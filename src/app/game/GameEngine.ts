@@ -113,6 +113,7 @@ export class GameEngine {
 
     // Crear nave del jugador
     this.spaceship = new Spaceship({ x: 0, y: 0, z: 0 });
+    console.log('🚀 Spaceship created at position:', this.spaceship.position);
 
     // Crear asteroides
     this.asteroids = [];
@@ -136,6 +137,29 @@ export class GameEngine {
 
       this.asteroids.push(asteroid);
     }
+    
+    // ¡CRÍTICO! Inicializar buffers WebGL para todos los objetos
+    this.initializeAllBuffers();
+  }
+  
+  /**
+   * Inicializa los buffers WebGL para todos los objetos del juego
+   */
+  private initializeAllBuffers(): void {
+    if (!this.gl) {
+      console.error('❌ Cannot initialize buffers: WebGL context not available');
+      return;
+    }
+    
+    // Inicializar buffers de la nave
+    this.spaceship.initBuffers(this.gl);
+    console.log('🚀 Spaceship buffers initialized');
+    
+    // Inicializar buffers de todos los asteroides
+    this.asteroids.forEach((asteroid, index) => {
+      asteroid.initBuffers(this.gl!);
+    });
+    console.log(`⭐ Initialized buffers for ${this.asteroids.length} asteroids`);
   }
 
   /**
@@ -234,13 +258,17 @@ export class GameEngine {
    * Renderiza el frame actual
    */
   private render(): void {
-    if (!this.gl || !this.shaderManager) return;
+    if (!this.gl || !this.shaderManager) {
+      console.warn('❌ Render skipped: gl or shaderManager not available');
+      return;
+    }
 
     // Limpiar buffers
     this.webglService.clear();
 
     // Usar programa con iluminación
     this.shaderManager.useLitProgram();
+    console.log('🎨 Rendering frame with', this.asteroids.length, 'asteroids');
 
     // Configurar iluminación global
     this.shaderManager.setLighting(
@@ -263,10 +291,15 @@ export class GameEngine {
    * Renderiza un objeto individual
    */
   private renderObject(object: GameObject): void {
-    if (!this.gl || !this.shaderManager) return;
+    if (!this.gl || !this.shaderManager) {
+      console.warn('❌ RenderObject skipped: gl or shaderManager not available');
+      return;
+    }
 
     // Calcular matriz normal (para iluminación)
     this.calculateNormalMatrix(object.modelMatrix);
+    
+    console.log('🎯 Rendering object:', object.id, 'at position:', object.position);
 
     // Establecer matrices
     this.shaderManager.setLitMatrices(
@@ -336,6 +369,12 @@ export class GameEngine {
         break;
       case 'e':
         this.spaceship.controls.down = pressed;
+        break;
+      case 'r':
+        this.spaceship.controls.rollLeft = pressed;
+        break;
+      case 'f':
+        this.spaceship.controls.rollRight = pressed;
         break;
       case 'shift':
         this.spaceship.controls.speedUp = pressed;

@@ -1,6 +1,9 @@
-import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy } from '@angular/core';
+﻿import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, HostListener } from '@angular/core';
 import { Modal } from '../modal/modal';
-import { WebGLService, WebGLConfig } from '../../services/webgl.service';
+import { GameStateManager, GameState } from '../../services/game/game-state.service';
+import { GameInputHandler } from '../../services/game/game-input.service';
+import { GameInitializer } from '../../services/game/game-initializer.service';
+import { GameUIManager } from '../../services/game/game-ui.service';
 
 @Component({
   selector: 'app-game',
@@ -11,15 +14,20 @@ import { WebGLService, WebGLConfig } from '../../services/webgl.service';
 export class Game implements AfterViewInit, OnDestroy {
   @ViewChild('gameCanvas', { static: true }) canvas!: ElementRef<HTMLCanvasElement>;
   
-  gameStarted = false;
-  webglReady = false;
-  private animationFrameId?: number;
+  // Estado público para el template
+  get gameState() { return this.stateManager.getCurrentState(); }
+  get isGameRunning() { return this.gameState === GameState.RUNNING; }
+  get isGameReady() { return this.gameState === GameState.READY; }
 
-  constructor(private webglService: WebGLService) {}
+  constructor(
+    private stateManager: GameStateManager,
+    private inputHandler: GameInputHandler,
+    private gameInitializer: GameInitializer,
+    private uiManager: GameUIManager
+  ) {}
 
   async ngAfterViewInit() {
-    await this.initializeWebGL();
-    this.setupEventListeners();
+    await this.initializeGame();
   }
 
   ngOnDestroy() {
@@ -27,244 +35,206 @@ export class Game implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Inicializa WebGL usando el servicio inyectable
+   * Inicialización completa usando GameInitializer
    */
-  private async initializeWebGL(): Promise<void> {
+  private async initializeGame(): Promise<void> {
     try {
-      // Configuración optimizada para el juego
-      const config: WebGLConfig = {
-        antialias: true,
-        alpha: false,
-        depth: true,
-        stencil: false,
-        preserveDrawingBuffer: false,
-        powerPreference: 'high-performance'
-      };
+      // Inicializar UI
+      this.uiManager.initializeUI('game-status', 'game-controls');
+      this.uiManager.showGameStateMessage(GameState.INITIALIZING);
 
-      const success = await this.webglService.initialize(this.canvas, config);
-      
-      if (success) {
-        this.webglReady = true;
-        console.log('🎮 WebGL ready for game!', this.webglService.getState());
-        
-        // Limpiar canvas inicial
-        this.webglService.clear();
+      // Inicializar el juego
+      const result = await this.gameInitializer.initializeGame(this.canvas, {
+        canvasWidth: 800,
+        canvasHeight: 600,
+        enableDebug: false
+      });
+
+      if (result.success) {
+        // Configurar input handler y debug collector
+        const gameEngine = this.gameInitializer.getGameEngine();
+        if (gameEngine) {
+          this.inputHandler.setGameEngine(gameEngine);
+          this.inputHandler.setInputEnabled(true);
+          this.uiManager.initializeDebugCollector(gameEngine);
+        }
+
+        // Configurar listeners de estado
+        this.stateManager.onStateChange((state: GameState) => {
+          this.uiManager.showGameStateMessage(state);
+          this.inputHandler.setInputEnabled(state === GameState.RUNNING);
+        });
+
+        // Cambiar a estado listo
+        this.stateManager.setState(GameState.READY);
+        console.log('✅ Game initialized successfully!', result);
       } else {
-        console.error('❌ Failed to initialize WebGL');
-        this.handleWebGLError();
+        this.stateManager.setState(GameState.ERROR);
+        this.uiManager.showError(result.error || 'Unknown initialization error');
+        console.error('❌ Game initialization failed:', result.error);
       }
     } catch (error) {
-      console.error('❌ WebGL initialization error:', error);
-      this.handleWebGLError();
+      this.stateManager.setState(GameState.ERROR);
+      this.uiManager.showError(error instanceof Error ? error.message : 'Initialization error');
+      console.error('❌ Game initialization error:', error);
     }
   }
 
   /**
-   * Configura los event listeners para el canvas
+   * Manejador de teclas usando GameInputHandler
    */
-  private setupEventListeners(): void {
-    // Escuchar eventos de redimensionamiento
-    this.canvas.nativeElement.addEventListener('webgl-resize', (event: any) => {
-      console.log('📐 Canvas resized:', event.detail);
-      if (this.gameStarted) {
-        this.onCanvasResize(event.detail);
-      }
-    });
-
-    // Escuchar eventos del juego (teclado, mouse, etc.)
-    this.setupGameControls();
-  }
-
-  /**
-   * Configura los controles del juego
-   */
-  private setupGameControls(): void {
-    // Eventos de teclado
-    window.addEventListener('keydown', (event) => {
-      if (this.gameStarted) {
-        this.handleKeyDown(event);
-      }
-    });
-
-    // Eventos del canvas
-    const canvas = this.canvas.nativeElement;
-    
-    canvas.addEventListener('mousedown', (event) => {
-      if (this.gameStarted) {
-        this.handleMouseDown(event);
-      }
-    });
-
-    canvas.addEventListener('mousemove', (event) => {
-      if (this.gameStarted) {
-        this.handleMouseMove(event);
-      }
-    });
-  }
-
-  /**
-   * Inicia el juego
-   */
-  async startGame(): Promise<void> {
-    if (!this.webglReady) {
-      console.warn('⚠️ WebGL not ready, waiting...');
+  @HostListener('window:keydown', ['$event'])
+  handleKeyDown(event: KeyboardEvent): void {
+    // Manejar teclas especiales del componente
+    if (event.key === 'Escape') {
+      this.togglePause();
+      event.preventDefault();
       return;
     }
 
-    this.gameStarted = true;
-    console.log('🚀 Game started!');
-
-    // Inicializar recursos del juego
-    await this.loadGameResources();
-    
-    // Comenzar el loop de renderizado
-    this.startGameLoop();
-  }
-
-  /**
-   * Carga los recursos necesarios para el juego
-   */
-  private async loadGameResources(): Promise<void> {
-    // Aquí cargarías texturas, shaders, modelos, etc.
-    console.log('📦 Loading game resources...');
-    
-    // Ejemplo: simular carga de recursos
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
-    console.log('✅ Game resources loaded');
-  }
-
-  /**
-   * Inicia el loop principal del juego
-   */
-  private startGameLoop(): void {
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
+    if (event.key === ' ' || event.key === 'Space') {
+      if (this.gameState === GameState.READY || this.gameState === GameState.STOPPED) {
+        this.startGame();
+      }
+      event.preventDefault();
+      return;
     }
-    
-    this.gameLoop();
+
+    if (event.key === 'F1') {
+      this.toggleDebugOverlay();
+      event.preventDefault();
+      return;
+    }
+
+    // Delegar al input handler
+    const handled = this.inputHandler.handleKeyDown(event);
+    if (handled) {
+      event.preventDefault();
+    }
   }
 
-  /**
-   * Loop principal del juego
-   */
-  private gameLoop(): void {
-    if (!this.gameStarted || !this.webglReady) return;
-
-    // Limpiar canvas
-    this.webglService.clear();
-
-    // Actualizar lógica del juego
-    this.updateGame();
-
-    // Renderizar frame
-    this.renderGame();
-
-    // Continuar el loop
-    this.animationFrameId = requestAnimationFrame(() => this.gameLoop());
-  }
-
-  /**
-   * Actualiza la lógica del juego
-   */
-  private updateGame(): void {
-    // Aquí irá la lógica de actualización del juego
-    // - Física
-    // - Colisiones
-    // - IA
-    // - Input handling
-  }
-
-  /**
-   * Renderiza el frame actual del juego
-   */
-  private renderGame(): void {
-    const gl = this.webglService.getContext();
-    if (!gl) return;
-
-    // Aquí irá el código de renderizado OpenGL
-    // - Configurar shaders
-    // - Dibujar geometría
-    // - Aplicar texturas
-    // - Efectos de post-procesado
-  }
-
-  /**
-   * Maneja eventos de redimensionamiento del canvas
-   */
-  private onCanvasResize(detail: any): void {
-    console.log('🔄 Updating game viewport:', detail);
-    // Actualizar cámaras, proyecciones, etc.
-  }
-
-  /**
-   * Maneja eventos de teclado
-   */
-  private handleKeyDown(event: KeyboardEvent): void {
-    switch (event.code) {
-      case 'Space':
-        event.preventDefault();
-        // Acción de salto o disparo
-        break;
-      case 'Escape':
-        this.pauseGame();
-        break;
-      // Más controles...
+  @HostListener('window:keyup', ['$event'])
+  handleKeyUp(event: KeyboardEvent): void {
+    // Delegar al input handler
+    const handled = this.inputHandler.handleKeyUp(event);
+    if (handled) {
+      event.preventDefault();
     }
   }
 
   /**
-   * Maneja eventos del mouse (down)
+   * Inicia el juego usando GameStateManager
    */
-  private handleMouseDown(event: MouseEvent): void {
-    const canvas = this.canvas.nativeElement;
-    const rect = canvas.getBoundingClientRect();
-    const x = event.clientX - rect.left;
-    const y = event.clientY - rect.top;
-    
-    console.log('🖱️ Mouse click at:', { x, y });
-    // Manejar clicks del juego
-  }
-
-  /**
-   * Maneja eventos del mouse (move)
-   */
-  private handleMouseMove(event: MouseEvent): void {
-    // Manejar movimiento del mouse para cámaras, etc.
-  }
-
-  /**
-   * Pausa el juego
-   */
-  private pauseGame(): void {
-    this.gameStarted = false;
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
-      this.animationFrameId = undefined;
+  async startGame(): Promise<void> {
+    if (!this.stateManager.canStart()) {
+      console.warn('Cannot start game in current state:', this.gameState);
+      return;
     }
-    console.log('⏸️ Game paused');
+
+    try {
+      const gameEngine = this.gameInitializer.getGameEngine();
+      if (!gameEngine) {
+        throw new Error('Game engine not available');
+      }
+
+      this.stateManager.setState(GameState.RUNNING);
+      this.uiManager.resetGameStats();
+      gameEngine.start();
+      
+      console.log('🎮 Game started!');
+    } catch (error) {
+      this.stateManager.setState(GameState.ERROR);
+      this.uiManager.showError(error instanceof Error ? error.message : 'Failed to start game');
+    }
   }
 
   /**
-   * Maneja errores de WebGL
+   * Para el juego usando GameStateManager
    */
-  private handleWebGLError(): void {
-    // Mostrar mensaje de error al usuario
-    console.error('💥 WebGL not supported. Game cannot run.');
-    // Podrías mostrar un modal de error aquí
+  stopGame(): void {
+    if (!this.stateManager.canStop()) {
+      console.warn('Cannot stop game in current state:', this.gameState);
+      return;
+    }
+
+    const gameEngine = this.gameInitializer.getGameEngine();
+    if (gameEngine) {
+      gameEngine.stop();
+    }
+
+    this.stateManager.setState(GameState.STOPPED);
+    console.log('⏹️ Game stopped');
   }
 
   /**
-   * Limpia recursos al destruir el componente
+   * Pausa/reanuda el juego
+   */
+  togglePause(): void {
+    if (this.gameState === GameState.RUNNING) {
+      if (this.stateManager.canPause()) {
+        const gameEngine = this.gameInitializer.getGameEngine();
+        if (gameEngine) {
+          gameEngine.stop(); // GameEngine no tiene pause, usa stop
+        }
+        this.stateManager.setState(GameState.PAUSED);
+        console.log('⏸️ Game paused');
+      }
+    } else if (this.gameState === GameState.PAUSED) {
+      if (this.stateManager.canStart()) {
+        const gameEngine = this.gameInitializer.getGameEngine();
+        if (gameEngine) {
+          gameEngine.start();
+        }
+        this.stateManager.setState(GameState.RUNNING);
+        console.log('▶️ Game resumed');
+      }
+    }
+  }
+
+  /**
+   * Toggle del overlay de debug de la nave (F1)
+   */
+  toggleDebugOverlay(): boolean {
+    const isActive = this.uiManager.toggleSpaceshipDebug();
+    console.log(isActive ? '🎯 Debug overlay activated' : '❌ Debug overlay deactivated');
+    return isActive;
+  }
+
+  /**
+   * Obtiene información de debug de todos los servicios
+   */
+  getDebugInfo(): any {
+    return {
+      gameState: this.stateManager.getCurrentState(),
+      gameInitializer: this.gameInitializer.getDiagnosticInfo(),
+      inputHandler: this.inputHandler.getDebugInfo(),
+      uiManager: this.uiManager.getUIInfo(),
+      debugActive: this.uiManager.isDebugActive(),
+      stateManager: {
+        currentState: this.stateManager.getCurrentState(),
+        canStart: this.stateManager.canStart(),
+        canPause: this.stateManager.canPause(),
+        canStop: this.stateManager.canStop()
+      }
+    };
+  }
+
+  /**
+   * Limpieza usando todos los servicios
    */
   private cleanup(): void {
-    this.gameStarted = false;
+    console.log('🧹 Cleaning up game component...');
     
-    if (this.animationFrameId) {
-      cancelAnimationFrame(this.animationFrameId);
+    // Parar el juego si está corriendo
+    if (this.gameState === GameState.RUNNING || this.gameState === GameState.PAUSED) {
+      this.stopGame();
     }
 
-    this.webglService.destroy();
-    console.log('🧹 Game component cleaned up');
+    // Limpiar servicios
+    this.inputHandler.cleanup();
+    this.gameInitializer.cleanup();
+    this.uiManager.cleanup();
+    
+    console.log('✅ Game component cleaned up');
   }
 }

@@ -1,0 +1,174 @@
+import { Injectable } from '@angular/core';
+import { GameEngine } from '../../game/GameEngine';
+
+export interface KeyState {
+  [key: string]: boolean;
+}
+
+/**
+ * Servicio para manejar todos los inputs del juego
+ */
+@Injectable({
+  providedIn: 'root'
+})
+export class GameInputHandler {
+  private keyState: KeyState = {};
+  private gameEngine: GameEngine | null = null;
+  private inputEnabled: boolean = false;
+
+  constructor() {
+    this.initializeKeyState();
+  }
+
+  /**
+   * Inicializa el estado de las teclas
+   */
+  private initializeKeyState(): void {
+    const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', 'r', 'f', 'shift', 'control', 'escape'];
+    gameKeys.forEach(key => {
+      this.keyState[key.toLowerCase()] = false;
+    });
+  }
+
+  /**
+   * Establece la referencia al motor del juego
+   */
+  setGameEngine(engine: GameEngine): void {
+    this.gameEngine = engine;
+  }
+
+  /**
+   * Habilita o deshabilita el procesamiento de input
+   */
+  setInputEnabled(enabled: boolean): void {
+    this.inputEnabled = enabled;
+    if (!enabled) {
+      this.clearAllKeys();
+    }
+  }
+
+  /**
+   * Limpia el estado de todas las teclas
+   */
+  clearAllKeys(): void {
+    Object.keys(this.keyState).forEach(key => {
+      this.keyState[key] = false;
+    });
+  }
+
+  /**
+   * Maneja eventos de tecla presionada
+   */
+  handleKeyDown(event: KeyboardEvent): boolean {
+    if (!this.inputEnabled || !this.gameEngine) {
+      return false;
+    }
+
+    const key = event.key.toLowerCase();
+    
+    // Manejar teclas especiales que no se pasan al motor
+    if (this.handleSpecialKeys(key)) {
+      event.preventDefault();
+      return true;
+    }
+
+    // Actualizar estado de la tecla
+    if (key in this.keyState) {
+      this.keyState[key] = true;
+      this.gameEngine.handleKeyDown(event.key);
+      event.preventDefault();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Maneja eventos de tecla liberada
+   */
+  handleKeyUp(event: KeyboardEvent): boolean {
+    if (!this.inputEnabled || !this.gameEngine) {
+      return false;
+    }
+
+    const key = event.key.toLowerCase();
+
+    // Actualizar estado de la tecla
+    if (key in this.keyState) {
+      this.keyState[key] = false;
+      this.gameEngine.handleKeyUp(event.key);
+      event.preventDefault();
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Maneja teclas especiales del juego
+   */
+  private handleSpecialKeys(key: string): boolean {
+    switch (key) {
+      case 'escape':
+        // La tecla escape se maneja externamente
+        return true;
+      case 'f11':
+        // Fullscreen toggle podría manejarse aquí
+        return false;
+      default:
+        return false;
+    }
+  }
+
+  /**
+   * Obtiene el estado actual de una tecla
+   */
+  isKeyPressed(key: string): boolean {
+    return this.keyState[key.toLowerCase()] || false;
+  }
+
+  /**
+   * Obtiene el estado completo de las teclas
+   */
+  getKeyState(): Readonly<KeyState> {
+    return { ...this.keyState };
+  }
+
+  /**
+   * Verifica si alguna tecla de movimiento está presionada
+   */
+  hasMovementInput(): boolean {
+    return this.keyState['w'] || this.keyState['a'] || 
+           this.keyState['s'] || this.keyState['d'] || 
+           this.keyState['q'] || this.keyState['e'] ||
+           this.keyState['r'] || this.keyState['f'];
+  }
+
+  /**
+   * Verifica si alguna tecla de velocidad está presionada
+   */
+  hasSpeedInput(): boolean {
+    return this.keyState['shift'] || this.keyState['control'];
+  }
+
+  /**
+   * Obtiene información de debug del input
+   */
+  getDebugInfo(): any {
+    return {
+      inputEnabled: this.inputEnabled,
+      hasGameEngine: !!this.gameEngine,
+      activeKeys: Object.keys(this.keyState).filter(key => this.keyState[key]),
+      keyState: { ...this.keyState }
+    };
+  }
+
+  /**
+   * Limpia recursos al destruir el servicio
+   */
+  cleanup(): void {
+    this.clearAllKeys();
+    this.gameEngine = null;
+    this.inputEnabled = false;
+  }
+}

@@ -1,0 +1,285 @@
+import { Injectable, ElementRef } from '@angular/core';
+import { GameEngine } from '../../game/GameEngine';
+import { WebGLService } from '../webgl.service';
+
+export interface GameInitializationConfig {
+  canvasWidth?: number;
+  canvasHeight?: number;
+  enableDebug?: boolean;
+  maxFPS?: number;
+  antialiasing?: boolean;
+}
+
+export interface InitializationResult {
+  success: boolean;
+  error?: string;
+  webglVersion?: string;
+  canvasInfo?: {
+    width: number;
+    height: number;
+    devicePixelRatio: number;
+  };
+}
+
+/**
+ * Servicio para manejar la inicialización completa del juego
+ */
+@Injectable({
+  providedIn: 'root'
+})
+export class GameInitializer {
+  private isInitialized: boolean = false;
+  private gameEngine: GameEngine | null = null;
+  private canvas: HTMLCanvasElement | null = null;
+  private config: GameInitializationConfig = {};
+
+  constructor(
+    private webglService: WebGLService
+  ) {}
+
+  /**
+   * Inicializa completamente el juego con un canvas
+   */
+  async initializeGame(
+    canvasRef: ElementRef<HTMLCanvasElement>, 
+    config: GameInitializationConfig = {}
+  ): Promise<InitializationResult> {
+    
+    try {
+      // Guardar configuración
+      this.config = { ...this.getDefaultConfig(), ...config };
+      
+      // Obtener canvas
+      this.canvas = canvasRef.nativeElement;
+      if (!this.canvas) {
+        throw new Error('Canvas element not found');
+      }
+
+      // Configurar canvas
+      this.setupCanvas();
+
+      // Inicializar WebGL
+      const webglResult = await this.initializeWebGL();
+      if (!webglResult.success) {
+        throw new Error(webglResult.error || 'WebGL initialization failed');
+      }
+
+      // Crear motor del juego
+      this.gameEngine = new GameEngine(this.webglService);
+
+      // Inicializar motor del juego
+      await this.gameEngine.initialize(canvasRef);
+
+      // Configurar eventos de redimensionado
+      this.setupResizeHandlers();
+
+      this.isInitialized = true;
+
+      return {
+        success: true,
+        webglVersion: webglResult.webglVersion,
+        canvasInfo: {
+          width: this.canvas.width,
+          height: this.canvas.height,
+          devicePixelRatio: window.devicePixelRatio || 1
+        }
+      };
+
+    } catch (error) {
+      this.cleanup();
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown initialization error'
+      };
+    }
+  }
+
+  /**
+   * Obtiene configuración por defecto
+   */
+  private getDefaultConfig(): GameInitializationConfig {
+    return {
+      canvasWidth: 800,
+      canvasHeight: 600,
+      enableDebug: false,
+      maxFPS: 60,
+      antialiasing: true
+    };
+  }
+
+  /**
+   * Configura las propiedades del canvas
+   */
+  private setupCanvas(): void {
+    if (!this.canvas) return;
+
+    // Establecer tamaño
+    this.canvas.width = this.config.canvasWidth || 800;
+    this.canvas.height = this.config.canvasHeight || 600;
+
+    // Configurar estilos CSS
+    this.canvas.style.display = 'block';
+    this.canvas.style.touchAction = 'none';
+    this.canvas.style.outline = 'none';
+
+    // Hacer el canvas focusable para eventos de teclado
+    if (!this.canvas.hasAttribute('tabindex')) {
+      this.canvas.setAttribute('tabindex', '0');
+    }
+
+    console.log(`Canvas configured: ${this.canvas.width}x${this.canvas.height}`);
+  }
+
+  /**
+   * Inicializa el contexto WebGL
+   */
+  private async initializeWebGL(): Promise<{ success: boolean; error?: string; webglVersion?: string }> {
+    if (!this.canvas) {
+      return { success: false, error: 'Canvas not available' };
+    }
+
+    try {
+      const canvasRef = { nativeElement: this.canvas };
+      const success = await this.webglService.initialize(canvasRef, {
+        antialias: this.config.antialiasing || true,
+        alpha: false,
+        depth: true,
+        powerPreference: 'high-performance'
+      });
+      
+      if (!success) {
+        return { success: false, error: 'Failed to create WebGL context' };
+      }
+
+      // Verificar capacidades WebGL
+      const gl = this.webglService.getContext();
+      if (!gl) {
+        return { success: false, error: 'WebGL context is null' };
+      }
+
+      return { 
+        success: true, 
+        webglVersion: this.webglService.getWebGLVersion() 
+      };
+
+    } catch (error) {
+      return { 
+        success: false, 
+        error: error instanceof Error ? error.message : 'WebGL initialization error' 
+      };
+    }
+  }
+
+  /**
+   * Configura manejadores de redimensionado
+   */
+  private setupResizeHandlers(): void {
+    const handleResize = () => {
+      if (this.canvas && this.gameEngine) {
+        // Actualizar canvas size si es necesario
+        this.updateCanvasSize();
+        
+        // El GameEngine no tiene handleResize, pero WebGL se actualiza automáticamente
+      }
+    };
+
+    // Escuchar cambios de tamaño de ventana
+    window.addEventListener('resize', handleResize);
+    
+    // Limpiar evento al destruir
+    // Nota: En un componente real, esto debería manejarse en ngOnDestroy
+  }
+
+  /**
+   * Actualiza el tamaño del canvas si es necesario
+   */
+  private updateCanvasSize(): void {
+    if (!this.canvas) return;
+
+    const rect = this.canvas.getBoundingClientRect();
+    const devicePixelRatio = window.devicePixelRatio || 1;
+
+    const displayWidth = Math.floor(rect.width * devicePixelRatio);
+    const displayHeight = Math.floor(rect.height * devicePixelRatio);
+
+    if (this.canvas.width !== displayWidth || this.canvas.height !== displayHeight) {
+      this.canvas.width = displayWidth;
+      this.canvas.height = displayHeight;
+
+      // Actualizar viewport de WebGL
+      const gl = this.webglService.getContext();
+      if (gl) {
+        gl.viewport(0, 0, displayWidth, displayHeight);
+      }
+
+      console.log(`Canvas resized to: ${displayWidth}x${displayHeight}`);
+    }
+  }
+
+  /**
+   * Verifica si el juego está inicializado
+   */
+  isGameInitialized(): boolean {
+    return this.isInitialized && !!this.gameEngine;
+  }
+
+  /**
+   * Obtiene referencia al motor del juego
+   */
+  getGameEngine(): GameEngine | null {
+    return this.gameEngine;
+  }
+
+  /**
+   * Obtiene referencia al canvas
+   */
+  getCanvas(): HTMLCanvasElement | null {
+    return this.canvas;
+  }
+
+  /**
+   * Obtiene configuración actual
+   */
+  getConfig(): Readonly<GameInitializationConfig> {
+    return { ...this.config };
+  }
+
+  /**
+   * Obtiene información de diagnóstico
+   */
+  getDiagnosticInfo(): any {
+    return {
+      isInitialized: this.isInitialized,
+      hasGameEngine: !!this.gameEngine,
+      hasCanvas: !!this.canvas,
+      canvasSize: this.canvas ? `${this.canvas.width}x${this.canvas.height}` : 'N/A',
+      webglVersion: this.webglService.getWebGLVersion(),
+      config: this.config
+    };
+  }
+
+  /**
+   * Reinicia la inicialización
+   */
+  async reinitialize(canvasRef: ElementRef<HTMLCanvasElement>, config?: GameInitializationConfig): Promise<InitializationResult> {
+    this.cleanup();
+    return await this.initializeGame(canvasRef, config);
+  }
+
+  /**
+   * Limpia recursos
+   */
+  cleanup(): void {
+    if (this.gameEngine) {
+      // Parar el juego si está corriendo
+      this.gameEngine.stop();
+      this.gameEngine = null;
+    }
+
+    this.canvas = null;
+    this.isInitialized = false;
+    
+    // Limpiar contexto WebGL si es necesario
+    this.webglService.destroy();
+  }
+}

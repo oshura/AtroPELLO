@@ -120,7 +120,10 @@ export abstract class GameObject {
    * Renderiza el objeto
    */
   public render(gl: WebGLRenderingContext, program: WebGLProgram, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
-    if (!this.visible || !this.vertexBuffer) return;
+    if (!this.visible || !this.vertexBuffer) {
+      console.warn('⚠️ Skipping render for', this.id, '- not visible or buffers not initialized');
+      return;
+    }
 
     // Configurar atributos
     const positionLocation = gl.getAttribLocation(program, 'a_position');

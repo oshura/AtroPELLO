@@ -25,7 +25,9 @@ export class Spaceship extends GameObject {
     up: false,
     down: false,
     speedUp: false,
-    speedDown: false
+    speedDown: false,
+    rollLeft: false,  // R key - Roll hacia la izquierda
+    rollRight: false  // F key - Roll hacia la derecha
   };
 
   constructor(position: Vector3 = { x: 100, y: 100, z: 100 }) {
@@ -147,6 +149,15 @@ export class Spaceship extends GameObject {
       this.angularVelocity.x = currentRotationSpeed;
     } else {
       this.angularVelocity.x = 0;
+    }
+
+    // Aplicar rotación en Z (roll)
+    if (this.controls.rollLeft) {
+      this.angularVelocity.z = currentRotationSpeed;
+    } else if (this.controls.rollRight) {
+      this.angularVelocity.z = -currentRotationSpeed;
+    } else {
+      this.angularVelocity.z = 0;
     }
 
     // Control de velocidad con +/-
