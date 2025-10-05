@@ -65,9 +65,6 @@ Z-Index Hierarchy:
     <div class="modal-content" (click)="$event.stopPropagation()">
       <div class="modal-header">
         <h2>{{ title }}</h2>
-        <button class="close-button" (click)="close()">
-          <!-- Close Icon SVG -->
-        </button>
       </div>
       <div class="modal-body">
         <ng-content></ng-content>  <!-- ← Contenido proyectado -->
