@@ -1,0 +1,51 @@
+<div class="game-container">
+  <canvas #gameCanvas id="gameCanvas" class="game-canvas">
+    Tu navegador no soporta el elemento canvas requerido para este juego.
+  </canvas>
+</div>
+
+<app-modal 
+  [isVisible]="!gameStarted" 
+  [title]="'Bienvenido a AtroPELLO'" 
+  [closeOnBackdrop]="false"
+  (onClose)="startGame()">
+  
+  <div class="welcome-content">
+    <div class="welcome-icon">
+      <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="32" cy="32" r="32" fill="url(#gameGradient)"/>
+        <path d="M32 16L40 32L32 48L24 32Z" fill="white"/>
+        <defs>
+          <linearGradient id="gameGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#667eea"/>
+            <stop offset="100%" stop-color="#764ba2"/>
+          </linearGradient>
+        </defs>
+      </svg>
+    </div>
+    <p class="welcome-text">Prepárate para una experiencia de juego increíble con tecnología OpenGL en tu navegador.</p>
+    <div class="game-features">
+      <div class="feature">
+        <span class="feature-icon">🎮</span>
+        <span>Controles intuitivos</span>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">⚡</span>
+        <span>Gráficos acelerados</span>
+      </div>
+      <div class="feature">
+        <span class="feature-icon">🏆</span>
+        <span>Desafíos emocionantes</span>
+      </div>
+    </div>
+  </div>
+  
+  <div slot="footer">
+    <button class="start-button" (click)="startGame()">
+      <span>Comenzar Aventura</span>
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+        <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </button>
+  </div>
+</app-modal>
