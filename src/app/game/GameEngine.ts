@@ -651,12 +651,30 @@ export class GameEngine {
     const speedRatio = this.spaceship.currentSpeed / this.spaceship.maxSpeed; // 0 a 1
     const scaleFactor = 1.0 + (speedRatio * 0.5); // 1.0 a 1.5
     
-    // Escalar los vértices del thruster
+    // Encontrar el centro de la geometría del thruster
+    let centerX = 0, centerY = 0, centerZ = 0;
+    const vertexCount = thrusterGeometry.vertices.length / 3;
+    
+    for (let i = 0; i < thrusterGeometry.vertices.length; i += 3) {
+      centerX += thrusterGeometry.vertices[i];
+      centerY += thrusterGeometry.vertices[i + 1]; 
+      centerZ += thrusterGeometry.vertices[i + 2];
+    }
+    centerX /= vertexCount;
+    centerY /= vertexCount;
+    centerZ /= vertexCount;
+    
+    // Escalar los vértices respecto al centro de la geometría
     const scaledVertices = new Float32Array(thrusterGeometry.vertices.length);
     for (let i = 0; i < thrusterGeometry.vertices.length; i += 3) {
-      scaledVertices[i] = thrusterGeometry.vertices[i] * scaleFactor;     // X
-      scaledVertices[i + 1] = thrusterGeometry.vertices[i + 1] * scaleFactor; // Y  
-      scaledVertices[i + 2] = thrusterGeometry.vertices[i + 2] * scaleFactor; // Z
+      // Trasladar al origen, escalar, y trasladar de vuelta
+      const x = thrusterGeometry.vertices[i] - centerX;
+      const y = thrusterGeometry.vertices[i + 1] - centerY;
+      const z = thrusterGeometry.vertices[i + 2] - centerZ;
+      
+      scaledVertices[i] = x * scaleFactor + centerX;
+      scaledVertices[i + 1] = y * scaleFactor + centerY;
+      scaledVertices[i + 2] = z * scaleFactor + centerZ;
     }
 
     // Configurar geometría del thruster escalada

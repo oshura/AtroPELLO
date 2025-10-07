@@ -312,18 +312,18 @@ export abstract class GameObject {
   }
 
   // Funciones auxiliares para matrices (implementación básica)
-  private identityMatrix(matrix: Float32Array): void {
+  protected identityMatrix(matrix: Float32Array): void {
     matrix.fill(0);
     matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1;
   }
 
-  private translate(matrix: Float32Array, x: number, y: number, z: number): void {
+  protected translate(matrix: Float32Array, x: number, y: number, z: number): void {
     matrix[12] += x;
     matrix[13] += y;
     matrix[14] += z;
   }
 
-  private rotateX(matrix: Float32Array, angle: number): void {
+  protected rotateX(matrix: Float32Array, angle: number): void {
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const temp = new Float32Array(matrix);
@@ -336,7 +336,7 @@ export abstract class GameObject {
     matrix[10] = temp[10] * cos - temp[6] * sin;
   }
 
-  private rotateY(matrix: Float32Array, angle: number): void {
+  protected rotateY(matrix: Float32Array, angle: number): void {
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const temp = new Float32Array(matrix);
@@ -349,7 +349,7 @@ export abstract class GameObject {
     matrix[10] = temp[2] * sin + temp[10] * cos;
   }
 
-  private rotateZ(matrix: Float32Array, angle: number): void {
+  protected rotateZ(matrix: Float32Array, angle: number): void {
     const cos = Math.cos(angle);
     const sin = Math.sin(angle);
     const temp = new Float32Array(matrix);
@@ -362,7 +362,7 @@ export abstract class GameObject {
     matrix[6] = temp[6] * cos - temp[2] * sin;
   }
 
-  private scaleMatrix(matrix: Float32Array, x: number, y: number, z: number): void {
+  protected scaleMatrix(matrix: Float32Array, x: number, y: number, z: number): void {
     matrix[0] *= x;
     matrix[1] *= x;
     matrix[2] *= x;

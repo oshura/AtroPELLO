@@ -22,9 +22,6 @@ export class Spaceship extends GameObject {
   public rotationSpeed: number = Math.PI / 2.5; // 72 grados por segundo (180 grados en 2.5 segundos)
   public minRotationSpeed: number = Math.PI / 5; // 36 grados por segundo
   
-  // Matriz de orientación para rotaciones locales verdaderas
-  private orientationMatrix: Float32Array = new Float32Array(16);
-  
   public currentSpeed: number = 0.0;
   public targetSpeed: number = 0.0;
   public forwardDirection: Vector3 = { x: 0, y: 0, z: 1 }; // Dirección hacia adelante
@@ -52,27 +49,11 @@ export class Spaceship extends GameObject {
     super('player-ship', position);
     this.color = { r: 0.7, g: 0.75, b: 0.8, a: 1.0 }; // Color metálico plateado base
     
-    // Inicializar matriz de orientación como identidad
-    this.initializeOrientationMatrix();
-    
     console.log('🚀 Spaceship created with geometry:', {
       vertices: this.vertices.length,
       indices: this.indices.length,
       position: this.position
     });
-  }
-
-  /**
-   * Inicializa la matriz de orientación como identidad
-   */
-  private initializeOrientationMatrix(): void {
-    // Matriz identidad 4x4
-    this.orientationMatrix.set([
-      1, 0, 0, 0,
-      0, 1, 0, 0,
-      0, 0, 1, 0,
-      0, 0, 0, 1
-    ]);
   }
 
   /**
@@ -145,61 +126,31 @@ export class Spaceship extends GameObject {
     const rotationMultiplier = 1.0 - (speedFactor * 0.58); // Reduce a 42% a velocidad máxima
     const currentRotationSpeed = this.rotationSpeed * rotationMultiplier;
 
-    // SISTEMA SIMPLIFICADO: usar angularVelocity con mejor orden de rotación
+    // Sistema simple con angularVelocity - funciona perfectamente para todas las rotaciones
     
-    // Yaw (Q/E) - Rotación en Y 
-    if (this.controls.left) {
-      this.angularVelocity.y = currentRotationSpeed;
-      console.log('🚀 Q pressed - YAW LEFT | Current rotation:', {
-        x: this.rotation.x.toFixed(3), 
-        y: this.rotation.y.toFixed(3), 
-        z: this.rotation.z.toFixed(3)
-      });
-    } else if (this.controls.right) {
-      this.angularVelocity.y = -currentRotationSpeed;
-      console.log('🚀 E pressed - YAW RIGHT | Current rotation:', {
-        x: this.rotation.x.toFixed(3), 
-        y: this.rotation.y.toFixed(3), 
-        z: this.rotation.z.toFixed(3)
-      });
-    } else {
-      this.angularVelocity.y = 0;
-    }
-
     // Pitch (W/S) - Rotación en X 
     if (this.controls.up) {
       this.angularVelocity.x = -currentRotationSpeed;
-      console.log('🚀 W pressed - PITCH UP | Current rotation:', {
-        x: this.rotation.x.toFixed(3), 
-        y: this.rotation.y.toFixed(3), 
-        z: this.rotation.z.toFixed(3)
-      });
     } else if (this.controls.down) {
       this.angularVelocity.x = currentRotationSpeed;
-      console.log('🚀 S pressed - PITCH DOWN | Current rotation:', {
-        x: this.rotation.x.toFixed(3), 
-        y: this.rotation.y.toFixed(3), 
-        z: this.rotation.z.toFixed(3)
-      });
     } else {
       this.angularVelocity.x = 0;
+    }
+
+    // Yaw (Q/E) - Rotación en Y 
+    if (this.controls.left) {
+      this.angularVelocity.y = currentRotationSpeed;
+    } else if (this.controls.right) {
+      this.angularVelocity.y = -currentRotationSpeed;
+    } else {
+      this.angularVelocity.y = 0;
     }
 
     // Roll (A/D) - Rotación en Z
     if (this.controls.rollLeft) {
       this.angularVelocity.z = currentRotationSpeed;
-      console.log('🚀 A pressed - ROLL LEFT | Current rotation:', {
-        x: this.rotation.x.toFixed(3), 
-        y: this.rotation.y.toFixed(3), 
-        z: this.rotation.z.toFixed(3)
-      });
     } else if (this.controls.rollRight) {
       this.angularVelocity.z = -currentRotationSpeed;
-      console.log('🚀 D pressed - ROLL RIGHT | Current rotation:', {
-        x: this.rotation.x.toFixed(3), 
-        y: this.rotation.y.toFixed(3), 
-        z: this.rotation.z.toFixed(3)
-      });
     } else {
       this.angularVelocity.z = 0;
     }
@@ -301,114 +252,6 @@ export class Spaceship extends GameObject {
     x = tempX;
     
     return { x, y, z };
-  }
-
-  /**
-   * Aplica una rotación incremental en el eje local especificado
-   */
-  private applyLocalRotation(axis: 'x' | 'y' | 'z', angle: number): void {
-    // Crear matriz de rotación para el eje especificado
-    const rotationMatrix = new Float32Array(16);
-    this.createIdentityMatrix(rotationMatrix);
-
-    switch (axis) {
-      case 'x':
-        this.applyRotationX(rotationMatrix, angle);
-        break;
-      case 'y':
-        this.applyRotationY(rotationMatrix, angle);
-        break;
-      case 'z':
-        this.applyRotationZ(rotationMatrix, angle);
-        break;
-    }
-
-    // Multiplicar: nueva_orientación = rotación_incremental * orientación_actual
-    // Esto aplica la rotación en coordenadas LOCALES
-    const tempMatrix = new Float32Array(16);
-    this.multiplyMatrices(rotationMatrix, this.orientationMatrix, tempMatrix);
-    this.orientationMatrix.set(tempMatrix);
-  }
-
-  /**
-   * Extrae ángulos de Euler de la matriz de orientación para compatibilidad
-   */
-  private extractEulerFromMatrix(): void {
-    // Extraer rotación Y (yaw)
-    this.rotation.y = Math.atan2(this.orientationMatrix[8], this.orientationMatrix[10]);
-    
-    // Extraer rotación X (pitch)
-    const sy = Math.sqrt(this.orientationMatrix[0] * this.orientationMatrix[0] + this.orientationMatrix[4] * this.orientationMatrix[4]);
-    this.rotation.x = Math.atan2(-this.orientationMatrix[9], sy);
-    
-    // Extraer rotación Z (roll)
-    this.rotation.z = Math.atan2(this.orientationMatrix[4], this.orientationMatrix[0]);
-  }
-
-  /**
-   * Multiplica dos matrices 4x4: result = a * b
-   */
-  private multiplyMatrices(a: Float32Array, b: Float32Array, result: Float32Array): void {
-    for (let i = 0; i < 4; i++) {
-      for (let j = 0; j < 4; j++) {
-        let sum = 0;
-        for (let k = 0; k < 4; k++) {
-          sum += a[i * 4 + k] * b[k * 4 + j];
-        }
-        result[i * 4 + j] = sum;
-      }
-    }
-  }
-
-  /**
-   * Crea una matriz identidad (versión local para evitar conflictos)
-   */
-  private createIdentityMatrix(matrix: Float32Array): void {
-    matrix.fill(0);
-    matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1;
-  }
-
-  /**
-   * Aplica rotación X a una matriz (versión local)
-   */
-  private applyRotationX(matrix: Float32Array, angle: number): void {
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    
-    matrix[5] = cos;
-    matrix[6] = sin;
-    matrix[9] = -sin;
-    matrix[10] = cos;
-  }
-
-  /**
-   * Aplica rotación Y a una matriz (versión local)
-   */
-  private applyRotationY(matrix: Float32Array, angle: number): void {
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    
-    matrix[0] = cos;
-    matrix[2] = -sin;
-    matrix[8] = sin;
-    matrix[10] = cos;
-  }
-
-  /**
-   * Aplica rotación Z a una matriz (versión local)
-   */
-  private applyRotationZ(matrix: Float32Array, angle: number): void {
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    
-    matrix[0] = cos;
-    matrix[1] = sin;
-    matrix[4] = -sin;
-    matrix[5] = cos;
-  }
-
-  /**
-   * Obtiene información de depuración de la nave
   }
 
   /**
@@ -664,6 +507,4 @@ export class Spaceship extends GameObject {
       indices: new Uint16Array(indices)
     };
   }
-
-
 }
