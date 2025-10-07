@@ -1,6 +1,8 @@
-import { Injectable, ElementRef } from '@angular/core';
+import { Injectable, ElementRef, PLATFORM_ID, Inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { GameEngine } from '../../game/GameEngine';
 import { WebGLService } from '../webgl.service';
+import { ParticleEffectsService } from '../particle-effects.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -34,7 +36,9 @@ export class GameInitializer {
   private config: GameInitializationConfig = {};
 
   constructor(
-    private webglService: WebGLService
+    private webglService: WebGLService,
+    private particleEffectsService: ParticleEffectsService,
+    @Inject(PLATFORM_ID) private platformId: Object
   ) {}
 
   /**
@@ -46,6 +50,15 @@ export class GameInitializer {
   ): Promise<InitializationResult> {
     
     try {
+      // Verificar que estamos en el navegador
+      if (!isPlatformBrowser(this.platformId)) {
+        console.log('⚠️ Game initialization skipped - not in browser');
+        return {
+          success: false,
+          error: 'SSR environment - game initialization skipped'
+        };
+      }
+
       // Guardar configuración
       this.config = { ...this.getDefaultConfig(), ...config };
       
@@ -65,7 +78,7 @@ export class GameInitializer {
       }
 
       // Crear motor del juego
-      this.gameEngine = new GameEngine(this.webglService);
+      this.gameEngine = new GameEngine(this.webglService, this.particleEffectsService);
 
       // Inicializar motor del juego
       await this.gameEngine.initialize(canvasRef);

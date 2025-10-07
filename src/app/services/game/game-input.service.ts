@@ -24,7 +24,7 @@ export class GameInputHandler {
    * Inicializa el estado de las teclas
    */
   private initializeKeyState(): void {
-    const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', 'r', 'f', 'shift', 'control', 'escape'];
+    const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', '+', '=', '-', '_', 'shift', 'control', 'escape'];
     gameKeys.forEach(key => {
       this.keyState[key.toLowerCase()] = false;
     });
@@ -66,6 +66,9 @@ export class GameInputHandler {
 
     const key = event.key.toLowerCase();
     
+    // Log para debug de controles
+    console.log('🎮 Key pressed:', event.key, '(mapped to:', key, ')');
+    
     // Manejar teclas especiales que no se pasan al motor
     if (this.handleSpecialKeys(key)) {
       event.preventDefault();
@@ -73,7 +76,7 @@ export class GameInputHandler {
     }
 
     // Actualizar estado de la tecla
-    if (key in this.keyState) {
+    if (key in this.keyState || ['+', '=', '-', '_'].includes(key)) {
       this.keyState[key] = true;
       this.gameEngine.handleKeyDown(event.key);
       event.preventDefault();
@@ -140,15 +143,16 @@ export class GameInputHandler {
   hasMovementInput(): boolean {
     return this.keyState['w'] || this.keyState['a'] || 
            this.keyState['s'] || this.keyState['d'] || 
-           this.keyState['q'] || this.keyState['e'] ||
-           this.keyState['r'] || this.keyState['f'];
+           this.keyState['q'] || this.keyState['e'];
   }
 
   /**
    * Verifica si alguna tecla de velocidad está presionada
    */
   hasSpeedInput(): boolean {
-    return this.keyState['shift'] || this.keyState['control'];
+    return this.keyState['shift'] || this.keyState['control'] ||
+           this.keyState['+'] || this.keyState['='] ||
+           this.keyState['-'] || this.keyState['_'];
   }
 
   /**

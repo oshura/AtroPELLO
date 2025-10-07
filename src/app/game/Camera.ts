@@ -31,6 +31,8 @@ export class Camera {
   // Suavizado de movimiento
   private smoothingFactor: number = 8.0; // Mayor = más rígido, menor = más suave
   
+
+  
   constructor(aspect: number = 1.0) {
     this.aspect = aspect;
     this.updateProjectionMatrix();
@@ -38,14 +40,51 @@ export class Camera {
   }
 
   /**
-   * Actualiza la cámara para seguir a la nave
+   * Actualiza la cámara en modo cockpit fijo (único modo)
    */
   public update(spaceship: Spaceship, deltaTime: number): void {
-    this.calculateTargetPosition(spaceship);
-    this.calculateTargetLookAt(spaceship);
-    this.smoothCameraMovement(deltaTime);
+    this.updateCockpitMode(spaceship, deltaTime);
     this.updateViewMatrix();
   }
+
+  /**
+   * Modo COCKPIT: Cámara completamente soldada a la nave
+   * La nave permanece visualmente inmóvil, el universo rota alrededor
+   */
+  private updateCockpitMode(spaceship: Spaceship, deltaTime: number): void {
+    // Posición FIJA respecto a la nave (nunca cambia)
+    const FIXED_OFFSET = { x: 0, y: 0.5, z: -2.0 };
+    
+    // Posición absoluta de la cámara
+    this.position = {
+      x: spaceship.position.x + FIXED_OFFSET.x,
+      y: spaceship.position.y + FIXED_OFFSET.y,
+      z: spaceship.position.z + FIXED_OFFSET.z
+    };
+    
+    // Target FIJO: siempre mira 3 unidades hacia adelante en Z local
+    this.target = {
+      x: this.position.x + 0,     // Sin movimiento en X
+      y: this.position.y + 0,     // Sin movimiento en Y  
+      z: this.position.z + 3.0    // Siempre 3 unidades adelante en Z
+    };
+    
+    // Vector up FIJO
+    this.up = { x: 0, y: 1, z: 0 };
+    
+    // Debug
+    if (Math.abs(spaceship.rotation.y) > 0.01) {
+      console.log('🏠 COCKPIT MODE:');
+      console.log('  Ship rotation.y:', spaceship.rotation.y.toFixed(4));
+      console.log('  Camera pos (FIXED):', this.position);
+      console.log('  Camera target (FIXED):', this.target);
+      console.log('  Expected result: Ship stays put, space rotates');
+    }
+  }
+
+
+
+
 
   /**
    * Calcula la posición objetivo de la cámara detrás de la nave
@@ -329,6 +368,37 @@ export class Camera {
     matrix[13] = -(newUp.x * eye.x + newUp.y * eye.y + newUp.z * eye.z);
     matrix[14] = (forward.x * eye.x + forward.y * eye.y + forward.z * eye.z);
     matrix[15] = 1;
+  }
+
+  /**
+   * Aplica rotación a un vector usando EXACTAMENTE la misma lógica que la nave
+   */
+  private applyRotationToVector(localVector: Vector3, rotation: Vector3): Vector3 {
+    // Usar EXACTAMENTE el mismo orden y cálculo que usa la nave
+    const cosY = Math.cos(rotation.y);
+    const sinY = Math.sin(rotation.y);
+    const cosX = Math.cos(rotation.x);
+    const sinX = Math.sin(rotation.x);
+    const cosZ = Math.cos(rotation.z);
+    const sinZ = Math.sin(rotation.z);
+    
+    // Aplicar rotaciones en el mismo orden: Y, X, Z
+    // Primero Y (yaw)
+    let x = localVector.x * cosY - localVector.z * sinY;
+    let y = localVector.y;
+    let z = localVector.x * sinY + localVector.z * cosY;
+    
+    // Luego X (pitch)
+    const tempY = y * cosX - z * sinX;
+    z = y * sinX + z * cosX;
+    y = tempY;
+    
+    // Finalmente Z (roll)
+    const tempX = x * cosZ - y * sinZ;
+    y = x * sinZ + y * cosZ;
+    x = tempX;
+    
+    return { x, y, z };
   }
 
   /**

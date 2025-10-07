@@ -1,4 +1,5 @@
-﻿import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, HostListener } from '@angular/core';
+﻿import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, HostListener, PLATFORM_ID, Inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 import { Modal } from '../modal/modal';
 import { GameStateManager, GameState } from '../../services/game/game-state.service';
 import { GameInputHandler } from '../../services/game/game-input.service';
@@ -23,11 +24,24 @@ export class Game implements AfterViewInit, OnDestroy {
     private stateManager: GameStateManager,
     private inputHandler: GameInputHandler,
     private gameInitializer: GameInitializer,
-    private uiManager: GameUIManager
+    private uiManager: GameUIManager,
+    @Inject(PLATFORM_ID) private platformId: Object
   ) {}
 
   async ngAfterViewInit() {
-    await this.initializeGame();
+    console.log('🎮 Game component ngAfterViewInit - starting initialization...');
+    
+    // Solo inicializar en el navegador, no en SSR
+    if (isPlatformBrowser(this.platformId)) {
+      // Añadir un pequeño delay para asegurar que el DOM esté completamente listo
+      setTimeout(async () => {
+        await this.initializeGame();
+      }, 100);
+    } else {
+      console.log('⚠️ SSR detected - skipping WebGL initialization');
+      // En SSR, establecer estado inicial sin inicializar WebGL
+      this.stateManager.setState(GameState.READY);
+    }
   }
 
   ngOnDestroy() {
@@ -39,6 +53,28 @@ export class Game implements AfterViewInit, OnDestroy {
    */
   private async initializeGame(): Promise<void> {
     try {
+      console.log('🎯 Starting game initialization...');
+      
+      // Verificar que estamos en el navegador
+      if (!isPlatformBrowser(this.platformId)) {
+        console.log('⚠️ Not in browser - skipping WebGL initialization');
+        return;
+      }
+      
+      // Test básico de WebGL
+      const canvas = this.canvas.nativeElement;
+      if (!canvas) {
+        throw new Error('Canvas not available');
+      }
+      
+      const testGL = canvas.getContext('webgl2') || canvas.getContext('webgl');
+      console.log('🧪 WebGL test context:', !!testGL);
+      if (testGL) {
+        testGL.clearColor(0.2, 0.4, 0.8, 1.0);
+        testGL.clear(testGL.COLOR_BUFFER_BIT);
+        console.log('✅ WebGL basic test successful - canvas should be blue');
+      }
+      
       // Inicializar UI
       this.uiManager.initializeUI('game-status', 'game-controls');
       this.uiManager.showGameStateMessage(GameState.INITIALIZING);
@@ -74,6 +110,13 @@ export class Game implements AfterViewInit, OnDestroy {
         console.error('❌ Game initialization failed:', result.error);
       }
     } catch (error) {
+      // Verificar si es un error de SSR específico
+      if (error instanceof Error && error.message.includes('NotYetImplemented')) {
+        console.log('⚠️ SSR error detected - this is expected during server-side rendering');
+        // No cambiar el estado a ERROR para errores de SSR
+        return;
+      }
+      
       this.stateManager.setState(GameState.ERROR);
       this.uiManager.showError(error instanceof Error ? error.message : 'Initialization error');
       console.error('❌ Game initialization error:', error);

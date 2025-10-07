@@ -1,4 +1,5 @@
-import { Injectable, ElementRef } from '@angular/core';
+import { Injectable, ElementRef, PLATFORM_ID, Inject } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
 
 export interface WebGLConfig {
   antialias?: boolean;
@@ -31,6 +32,8 @@ export class WebGLService {
 
   private resizeObserver?: ResizeObserver;
 
+  constructor(@Inject(PLATFORM_ID) private platformId: Object) {}
+
   /**
    * Inicializa el contexto WebGL en el canvas especificado
    * @param canvasRef - Referencia al elemento canvas
@@ -42,6 +45,12 @@ export class WebGLService {
     config: WebGLConfig = {}
   ): Promise<boolean> {
     try {
+      // Verificar que estamos en el navegador
+      if (!isPlatformBrowser(this.platformId)) {
+        console.log('⚠️ WebGL initialization skipped - not in browser');
+        return false;
+      }
+
       this.state.canvas = canvasRef.nativeElement;
       
       if (!this.state.canvas) {
@@ -167,8 +176,8 @@ export class WebGLService {
     gl.enable(gl.CULL_FACE);
     gl.cullFace(gl.BACK);
 
-    // Color de fondo
-    gl.clearColor(0.1, 0.1, 0.2, 1.0);
+    // Color de fondo (azul oscuro espacial más visible)
+    gl.clearColor(0.05, 0.05, 0.15, 1.0);
   }
 
   /**

@@ -32,7 +32,7 @@ export class Asteroid extends GameObject {
     );
 
     this.size = size;
-    this.color = { r: 0.7, g: 0.6, b: 0.5, a: 1.0 }; // Color rocoso
+    this.color = { r: 0.6, g: 0.5, b: 0.4, a: 1.0 }; // Color gris-marrón rocoso
 
     // Dirección de movimiento (si no se especifica, aleatoria)
     this.direction = direction || this.getRandomDirection();
@@ -286,5 +286,29 @@ export class Asteroid extends GameObject {
     const size = 0.5 + Math.random() * 1.5; // Entre 0.5 y 2.0
 
     return new Asteroid(id, position, size, direction);
+  }
+
+  /**
+   * Genera colores variados gris-marrón para cada vértice del asteroide
+   */
+  protected override generateVertexColors(): void {
+    const vertexCount = this.vertices.length / 3;
+    this.colors = new Float32Array(vertexCount * 3);
+    
+    for (let i = 0; i < vertexCount; i++) {
+      const colorIndex = i * 3;
+      
+      // Variaciones aleatorias del color base gris-marrón
+      const variation = (Math.random() - 0.5) * 0.3; // ±15% de variación
+      
+      // Color base gris-marrón con variaciones
+      const r = Math.max(0.2, Math.min(1.0, this.color.r + variation));
+      const g = Math.max(0.15, Math.min(0.8, this.color.g + variation * 0.8));  
+      const b = Math.max(0.1, Math.min(0.6, this.color.b + variation * 0.6));
+      
+      this.colors[colorIndex] = r;     // R
+      this.colors[colorIndex + 1] = g; // G  
+      this.colors[colorIndex + 2] = b; // B
+    }
   }
 }

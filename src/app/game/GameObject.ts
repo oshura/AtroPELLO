@@ -24,12 +24,14 @@ export abstract class GameObject {
   public indices: Uint16Array;
   public normals: Float32Array;
   public uvs: Float32Array;
+  public colors: Float32Array; // Colores por vértice
   
   // Buffers WebGL (se crean una vez)
   public vertexBuffer: WebGLBuffer | null = null;
   public indexBuffer: WebGLBuffer | null = null;
   public normalBuffer: WebGLBuffer | null = null;
   public uvBuffer: WebGLBuffer | null = null;
+  public colorBuffer: WebGLBuffer | null = null;
 
   constructor(
     id: string,
@@ -56,8 +58,10 @@ export abstract class GameObject {
     this.indices = new Uint16Array(0);
     this.normals = new Float32Array(0);
     this.uvs = new Float32Array(0);
+    this.colors = new Float32Array(0);
 
     this.initGeometry();
+    this.generateVertexColors(); // Generar colores basados en el color del objeto
     this.updateModelMatrix();
     this.computeBoundingSphere();
   }
@@ -66,6 +70,32 @@ export abstract class GameObject {
    * Inicializa la geometría del objeto (implementado por subclases)
    */
   protected abstract initGeometry(): void;
+
+  /**
+   * Genera colores por vértice basados en el color del objeto
+   */
+  protected generateVertexColors(): void {
+    const vertexCount = this.vertices.length / 3; // 3 componentes por vértice
+    this.colors = new Float32Array(vertexCount * 3); // RGB por vértice
+    
+    for (let i = 0; i < vertexCount; i++) {
+      const colorIndex = i * 3;
+      this.colors[colorIndex] = this.color.r;     // R
+      this.colors[colorIndex + 1] = this.color.g; // G
+      this.colors[colorIndex + 2] = this.color.b; // B
+    }
+  }
+
+  /**
+   * Actualiza el buffer de colores cuando cambia el color del objeto
+   */
+  public updateVertexColors(gl: WebGLRenderingContext): void {
+    this.generateVertexColors();
+    if (this.colorBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, this.colors, gl.STATIC_DRAW);
+    }
+  }
 
   /**
    * Actualiza la lógica del objeto
@@ -114,6 +144,11 @@ export abstract class GameObject {
     this.uvBuffer = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.uvBuffer);
     gl.bufferData(gl.ARRAY_BUFFER, this.uvs, gl.STATIC_DRAW);
+
+    // Buffer de colores
+    this.colorBuffer = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, this.colors, gl.STATIC_DRAW);
   }
 
   /**
@@ -121,13 +156,13 @@ export abstract class GameObject {
    */
   public render(gl: WebGLRenderingContext, program: WebGLProgram, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
     if (!this.visible || !this.vertexBuffer) {
-      console.warn('⚠️ Skipping render for', this.id, '- not visible or buffers not initialized');
       return;
     }
 
     // Configurar atributos
     const positionLocation = gl.getAttribLocation(program, 'a_position');
     const normalLocation = gl.getAttribLocation(program, 'a_normal');
+    const colorLocation = gl.getAttribLocation(program, 'a_color');
     const uvLocation = gl.getAttribLocation(program, 'a_uv');
 
     // Vértices
@@ -140,6 +175,13 @@ export abstract class GameObject {
       gl.bindBuffer(gl.ARRAY_BUFFER, this.normalBuffer);
       gl.enableVertexAttribArray(normalLocation);
       gl.vertexAttribPointer(normalLocation, 3, gl.FLOAT, false, 0, 0);
+    }
+
+    // Colores
+    if (colorLocation >= 0 && this.colorBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.colorBuffer);
+      gl.enableVertexAttribArray(colorLocation);
+      gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
     }
 
     // UVs
@@ -179,25 +221,26 @@ export abstract class GameObject {
       gl.uniformMatrix4fv(projectionLocation, false, projectionMatrix);
     }
 
-    // Color
-    const colorLocation = gl.getUniformLocation(program, 'u_color');
-    if (colorLocation) {
-      gl.uniform4f(colorLocation, this.color.r, this.color.g, this.color.b, this.color.a || 1.0);
-    }
+    // El color ahora se pasa como atributo de vértice, no como uniform
   }
 
   /**
    * Actualiza la matriz de modelo
    */
-  private updateModelMatrix(): void {
+  public updateModelMatrix(): void {
     // Resetear matriz
     this.identityMatrix(this.modelMatrix);
 
-    // Aplicar transformaciones: T * R * S
+    // 1. Trasladar al punto donde queremos que esté el objeto
     this.translate(this.modelMatrix, this.position.x, this.position.y, this.position.z);
-    this.rotateX(this.modelMatrix, this.rotation.x);
-    this.rotateY(this.modelMatrix, this.rotation.y);
-    this.rotateZ(this.modelMatrix, this.rotation.z);
+    
+    // 2. APLICAR ROTACIONES EN ORDEN X→Y→Z (estándar)
+    // Este orden evita interferencias extrañas entre ejes
+    this.rotateX(this.modelMatrix, this.rotation.x); // Pitch primero
+    this.rotateY(this.modelMatrix, this.rotation.y); // Yaw después  
+    this.rotateZ(this.modelMatrix, this.rotation.z); // Roll al final
+    
+    // 3. Aplicar escala
     this.scaleMatrix(this.modelMatrix, this.scale.x, this.scale.y, this.scale.z);
   }
 
