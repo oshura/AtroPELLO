@@ -133,9 +133,14 @@ export class GameEngine {
   private createGameObjects(): void {
     if (!this.gl) return;
 
-    // Crear nave del jugador en el origen
-    this.spaceship = new Spaceship({ x: 0, y: 0, z: 0 });
-    console.log('🚀 Spaceship created at position:', this.spaceship.position);
+    try {
+      // Crear nave del jugador en el origen
+      this.spaceship = new Spaceship({ x: 0, y: 0, z: 0 });
+      console.log('🚀 Spaceship created successfully at position:', this.spaceship.position);
+    } catch (error) {
+      console.error('❌ Error creating spaceship:', error);
+      throw error;
+    }
     console.log('🚀 Spaceship geometry check:', {
       vertices: this.spaceship.vertices.length,
       indices: this.spaceship.indices.length,
@@ -252,7 +257,12 @@ export class GameEngine {
    * Actualiza la lógica del juego
    */
   private update(deltaTime: number): void {
-    // Actualizar nave
+    // Actualizar nave si existe
+    if (!this.spaceship) {
+      console.error('❌ Spaceship is undefined in update method');
+      return;
+    }
+    
     this.spaceship.update(deltaTime);
     
     // Actualizar efectos de partículas

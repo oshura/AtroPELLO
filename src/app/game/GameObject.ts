@@ -234,11 +234,11 @@ export abstract class GameObject {
     // 1. Trasladar al punto donde queremos que esté el objeto
     this.translate(this.modelMatrix, this.position.x, this.position.y, this.position.z);
     
-    // 2. APLICAR ROTACIONES EN ORDEN X→Y→Z (estándar)
-    // Este orden evita interferencias extrañas entre ejes
-    this.rotateX(this.modelMatrix, this.rotation.x); // Pitch primero
-    this.rotateY(this.modelMatrix, this.rotation.y); // Yaw después  
-    this.rotateZ(this.modelMatrix, this.rotation.z); // Roll al final
+    // 2. VOLVER AL SISTEMA SIMPLE Y ESTABLE
+    // Aplicar rotaciones en orden estándar X→Y→Z
+    this.rotateX(this.modelMatrix, this.rotation.x); // Pitch
+    this.rotateY(this.modelMatrix, this.rotation.y); // Yaw  
+    this.rotateZ(this.modelMatrix, this.rotation.z); // Roll
     
     // 3. Aplicar escala
     this.scaleMatrix(this.modelMatrix, this.scale.x, this.scale.y, this.scale.z);
@@ -372,5 +372,55 @@ export abstract class GameObject {
     matrix[8] *= z;
     matrix[9] *= z;
     matrix[10] *= z;
+  }
+
+  /**
+   * Multiplica dos matrices 4x4: result = a * b
+   */
+  protected multiplyMatrix4x4(a: Float32Array, b: Float32Array, result: Float32Array): void {
+    for (let i = 0; i < 4; i++) {
+      for (let j = 0; j < 4; j++) {
+        let sum = 0;
+        for (let k = 0; k < 4; k++) {
+          sum += a[i * 4 + k] * b[k * 4 + j];
+        }
+        result[i * 4 + j] = sum;
+      }
+    }
+  }
+
+  /**
+   * Crea matriz de rotación aeroespacial correcta (intrinsic rotations)
+   * Usa el orden Yaw-Pitch-Roll (Y-X-Z) para navegación de nave espacial
+   */
+  protected createRotationMatrix(result: Float32Array, pitch: number, yaw: number, roll: number): void {
+    const cosY = Math.cos(yaw);
+    const sinY = Math.sin(yaw);
+    const cosX = Math.cos(pitch);
+    const sinX = Math.sin(pitch);
+    const cosZ = Math.cos(roll);
+    const sinZ = Math.sin(roll);
+
+    // Matriz de rotación compuesta para orden intrinsic Y-X-Z
+    // Esta fórmula garantiza rotaciones locales correctas
+    result[0] = cosY * cosZ + sinY * sinX * sinZ;
+    result[1] = cosX * sinZ;
+    result[2] = -sinY * cosZ + cosY * sinX * sinZ;
+    result[3] = 0;
+
+    result[4] = -cosY * sinZ + sinY * sinX * cosZ;
+    result[5] = cosX * cosZ;
+    result[6] = sinY * sinZ + cosY * sinX * cosZ;
+    result[7] = 0;
+
+    result[8] = sinY * cosX;
+    result[9] = -sinX;
+    result[10] = cosY * cosX;
+    result[11] = 0;
+
+    result[12] = 0;
+    result[13] = 0;
+    result[14] = 0;
+    result[15] = 1;
   }
 }

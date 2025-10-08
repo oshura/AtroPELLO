@@ -1,5 +1,6 @@
 import { GameObject } from './GameObject';
 import { Vector3 } from '../types/game.types';
+import { mat4, vec3, quat } from 'gl-matrix';
 
 /**
  * Estados del thruster para diferentes efectos visuales
@@ -21,6 +22,11 @@ export class Spaceship extends GameObject {
   public deceleration: number = 2.5;
   public rotationSpeed: number = Math.PI / 2.5; // 72 grados por segundo (180 grados en 2.5 segundos)
   public minRotationSpeed: number = Math.PI / 5; // 36 grados por segundo
+  
+  // Quaternion de orientación para rotaciones locales verdaderas (gl-matrix)
+  private orientationQuaternion!: quat;
+  // Matriz de orientación derivada del quaternion
+  private orientationMatrix!: mat4;
   
   public currentSpeed: number = 0.0;
   public targetSpeed: number = 0.0;
@@ -48,6 +54,9 @@ export class Spaceship extends GameObject {
   constructor(position: Vector3 = { x: 0, y: 0, z: 0 }) {
     super('player-ship', position);
     this.color = { r: 0.7, g: 0.75, b: 0.8, a: 1.0 }; // Color metálico plateado base
+    
+    // Inicializar matriz de orientación como identidad
+    this.initializeOrientationMatrix();
     
     console.log('🚀 Spaceship created with geometry:', {
       vertices: this.vertices.length,
@@ -118,42 +127,118 @@ export class Spaceship extends GameObject {
   }
 
   /**
-   * Maneja la entrada del jugador
+   * Override del updateModelMatrix para usar quaternion de orientación con gl-matrix
+   */
+  public override updateModelMatrix(): void {
+    // Si el quaternion o matriz de orientación no están inicializados, usar el método padre
+    if (!this.orientationQuaternion || !this.orientationMatrix) {
+      super.updateModelMatrix();
+      return;
+    }
+    
+    // Crear una matriz temporal de gl-matrix para los cálculos
+    const tempMatrix = mat4.create();
+    
+    // 1. Aplicar traslación
+    mat4.translate(tempMatrix, tempMatrix, [this.position.x, this.position.y, this.position.z]);
+    
+    // 2. Aplicar la matriz de orientación acumulativa (rotaciones locales verdaderas)
+    mat4.multiply(tempMatrix, tempMatrix, this.orientationMatrix);
+    
+    // 3. Aplicar escala
+    mat4.scale(tempMatrix, tempMatrix, [this.scale.x, this.scale.y, this.scale.z]);
+    
+    // 4. Copiar el resultado a this.modelMatrix (Float32Array)
+    for (let i = 0; i < 16; i++) {
+      this.modelMatrix[i] = tempMatrix[i];
+    }
+  }
+
+  /**
+   * Maneja la entrada del jugador con rotaciones sobre ejes locales reales de la nave
    */
   private handleInput(deltaTime: number): void {
     // Calcular velocidad de rotación basada en la velocidad actual
     const speedFactor = this.currentSpeed / this.maxSpeed;
     const rotationMultiplier = 1.0 - (speedFactor * 0.58); // Reduce a 42% a velocidad máxima
     const currentRotationSpeed = this.rotationSpeed * rotationMultiplier;
+    const deltaRotation = currentRotationSpeed * deltaTime;
 
-    // Sistema simple con angularVelocity - funciona perfectamente para todas las rotaciones
+    // EXTRAER EJES LOCALES REALES DE LA NAVE desde la matriz de orientación
+    // Estos son los ejes tal como están ahora en el espacio mundial
     
-    // Pitch (W/S) - Rotación en X 
+    // Eje Right (X local) - Primera fila de la matriz de rotación
+    const rightAxis = vec3.fromValues(
+      this.orientationMatrix[0], 
+      this.orientationMatrix[1], 
+      this.orientationMatrix[2]
+    );
+    
+    // Eje Up (Y local) - Segunda fila de la matriz de rotación
+    const upAxis = vec3.fromValues(
+      this.orientationMatrix[4], 
+      this.orientationMatrix[5], 
+      this.orientationMatrix[6]
+    );
+    
+    // Eje Forward (Z local) - Tercera fila de la matriz de rotación
+    const forwardAxis = vec3.fromValues(
+      this.orientationMatrix[8], 
+      this.orientationMatrix[9], 
+      this.orientationMatrix[10]
+    );
+
+    let hasRotation = false;
+    
+    // Pitch (W/S) - Rotación sobre el eje Right actual de la nave (transversal a las alas)
     if (this.controls.up) {
-      this.angularVelocity.x = -currentRotationSpeed;
+      const pitchQuat = quat.create();
+      quat.setAxisAngle(pitchQuat, rightAxis, -deltaRotation);
+      quat.multiply(this.orientationQuaternion, pitchQuat, this.orientationQuaternion);
+      hasRotation = true;
     } else if (this.controls.down) {
-      this.angularVelocity.x = currentRotationSpeed;
-    } else {
-      this.angularVelocity.x = 0;
+      const pitchQuat = quat.create();
+      quat.setAxisAngle(pitchQuat, rightAxis, deltaRotation);
+      quat.multiply(this.orientationQuaternion, pitchQuat, this.orientationQuaternion);
+      hasRotation = true;
     }
 
-    // Yaw (Q/E) - Rotación en Y 
+    // Yaw (Q/E) - Rotación sobre el eje Up actual de la nave (perpendicular al plano de las alas)
     if (this.controls.left) {
-      this.angularVelocity.y = currentRotationSpeed;
+      const yawQuat = quat.create();
+      quat.setAxisAngle(yawQuat, upAxis, deltaRotation);
+      quat.multiply(this.orientationQuaternion, yawQuat, this.orientationQuaternion);
+      hasRotation = true;
     } else if (this.controls.right) {
-      this.angularVelocity.y = -currentRotationSpeed;
-    } else {
-      this.angularVelocity.y = 0;
+      const yawQuat = quat.create();
+      quat.setAxisAngle(yawQuat, upAxis, -deltaRotation);
+      quat.multiply(this.orientationQuaternion, yawQuat, this.orientationQuaternion);
+      hasRotation = true;
     }
 
-    // Roll (A/D) - Rotación en Z
+    // Roll (A/D) - Rotación sobre el eje Forward actual de la nave (longitudinal)
     if (this.controls.rollLeft) {
-      this.angularVelocity.z = currentRotationSpeed;
+      const rollQuat = quat.create();
+      quat.setAxisAngle(rollQuat, forwardAxis, deltaRotation);
+      quat.multiply(this.orientationQuaternion, rollQuat, this.orientationQuaternion);
+      hasRotation = true;
     } else if (this.controls.rollRight) {
-      this.angularVelocity.z = -currentRotationSpeed;
-    } else {
-      this.angularVelocity.z = 0;
+      const rollQuat = quat.create();
+      quat.setAxisAngle(rollQuat, forwardAxis, -deltaRotation);
+      quat.multiply(this.orientationQuaternion, rollQuat, this.orientationQuaternion);
+      hasRotation = true;
     }
+    
+    // Actualizar matriz solo si hubo rotación
+    if (hasRotation) {
+      // Normalizar el quaternion para evitar drift
+      quat.normalize(this.orientationQuaternion, this.orientationQuaternion);
+      // Convertir quaternion actualizado de vuelta a matriz
+      mat4.fromQuat(this.orientationMatrix, this.orientationQuaternion);
+    }
+
+    // Extraer ángulos de Euler para compatibilidad con el sistema existente
+    this.extractEulerFromOrientationMatrix();
 
     // Control de velocidad con +/-
     if (this.controls.speedUp) {
@@ -213,19 +298,20 @@ export class Spaceship extends GameObject {
   }
 
   /**
-   * Actualiza la dirección hacia adelante basada en la rotación actual
+   * Actualiza la dirección hacia adelante usando la matriz de orientación
    */
   private updateForwardDirection(): void {
-    // Usar EXACTAMENTE el mismo método que usa la cámara
-    // Dirección inicial: +Z (hacia adelante)
-    const localForward = { x: 0, y: 0, z: 1 };
-    
-    // Aplicar rotaciones completas Y→X→Z (igual que la cámara)
-    this.forwardDirection = this.applyRotationToVector(localForward, this.rotation);
+    // Extraer la dirección hacia adelante directamente de la matriz de orientación
+    // El eje Z local (forward) está en la columna 2 de la matriz
+    this.forwardDirection = {
+      x: this.orientationMatrix[8],
+      y: this.orientationMatrix[9],
+      z: this.orientationMatrix[10]
+    };
   }
 
   /**
-   * Aplica rotaciones a un vector usando el mismo orden que la cámara: Y→X→Z
+   * Aplica rotaciones a un vector usando el orden X→Y→Z (igual que GameObject)
    */
   private applyRotationToVector(localVector: Vector3, rotation: Vector3): Vector3 {
     const cosY = Math.cos(rotation.y);
@@ -235,21 +321,25 @@ export class Spaceship extends GameObject {
     const cosZ = Math.cos(rotation.z);
     const sinZ = Math.sin(rotation.z);
     
-    // Aplicar rotaciones en el mismo orden: Y, X, Z
-    // Primero Y (yaw)
-    let x = localVector.x * cosY - localVector.z * sinY;
+    // Aplicar rotaciones en orden X, Y, Z (igual que GameObject)
+    let x = localVector.x;
     let y = localVector.y;
-    let z = localVector.x * sinY + localVector.z * cosY;
+    let z = localVector.z;
     
-    // Luego X (pitch)
-    const tempY = y * cosX - z * sinX;
+    // Primero X (pitch)
+    const tempY1 = y * cosX - z * sinX;
     z = y * sinX + z * cosX;
-    y = tempY;
+    y = tempY1;
+    
+    // Luego Y (yaw)
+    const tempX = x * cosY - z * sinY;
+    z = x * sinY + z * cosY;
+    x = tempX;
     
     // Finalmente Z (roll)
-    const tempX = x * cosZ - y * sinZ;
+    const tempX2 = x * cosZ - y * sinZ;
     y = x * sinZ + y * cosZ;
-    x = tempX;
+    x = tempX2;
     
     return { x, y, z };
   }
@@ -506,5 +596,38 @@ export class Spaceship extends GameObject {
       vertices: new Float32Array(vertices),
       indices: new Uint16Array(indices)
     };
+  }
+
+  /**
+   * Inicializa el quaternion y matriz de orientación como identidad usando gl-matrix
+   */
+  private initializeOrientationMatrix(): void {
+    this.orientationQuaternion = quat.create();
+    quat.identity(this.orientationQuaternion);
+    this.orientationMatrix = mat4.create();
+    mat4.fromQuat(this.orientationMatrix, this.orientationQuaternion);
+  }
+
+  /**
+   * Extrae ángulos de Euler de la matriz de orientación para compatibilidad con el sistema existente
+   */
+  private extractEulerFromOrientationMatrix(): void {
+    // Extraer ángulos de Euler de la matriz de orientación usando gl-matrix
+    // Esto mantiene compatibilidad con el resto del sistema que espera rotation.x, .y, .z
+    
+    // Extraer rotación Y (yaw) - atan2(m[8], m[10])
+    this.rotation.y = Math.atan2(this.orientationMatrix[8], this.orientationMatrix[10]);
+    
+    // Extraer rotación X (pitch) - asin(-m[9])  
+    const sy = Math.sqrt(this.orientationMatrix[0] * this.orientationMatrix[0] + this.orientationMatrix[4] * this.orientationMatrix[4]);
+    const singular = sy < 1e-6; // Si sy está cerca de 0, tenemos gimbal lock
+    
+    if (!singular) {
+      this.rotation.x = Math.atan2(-this.orientationMatrix[9], sy);
+      this.rotation.z = Math.atan2(this.orientationMatrix[4], this.orientationMatrix[0]);
+    } else {
+      this.rotation.x = Math.atan2(-this.orientationMatrix[6], this.orientationMatrix[5]);
+      this.rotation.z = 0;
+    }
   }
 }
