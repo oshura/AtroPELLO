@@ -32,16 +32,17 @@ export class Game implements AfterViewInit, OnDestroy {
     console.log('🎮 Game component ngAfterViewInit - starting initialization...');
     
     // Solo inicializar en el navegador, no en SSR
-    if (isPlatformBrowser(this.platformId)) {
-      // Añadir un pequeño delay para asegurar que el DOM esté completamente listo
-      setTimeout(async () => {
+    // FORZAR inicialización para depuración (desactivando detección SSR temporalmente)
+    console.log('🔍 Force init - bypassing SSR detection for debugging');
+    
+    // Añadir un pequeño delay para asegurar que el DOM esté completamente listo
+    setTimeout(async () => {
+      try {
         await this.initializeGame();
-      }, 100);
-    } else {
-      console.log('⚠️ SSR detected - skipping WebGL initialization');
-      // En SSR, establecer estado inicial sin inicializar WebGL
-      this.stateManager.setState(GameState.READY);
-    }
+      } catch (error) {
+        console.error('❌ Error durante inicialización forzada:', error);
+      }
+    }, 500); // Más tiempo para asegurar que todo esté listo
   }
 
   ngOnDestroy() {

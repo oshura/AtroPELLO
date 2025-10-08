@@ -116,9 +116,10 @@ export class GameEngine {
     this.gl.enable(this.gl.DEPTH_TEST);
     this.gl.depthFunc(this.gl.LEQUAL);
 
-    // Configurar culling (opcional)
-    // this.gl.enable(this.gl.CULL_FACE);
+    // DESHABILITAR culling temporalmente para depurar las alas
+    this.gl.disable(this.gl.CULL_FACE);
     // this.gl.cullFace(this.gl.BACK);
+    // this.gl.frontFace(this.gl.CCW);
 
     // Color de fondo (espacio negro)
     this.gl.clearColor(0.05, 0.05, 0.15, 1.0);
@@ -474,6 +475,7 @@ export class GameEngine {
     // Renderizar cada componente de la nave por separado
     this.renderSpaceshipNose();
     this.renderSpaceshipBody();
+    this.renderSpaceshipCockpit();  // Cabina del piloto
     this.renderSpaceshipWings();
     this.renderSpaceshipThruster();
     // this.renderOrientationIndicator(); // Temporalmente deshabilitada
@@ -585,6 +587,63 @@ export class GameEngine {
     // Limpiar buffers temporales
     this.gl.deleteBuffer(bodyVertexBuffer);
     this.gl.deleteBuffer(bodyIndexBuffer);
+  }
+
+  /**
+   * Renderiza la cabina del piloto (esfera azul oscuro reflectante)
+   */
+  private renderSpaceshipCockpit(): void {
+    if (!this.gl || !this.shaderManager || !this.spaceship) return;
+
+    console.log('🛸 Renderizando cabina del piloto...');
+    const cockpitGeometry = this.spaceship.createCockpitGeometry();
+    console.log('🛸 Geometría de cabina creada:', cockpitGeometry.vertices.length, 'vértices');
+    const program = this.shaderManager.litProgram;
+    if (!program) return;
+
+    this.gl.useProgram(program);
+
+    // Crear buffers temporales para la geometría de la cabina
+    const cockpitVertexBuffer = this.gl.createBuffer();
+    const cockpitIndexBuffer = this.gl.createBuffer();
+
+    // Configurar geometría de la cabina
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, cockpitVertexBuffer);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, cockpitGeometry.vertices, this.gl.STATIC_DRAW);
+
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, cockpitIndexBuffer);
+    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, cockpitGeometry.indices, this.gl.STATIC_DRAW);
+
+    // Configurar atributos
+    const positionLocation = this.shaderManager.litAttributes['position'];
+    if (positionLocation >= 0) {
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, cockpitVertexBuffer);
+      this.gl.enableVertexAttribArray(positionLocation);
+      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
+    }
+
+    // Configurar matriz de transformación
+    this.spaceship.updateModelMatrix();
+    this.calculateNormalMatrix(this.spaceship.modelMatrix);
+
+    this.shaderManager.setLitMatrices(
+      this.spaceship.modelMatrix,
+      this.camera.viewMatrix,
+      this.camera.projectionMatrix,
+      this.normalMatrix
+    );
+
+    // Color azul oscuro muy reflectante para la cabina del piloto
+    // Azul eléctrico súper visible para depuración
+    this.shaderManager.setLitColor(new Float32Array([0.0, 0.5, 1.0])); // Azul eléctrico súper brillante
+
+    // Renderizar
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, cockpitIndexBuffer);
+    this.gl.drawElements(this.gl.TRIANGLES, cockpitGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
+
+    // Limpiar buffers temporales
+    this.gl.deleteBuffer(cockpitVertexBuffer);
+    this.gl.deleteBuffer(cockpitIndexBuffer);
   }
 
   /**

@@ -397,18 +397,18 @@ export class Spaceship extends GameObject {
     const vertices: number[] = [];
     const indices: number[] = [];
     
-    // Vértice de la punta (frente)
-    vertices.push(0, 0, 1.5);
+    // Vértice de la punta (frente) - movido más atrás
+    vertices.push(0, 0, 1.25); // Era 1.5, ahora 1.25
     
-    // Base del cono (círculo en z = 0.5)
+    // Base del cono (círculo) - aplanado en Y y movido atrás
     const segments = 8;
     const radius = 0.4;
-    const baseZ = 0.5;
+    const baseZ = 0.35; // Era 0.5, ahora 0.35
     
     for (let i = 0; i < segments; i++) {
       const angle = (i / segments) * Math.PI * 2;
       const x = Math.cos(angle) * radius;
-      const y = Math.sin(angle) * radius;
+      const y = Math.sin(angle) * radius * 0.7; // Aplanar en Y (profundidad)
       vertices.push(x, y, baseZ);
     }
     
@@ -460,7 +460,7 @@ export class Spaceship extends GameObject {
         const cosPhi = Math.cos(phi);
         
         const x = cosPhi * sinTheta * radius;
-        const y = sinPhi * sinTheta * radius;
+        const y = sinPhi * sinTheta * radius * 0.7; // Aplanar en Y (70% profundidad)
         const z = cosTheta * radius;
         
         vertices.push(x, y, z);
@@ -491,58 +491,76 @@ export class Spaceship extends GameObject {
     const vertices: number[] = [];
     const indices: number[] = [];
     
-    // Ala izquierda
-    const wingLength = 1.2;
-    const wingWidth = 0.1;
-    const wingThickness = 0.05;
+    // Dimensiones de las alas CORREGIDAS - intercambiando los valores
+    const wingLength = 1.2;              // Longitud lateral (sin cambio)
+    const wingWidth = 0.016;             // Ancho atrás-adelante: quinta parte (más estrechas)
+    const wingThickness = 0.225;         // Grosor arriba-abajo: 1.5x (más altas)
+    const wingRoot = 0.4;                // Conexión con cuerpo (sin cambio)
     
-    // Vértices del ala izquierda
+    // CREAR AMBAS ALAS CON WINDING ORDER CONSISTENTE
+    // Cada ala como cubo independiente con coordenadas explícitas
+    
+    // ==================== ALA IZQUIERDA ====================
+    // 8 vértices del cubo ala izquierda
     vertices.push(
-      // Cara superior
-      -wingLength, -wingWidth, wingThickness,
-      -0.3, -wingWidth, wingThickness,
-      -0.3, wingWidth, wingThickness,
-      -wingLength, wingWidth, wingThickness,
-      
-      // Cara inferior
-      -wingLength, -wingWidth, -wingThickness,
-      -wingLength, wingWidth, -wingThickness,
-      -0.3, wingWidth, -wingThickness,
-      -0.3, -wingWidth, -wingThickness
+      // Vértices 0-7 (ala izquierda)
+      -wingRoot,   -wingWidth, -wingThickness,  // 0: cerca-frontal-abajo
+      -wingLength, -wingWidth, -wingThickness,  // 1: lejos-frontal-abajo  
+      -wingRoot,   -wingWidth,  wingThickness,  // 2: cerca-frontal-arriba
+      -wingLength, -wingWidth,  wingThickness,  // 3: lejos-frontal-arriba
+      -wingRoot,    wingWidth, -wingThickness,  // 4: cerca-trasero-abajo
+      -wingLength,  wingWidth, -wingThickness,  // 5: lejos-trasero-abajo
+      -wingRoot,    wingWidth,  wingThickness,  // 6: cerca-trasero-arriba
+      -wingLength,  wingWidth,  wingThickness   // 7: lejos-trasero-arriba
     );
     
-    // Índices para el ala izquierda
-    const leftWingIndices = [
-      0, 1, 2,  0, 2, 3,  // top
-      4, 5, 6,  4, 6, 7,  // bottom
-      0, 4, 7,  0, 7, 1,  // front
-      2, 6, 5,  2, 5, 3,  // back
-      0, 3, 5,  0, 5, 4,  // left
-      1, 7, 6,  1, 6, 2   // right
-    ];
-    
-    indices.push(...leftWingIndices);
-    
-    // Ala derecha (espejo del ala izquierda)
-    const rightWingStartIndex = vertices.length / 3;
-    vertices.push(
-      // Cara superior
-      wingLength, -wingWidth, wingThickness,
-      0.3, -wingWidth, wingThickness,
-      0.3, wingWidth, wingThickness,
-      wingLength, wingWidth, wingThickness,
-      
-      // Cara inferior
-      wingLength, -wingWidth, -wingThickness,
-      wingLength, wingWidth, -wingThickness,
-      0.3, wingWidth, -wingThickness,
-      0.3, -wingWidth, -wingThickness
+    // Índices ala izquierda - CORREGIDO para que coincida con la derecha
+    indices.push(
+      // Cara frontal (frente de la nave, -Y)
+      0, 3, 2,  0, 1, 3,
+      // Cara trasera (atrás de la nave, +Y)  
+      4, 6, 7,  4, 7, 5,
+      // Cara inferior (-Z)
+      0, 4, 5,  0, 5, 1,
+      // Cara superior (+Z)
+      2, 7, 6,  2, 3, 7,
+      // Cara interna (hacia cuerpo, +X)
+      0, 2, 6,  0, 6, 4,
+      // Cara externa (punta ala, -X)
+      1, 5, 7,  1, 7, 3
     );
     
-    // Índices para el ala derecha
-    for (const index of leftWingIndices) {
-      indices.push(index + rightWingStartIndex);
-    }
+    // ==================== ALA DERECHA ====================  
+    const rightStartIndex = 8; // Empezamos desde vértice 8
+    
+    // 8 vértices del cubo ala derecha
+    vertices.push(
+      // Vértices 8-15 (ala derecha)
+      wingRoot,   -wingWidth, -wingThickness,   // 8:  cerca-frontal-abajo
+      wingLength, -wingWidth, -wingThickness,   // 9:  lejos-frontal-abajo
+      wingRoot,   -wingWidth,  wingThickness,   // 10: cerca-frontal-arriba  
+      wingLength, -wingWidth,  wingThickness,   // 11: lejos-frontal-arriba
+      wingRoot,    wingWidth, -wingThickness,   // 12: cerca-trasero-abajo
+      wingLength,  wingWidth, -wingThickness,   // 13: lejos-trasero-abajo
+      wingRoot,    wingWidth,  wingThickness,   // 14: cerca-trasero-arriba
+      wingLength,  wingWidth,  wingThickness    // 15: lejos-trasero-arriba
+    );
+    
+    // Índices ala derecha - mismo patrón pero con índices 8-15
+    indices.push(
+      // Cara frontal (frente de la nave, -Y)
+      8, 10, 11,  8, 11, 9,
+      // Cara trasera (atrás de la nave, +Y)
+      12, 13, 15,  12, 15, 14,
+      // Cara inferior (-Z)  
+      8, 9, 13,  8, 13, 12,
+      // Cara superior (+Z)
+      10, 14, 15,  10, 15, 11,
+      // Cara interna (hacia cuerpo, -X)
+      8, 12, 14,  8, 14, 10,
+      // Cara externa (punta ala, +X)
+      9, 11, 15,  9, 15, 13
+    );
     
     return {
       vertices: new Float32Array(vertices),
@@ -560,7 +578,7 @@ export class Spaceship extends GameObject {
     const latSegments = 8;
     const lonSegments = 12;
     const radius = 0.15;
-    const positionZ = -0.8; // Posición trasera
+    const positionZ = -0.65; // Posición trasera - acercada al cuerpo
     
     // Generar vértices de la esfera del thruster
     for (let lat = 0; lat <= latSegments; lat++) {
@@ -606,6 +624,63 @@ export class Spaceship extends GameObject {
     quat.identity(this.orientationQuaternion);
     this.orientationMatrix = mat4.create();
     mat4.fromQuat(this.orientationMatrix, this.orientationQuaternion);
+  }
+
+  /**
+   * Crear geometría para la cabina del piloto (esfera azul reflectante)
+   */
+  createCockpitGeometry(): { vertices: Float32Array; indices: Uint16Array } {
+    const vertices: number[] = [];
+    const indices: number[] = [];
+    
+    const latSegments = 8;  // Menos segmentos para la cabina pequeña
+    const lonSegments = 12;
+    const radius = 0.15; // 40% más pequeña: 0.25 * 0.6 = 0.15
+    
+    // Posición: Un poquitín más adelante y un pelín más abajo
+    const offsetZ = 0.68; // Ligeramente más adelante (era 0.65)
+    const offsetY = 0.1; // Un pelín más abajo: era 0.15, ahora 0.1
+    
+    // Factores de escala para hacer una elipse aplastada por los laterales
+    const scaleX = 0.7; // Aplastar en X (laterales)
+    const scaleY = 1.0; // Mantener Y normal (altura)
+    const scaleZ = 1.0; // Mantener Z normal (profundidad)
+    
+    // Generar vértices de la cabina elipsoidal (aplastada por los laterales)
+    for (let lat = 0; lat <= latSegments; lat++) {
+      const theta = (lat * Math.PI) / latSegments;
+      const sinTheta = Math.sin(theta);
+      const cosTheta = Math.cos(theta);
+      
+      for (let lon = 0; lon <= lonSegments; lon++) {
+        const phi = (lon * 2 * Math.PI) / lonSegments;
+        const sinPhi = Math.sin(phi);
+        const cosPhi = Math.cos(phi);
+        
+        // Aplicar escalas diferentes para crear elipse aplastada lateralmente
+        const x = cosPhi * sinTheta * radius * scaleX; // Aplastado lateralmente
+        const y = sinPhi * sinTheta * radius * scaleY + offsetY; // Normal en altura
+        const z = cosTheta * radius * scaleZ + offsetZ; // Normal en profundidad
+        
+        vertices.push(x, y, z);
+      }
+    }
+    
+    // Generar índices
+    for (let lat = 0; lat < latSegments; lat++) {
+      for (let lon = 0; lon < lonSegments; lon++) {
+        const current = lat * (lonSegments + 1) + lon;
+        const next = current + lonSegments + 1;
+        
+        indices.push(current, next, current + 1);
+        indices.push(next, next + 1, current + 1);
+      }
+    }
+    
+    return {
+      vertices: new Float32Array(vertices),
+      indices: new Uint16Array(indices)
+    };
   }
 
   /**
