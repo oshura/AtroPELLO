@@ -108,6 +108,22 @@ export class GameInputHandler {
   }
 
   /**
+   * Maneja eventos de rueda del mouse para zoom
+   */
+  handleWheel(event: WheelEvent): boolean {
+    if (!this.gameEngine) {
+      return false;
+    }
+
+    // Normalizar el delta (diferentes navegadores pueden tener diferentes valores)
+    const delta = -Math.sign(event.deltaY); // Invertir para que sea intuitivo
+    
+    this.gameEngine.handleZoom(delta);
+    event.preventDefault();
+    return true;
+  }
+
+  /**
    * Maneja teclas especiales del juego
    */
   private handleSpecialKeys(key: string): boolean {

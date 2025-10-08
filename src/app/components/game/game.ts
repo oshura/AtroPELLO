@@ -166,6 +166,15 @@ export class Game implements AfterViewInit, OnDestroy {
     }
   }
 
+  @HostListener('wheel', ['$event'])
+  handleWheel(event: WheelEvent): void {
+    // Delegar al input handler para zoom
+    const handled = this.inputHandler.handleWheel(event);
+    if (handled) {
+      event.preventDefault();
+    }
+  }
+
   /**
    * Inicia el juego usando GameStateManager
    */

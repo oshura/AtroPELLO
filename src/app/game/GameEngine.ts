@@ -476,6 +476,7 @@ export class GameEngine {
     this.renderSpaceshipNose();
     this.renderSpaceshipBody();
     this.renderSpaceshipCockpit();  // Cabina del piloto
+    this.renderSpaceshipEngineNozzle();  // Tubo del motor
     this.renderSpaceshipWings();
     this.renderSpaceshipThruster();
     // this.renderOrientationIndicator(); // Temporalmente deshabilitada
@@ -647,6 +648,61 @@ export class GameEngine {
   }
 
   /**
+   * Renderiza el tubo del motor que conecta el cuerpo con el thruster
+   */
+  private renderSpaceshipEngineNozzle(): void {
+    if (!this.gl || !this.shaderManager || !this.spaceship) return;
+
+    console.log('🔧 Renderizando tubo del motor...');
+    const nozzleGeometry = this.spaceship.createEngineNozzleGeometry();
+    const program = this.shaderManager.litProgram;
+    if (!program) return;
+
+    this.gl.useProgram(program);
+
+    // Crear buffers temporales para la geometría del tubo
+    const nozzleVertexBuffer = this.gl.createBuffer();
+    const nozzleIndexBuffer = this.gl.createBuffer();
+
+    // Configurar geometría del tubo
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, nozzleVertexBuffer);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, nozzleGeometry.vertices, this.gl.STATIC_DRAW);
+
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, nozzleIndexBuffer);
+    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, nozzleGeometry.indices, this.gl.STATIC_DRAW);
+
+    // Configurar atributos
+    const positionLocation = this.shaderManager.litAttributes['position'];
+    if (positionLocation >= 0) {
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, nozzleVertexBuffer);
+      this.gl.enableVertexAttribArray(positionLocation);
+      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
+    }
+
+    // Configurar matriz de transformación
+    this.spaceship.updateModelMatrix();
+    this.calculateNormalMatrix(this.spaceship.modelMatrix);
+
+    this.shaderManager.setLitMatrices(
+      this.spaceship.modelMatrix,
+      this.camera.viewMatrix,
+      this.camera.projectionMatrix,
+      this.normalMatrix
+    );
+
+    // Color metálico oscuro para el tubo del motor
+    this.shaderManager.setLitColor(new Float32Array([0.4, 0.4, 0.45])); // Gris metálico
+
+    // Renderizar
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, nozzleIndexBuffer);
+    this.gl.drawElements(this.gl.TRIANGLES, nozzleGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
+
+    // Limpiar buffers temporales
+    this.gl.deleteBuffer(nozzleVertexBuffer);
+    this.gl.deleteBuffer(nozzleIndexBuffer);
+  }
+
+  /**
    * Renderiza las alas laterales (textura azul metálica)
    */
   private renderSpaceshipWings(): void {
@@ -716,39 +772,9 @@ export class GameEngine {
     const thrusterVertexBuffer = this.gl.createBuffer();
     const thrusterIndexBuffer = this.gl.createBuffer();
 
-    // Calcular factor de escalado: velocidad 0 = 1.0, velocidad 5 = 1.5
-    const speedRatio = this.spaceship.currentSpeed / this.spaceship.maxSpeed; // 0 a 1
-    const scaleFactor = 1.0 + (speedRatio * 0.5); // 1.0 a 1.5
-    
-    // Encontrar el centro de la geometría del thruster
-    let centerX = 0, centerY = 0, centerZ = 0;
-    const vertexCount = thrusterGeometry.vertices.length / 3;
-    
-    for (let i = 0; i < thrusterGeometry.vertices.length; i += 3) {
-      centerX += thrusterGeometry.vertices[i];
-      centerY += thrusterGeometry.vertices[i + 1]; 
-      centerZ += thrusterGeometry.vertices[i + 2];
-    }
-    centerX /= vertexCount;
-    centerY /= vertexCount;
-    centerZ /= vertexCount;
-    
-    // Escalar los vértices respecto al centro de la geometría
-    const scaledVertices = new Float32Array(thrusterGeometry.vertices.length);
-    for (let i = 0; i < thrusterGeometry.vertices.length; i += 3) {
-      // Trasladar al origen, escalar, y trasladar de vuelta
-      const x = thrusterGeometry.vertices[i] - centerX;
-      const y = thrusterGeometry.vertices[i + 1] - centerY;
-      const z = thrusterGeometry.vertices[i + 2] - centerZ;
-      
-      scaledVertices[i] = x * scaleFactor + centerX;
-      scaledVertices[i + 1] = y * scaleFactor + centerY;
-      scaledVertices[i + 2] = z * scaleFactor + centerZ;
-    }
-
-    // Configurar geometría del thruster escalada
+    // Configurar geometría del thruster (el escalado ya está aplicado en createThrusterGeometry)
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, thrusterVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, scaledVertices, this.gl.STATIC_DRAW);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, thrusterGeometry.vertices, this.gl.STATIC_DRAW);
 
     this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, thrusterIndexBuffer);
     this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, thrusterGeometry.indices, this.gl.STATIC_DRAW);
@@ -947,6 +973,15 @@ export class GameEngine {
   public handleKeyUp(key: string): void {
     if (this.spaceship) {
       this.updateShipControls(key, false);
+    }
+  }
+
+  /**
+   * Maneja el zoom de la cámara
+   */
+  public handleZoom(delta: number): void {
+    if (this.camera) {
+      this.camera.handleZoom(delta);
     }
   }
 

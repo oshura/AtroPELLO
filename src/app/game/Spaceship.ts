@@ -36,6 +36,7 @@ export class Spaceship extends GameObject {
   public isThrusting: boolean = false;
   public thrusterIntensity: number = 0.0;
   public thrusterState: ThrusterState = ThrusterState.IDLE;
+  public thrusterScaleFactor: number = 1.0; // Factor de escala dinámico del thruster
   
   // Control de entrada
   public controls = {
@@ -123,6 +124,7 @@ export class Spaceship extends GameObject {
   public override update(deltaTime: number): void {
     this.handleInput(deltaTime);
     this.updateMovement(deltaTime);
+    this.thrusterScaleFactor = this.calculateThrusterScale(); // Actualizar escala del thruster
     super.update(deltaTime);
   }
 
@@ -373,6 +375,33 @@ export class Spaceship extends GameObject {
   }
 
   /**
+   * Obtiene el cuaternión de orientación actual para sistemas externos (como partículas)
+   */
+  public getOrientationQuaternion(): quat {
+    return quat.clone(this.orientationQuaternion);
+  }
+
+  /**
+   * Calcula el factor de escala del thruster basado en la velocidad
+   * A velocidad máxima, el thruster crecerá hasta un 5% más del diámetro del tubo exterior
+   */
+  private calculateThrusterScale(): number {
+    const speedRatio = this.currentSpeed / this.maxSpeed;
+    
+    // Radio base del thruster: 0.15
+    // Radio exterior del tubo: 0.1625
+    // A velocidad máxima, queremos que el thruster sea 5% más grande que el tubo exterior
+    const baseRadius = 0.15;
+    const tubeOuterRadius = 0.1625;
+    const maxRadius = tubeOuterRadius * 1.05; // 5% más grande que el tubo
+    
+    // Calcular el factor de escala: de 1.0 (velocidad 0) a maxRadius/baseRadius (velocidad máxima)
+    const maxScaleFactor = maxRadius / baseRadius;
+    
+    return 1.0 + (maxScaleFactor - 1.0) * speedRatio;
+  }
+
+  /**
    * Resetea la nave a su estado inicial
    */
   public reset(): void {
@@ -460,7 +489,7 @@ export class Spaceship extends GameObject {
         const cosPhi = Math.cos(phi);
         
         const x = cosPhi * sinTheta * radius;
-        const y = sinPhi * sinTheta * radius * 0.7; // Aplanar en Y (70% profundidad)
+        const y = sinPhi * sinTheta * radius * 0.5; // Aplanar más en Y (50% profundidad)
         const z = cosTheta * radius;
         
         vertices.push(x, y, z);
@@ -569,7 +598,7 @@ export class Spaceship extends GameObject {
   }
 
   /**
-   * Crear geometría para la esfera del thruster trasero
+   * Crear geometría para la esfera del thruster trasero con escalado dinámico
    */
   createThrusterGeometry(): { vertices: Float32Array; indices: Uint16Array } {
     const vertices: number[] = [];
@@ -577,7 +606,8 @@ export class Spaceship extends GameObject {
     
     const latSegments = 8;
     const lonSegments = 12;
-    const radius = 0.15;
+    const baseRadius = 0.15;
+    const scaledRadius = baseRadius * this.thrusterScaleFactor; // Radio dinámico
     const positionZ = -0.65; // Posición trasera - acercada al cuerpo
     
     // Generar vértices de la esfera del thruster
@@ -591,9 +621,9 @@ export class Spaceship extends GameObject {
         const sinPhi = Math.sin(phi);
         const cosPhi = Math.cos(phi);
         
-        const x = cosPhi * sinTheta * radius;
-        const y = sinPhi * sinTheta * radius;
-        const z = cosTheta * radius + positionZ;
+        const x = cosPhi * sinTheta * scaledRadius;
+        const y = sinPhi * sinTheta * scaledRadius;
+        const z = cosTheta * scaledRadius + positionZ;
         
         vertices.push(x, y, z);
       }
@@ -675,6 +705,77 @@ export class Spaceship extends GameObject {
         indices.push(current, next, current + 1);
         indices.push(next, next + 1, current + 1);
       }
+    }
+    
+    return {
+      vertices: new Float32Array(vertices),
+      indices: new Uint16Array(indices)
+    };
+  }
+
+  /**
+   * Crear geometría para el tubo que conecta el cuerpo con el thruster
+   */
+  createEngineNozzleGeometry(): { vertices: Float32Array; indices: Uint16Array } {
+    const vertices: number[] = [];
+    const indices: number[] = [];
+    
+    // Dimensiones del tubo
+    const innerRadius = 0.15;     // Igual al radio del thruster
+    const outerRadius = 0.1625;   // Mantiene la misma relación: 0.15 * (0.65/0.6) ≈ 0.1625
+    const segments = 16;          // Segmentos para suavidad
+    
+    // Posiciones Z: desde centro (0) hasta fin del thruster (-0.8)
+    const startZ = 0;             // Centro de la nave
+    const endZ = -0.8;            // Fin del thruster: -0.65 - 0.15 = -0.8
+    
+    // Crear vértices del cilindro hueco
+    for (let i = 0; i <= segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      const cosA = Math.cos(angle);
+      const sinA = Math.sin(angle);
+      
+      // Vértices en el inicio (z = 0)
+      // Círculo interior inicio
+      vertices.push(innerRadius * cosA, innerRadius * sinA, startZ);
+      // Círculo exterior inicio  
+      vertices.push(outerRadius * cosA, outerRadius * sinA, startZ);
+      
+      // Vértices en el final (z = endZ)
+      // Círculo interior final
+      vertices.push(innerRadius * cosA, innerRadius * sinA, endZ);
+      // Círculo exterior final
+      vertices.push(outerRadius * cosA, outerRadius * sinA, endZ);
+    }
+    
+    // Crear índices para las caras del tubo
+    for (let i = 0; i < segments; i++) {
+      const base = i * 4;
+      const next = ((i + 1) % (segments + 1)) * 4;
+      
+      // Cara exterior del tubo
+      indices.push(
+        base + 1, base + 3, next + 1,     // Triángulo 1
+        next + 1, base + 3, next + 3      // Triángulo 2  
+      );
+      
+      // Cara interior del tubo (orden inverso para normal hacia adentro)
+      indices.push(
+        base, next, base + 2,             // Triángulo 1
+        next, next + 2, base + 2          // Triángulo 2
+      );
+      
+      // Cara frontal (anillo en z = 0)
+      indices.push(
+        base, base + 1, next,             // Triángulo 1
+        next, base + 1, next + 1          // Triángulo 2
+      );
+      
+      // Cara trasera (anillo en z = endZ)  
+      indices.push(
+        base + 2, next + 2, base + 3,     // Triángulo 1
+        next + 2, next + 3, base + 3      // Triángulo 2
+      );
     }
     
     return {

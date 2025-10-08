@@ -23,6 +23,12 @@ export class Camera {
   private heightOffset: number = 1.0; // Altura sobre la nave
   private pitchAngle: number = 30 * (Math.PI / 180); // 30 grados hacia abajo
   
+  // Configuración de zoom dinámico con rueda del mouse
+  private zoomDistance: number = 2.0; // Distancia base restaurada
+  private minZoom: number = 0.8; // Distancia mínima (más cerca)
+  private maxZoom: number = 8.0; // Distancia máxima
+  private zoomSensitivity: number = 0.2; // Sensibilidad normal
+  
   // Posición y orientación actuales
   public position: Vector3 = { x: 0, y: 0, z: 0 };
   public target: Vector3 = { x: 0, y: 0, z: 0 };
@@ -52,14 +58,14 @@ export class Camera {
    * La nave permanece visualmente inmóvil, el universo rota alrededor
    */
   private updateCockpitMode(spaceship: Spaceship, deltaTime: number): void {
-    // Posición FIJA respecto a la nave (nunca cambia)
-    const FIXED_OFFSET = { x: 0, y: 0.5, z: -2.0 };
+    // Posición dinámica respecto a la nave (cambia con zoom)
+    const DYNAMIC_OFFSET = { x: 0, y: 1.0, z: -this.zoomDistance }; // Y duplicado: era 0.5, ahora 1.0
     
     // Posición absoluta de la cámara
     this.position = {
-      x: spaceship.position.x + FIXED_OFFSET.x,
-      y: spaceship.position.y + FIXED_OFFSET.y,
-      z: spaceship.position.z + FIXED_OFFSET.z
+      x: spaceship.position.x + DYNAMIC_OFFSET.x,
+      y: spaceship.position.y + DYNAMIC_OFFSET.y,
+      z: spaceship.position.z + DYNAMIC_OFFSET.z
     };
     
     // Target FIJO: siempre mira 3 unidades hacia adelante en Z local
@@ -402,6 +408,27 @@ export class Camera {
   }
 
   /**
+   * Maneja el zoom con la rueda del mouse
+   * @param delta - Valor del desplazamiento de la rueda (positivo = acercar, negativo = alejar)
+   */
+  public handleZoom(delta: number): void {
+    // Calcular nuevo zoom basado en la dirección de la rueda
+    // Delta positivo (rueda hacia arriba) = acercar (menor distancia)
+    // Delta negativo (rueda hacia abajo) = alejar (mayor distancia) 
+    this.zoomDistance -= delta * this.zoomSensitivity;
+    
+    // Limitar el zoom entre los valores mínimo y máximo
+    this.zoomDistance = Math.max(this.minZoom, Math.min(this.maxZoom, this.zoomDistance));
+  }
+
+  /**
+   * Obtiene la distancia de zoom actual
+   */
+  public getZoomDistance(): number {
+    return this.zoomDistance;
+  }
+
+  /**
    * Obtiene información de depuración de la cámara
    */
   public getDebugInfo() {
@@ -412,7 +439,8 @@ export class Camera {
       fov: this.fov * (180 / Math.PI),
       aspect: this.aspect,
       near: this.near,
-      far: this.far
+      far: this.far,
+      zoomDistance: this.zoomDistance
     };
   }
 }

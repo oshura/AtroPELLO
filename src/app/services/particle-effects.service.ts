@@ -3,6 +3,7 @@ import { WebGLService } from './webgl.service';
 import { ShaderManager } from '../game/ShaderManager';
 import { Spaceship } from '../game/Spaceship';
 import { Camera } from '../game/Camera';
+import { vec3, quat } from 'gl-matrix';
 
 export interface ParticleEffect {
   position: { x: number; y: number; z: number };
@@ -136,10 +137,11 @@ export class ParticleEffectsService {
       const thrusterPos = this.calculateThrusterPosition(spaceship);
       
       // Añadir variación aleatoria
+      // Offset aleatorio más pequeño para mantener partículas cerca del propulsor
       const randomOffset = {
-        x: (Math.random() - 0.5) * 0.2,
-        y: (Math.random() - 0.5) * 0.1,
-        z: (Math.random() - 0.5) * 0.3
+        x: (Math.random() - 0.5) * 0.08, // Reducido
+        y: (Math.random() - 0.5) * 0.04, // Reducido 
+        z: (Math.random() - 0.5) * 0.12  // Reducido
       };
 
       const particle: ParticleEffect = {
@@ -148,7 +150,7 @@ export class ParticleEffectsService {
           y: thrusterPos.y + randomOffset.y,
           z: thrusterPos.z + randomOffset.z
         },
-        size: 0.15 + intensity * 0.25, // Tamaño basado en intensidad
+        size: 0.05 + intensity * 0.08, // Partículas mucho más pequeñas
         intensity: intensity,
         color: this.getThrusterColor(intensity, Math.random()),
         life: 1.0 // Vida completa al nacer
@@ -159,59 +161,41 @@ export class ParticleEffectsService {
   }
 
   /**
-   * Calcula la posición detrás de la nave para el propulsor
+   * Calcula la posición detrás de la nave para el propulsor usando cuaterniones
    */
   private calculateThrusterPosition(spaceship: Spaceship): { x: number; y: number; z: number } {
-    // Offset local del propulsor
-    const localOffset = {
-      x: 0,
-      y: -0.05, // Ligeramente debajo del centro
-      z: -1.2   // Más lejos detrás para mejor visibilidad
-    };
-
-    // Transformar usando rotación de la nave
-    const cosY = Math.cos(spaceship.rotation.y);
-    const sinY = Math.sin(spaceship.rotation.y);
-    const cosX = Math.cos(spaceship.rotation.x);
-    const sinX = Math.sin(spaceship.rotation.x);
-    const cosZ = Math.cos(spaceship.rotation.z);
-    const sinZ = Math.sin(spaceship.rotation.z);
-
-    // Aplicar rotaciones (Y -> X -> Z)
-    let x = localOffset.x * cosY - localOffset.z * sinY;
-    let y = localOffset.y;
-    let z = localOffset.x * sinY + localOffset.z * cosY;
-
-    const tempY = y * cosX - z * sinX;
-    z = y * sinX + z * cosX;
-    y = tempY;
-
-    const tempX = x * cosZ - y * sinZ;
-    y = x * sinZ + y * cosZ;
-    x = tempX;
-
+    // Offset local del propulsor (posición relativa al centro de la nave)
+    const localThrusterOffset = vec3.fromValues(0, -0.05, -0.8); // Más cerca de la nave
+    
+    // Obtener el cuaternión de orientación de la nave
+    const spaceshipQuaternion = spaceship.getOrientationQuaternion();
+    
+    // Rotar el offset usando el cuaternión de orientación de la nave
+    const rotatedOffset = vec3.create();
+    vec3.transformQuat(rotatedOffset, localThrusterOffset, spaceshipQuaternion);
+    
     return {
-      x: spaceship.position.x + x,
-      y: spaceship.position.y + y,
-      z: spaceship.position.z + z
+      x: spaceship.position.x + rotatedOffset[0],
+      y: spaceship.position.y + rotatedOffset[1],
+      z: spaceship.position.z + rotatedOffset[2]
     };
   }
 
   /**
-   * Obtiene el color del propulsor basado en intensidad
+   * Obtiene el color del propulsor - amarillo intenso como solicitado
    */
   private getThrusterColor(intensity: number, randomFactor: number): { r: number; g: number; b: number } {
-    // Colores de plasma: azul frío -> blanco caliente -> naranja-amarillo
-    const coldColor = { r: 0.3, g: 0.7, b: 1.0 };    // Azul brillante
-    const hotColor = { r: 1.0, g: 0.9, b: 0.6 };     // Amarillo-blanco caliente
+    // Colores amarillos intensos: naranja-amarillo -> amarillo brillante -> blanco-amarillo
+    const baseColor = { r: 1.0, g: 0.8, b: 0.2 };    // Amarillo-naranja intenso
+    const brightColor = { r: 1.0, g: 1.0, b: 0.4 };  // Amarillo brillante
     
-    // Interpolar entre frío y caliente basado en intensidad
-    const t = Math.min(1.0, intensity + randomFactor * 0.3);
+    // Interpolar entre base y brillante basado en intensidad con variación aleatoria
+    const t = Math.min(1.0, intensity * 0.8 + randomFactor * 0.4);
     
     return {
-      r: coldColor.r + (hotColor.r - coldColor.r) * t,
-      g: coldColor.g + (hotColor.g - coldColor.g) * t,
-      b: coldColor.b + (hotColor.b - coldColor.b) * t
+      r: baseColor.r + (brightColor.r - baseColor.r) * t,
+      g: baseColor.g + (brightColor.g - baseColor.g) * t,
+      b: baseColor.b + (brightColor.b - baseColor.b) * t
     };
   }
 
@@ -230,8 +214,9 @@ export class ParticleEffectsService {
     this.gl.enable(this.gl.BLEND);
     this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE); // Additive blending
     
-    // Deshabilitar depth test para que las partículas siempre se vean
-    this.gl.disable(this.gl.DEPTH_TEST);
+    // Mantener depth test habilitado para oclusión correcta, pero deshabilitar escritura en depth buffer
+    this.gl.enable(this.gl.DEPTH_TEST);
+    this.gl.depthMask(false); // No escribir en depth buffer para permitir transparencias
 
     // Renderizar cada partícula
     this.thrusterParticles.forEach(particle => {
@@ -240,6 +225,7 @@ export class ParticleEffectsService {
 
     // Restaurar estados de OpenGL
     this.gl.enable(this.gl.DEPTH_TEST);
+    this.gl.depthMask(true); // Restaurar escritura en depth buffer
     this.gl.disable(this.gl.BLEND);
   }
 
