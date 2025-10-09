@@ -11,6 +11,11 @@ export interface SpaceshipDebugData {
   };
   velocity: { x: number; y: number; z: number };
   speed: number;
+  camera: {
+    mode: string;
+    modeName: string;
+    zoomDistance: number;
+  };
 }
 
 /**
@@ -94,6 +99,15 @@ export class DebugOverlayService {
             <span>VX: <span id="velocity-x">0.000</span></span>
             <span>VY: <span id="velocity-y">0.000</span></span>
             <span>VZ: <span id="velocity-z">0.000</span></span>
+          </div>
+        </div>
+
+        <div class="debug-section">
+          <h4>🎥 Camera</h4>
+          <div class="debug-values">
+            <span>Mode: <span id="camera-mode">N/A</span></span>
+            <span>Name: <span id="camera-name">Unknown</span></span>
+            <span>Zoom: <span id="camera-zoom">0.00</span></span>
           </div>
         </div>
       </div>
@@ -254,6 +268,11 @@ export class DebugOverlayService {
     this.updateElementText('velocity-x', data.velocity.x.toFixed(3));
     this.updateElementText('velocity-y', data.velocity.y.toFixed(3));
     this.updateElementText('velocity-z', data.velocity.z.toFixed(3));
+
+    // Actualizar información de cámara
+    this.updateElementText('camera-mode', data.camera.mode);
+    this.updateElementText('camera-name', data.camera.modeName);
+    this.updateElementText('camera-zoom', data.camera.zoomDistance.toFixed(2));
   }
 
   /**

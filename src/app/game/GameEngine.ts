@@ -964,10 +964,14 @@ export class GameEngine {
   public handleKeyDown(key: string): void {
     // Manejo de cambio de modos de cámara
     if (key === '0') {
-      this.camera.setCameraMode(CameraMode.REAR_EXTERNAL);
+      this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+      return;
+    } else if (key === '8') {
+      // TODO: Implementar modo COCKPIT cuando esté definido
+      console.log('🎥 Tecla 8 presionada - Modo COCKPIT pendiente de implementación');
       return;
     } else if (key === '9') {
-      this.camera.setCameraMode(CameraMode.EXTERNAL);
+      this.camera.setCameraMode(CameraMode.REAR_TRACKING);
       return;
     }
 

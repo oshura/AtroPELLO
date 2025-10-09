@@ -99,6 +99,9 @@ export class SpaceshipDebugCollector {
       z: (status.rotation.z * 180) / Math.PI
     };
 
+    // Obtener información de cámara del GameEngine
+    const cameraInfo = this.getCameraInfo();
+
     return {
       position: status.position,
       rotation: rotationDegrees,
@@ -108,7 +111,8 @@ export class SpaceshipDebugCollector {
         phi: 0     // Se calcula en el overlay
       },
       velocity: velocity,
-      speed: speed
+      speed: speed,
+      camera: cameraInfo
     };
   }
 
@@ -127,6 +131,47 @@ export class SpaceshipDebugCollector {
     } catch (error) {
       console.warn('Could not access spaceship from GameEngine:', error);
       return null;
+    }
+  }
+
+  /**
+   * Obtiene la información de cámara del GameEngine
+   */
+  private getCameraInfo(): { mode: string; modeName: string; zoomDistance: number } {
+    if (!this.gameEngine) {
+      return { mode: 'N/A', modeName: 'Unknown', zoomDistance: 0 };
+    }
+
+    try {
+      // Acceder a la cámara del GameEngine
+      const engineAny = this.gameEngine as any;
+      const camera = engineAny.camera;
+      
+      if (!camera) {
+        return { mode: 'N/A', modeName: 'No Camera', zoomDistance: 0 };
+      }
+
+      // Obtener información de debug de la cámara
+      const debugInfo = camera.getDebugInfo ? camera.getDebugInfo() : null;
+      const currentMode = camera.getCurrentMode ? camera.getCurrentMode() : 'Unknown';
+      const zoomDistance = camera.getZoomDistance ? camera.getZoomDistance() : 0;
+
+      // Mapear números de modo a nombres legibles
+      const modeNames: { [key: number]: string } = {
+        0: 'INMOVILE_EXTERNAL',
+        9: 'REAR_TRACKING'
+      };
+
+      const modeName = modeNames[currentMode] || `Mode ${currentMode}`;
+
+      return {
+        mode: currentMode.toString(),
+        modeName: modeName,
+        zoomDistance: Math.round(zoomDistance * 100) / 100 // Redondear a 2 decimales
+      };
+    } catch (error) {
+      console.warn('Could not access camera info from GameEngine:', error);
+      return { mode: 'Error', modeName: 'Error accessing camera', zoomDistance: 0 };
     }
   }
 

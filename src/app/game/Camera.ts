@@ -2,34 +2,30 @@ import { Vector3 } from '../types/game.types';
 import { Spaceship } from './Spaceship';
 
 export enum CameraMode {
-  REAR_EXTERNAL = 0,    // Modo por defecto (tecla 0) - Cámara externa trasera fija
-  EXTERNAL = 9          // Modo futuro (tecla 9) - por implementar
+  INMOVILE_EXTERNAL = 0, // Cámara externa inmóvil que rota con la nave (modo por defecto)
+  REAR_TRACKING = 9      // Cámara trasera que sigue a la nave
 }
 
 /**
- * Sistema de cámara simplificado con múltiples modos
- * - Modo 0 (REAR_EXTERNAL): Cámara externa trasera fija con zoom
- * - Modo 9 (EXTERNAL): Reservado para implementación futura
+ * Clase base abstracta para todos los modos de cámara
+ * Contiene funcionalidades comunes como matrices, proyección y zoom
  */
-export class Camera {
+export abstract class BaseCamera {
   // Matrices de la cámara
   public viewMatrix: Float32Array = new Float32Array(16);
   public projectionMatrix: Float32Array = new Float32Array(16);
   
   // Configuración de proyección
-  public fov: number = 120 * (Math.PI / 180); // 120 grados en radianes
+  public fov: number = 120 * (Math.PI / 180);
   public aspect: number = 1.0;
   public near: number = 0.1;
   public far: number = 1000.0;
   
-  // Sistema de modos de cámara
-  private currentMode: CameraMode = CameraMode.REAR_EXTERNAL;
-  
-  // Configuración de zoom dinámico con rueda del mouse
-  private zoomDistance: number = 2.0;
-  private minZoom: number = 0.8;
-  private maxZoom: number = 8.0;
-  private zoomSensitivity: number = 0.2;
+  // Configuración de zoom dinámico
+  protected zoomDistance: number = 2.0;
+  protected minZoom: number = 0.8;
+  protected maxZoom: number = 8.0;
+  protected zoomSensitivity: number = 0.2;
   
   // Posición y orientación actuales
   public position: Vector3 = { x: 0, y: 0, z: 0 };
@@ -43,67 +39,16 @@ export class Camera {
   }
 
   /**
-   * Actualiza la cámara según el modo actual
+   * Método abstracto que cada modo de cámara debe implementar
+   */
+  protected abstract updateCameraMode(spaceship: Spaceship): void;
+
+  /**
+   * Actualiza la cámara
    */
   public update(spaceship: Spaceship, deltaTime: number): void {
-    switch (this.currentMode) {
-      case CameraMode.REAR_EXTERNAL:
-        this.updateRearExternalMode(spaceship);
-        break;
-      case CameraMode.EXTERNAL:
-        // TODO: Implementar modo externo en el futuro
-        console.warn('🎥 Modo EXTERNAL no implementado aún - usando REAR_EXTERNAL');
-        this.updateRearExternalMode(spaceship);
-        break;
-    }
+    this.updateCameraMode(spaceship);
     this.updateViewMatrix();
-  }
-
-  /**
-   * Cambia el modo de cámara
-   */
-  public setCameraMode(mode: CameraMode): void {
-    const previousMode = this.currentMode;
-    this.currentMode = mode;
-    
-    console.log(`🎥 Cambio de cámara: ${CameraMode[previousMode]} → ${CameraMode[mode]}`);
-    
-    if (mode === CameraMode.EXTERNAL) {
-      console.log('⚠️  Modo EXTERNAL preparado pero no implementado');
-    }
-  }
-
-  /**
-   * Obtiene el modo actual de cámara
-   */
-  public getCurrentMode(): CameraMode {
-    return this.currentMode;
-  }
-
-  /**
-   * MODO REAR EXTERNAL (0): Cámara externa trasera fija
-   * La cámara está ubicada detrás de la nave a distancia fija
-   */
-  private updateRearExternalMode(spaceship: Spaceship): void {
-    // Posición dinámica respecto a la nave (cambia con zoom)
-    const REAR_EXTERNAL_OFFSET = { x: 0, y: 1.0, z: -this.zoomDistance };
-    
-    // Posición absoluta de la cámara
-    this.position = {
-      x: spaceship.position.x + REAR_EXTERNAL_OFFSET.x,
-      y: spaceship.position.y + REAR_EXTERNAL_OFFSET.y,
-      z: spaceship.position.z + REAR_EXTERNAL_OFFSET.z
-    };
-    
-    // Target fijo: siempre mira hacia adelante
-    this.target = {
-      x: this.position.x,
-      y: this.position.y,
-      z: this.position.z + 3.0
-    };
-    
-    // Vector up fijo
-    this.up = { x: 0, y: 1, z: 0 };
   }
 
   /**
@@ -136,35 +81,22 @@ export class Camera {
     this.updateProjectionMatrix();
   }
 
-  /**
-   * Obtiene información de depuración
-   */
-  public getDebugInfo() {
-    return {
-      mode: `${CameraMode[this.currentMode]} (${this.currentMode})`,
-      position: { ...this.position },
-      target: { ...this.target },
-      zoomDistance: this.zoomDistance,
-      fov: this.fov * (180 / Math.PI)
-    };
-  }
-
   // ===== FUNCIONES AUXILIARES PARA MATRICES =====
   
-  private initializeViewMatrix(): void {
+  protected initializeViewMatrix(): void {
     this.identityMatrix(this.viewMatrix);
   }
 
-  private updateViewMatrix(): void {
+  protected updateViewMatrix(): void {
     this.lookAt(this.viewMatrix, this.position, this.target, this.up);
   }
 
-  private identityMatrix(matrix: Float32Array): void {
+  protected identityMatrix(matrix: Float32Array): void {
     matrix.fill(0);
     matrix[0] = matrix[5] = matrix[10] = matrix[15] = 1;
   }
 
-  private perspective(matrix: Float32Array, fov: number, aspect: number, near: number, far: number): void {
+  protected perspective(matrix: Float32Array, fov: number, aspect: number, near: number, far: number): void {
     const f = 1.0 / Math.tan(fov * 0.5);
     const nf = 1.0 / (near - far);
 
@@ -176,7 +108,7 @@ export class Camera {
     matrix[14] = 2 * far * near * nf;
   }
 
-  private lookAt(matrix: Float32Array, eye: Vector3, target: Vector3, up: Vector3): void {
+  protected lookAt(matrix: Float32Array, eye: Vector3, target: Vector3, up: Vector3): void {
     const forward = {
       x: target.x - eye.x,
       y: target.y - eye.y,
@@ -233,5 +165,206 @@ export class Camera {
     matrix[13] = -(newUp.x * eye.x + newUp.y * eye.y + newUp.z * eye.z);
     matrix[14] = (forward.x * eye.x + forward.y * eye.y + forward.z * eye.z);
     matrix[15] = 1;
+  }
+}
+
+/**
+ * Cámara trasera que sigue a la nave (modo 9)
+ */
+export class RearExternalCamera extends BaseCamera {
+  protected updateCameraMode(spaceship: Spaceship): void {
+    const REAR_EXTERNAL_OFFSET = { x: 0, y: 1.0, z: -this.zoomDistance };
+    
+    this.position = {
+      x: spaceship.position.x + REAR_EXTERNAL_OFFSET.x,
+      y: spaceship.position.y + REAR_EXTERNAL_OFFSET.y,
+      z: spaceship.position.z + REAR_EXTERNAL_OFFSET.z
+    };
+    
+    this.target = {
+      x: this.position.x,
+      y: this.position.y,
+      z: this.position.z + 3.0
+    };
+    
+    this.up = { x: 0, y: 1, z: 0 };
+  }
+
+  public getDebugInfo() {
+    return {
+      mode: 'REAR_TRACKING (9)',
+      position: { ...this.position },
+      target: { ...this.target },
+      zoomDistance: this.zoomDistance,
+      fov: this.fov * (180 / Math.PI)
+    };
+  }
+}
+
+/**
+ * Cámara externa inmóvil que rota con la nave (modo 0)
+ */
+export class CockpitCamera extends BaseCamera {
+  protected updateCameraMode(spaceship: Spaceship): void {
+    // Posición inicial relativa: -aZ, +bY, 0X (como especificaste)
+    const COCKPIT_OFFSET = { x: 0, y: 1.0, z: -this.zoomDistance };
+    
+    // Obtener el cuaternión de orientación de la nave
+    const spaceshipQuaternion = spaceship.getOrientationQuaternion();
+    
+    // Rotar el offset usando el cuaternión de la nave
+    const rotatedOffset = this.rotateVectorByQuaternion(COCKPIT_OFFSET, spaceshipQuaternion);
+    const rotatedForward = this.rotateVectorByQuaternion({ x: 0, y: 0, z: 3.0 }, spaceshipQuaternion);
+    const rotatedUp = this.rotateVectorByQuaternion({ x: 0, y: 1, z: 0 }, spaceshipQuaternion);
+    
+    // Posición de la cámara rotada con la nave
+    this.position = {
+      x: spaceship.position.x + rotatedOffset.x,
+      y: spaceship.position.y + rotatedOffset.y,
+      z: spaceship.position.z + rotatedOffset.z
+    };
+    
+    // Target rotado con la nave (mira en la misma dirección)
+    this.target = {
+      x: this.position.x + rotatedForward.x,
+      y: this.position.y + rotatedForward.y,
+      z: this.position.z + rotatedForward.z
+    };
+    
+    // Vector up rotado con la nave
+    this.up = {
+      x: rotatedUp.x,
+      y: rotatedUp.y,
+      z: rotatedUp.z
+    };
+  }
+
+  /**
+   * Rota un vector usando un cuaternión (usando gl-matrix)
+   */
+  private rotateVectorByQuaternion(vector: Vector3, quaternion: any): Vector3 {
+    const { x, y, z } = vector;
+    const [qx, qy, qz, qw] = quaternion;
+    
+    // Aplicar rotación de cuaternión
+    const qx2 = qx * qx;
+    const qy2 = qy * qy;
+    const qz2 = qz * qz;
+    const qw2 = qw * qw;
+    
+    return {
+      x: x * (qx2 - qy2 - qz2 + qw2) + y * (2 * qx * qy - 2 * qz * qw) + z * (2 * qx * qz + 2 * qy * qw),
+      y: x * (2 * qx * qy + 2 * qz * qw) + y * (-qx2 + qy2 - qz2 + qw2) + z * (2 * qy * qz - 2 * qx * qw),
+      z: x * (2 * qx * qz - 2 * qy * qw) + y * (2 * qy * qz + 2 * qx * qw) + z * (-qx2 - qy2 + qz2 + qw2)
+    };
+  }
+
+  public getDebugInfo() {
+    return {
+      mode: 'INMOVILE_EXTERNAL (0)',
+      position: { ...this.position },
+      target: { ...this.target },
+      up: { ...this.up },
+      zoomDistance: this.zoomDistance,
+      fov: this.fov * (180 / Math.PI)
+    };
+  }
+}
+
+/**
+ * Manager de cámaras que maneja múltiples modos
+ */
+export class Camera {
+  private currentMode: CameraMode = CameraMode.INMOVILE_EXTERNAL;
+  private rearExternalCamera: RearExternalCamera;
+  private cockpitCamera: CockpitCamera;
+  private activeCamera: BaseCamera;
+
+  // Exponer propiedades de la cámara activa
+  public get viewMatrix(): Float32Array { return this.activeCamera.viewMatrix; }
+  public get projectionMatrix(): Float32Array { return this.activeCamera.projectionMatrix; }
+  public get position(): Vector3 { return this.activeCamera.position; }
+  public get target(): Vector3 { return this.activeCamera.target; }
+  public get up(): Vector3 { return this.activeCamera.up; }
+  
+  constructor(aspect: number = 1.0) {
+    this.rearExternalCamera = new RearExternalCamera(aspect);
+    this.cockpitCamera = new CockpitCamera(aspect);
+    this.activeCamera = this.cockpitCamera; // INMOVILE_EXTERNAL como modo por defecto
+  }
+
+  /**
+   * Actualiza la cámara activa
+   */
+  public update(spaceship: Spaceship, deltaTime: number): void {
+    this.activeCamera.update(spaceship, deltaTime);
+  }
+
+  /**
+   * Cambia el modo de cámara
+   */
+  public setCameraMode(mode: CameraMode): void {
+    const previousMode = this.currentMode;
+    this.currentMode = mode;
+    
+    switch (mode) {
+      case CameraMode.INMOVILE_EXTERNAL:
+        this.activeCamera = this.cockpitCamera;
+        break;
+      case CameraMode.REAR_TRACKING:
+        this.activeCamera = this.rearExternalCamera;
+        break;
+    }
+    
+    console.log(`🎥 Cambio de cámara: ${CameraMode[previousMode]} → ${CameraMode[mode]}`);
+  }
+
+  /**
+   * Obtiene el modo actual de cámara
+   */
+  public getCurrentMode(): CameraMode {
+    return this.currentMode;
+  }
+
+  /**
+   * Maneja el zoom con la rueda del mouse
+   */
+  public handleZoom(delta: number): void {
+    this.activeCamera.handleZoom(delta);
+  }
+
+  /**
+   * Obtiene la distancia de zoom actual
+   */
+  public getZoomDistance(): number {
+    return this.activeCamera.getZoomDistance();
+  }
+
+  /**
+   * Actualiza la matriz de proyección
+   */
+  public updateProjectionMatrix(): void {
+    this.rearExternalCamera.updateProjectionMatrix();
+    this.cockpitCamera.updateProjectionMatrix();
+  }
+
+  /**
+   * Actualiza el aspect ratio
+   */
+  public setAspectRatio(aspect: number): void {
+    this.rearExternalCamera.setAspectRatio(aspect);
+    this.cockpitCamera.setAspectRatio(aspect);
+  }
+
+  /**
+   * Obtiene información de depuración
+   */
+  public getDebugInfo() {
+    return {
+      currentMode: CameraMode[this.currentMode],
+      activeCamera: this.activeCamera === this.rearExternalCamera ? 
+        this.rearExternalCamera.getDebugInfo() : 
+        this.cockpitCamera.getDebugInfo()
+    };
   }
 }
