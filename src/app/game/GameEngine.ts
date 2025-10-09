@@ -1315,12 +1315,13 @@ export class GameEngine {
     // Actualizar elementos del HUD
     this.hudManager.update(gameData);
 
-    // Renderizar HUD FIJO (no rota con nave)
+    // Renderizar HUD que se mueve CON la cámara
     this.hudManager.render(
       this.camera.getCurrentMode(),
       this.shaderManager,
       this.camera.viewMatrix,
-      this.camera.projectionMatrix
+      this.camera.projectionMatrix,
+      this.camera.position
     );
 
     console.log('🎯 HUD dinámico FIJO renderizado:', {

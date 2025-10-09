@@ -68,15 +68,19 @@ export class HUDManager {
   }
 
   /**
-   * Renderiza el HUD solo en modo COCKPIT
-   * TEMPORAL: Usando litProgram hasta resolver texturas
+   * Renderiza el HUD que se mueve CON la cámara como HUD de avión
    */
-  public render(cameraMode: CameraMode, shaderManager: any, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
+  public render(cameraMode: CameraMode, shaderManager: any, viewMatrix: Float32Array, projectionMatrix: Float32Array, cameraPosition?: {x: number, y: number, z: number}): void {
     if (cameraMode !== CameraMode.COCKPIT || !this.hudGeometry) {
       return;
     }
 
-    console.log('🎯 Verificando posición HUD inclinado 30° (temporalmente magenta)');
+    console.log('🎯 Renderizando HUD que se mueve CON la cámara');
+    
+    // Actualizar geometría HUD para que siga la cámara
+    if (cameraPosition) {
+      this.updateHUDPositionWithCamera(cameraPosition, viewMatrix);
+    }
     
     // Usar shader básico para verificar posición
     const program = shaderManager.litProgram;
@@ -131,6 +135,19 @@ export class HUDManager {
     if (depthTestEnabled) {
       this.gl.enable(this.gl.DEPTH_TEST);
     }
+  }
+
+  /**
+   * Actualiza la posición del HUD para que se mueva CON la cámara
+   */
+  private updateHUDPositionWithCamera(cameraPosition: {x: number, y: number, z: number}, viewMatrix: Float32Array): void {
+    // Extraer la rotación de la matriz de vista de la cámara
+    // La matriz de vista ya incluye la orientación de la cámara
+    
+    // Por ahora, mantener la geometría fija hasta que funcione el movimiento básico
+    // TODO: Implementar transformación de geometría basada en orientación de cámara
+    
+    console.log('📍 HUD siguiendo cámara en:', cameraPosition);
   }
 
   /**
@@ -207,7 +224,7 @@ export class HUDManager {
   }
 
   private setupBasicHUDMatrices(shaderManager: any, originalViewMatrix: Float32Array, projectionMatrix: Float32Array): void {
-    // VOLVER a la configuración que FUNCIONABA
+    // HUD EN ESPACIO DE CÁMARA: matriz identidad para que se mueva CON la cámara
     const hudModelMatrix = new Float32Array([
       1, 0, 0, 0,
       0, 1, 0, 0,
@@ -215,8 +232,13 @@ export class HUDManager {
       0, 0, 0, 1
     ]);
     
-    // Usar la matriz de vista completa de la cámara (que funcionaba)
-    const hudViewMatrix = originalViewMatrix;
+    // MATRIZ IDENTIDAD = HUD se mueve y rota CON la cámara
+    const hudViewMatrix = new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    ]);
     
     const hudNormalMatrix = new Float32Array([
       1, 0, 0, 0,
@@ -225,7 +247,7 @@ export class HUDManager {
       0, 0, 0, 1
     ]);
 
-    console.log('📐 Restaurando matrices HUD que funcionaban');
+    console.log('📐 HUD ESPACIO CÁMARA: se mueve y rota CON la cámara');
 
     shaderManager.setLitMatrices(
       hudModelMatrix,
@@ -314,31 +336,28 @@ export class HUDManager {
    * CORREGIDO: Geometría en espacio de cámara para que sea FIJA (no rote con nave)
    */
   private createHUDPlaneGeometry(): void {
-    // HUD más ancho (x1.5) y base en límite inferior de cámara
-    const width = 1.5; // Ancho x1.5 como pediste
+    // HUD ajustado - base visible dentro del frustum
+    const width = 1.5;
     const height = 0.4;
-    const baseY = -0.6; // Base más abajo (límite inferior de vista)
-    const baseZ = 1.0;
-    const tilt = 15 * (Math.PI / 180); // Mantener inclinación suave por ahora
+    const baseY = -0.65; // Base ligeramente más arriba para evitar recorte
+    const baseZ = -0.3; // MUY CERCA de la cámara
+    const tilt = 15 * (Math.PI / 180);
     
-    console.log('🎯 HUD x1.5 más ancho, base en límite inferior de cámara');
+    console.log('🎯 HUD ajustado - evitando recorte por frustum inferior');
     
-    // Inclinación suave: base cerca y en límite inferior, top ligeramente más lejos
+    // HUD dentro del frustum visible
     const vertices = [
-      // Base inferior (límite inferior de la vista de cámara)
-      -width/2, baseY, baseZ, 0.0, 1.0, // Esquina inferior izquierda
-       width/2, baseY, baseZ, 1.0, 1.0, // Esquina inferior derecha
+      // Base inferior (visible, no recortada por frustum)
+      -width/2, baseY, baseZ, 0.0, 1.0,
+       width/2, baseY, baseZ, 1.0, 1.0,
       
-      // Parte superior (inclinada hacia arriba y atrás)
-       width/2, baseY + height * Math.cos(tilt), baseZ + height * Math.sin(tilt), 1.0, 0.0, // Superior derecha
-      -width/2, baseY + height * Math.cos(tilt), baseZ + height * Math.sin(tilt), 0.0, 0.0  // Superior izquierda
+      // Parte superior (inclinada hacia atrás)
+       width/2, baseY + height * Math.cos(tilt), baseZ - height * Math.sin(tilt), 1.0, 0.0,
+      -width/2, baseY + height * Math.cos(tilt), baseZ - height * Math.sin(tilt), 0.0, 0.0
     ];
 
-    // Debug: verificar dimensiones
-    const topY = baseY + height * Math.cos(tilt);
-    const topZ = baseZ + height * Math.sin(tilt);
-    console.log(`📊 HUD x1.5: Ancho=${width}, Base(Y:${baseY}, Z:${baseZ}) → Top(Y:${topY.toFixed(2)}, Z:${topZ.toFixed(2)})`);
-    console.log(`📏 Base pegada al límite inferior de vista de cámara`);
+    console.log(`📊 HUD dentro frustum: Base Y=${baseY} (evita recorte), Z=${baseZ}`);
+    console.log(`📏 Top Y=${(baseY + height * Math.cos(tilt)).toFixed(2)}, Z=${(baseZ - height * Math.sin(tilt)).toFixed(2)}`);
 
     const indices = [0, 1, 2, 0, 2, 3];
 
