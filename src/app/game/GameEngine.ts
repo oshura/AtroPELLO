@@ -480,6 +480,9 @@ export class GameEngine {
     this.renderSpaceshipWings();
     this.renderSpaceshipThruster();
     // this.renderOrientationIndicator(); // Temporalmente deshabilitada
+    
+    // Renderizar HUD (solo en modo COCKPIT)
+    this.renderHUDPlane();
   }
 
   /**
@@ -1229,5 +1232,142 @@ export class GameEngine {
     matrix[8] *= factor;
     matrix[9] *= factor;
     matrix[10] *= factor;
+  }
+
+  /**
+   * Crea la geometría del plano HUD inclinado (FASE 2)
+   */
+  private createHUDPlaneGeometry(): { vertices: Float32Array; indices: Uint16Array } {
+    // Dimensiones del plano HUD ajustadas
+    const width = 3.0;  // 1.5x más ancho (2.0 * 1.5 = 3.0)
+    const height = 0.75; // Mitad de profundidad (1.5 / 2 = 0.75)
+    
+    // Posición relativa a la cámara (acercamos para pegar la base)
+    const distance = 1.1; // Distancia de la cámara (más cerca)
+    const tilt = -30 * (Math.PI / 180); // Inclinación de 30° hacia la cámara
+    
+    // Vértices del plano rectangular (antes de inclinar)
+    const halfWidth = width / 2;
+    const halfHeight = height / 2;
+    
+    console.log('🎯 Creando geometría HUD:', {
+      width, height, distance, tilt: tilt * 180 / Math.PI
+    });
+    
+    // Crear vértices del plano inclinado (base pegada al borde inferior)
+    const vertices = [
+      // Esquina inferior izquierda
+      -halfWidth, -halfHeight * Math.cos(tilt) - 0.5, distance + halfHeight * Math.sin(tilt),
+      
+      // Esquina inferior derecha  
+      halfWidth, -halfHeight * Math.cos(tilt) - 0.5, distance + halfHeight * Math.sin(tilt),
+      
+      // Esquina superior derecha
+      halfWidth, halfHeight * Math.cos(tilt) - 0.5, distance - halfHeight * Math.sin(tilt),
+      
+      // Esquina superior izquierda
+      -halfWidth, halfHeight * Math.cos(tilt) - 0.5, distance - halfHeight * Math.sin(tilt)
+    ];
+    
+    console.log('🎯 Vértices HUD:', vertices);
+    
+    // Índices para formar los triángulos del plano
+    const indices = [
+      0, 1, 2,  // Primer triángulo
+      0, 2, 3   // Segundo triángulo
+    ];
+    
+    return {
+      vertices: new Float32Array(vertices),
+      indices: new Uint16Array(indices)
+    };
+  }
+
+  /**
+   * Renderiza el plano HUD (solo en modo COCKPIT)
+   */
+  private renderHUDPlane(): void {
+    if (!this.gl || !this.shaderManager || !this.spaceship) return;
+
+    // Solo renderizar en modo COCKPIT
+    const isInCockpitMode = this.camera.getCurrentMode() === CameraMode.COCKPIT;
+    if (!isInCockpitMode) {
+      return; // No renderizar en otros modos
+    }
+
+    console.log('🎯 Renderizando HUD en modo COCKPIT');
+
+    const hudGeometry = this.createHUDPlaneGeometry();
+    const program = this.shaderManager.litProgram;
+    if (!program) return;
+
+    this.gl.useProgram(program);
+
+    // Crear buffers temporales para la geometría del HUD
+    const hudVertexBuffer = this.gl.createBuffer();
+    const hudIndexBuffer = this.gl.createBuffer();
+
+    // Configurar geometría del HUD
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, hudVertexBuffer);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, hudGeometry.vertices, this.gl.STATIC_DRAW);
+
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, hudIndexBuffer);
+    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, hudGeometry.indices, this.gl.STATIC_DRAW);
+
+    // Configurar atributos
+    const positionLocation = this.shaderManager.litAttributes['position'];
+    if (positionLocation >= 0) {
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, hudVertexBuffer);
+      this.gl.enableVertexAttribArray(positionLocation);
+      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
+    }
+
+    // Crear matriz de transformación para el HUD (relativa a la nave)
+    const hudMatrix = this.createHUDMatrix();
+    this.calculateNormalMatrix(hudMatrix);
+
+    this.shaderManager.setLitMatrices(
+      hudMatrix,
+      this.camera.viewMatrix,
+      this.camera.projectionMatrix,
+      this.normalMatrix
+    );
+
+    // Color brillante y opaco para debugging
+    this.shaderManager.setLitColor(new Float32Array([1.0, 0.0, 1.0])); // Magenta brillante
+
+    // Sin transparencia para debugging
+    this.gl.disable(this.gl.BLEND);
+    this.gl.depthMask(true);
+
+    // Renderizar
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, hudIndexBuffer);
+    this.gl.drawElements(this.gl.TRIANGLES, hudGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
+    
+    console.log('🎯 HUD renderizado - vértices:', hudGeometry.vertices.length, 'índices:', hudGeometry.indices.length);
+
+    // Limpiar buffers temporales
+    this.gl.deleteBuffer(hudVertexBuffer);
+    this.gl.deleteBuffer(hudIndexBuffer);
+  }
+
+  /**
+   * Crea la matriz de transformación para el HUD (relativa a la nave)
+   */
+  private createHUDMatrix(): Float32Array {
+    const matrix = new Float32Array(16);
+    
+    // Inicializar como matriz identidad
+    this.identityMatrix(matrix);
+    
+    // Aplicar las rotaciones de la nave para que el HUD rote con ella
+    this.rotateXMatrix(matrix, this.spaceship.rotation.x);
+    this.rotateYMatrix(matrix, this.spaceship.rotation.y); 
+    this.rotateZMatrix(matrix, this.spaceship.rotation.z);
+    
+    // Aplicar traslación de la nave
+    this.translateMatrix(matrix, this.spaceship.position.x, this.spaceship.position.y, this.spaceship.position.z);
+    
+    return matrix;
   }
 }
