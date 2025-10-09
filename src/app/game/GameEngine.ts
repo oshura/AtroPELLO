@@ -4,7 +4,7 @@ import { ParticleEffectsService } from '../services/particle-effects.service';
 import { GameObject } from './GameObject';
 import { Spaceship, ThrusterState } from './Spaceship';
 import { Asteroid } from './Asteroid';
-import { Camera } from './Camera';
+import { Camera, CameraMode } from './Camera';
 import { ShaderManager } from './ShaderManager';
 import { TextureManager } from './TextureManager';
 import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
@@ -962,6 +962,16 @@ export class GameEngine {
    * Maneja eventos de teclado
    */
   public handleKeyDown(key: string): void {
+    // Manejo de cambio de modos de cámara
+    if (key === '0') {
+      this.camera.setCameraMode(CameraMode.REAR_EXTERNAL);
+      return;
+    } else if (key === '9') {
+      this.camera.setCameraMode(CameraMode.EXTERNAL);
+      return;
+    }
+
+    // Manejo de controles de nave
     if (this.spaceship) {
       this.updateShipControls(key, true);
     }
