@@ -69,19 +69,68 @@ export class HUDManager {
 
   /**
    * Renderiza el HUD solo en modo COCKPIT
+   * TEMPORAL: Usando litProgram hasta resolver texturas
    */
-  public render(cameraMode: CameraMode, shaderManager: any): void {
+  public render(cameraMode: CameraMode, shaderManager: any, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
     if (cameraMode !== CameraMode.COCKPIT || !this.hudGeometry) {
       return;
     }
 
-    console.log('🎯 Renderizando HUD dinámico en modo COCKPIT');
+    console.log('🎯 Verificando posición HUD inclinado 30° (temporalmente magenta)');
     
-    // Configurar shader y buffers
-    this.setupRenderingState(shaderManager);
+    // Usar shader básico para verificar posición
+    const program = shaderManager.litProgram;
+    if (!program) {
+      console.error('❌ litProgram no disponible');
+      return;
+    }
+
+    this.gl.useProgram(program);
     
-    // Renderizar el plano con textura dinámica
+    // Configurar shader básico
+    this.setupBasicRenderingState(shaderManager);
+    
+    // Configurar matrices para HUD fijo
+    this.setupBasicHUDMatrices(shaderManager, viewMatrix, projectionMatrix);
+    
+    // Color magenta para verificar posición
+    shaderManager.setLitColor(new Float32Array([1.0, 0.0, 1.0]));
+    
+    // Debug: verificar estado del renderizado
+    console.log('🔍 Estado HUD debug:', {
+      vertices: this.hudGeometry.vertices.length,
+      indices: this.hudGeometry.indices.length,
+      program: this.gl.getParameter(this.gl.CURRENT_PROGRAM),
+      cullFace: this.gl.getParameter(this.gl.CULL_FACE),
+      depthTest: this.gl.getParameter(this.gl.DEPTH_TEST)
+    });
+    
+    // Desactivar depth test temporalmente para forzar visibilidad
+    const depthTestEnabled = this.gl.getParameter(this.gl.DEPTH_TEST);
+    this.gl.disable(this.gl.DEPTH_TEST);
+    
+    // Configurar transparencia
+    this.gl.enable(this.gl.BLEND);
+    this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+    this.gl.depthMask(false);
+    
+    // Renderizar el plano HUD
     this.gl.drawElements(this.gl.TRIANGLES, this.hudGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
+    
+    // Verificar errores GL
+    const error = this.gl.getError();
+    if (error !== this.gl.NO_ERROR) {
+      console.error('❌ Error GL al renderizar HUD:', error);
+    } else {
+      console.log('✅ HUD renderizado sin errores GL');
+    }
+    
+    // Restaurar estado
+    this.gl.disable(this.gl.BLEND);
+    this.gl.depthMask(true);
+    if (depthTestEnabled) {
+      this.gl.enable(this.gl.DEPTH_TEST);
+    }
   }
 
   /**
@@ -110,59 +159,188 @@ export class HUDManager {
   }
 
   /**
-   * Configura el estado de renderizado para el HUD
+   * Configura el estado de renderizado para texturas dinámicas
    */
-  private setupRenderingState(shaderManager: any): void {
+  private setupTexturedRenderingState(shaderManager: any): void {
     // Enlazar textura del HUD
     this.gl.activeTexture(this.gl.TEXTURE0);
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.hudTexture.getWebGLTexture());
     
-    // Configurar buffers de geometría
+    // Configurar buffers de geometría (posición + coordenadas de textura)
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
     this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     
-    // Configurar atributos de shader
-    const positionLocation = shaderManager.basicAttributes?.['position'] ?? -1;
+    // Configurar atributos del shader texturizado
+    const positionLocation = shaderManager.texturedAttributes?.['position'] ?? -1;
+    const texCoordLocation = shaderManager.texturedAttributes?.['texCoord'] ?? -1;
+    
     if (positionLocation >= 0) {
       this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
+      // 5 floats por vértice: 3 para posición + 2 para coordenadas de textura
+      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 5 * 4, 0);
+    }
+    
+    if (texCoordLocation >= 0) {
+      this.gl.enableVertexAttribArray(texCoordLocation);
+      // Coordenadas de textura empiezan después de los 3 floats de posición
+      this.gl.vertexAttribPointer(texCoordLocation, 2, this.gl.FLOAT, false, 5 * 4, 3 * 4);
+    }
+    
+    // Configurar uniform de textura (usar metallicTexture como textura del HUD)
+    const metallicTextureLocation = shaderManager.texturedUniforms?.['metallicTexture'];
+    if (metallicTextureLocation) {
+      this.gl.uniform1i(metallicTextureLocation, 0); // Usar texture unit 0
+    }
+    
+    console.log('🎨 Shader texturizado configurado para HUD');
+  }
+
+  private setupBasicRenderingState(shaderManager: any): void {
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+    
+    const positionLocation = shaderManager.litAttributes?.['position'] ?? -1;
+    if (positionLocation >= 0) {
+      this.gl.enableVertexAttribArray(positionLocation);
+      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 5 * 4, 0);
     }
   }
 
+  private setupBasicHUDMatrices(shaderManager: any, originalViewMatrix: Float32Array, projectionMatrix: Float32Array): void {
+    // VOLVER a la configuración que FUNCIONABA
+    const hudModelMatrix = new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    ]);
+    
+    // Usar la matriz de vista completa de la cámara (que funcionaba)
+    const hudViewMatrix = originalViewMatrix;
+    
+    const hudNormalMatrix = new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    ]);
+
+    console.log('📐 Restaurando matrices HUD que funcionaban');
+
+    shaderManager.setLitMatrices(
+      hudModelMatrix,
+      hudViewMatrix,
+      projectionMatrix,
+      hudNormalMatrix
+    );
+  }
+
   /**
-   * Crea la geometría del plano HUD inclinado (usa la geometría de FASE 2)
+   * Configura las matrices para que el HUD sea FIJO relativo a la cámara
+   * CRÍTICO: El HUD NO debe rotar con la nave, debe permanecer estático
+   */
+  private setupHUDMatrices(shaderManager: any, originalViewMatrix: Float32Array, projectionMatrix: Float32Array): void {
+    // Matriz de modelo de identidad para el HUD
+    const hudModelMatrix = new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    ]);
+
+    // Matriz de vista de identidad para el HUD (sin rotación de nave)
+    const hudViewMatrix = new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    ]);
+
+    // Matriz normal de identidad
+    const hudNormalMatrix = new Float32Array([
+      1, 0, 0, 0,
+      0, 1, 0, 0,
+      0, 0, 1, 0,
+      0, 0, 0, 1
+    ]);
+
+    // Aplicar matrices al shader texturizado
+    const modelMatrixLocation = shaderManager.texturedUniforms?.['modelMatrix'];
+    const viewMatrixLocation = shaderManager.texturedUniforms?.['viewMatrix'];
+    const projectionMatrixLocation = shaderManager.texturedUniforms?.['projectionMatrix'];
+    const normalMatrixLocation = shaderManager.texturedUniforms?.['normalMatrix'];
+
+    if (modelMatrixLocation) {
+      this.gl.uniformMatrix4fv(modelMatrixLocation, false, hudModelMatrix);
+    }
+    if (viewMatrixLocation) {
+      this.gl.uniformMatrix4fv(viewMatrixLocation, false, hudViewMatrix);
+    }
+    if (projectionMatrixLocation) {
+      this.gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
+    }
+    if (normalMatrixLocation) {
+      this.gl.uniformMatrix4fv(normalMatrixLocation, false, hudNormalMatrix);
+    }
+
+    // Configurar parámetros de iluminación para el HUD
+    const lightDirectionLocation = shaderManager.texturedUniforms?.['lightDirection'];
+    const lightColorLocation = shaderManager.texturedUniforms?.['lightColor'];
+    const ambientColorLocation = shaderManager.texturedUniforms?.['ambientColor'];
+    const ambientStrengthLocation = shaderManager.texturedUniforms?.['ambientStrength'];
+    const baseColorLocation = shaderManager.texturedUniforms?.['baseColor'];
+
+    if (lightDirectionLocation) {
+      this.gl.uniform3fv(lightDirectionLocation, new Float32Array([0, 0, -1])); // Luz frontal
+    }
+    if (lightColorLocation) {
+      this.gl.uniform3fv(lightColorLocation, new Float32Array([1, 1, 1])); // Luz blanca
+    }
+    if (ambientColorLocation) {
+      this.gl.uniform3fv(ambientColorLocation, new Float32Array([1, 1, 1])); // Ambiente blanco
+    }
+    if (ambientStrengthLocation) {
+      this.gl.uniform1f(ambientStrengthLocation, 1.0); // Ambiente fuerte
+    }
+    if (baseColorLocation) {
+      this.gl.uniform3fv(baseColorLocation, new Float32Array([1, 1, 1])); // Color base blanco
+    }
+
+    console.log('📐 HUD matrices texturizadas configuradas: FIJO en espacio cámara');
+  }
+
+  /**
+   * Crea la geometría del plano HUD inclinado 
+   * CORREGIDO: Geometría en espacio de cámara para que sea FIJA (no rote con nave)
    */
   private createHUDPlaneGeometry(): void {
-    const width = 3.0;
-    const height = 0.75;
-    const distance = 1.1;
-    const tilt = -30 * (Math.PI / 180);
+    // HUD más ancho (x1.5) y base en límite inferior de cámara
+    const width = 1.5; // Ancho x1.5 como pediste
+    const height = 0.4;
+    const baseY = -0.6; // Base más abajo (límite inferior de vista)
+    const baseZ = 1.0;
+    const tilt = 15 * (Math.PI / 180); // Mantener inclinación suave por ahora
     
-    const halfWidth = width / 2;
-    const halfHeight = height / 2;
+    console.log('🎯 HUD x1.5 más ancho, base en límite inferior de cámara');
     
-    console.log('🎯 Creando geometría HUD para texturas dinámicas:', {
-      width, height, distance, tilt: tilt * 180 / Math.PI
-    });
-    
+    // Inclinación suave: base cerca y en límite inferior, top ligeramente más lejos
     const vertices = [
-      // Esquina inferior izquierda
-      -halfWidth, -halfHeight * Math.cos(tilt) - 0.5, distance + halfHeight * Math.sin(tilt),
+      // Base inferior (límite inferior de la vista de cámara)
+      -width/2, baseY, baseZ, 0.0, 1.0, // Esquina inferior izquierda
+       width/2, baseY, baseZ, 1.0, 1.0, // Esquina inferior derecha
       
-      // Esquina inferior derecha  
-      halfWidth, -halfHeight * Math.cos(tilt) - 0.5, distance + halfHeight * Math.sin(tilt),
-      
-      // Esquina superior derecha
-      halfWidth, halfHeight * Math.cos(tilt) - 0.5, distance - halfHeight * Math.sin(tilt),
-      
-      // Esquina superior izquierda
-      -halfWidth, halfHeight * Math.cos(tilt) - 0.5, distance - halfHeight * Math.sin(tilt)
+      // Parte superior (inclinada hacia arriba y atrás)
+       width/2, baseY + height * Math.cos(tilt), baseZ + height * Math.sin(tilt), 1.0, 0.0, // Superior derecha
+      -width/2, baseY + height * Math.cos(tilt), baseZ + height * Math.sin(tilt), 0.0, 0.0  // Superior izquierda
     ];
 
-    const indices = [
-      0, 1, 2,
-      0, 2, 3
-    ];
+    // Debug: verificar dimensiones
+    const topY = baseY + height * Math.cos(tilt);
+    const topZ = baseZ + height * Math.sin(tilt);
+    console.log(`📊 HUD x1.5: Ancho=${width}, Base(Y:${baseY}, Z:${baseZ}) → Top(Y:${topY.toFixed(2)}, Z:${topZ.toFixed(2)})`);
+    console.log(`📏 Base pegada al límite inferior de vista de cámara`);
+
+    const indices = [0, 1, 2, 0, 2, 3];
 
     this.hudGeometry = {
       vertices: new Float32Array(vertices),

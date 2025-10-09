@@ -7,6 +7,7 @@ import { Asteroid } from './Asteroid';
 import { Camera, CameraMode } from './Camera';
 import { ShaderManager } from './ShaderManager';
 import { TextureManager } from './TextureManager';
+import { HUDManager } from './hud/HUDManager';
 import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
 
 /**
@@ -25,6 +26,7 @@ export class GameEngine {
   private shaderManager!: ShaderManager;
   private textureManager!: TextureManager;
   private particleEffects!: ParticleEffectsService;
+  private hudManager!: HUDManager;
   
   // Objetos del juego
   private spaceship!: Spaceship;
@@ -85,6 +87,10 @@ export class GameEngine {
       // Inicializar sistema de partículas
       this.particleEffects = this.particleEffectsService;
       this.particleEffects.initialize(this.shaderManager);
+
+      // Inicializar sistema HUD con texturas dinámicas (FASE 3)
+      this.hudManager = new HUDManager(this.gl);
+      console.log('🎯 HUDManager inicializado con Canvas 2D → WebGL');
 
       // Crear cámara
       const canvas = canvasRef.nativeElement;
@@ -1284,71 +1290,44 @@ export class GameEngine {
   }
 
   /**
-   * Renderiza el plano HUD (solo en modo COCKPIT)
+   * Renderiza el HUD con texturas dinámicas (FASE 3)
+   * CORREGIDO: El HUD es FIJO relativo a la cámara, no rota con la nave
    */
   private renderHUDPlane(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
+    if (!this.gl || !this.shaderManager || !this.spaceship || !this.hudManager) return;
 
-    // Solo renderizar en modo COCKPIT
-    const isInCockpitMode = this.camera.getCurrentMode() === CameraMode.COCKPIT;
-    if (!isInCockpitMode) {
-      return; // No renderizar en otros modos
-    }
-
-    console.log('🎯 Renderizando HUD en modo COCKPIT');
-
-    const hudGeometry = this.createHUDPlaneGeometry();
-    const program = this.shaderManager.litProgram;
-    if (!program) return;
-
-    this.gl.useProgram(program);
-
-    // Crear buffers temporales para la geometría del HUD
-    const hudVertexBuffer = this.gl.createBuffer();
-    const hudIndexBuffer = this.gl.createBuffer();
-
-    // Configurar geometría del HUD
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, hudVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, hudGeometry.vertices, this.gl.STATIC_DRAW);
-
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, hudIndexBuffer);
-    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, hudGeometry.indices, this.gl.STATIC_DRAW);
-
-    // Configurar atributos
-    const positionLocation = this.shaderManager.litAttributes['position'];
-    if (positionLocation >= 0) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, hudVertexBuffer);
-      this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
-
-    // Crear matriz de transformación para el HUD (relativa a la nave)
-    const hudMatrix = this.createHUDMatrix();
-    this.calculateNormalMatrix(hudMatrix);
-
-    this.shaderManager.setLitMatrices(
-      hudMatrix,
-      this.camera.viewMatrix,
-      this.camera.projectionMatrix,
-      this.normalMatrix
+    // Obtener datos del juego para el HUD
+    const velocityMagnitude = Math.sqrt(
+      this.spaceship.velocity.x ** 2 + 
+      this.spaceship.velocity.y ** 2 + 
+      this.spaceship.velocity.z ** 2
     );
 
-    // Color brillante y opaco para debugging
-    this.shaderManager.setLitColor(new Float32Array([1.0, 0.0, 1.0])); // Magenta brillante
+    const gameData = {
+      velocity: velocityMagnitude,
+      heading: this.spaceship.rotation.y * (180 / Math.PI), // Convertir a grados
+      pitch: this.spaceship.rotation.x * (180 / Math.PI),
+      roll: this.spaceship.rotation.z * (180 / Math.PI),
+      altitude: this.spaceship.position.y,
+      speed: this.spaceship.getSpeedPercentage() * 2 // Escalar para mejor visualización
+    };
 
-    // Sin transparencia para debugging
-    this.gl.disable(this.gl.BLEND);
-    this.gl.depthMask(true);
+    // Actualizar elementos del HUD
+    this.hudManager.update(gameData);
 
-    // Renderizar
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, hudIndexBuffer);
-    this.gl.drawElements(this.gl.TRIANGLES, hudGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
-    
-    console.log('🎯 HUD renderizado - vértices:', hudGeometry.vertices.length, 'índices:', hudGeometry.indices.length);
+    // Renderizar HUD FIJO (no rota con nave)
+    this.hudManager.render(
+      this.camera.getCurrentMode(),
+      this.shaderManager,
+      this.camera.viewMatrix,
+      this.camera.projectionMatrix
+    );
 
-    // Limpiar buffers temporales
-    this.gl.deleteBuffer(hudVertexBuffer);
-    this.gl.deleteBuffer(hudIndexBuffer);
+    console.log('🎯 HUD dinámico FIJO renderizado:', {
+      velocity: gameData.velocity.toFixed(1),
+      heading: gameData.heading.toFixed(1),
+      speed: gameData.speed.toFixed(1)
+    });
   }
 
   /**
