@@ -488,6 +488,12 @@ export class GameEngine {
   private renderSpaceshipNose(): void {
     if (!this.gl || !this.shaderManager || !this.spaceship) return;
 
+    // No renderizar el nose en modo COCKPIT para tener vista despejada
+    const isInCockpitMode = this.camera.getCurrentMode() === CameraMode.COCKPIT;
+    if (isInCockpitMode) {
+      return; // Salir sin renderizar nada
+    }
+
     const noseGeometry = this.spaceship.createNoseGeometry();
     const program = this.shaderManager.litProgram;
     if (!program) return;
@@ -596,6 +602,12 @@ export class GameEngine {
   private renderSpaceshipCockpit(): void {
     if (!this.gl || !this.shaderManager || !this.spaceship) return;
 
+    // No renderizar la cabina en modo COCKPIT para tener vista despejada
+    const isInCockpitMode = this.camera.getCurrentMode() === CameraMode.COCKPIT;
+    if (isInCockpitMode) {
+      return; // Salir sin renderizar nada
+    }
+
     console.log('🛸 Renderizando cabina del piloto...');
     const cockpitGeometry = this.spaceship.createCockpitGeometry();
     console.log('🛸 Geometría de cabina creada:', cockpitGeometry.vertices.length, 'vértices');
@@ -634,9 +646,8 @@ export class GameEngine {
       this.normalMatrix
     );
 
-    // Color azul oscuro muy reflectante para la cabina del piloto
-    // Azul eléctrico súper visible para depuración
-    this.shaderManager.setLitColor(new Float32Array([0.0, 0.5, 1.0])); // Azul eléctrico súper brillante
+    // Color azul eléctrico súper brillante para la cabina del piloto
+    this.shaderManager.setLitColor(new Float32Array([0.0, 0.5, 1.0])); 
 
     // Renderizar
     this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, cockpitIndexBuffer);
@@ -967,8 +978,7 @@ export class GameEngine {
       this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
       return;
     } else if (key === '8') {
-      // TODO: Implementar modo COCKPIT cuando esté definido
-      console.log('🎥 Tecla 8 presionada - Modo COCKPIT pendiente de implementación');
+      this.camera.setCameraMode(CameraMode.COCKPIT);
       return;
     } else if (key === '9') {
       this.camera.setCameraMode(CameraMode.REAR_TRACKING);

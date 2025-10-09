@@ -159,6 +159,7 @@ export class SpaceshipDebugCollector {
       // Mapear números de modo a nombres legibles
       const modeNames: { [key: number]: string } = {
         0: 'INMOVILE_EXTERNAL',
+        8: 'COCKPIT',
         9: 'REAR_TRACKING'
       };
 

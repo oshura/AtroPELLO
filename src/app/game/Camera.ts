@@ -3,6 +3,7 @@ import { Spaceship } from './Spaceship';
 
 export enum CameraMode {
   INMOVILE_EXTERNAL = 0, // Cámara externa inmóvil que rota con la nave (modo por defecto)
+  COCKPIT = 8,           // Cámara interna en la cabina del piloto
   REAR_TRACKING = 9      // Cámara trasera que sigue a la nave
 }
 
@@ -272,12 +273,85 @@ export class CockpitCamera extends BaseCamera {
 }
 
 /**
+ * Cámara interna en la cabina del piloto (modo 8)
+ */
+export class CockpitInternalCamera extends BaseCamera {
+  protected updateCameraMode(spaceship: Spaceship): void {
+    // Posición exactamente en el centro de la cabina azul
+    // Basado en las dimensiones de createCockpitGeometry: offsetY=0.1, offsetZ=0.68
+    const COCKPIT_INTERNAL_OFFSET = { x: 0, y: 0.1, z: 0.68 }; // Centro exacto de la cabina
+    
+    // Obtener el cuaternión de orientación de la nave
+    const spaceshipQuaternion = spaceship.getOrientationQuaternion();
+    
+    // Convertir el cuaternión del array a objeto
+    const quaternion = {
+      x: spaceshipQuaternion[0],
+      y: spaceshipQuaternion[1], 
+      z: spaceshipQuaternion[2],
+      w: spaceshipQuaternion[3]
+    };
+    
+    // Rotar el offset usando el cuaternión de la nave
+    const rotatedOffset = this.rotateVectorByQuaternion(COCKPIT_INTERNAL_OFFSET, quaternion);
+    const rotatedForward = this.rotateVectorByQuaternion({ x: 0, y: 0, z: 1.0 }, quaternion);
+    const rotatedUp = this.rotateVectorByQuaternion({ x: 0, y: 1, z: 0 }, quaternion);
+    
+    // Posición de la cámara dentro de la cabina
+    this.position = {
+      x: spaceship.position.x + rotatedOffset.x,
+      y: spaceship.position.y + rotatedOffset.y,
+      z: spaceship.position.z + rotatedOffset.z
+    };
+    
+    // La cámara mira hacia adelante en la dirección de la nave
+    this.target = {
+      x: this.position.x + rotatedForward.x,
+      y: this.position.y + rotatedForward.y,
+      z: this.position.z + rotatedForward.z
+    };
+    
+    // El "arriba" de la cámara se orienta con la nave
+    this.up = rotatedUp;
+  }
+
+  private rotateVectorByQuaternion(vector: Vector3, quaternion: { x: number, y: number, z: number, w: number }): Vector3 {
+    const { x, y, z } = vector;
+    const { x: qx, y: qy, z: qz, w: qw } = quaternion;
+    
+    // Precalcular productos comunes para optimizar
+    const qx2 = qx * qx;
+    const qy2 = qy * qy;
+    const qz2 = qz * qz;
+    const qw2 = qw * qw;
+    
+    return {
+      x: x * (qx2 - qy2 - qz2 + qw2) + y * (2 * qx * qy - 2 * qz * qw) + z * (2 * qx * qz + 2 * qy * qw),
+      y: x * (2 * qx * qy + 2 * qz * qw) + y * (-qx2 + qy2 - qz2 + qw2) + z * (2 * qy * qz - 2 * qx * qw),
+      z: x * (2 * qx * qz - 2 * qy * qw) + y * (2 * qy * qz + 2 * qx * qw) + z * (-qx2 - qy2 + qz2 + qw2)
+    };
+  }
+
+  public getDebugInfo() {
+    return {
+      mode: 'COCKPIT (8)',
+      position: { ...this.position },
+      target: { ...this.target },
+      up: { ...this.up },
+      zoomDistance: this.zoomDistance,
+      fov: this.fov * (180 / Math.PI)
+    };
+  }
+}
+
+/**
  * Manager de cámaras que maneja múltiples modos
  */
 export class Camera {
   private currentMode: CameraMode = CameraMode.INMOVILE_EXTERNAL;
   private rearExternalCamera: RearExternalCamera;
   private cockpitCamera: CockpitCamera;
+  private cockpitInternalCamera: CockpitInternalCamera;
   private activeCamera: BaseCamera;
 
   // Exponer propiedades de la cámara activa
@@ -290,6 +364,7 @@ export class Camera {
   constructor(aspect: number = 1.0) {
     this.rearExternalCamera = new RearExternalCamera(aspect);
     this.cockpitCamera = new CockpitCamera(aspect);
+    this.cockpitInternalCamera = new CockpitInternalCamera(aspect);
     this.activeCamera = this.cockpitCamera; // INMOVILE_EXTERNAL como modo por defecto
   }
 
@@ -310,6 +385,9 @@ export class Camera {
     switch (mode) {
       case CameraMode.INMOVILE_EXTERNAL:
         this.activeCamera = this.cockpitCamera;
+        break;
+      case CameraMode.COCKPIT:
+        this.activeCamera = this.cockpitInternalCamera;
         break;
       case CameraMode.REAR_TRACKING:
         this.activeCamera = this.rearExternalCamera;
@@ -346,6 +424,7 @@ export class Camera {
   public updateProjectionMatrix(): void {
     this.rearExternalCamera.updateProjectionMatrix();
     this.cockpitCamera.updateProjectionMatrix();
+    this.cockpitInternalCamera.updateProjectionMatrix();
   }
 
   /**
@@ -354,6 +433,7 @@ export class Camera {
   public setAspectRatio(aspect: number): void {
     this.rearExternalCamera.setAspectRatio(aspect);
     this.cockpitCamera.setAspectRatio(aspect);
+    this.cockpitInternalCamera.setAspectRatio(aspect);
   }
 
   /**
@@ -364,6 +444,8 @@ export class Camera {
       currentMode: CameraMode[this.currentMode],
       activeCamera: this.activeCamera === this.rearExternalCamera ? 
         this.rearExternalCamera.getDebugInfo() : 
+        this.activeCamera === this.cockpitInternalCamera ?
+        this.cockpitInternalCamera.getDebugInfo() :
         this.cockpitCamera.getDebugInfo()
     };
   }
