@@ -74,13 +74,22 @@ export class ReticleRenderer implements IReticleRenderer {
    * Renderiza la retícula en la posición especificada
    */
   public render(position: ScreenPosition, config: ReticleConfig, deltaTime: number): void {
-    if (!this.gl || !this.shaderManager || !this.shaderManager.hudProgram) return;
+    if (!this.gl || !this.shaderManager || !this.shaderManager.reticleProgram) {
+      console.error('❌ ReticleRenderer: Recursos no disponibles', {
+        gl: !!this.gl,
+        shaderManager: !!this.shaderManager,
+        reticleProgram: !!this.shaderManager?.reticleProgram
+      });
+      return;
+    }
+
+    console.log('🎨 ReticleRenderer.render() ejecutando en posición:', position);
 
     // Actualizar animaciones
     this.update(deltaTime);
 
-    // Usar programa HUD (reutilizamos el existente)
-    this.gl.useProgram(this.shaderManager.hudProgram);
+    // Usar programa retícula dedicado
+    this.gl.useProgram(this.shaderManager.reticleProgram);
 
     // Configurar blending para transparencia
     this.gl.enable(this.gl.BLEND);
@@ -379,7 +388,7 @@ export class ReticleRenderer implements IReticleRenderer {
     this.gl.bufferData(this.gl.ARRAY_BUFFER, new Float32Array(vertices), this.gl.DYNAMIC_DRAW);
 
     // Configurar atributos de posición
-    const positionLocation = this.shaderManager?.hudAttributes['a_position'] ?? 0;
+    const positionLocation = this.shaderManager?.reticleAttributes['position'] ?? 0;
     this.gl.enableVertexAttribArray(positionLocation);
     this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
 
@@ -410,9 +419,9 @@ export class ReticleRenderer implements IReticleRenderer {
     ]);
 
     // Configurar uniformes
-    this.gl.uniformMatrix4fv(this.shaderManager.hudUniforms['u_modelMatrix'], false, modelMatrix);
-    this.gl.uniformMatrix4fv(this.shaderManager.hudUniforms['u_viewMatrix'], false, viewMatrix);
-    this.gl.uniformMatrix4fv(this.shaderManager.hudUniforms['u_projectionMatrix'], false, this.orthographicMatrix);
+    this.gl.uniformMatrix4fv(this.shaderManager.reticleUniforms['modelMatrix'], false, modelMatrix);
+    this.gl.uniformMatrix4fv(this.shaderManager.reticleUniforms['viewMatrix'], false, viewMatrix);
+    this.gl.uniformMatrix4fv(this.shaderManager.reticleUniforms['projectionMatrix'], false, this.orthographicMatrix);
   }
 
   private updateOrthographicMatrix(): void {
@@ -434,11 +443,17 @@ export class ReticleRenderer implements IReticleRenderer {
   private setupUniforms(config: ReticleConfig): void {
     if (!this.gl || !this.shaderManager) return;
 
-    // Color y opacidad
-    this.gl.uniform1f(this.shaderManager.hudUniforms['u_opacity'], config.opacity);
+    // Color (convertir de array a vec4)
+    const color = new Float32Array([
+      config.color[0], 
+      config.color[1], 
+      config.color[2], 
+      config.color[3]
+    ]);
+    this.gl.uniform4fv(this.shaderManager.reticleUniforms['color'], color);
     
-    // Para retícula no necesitamos textura, usar color sólido
-    // El shader HUD puede renderizar sin textura si es necesario
+    // Opacidad
+    this.gl.uniform1f(this.shaderManager.reticleUniforms['opacity'], config.opacity);
   }
 
   private drawReticle(indexCount: number): void {

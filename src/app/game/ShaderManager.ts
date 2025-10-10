@@ -11,6 +11,7 @@ export class ShaderManager {
   public litProgram: WebGLProgram | null = null;
   public texturedProgram: WebGLProgram | null = null;
   public hudProgram: WebGLProgram | null = null;
+  public reticleProgram: WebGLProgram | null = null;
   
   // Ubicaciones de uniformes para el programa básico
   public basicUniforms: { [key: string]: WebGLUniformLocation | null } = {};
@@ -24,11 +25,15 @@ export class ShaderManager {
   // Ubicaciones de uniformes para el programa HUD
   public hudUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   
+  // Ubicaciones de uniformes para el programa retícula
+  public reticleUniforms: { [key: string]: WebGLUniformLocation | null } = {};
+  
   // Ubicaciones de atributos
   public basicAttributes: { [key: string]: number } = {};
   public litAttributes: { [key: string]: number } = {};
   public texturedAttributes: { [key: string]: number } = {};
   public hudAttributes: { [key: string]: number } = {};
+  public reticleAttributes: { [key: string]: number } = {};
 
   constructor(private webglService: WebGLService) {
     const context = webglService.getContext();
@@ -68,6 +73,12 @@ export class ShaderManager {
       this.getHUDFragmentShader()
     );
 
+    // Crear programa retícula (geometría sólida 2D)
+    this.reticleProgram = this.createProgram(
+      this.getReticleVertexShader(),
+      this.getReticleFragmentShader()
+    );
+
     // Obtener ubicaciones de uniformes y atributos
     if (this.basicProgram) {
       this.getBasicProgramLocations();
@@ -83,6 +94,10 @@ export class ShaderManager {
 
     if (this.hudProgram) {
       this.getHUDProgramLocations();
+    }
+
+    if (this.reticleProgram) {
+      this.getReticleProgramLocations();
     }
   }
 
@@ -701,6 +716,73 @@ export class ShaderManager {
     console.log('🎯 Shader HUD inicializado:', {
       attributes: Object.keys(this.hudAttributes).length,
       uniforms: Object.keys(this.hudUniforms).length
+    });
+  }
+
+  /**
+   * Vertex shader para retícula (geometría sólida 2D)
+   */
+  private getReticleVertexShader(): string {
+    return `#version 300 es
+    precision highp float;
+
+    // Atributos de entrada
+    in vec3 a_position;
+
+    // Uniformes de matrices
+    uniform mat4 u_modelMatrix;
+    uniform mat4 u_viewMatrix;
+    uniform mat4 u_projectionMatrix;
+
+    void main() {
+      // Transformación de posición completa
+      vec4 worldPos = u_modelMatrix * vec4(a_position, 1.0);
+      vec4 viewPos = u_viewMatrix * worldPos;
+      gl_Position = u_projectionMatrix * viewPos;
+    }`;
+  }
+
+  /**
+   * Fragment shader para retícula (color sólido)
+   */
+  private getReticleFragmentShader(): string {
+    return `#version 300 es
+    precision highp float;
+
+    // Uniformes
+    uniform vec4 u_color;
+    uniform float u_opacity;
+
+    // Salida
+    out vec4 fragColor;
+
+    void main() {
+      // Color sólido con opacidad
+      fragColor = vec4(u_color.rgb, u_color.a * u_opacity);
+    }`;
+  }
+
+  /**
+   * Obtener ubicaciones de uniformes y atributos para programa retícula
+   */
+  private getReticleProgramLocations(): void {
+    if (!this.gl || !this.reticleProgram) return;
+
+    // Atributos
+    this.reticleAttributes['position'] = this.gl.getAttribLocation(this.reticleProgram, 'a_position');
+
+    // Uniformes de matrices
+    this.reticleUniforms['modelMatrix'] = this.gl.getUniformLocation(this.reticleProgram, 'u_modelMatrix');
+    this.reticleUniforms['viewMatrix'] = this.gl.getUniformLocation(this.reticleProgram, 'u_viewMatrix');
+    this.reticleUniforms['projectionMatrix'] = this.gl.getUniformLocation(this.reticleProgram, 'u_projectionMatrix');
+    
+    // Uniformes de color
+    this.reticleUniforms['color'] = this.gl.getUniformLocation(this.reticleProgram, 'u_color');
+    this.reticleUniforms['opacity'] = this.gl.getUniformLocation(this.reticleProgram, 'u_opacity');
+
+    console.log('🎯 Shader Retícula inicializado:', {
+      attributes: Object.keys(this.reticleAttributes).length,
+      uniforms: Object.keys(this.reticleUniforms).length
     });
   }
 }

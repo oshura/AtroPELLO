@@ -47,13 +47,13 @@ export class ReticleManager {
     this.reticleRenderer = reticleRenderer;
     this.config = { ...DEFAULT_TARGETING_CONFIG };
     
-    // Estado inicial del sistema
+    // Estado inicial del sistema (retícula centrada por defecto)
     this.state = {
       currentState: ReticleState.IDLE,
-      mousePosition: { x: 0, y: 0 },
+      mousePosition: { x: 512, y: 384 }, // Centro por defecto
       currentTarget: null,
       hoveredTarget: null,
-      reticlePosition: { x: 0, y: 0 },
+      reticlePosition: { x: 512, y: 384 }, // Centro por defecto
       isVisible: true,
       config: this.config.reticle
     };
@@ -97,6 +97,7 @@ export class ReticleManager {
         this.lastUpdateTime = performance.now();
 
         console.log('🎯 ReticleManager inicializado correctamente con renderizador');
+        console.log('🎯 Estado inicial:', this.state);
         resolve(true);
       } catch (error) {
         console.error('❌ Error inicializando ReticleManager:', error);
@@ -113,10 +114,10 @@ export class ReticleManager {
 
     const currentTime = performance.now();
     
-    // Throttle updates según configuración de performance
-    if (currentTime - this.lastUpdateTime < 1000 / this.config.performance.updateFrequency) {
-      return;
-    }
+    // DEBUG: Temporalmente sin throttle para verificar renderizado
+    // if (currentTime - this.lastUpdateTime < 1000 / this.config.performance.updateFrequency) {
+    //   return;
+    // }
 
     this.lastUpdateTime = currentTime;
 
@@ -140,7 +141,15 @@ export class ReticleManager {
    * Renderiza la retícula en pantalla
    */
   public render(deltaTime: number): void {
-    if (!this.isInitialized || !this.state.isVisible) return;
+    if (!this.isInitialized || !this.state.isVisible) {
+      console.log('🎯 Retícula NO renderizada:', { 
+        initialized: this.isInitialized, 
+        visible: this.state.isVisible 
+      });
+      return;
+    }
+
+    console.log('🎯 Renderizando retícula en:', this.state.reticlePosition);
 
     // Renderizar retícula en la posición actual
     this.reticleRenderer.render(
