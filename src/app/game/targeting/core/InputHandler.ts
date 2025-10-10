@@ -102,6 +102,11 @@ export class InputHandler {
       x: event.clientX - rect.left,
       y: event.clientY - rect.top
     };
+
+    // Debug temporal: Log ocasional para verificar eventos
+    if (Math.random() < 0.016) { // ~1 vez por segundo a 60fps
+      console.log('🖱️ Mouse move event:', this.mousePosition);
+    }
   }
 
   /**
