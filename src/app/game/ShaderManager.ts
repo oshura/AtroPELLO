@@ -10,6 +10,7 @@ export class ShaderManager {
   public basicProgram: WebGLProgram | null = null;
   public litProgram: WebGLProgram | null = null;
   public texturedProgram: WebGLProgram | null = null;
+  public hudProgram: WebGLProgram | null = null;
   
   // Ubicaciones de uniformes para el programa básico
   public basicUniforms: { [key: string]: WebGLUniformLocation | null } = {};
@@ -20,10 +21,14 @@ export class ShaderManager {
   // Ubicaciones de uniformes para el programa texturizado
   public texturedUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   
+  // Ubicaciones de uniformes para el programa HUD
+  public hudUniforms: { [key: string]: WebGLUniformLocation | null } = {};
+  
   // Ubicaciones de atributos
   public basicAttributes: { [key: string]: number } = {};
   public litAttributes: { [key: string]: number } = {};
   public texturedAttributes: { [key: string]: number } = {};
+  public hudAttributes: { [key: string]: number } = {};
 
   constructor(private webglService: WebGLService) {
     const context = webglService.getContext();
@@ -57,6 +62,12 @@ export class ShaderManager {
       this.getTexturedFragmentShader()
     );
 
+    // Crear programa HUD (texturas simples 2D)
+    this.hudProgram = this.createProgram(
+      this.getHUDVertexShader(),
+      this.getHUDFragmentShader()
+    );
+
     // Obtener ubicaciones de uniformes y atributos
     if (this.basicProgram) {
       this.getBasicProgramLocations();
@@ -68,6 +79,10 @@ export class ShaderManager {
 
     if (this.texturedProgram) {
       this.getTexturedProgramLocations();
+    }
+
+    if (this.hudProgram) {
+      this.getHUDProgramLocations();
     }
   }
 
@@ -578,7 +593,7 @@ export class ShaderManager {
    * Verifica si los shaders están listos
    */
   public isReady(): boolean {
-    return this.basicProgram !== null && this.litProgram !== null && this.texturedProgram !== null;
+    return this.basicProgram !== null && this.litProgram !== null && this.texturedProgram !== null && this.hudProgram !== null;
   }
 
   /**
@@ -601,5 +616,91 @@ export class ShaderManager {
       this.gl.deleteProgram(this.texturedProgram);
       this.texturedProgram = null;
     }
+
+    if (this.hudProgram) {
+      this.gl.deleteProgram(this.hudProgram);
+      this.hudProgram = null;
+    }
+  }
+
+  /**
+   * Vertex shader para HUD (texturas 2D simples)
+   */
+  private getHUDVertexShader(): string {
+    return `#version 300 es
+    precision highp float;
+
+    // Atributos de entrada
+    in vec3 a_position;
+    in vec2 a_uv;
+
+    // Uniformes de matrices
+    uniform mat4 u_modelMatrix;
+    uniform mat4 u_viewMatrix;
+    uniform mat4 u_projectionMatrix;
+
+    // Salidas al fragment shader
+    out vec2 v_uv;
+
+    void main() {
+      // Coordenadas UV directas sin transformación
+      v_uv = a_uv;
+      
+      // Transformación de posición completa
+      vec4 worldPos = u_modelMatrix * vec4(a_position, 1.0);
+      vec4 viewPos = u_viewMatrix * worldPos;
+      gl_Position = u_projectionMatrix * viewPos;
+    }`;
+  }
+
+  /**
+   * Fragment shader para HUD (texturas 2D simples)
+   */
+  private getHUDFragmentShader(): string {
+    return `#version 300 es
+    precision highp float;
+
+    // Entradas del vertex shader
+    in vec2 v_uv;
+
+    // Uniformes
+    uniform sampler2D u_texture;
+    uniform float u_opacity;
+
+    // Salida
+    out vec4 fragColor;
+
+    void main() {
+      // Muestrear la textura directamente
+      vec4 textureColor = texture(u_texture, v_uv);
+      
+      // Aplicar opacidad
+      fragColor = vec4(textureColor.rgb, textureColor.a * u_opacity);
+    }`;
+  }
+
+  /**
+   * Obtener ubicaciones de uniformes y atributos para programa HUD
+   */
+  private getHUDProgramLocations(): void {
+    if (!this.gl || !this.hudProgram) return;
+
+    // Atributos
+    this.hudAttributes['position'] = this.gl.getAttribLocation(this.hudProgram, 'a_position');
+    this.hudAttributes['uv'] = this.gl.getAttribLocation(this.hudProgram, 'a_uv');
+
+    // Uniformes de matrices
+    this.hudUniforms['modelMatrix'] = this.gl.getUniformLocation(this.hudProgram, 'u_modelMatrix');
+    this.hudUniforms['viewMatrix'] = this.gl.getUniformLocation(this.hudProgram, 'u_viewMatrix');
+    this.hudUniforms['projectionMatrix'] = this.gl.getUniformLocation(this.hudProgram, 'u_projectionMatrix');
+    
+    // Uniformes de textura
+    this.hudUniforms['texture'] = this.gl.getUniformLocation(this.hudProgram, 'u_texture');
+    this.hudUniforms['opacity'] = this.gl.getUniformLocation(this.hudProgram, 'u_opacity');
+
+    console.log('🎯 Shader HUD inicializado:', {
+      attributes: Object.keys(this.hudAttributes).length,
+      uniforms: Object.keys(this.hudUniforms).length
+    });
   }
 }

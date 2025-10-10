@@ -59,7 +59,25 @@ export class HUDTexture {
    * Actualiza la textura WebGL con el contenido actual del canvas
    */
   public updateTexture(): void {
+    console.log('📸 Actualizando textura WebGL desde Canvas...');
+    
+    // Verificar que el canvas tiene contenido
+    const ctx = this.canvas.getContext('2d')!;
+    const testData = ctx.getImageData(0, 0, 1, 1);
+    console.log('🎨 Canvas pixel test:', [testData.data[0], testData.data[1], testData.data[2], testData.data[3]]);
+    
+    // Enlazar textura y actualizar
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.webglTexture);
+    
+    // Verificar que la textura está enlazada
+    const boundTexture = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
+    console.log('🔗 Textura enlazada para actualización:', {
+      expected: this.webglTexture,
+      actual: boundTexture,
+      matches: boundTexture === this.webglTexture
+    });
+    
+    // Actualizar textura con datos del canvas
     this.gl.texImage2D(
       this.gl.TEXTURE_2D, 
       0, 
@@ -68,6 +86,14 @@ export class HUDTexture {
       this.gl.UNSIGNED_BYTE, 
       this.canvas
     );
+    
+    // Verificar errores
+    const error = this.gl.getError();
+    if (error !== this.gl.NO_ERROR) {
+      console.error('❌ Error al actualizar textura:', error);
+    } else {
+      console.log('✅ Textura WebGL actualizada correctamente');
+    }
   }
 
   /**
