@@ -71,6 +71,7 @@ export class HUDManager {
   // Variables para debug
   private forceDebugShader: boolean = false; // DESACTIVADO para probar shader texturizado
   private showDebugCanvas: boolean = false; // Canvas debug se activa con F2
+  private showHUDFrame: boolean = true; // Marco y grid permanente para inmersión cockpit
   
   // Sistema de targeting
   private targetingSystem: TargetingSystem;
@@ -101,6 +102,19 @@ export class HUDManager {
     
     // Renderizar todos los elementos en la textura
     this.renderToTexture();
+  }
+
+  /**
+   * Debug: Mostrar información de estado en consola (F1)
+   */
+  public showDebugInfo(): void {
+    console.log(`🔧 === INFORMACIÓN DE DEBUG HUD ===`);
+    console.log(`Estado forceDebugShader: ${this.forceDebugShader ? 'ACTIVO (Magenta)' : 'INACTIVO (Texturizado)'}`);
+    console.log(`Estado showDebugCanvas: ${this.showDebugCanvas ? 'ACTIVO (Marco debug rojo)' : 'INACTIVO'}`);
+    console.log(`Estado showHUDFrame: ${this.showHUDFrame ? 'ACTIVO (Marco cockpit azul)' : 'INACTIVO'}`);
+    console.log(`Dimensiones Canvas: ${this.hudTexture.getCanvas().width}x${this.hudTexture.getCanvas().height}`);
+        console.log(`WebGL Texture: ${this.hudTexture.getWebGLTexture() ? 'CREADA' : 'NO CREADA'}`);
+    console.log('📊 Estados actuales del HUD mostrados en consola');
   }
 
   /**
@@ -145,7 +159,7 @@ export class HUDManager {
       switch (event.code) {
         case 'F1':
           event.preventDefault();
-          this.toggleDebugShader();
+          this.showDebugInfo();
           break;
         case 'F2':
           event.preventDefault();
@@ -389,27 +403,64 @@ export class HUDManager {
     };
     this.compass.render(ctx, compassPos);
     
-    // Marco de debug opcional (solo si debug canvas está activo)
-    if (this.showDebugCanvas) {
-      ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
+    // Marco HUD permanente para inmersión cockpit
+    if (this.showHUDFrame) {
+      // Marco principal más sutil y elegante
+      ctx.strokeStyle = 'rgba(0, 150, 255, 0.4)'; // Azul cyan más elegante
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
       
-      // Grid de referencia para debug
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      // Grid de referencia sutil
+      ctx.strokeStyle = 'rgba(0, 150, 255, 0.08)'; // Muy sutil
+      ctx.lineWidth = 0.5;
+      for (let x = 50; x < canvas.width; x += 50) { // Grid más fino cada 50px
+        ctx.beginPath();
+        ctx.moveTo(x, 8);
+        ctx.lineTo(x, canvas.height - 8);
+        ctx.stroke();
+      }
+      for (let y = 50; y < canvas.height; y += 50) { // Grid más fino cada 50px
+        ctx.beginPath();
+        ctx.moveTo(8, y);
+        ctx.lineTo(canvas.width - 8, y);
+        ctx.stroke();
+      }
+      
+      // Esquinas reforzadas para look futurista
+      ctx.strokeStyle = 'rgba(0, 150, 255, 0.6)';
+      ctx.lineWidth = 2;
+      const cornerSize = 20;
+      // Esquina superior izquierda
+      ctx.beginPath();
+      ctx.moveTo(8, 8 + cornerSize);
+      ctx.lineTo(8, 8);
+      ctx.lineTo(8 + cornerSize, 8);
+      ctx.stroke();
+      // Esquina superior derecha  
+      ctx.beginPath();
+      ctx.moveTo(canvas.width - 8 - cornerSize, 8);
+      ctx.lineTo(canvas.width - 8, 8);
+      ctx.lineTo(canvas.width - 8, 8 + cornerSize);
+      ctx.stroke();
+      // Esquina inferior izquierda
+      ctx.beginPath();
+      ctx.moveTo(8, canvas.height - 8 - cornerSize);
+      ctx.lineTo(8, canvas.height - 8);
+      ctx.lineTo(8 + cornerSize, canvas.height - 8);
+      ctx.stroke();
+      // Esquina inferior derecha
+      ctx.beginPath();
+      ctx.moveTo(canvas.width - 8 - cornerSize, canvas.height - 8);
+      ctx.lineTo(canvas.width - 8, canvas.height - 8);
+      ctx.lineTo(canvas.width - 8, canvas.height - 8 - cornerSize);
+      ctx.stroke();
+    }
+    
+    // Marco de debug adicional (solo si debug canvas está activo)
+    if (this.showDebugCanvas) {
+      ctx.strokeStyle = 'rgba(255, 0, 0, 0.3)'; // Rojo para distinguir del marco principal
       ctx.lineWidth = 1;
-      for (let x = 0; x < canvas.width; x += 100) {
-        ctx.beginPath();
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
-        ctx.stroke();
-      }
-      for (let y = 0; y < canvas.height; y += 100) {
-        ctx.beginPath();
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-        ctx.stroke();
-      }
+      ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
     }
     
     console.log('🎨 Canvas 2D renderizado con debug visual');
