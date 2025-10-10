@@ -11,6 +11,8 @@ export * from './core/ReticleManager';
 export * from './core/TargetDetector';
 export * from './core/InputHandler';
 
-// TODO: FASE 2 - Rendering components
-// export * from './rendering/ReticleRenderer';
+// FASE 2 - Rendering components
+export * from './rendering/ReticleRenderer';
+
+// TODO: FASE 3 - Target highlighting
 // export * from './rendering/TargetHighlighter';

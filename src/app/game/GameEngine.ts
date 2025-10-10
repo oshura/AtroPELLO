@@ -53,7 +53,9 @@ export class GameEngine {
     private webglService: WebGLService,
     private particleEffectsService: ParticleEffectsService,
     private reticleManagerService: ReticleManager
-  ) {}
+  ) {
+    this.reticleManager = this.reticleManagerService;
+  }
 
   /**
    * Inicializa el motor del juego
@@ -100,10 +102,13 @@ export class GameEngine {
       const aspect = canvas.width / canvas.height;
       this.camera = new Camera(aspect);
 
-      // Inicializar sistema de retícula (FASE 1)
-      this.reticleManager = this.reticleManagerService;
-      await this.reticleManager.initialize(this.camera);
-      console.log('🎯 ReticleManager inicializado con targeting system');
+      // Inicializar sistema de retícula con renderizado (FASE 2)
+      const reticleInit = await this.reticleManager.initialize(this.camera, this.shaderManager);
+      if (!reticleInit) {
+        console.error('❌ Error inicializando sistema de retícula');
+        return false;
+      }
+      console.log('🎯 ReticleManager inicializado con visual system');
 
       // Crear objetos del juego
       this.createGameObjects();
@@ -504,6 +509,9 @@ export class GameEngine {
     
     // Renderizar HUD (solo en modo COCKPIT)
     this.renderHUDPlane();
+    
+    // Renderizar sistema de retícula (FASE 2)
+    this.renderReticleSystem();
   }
 
   /**
@@ -1088,6 +1096,11 @@ export class GameEngine {
     if (this.gl) {
       this.gl.viewport(0, 0, width, height);
     }
+
+    // Actualizar tamaño del sistema de retícula
+    if (this.reticleManager) {
+      this.reticleManager.updateCanvasSize(width, height);
+    }
   }
 
   /**
@@ -1364,5 +1377,15 @@ export class GameEngine {
     this.translateMatrix(matrix, this.spaceship.position.x, this.spaceship.position.y, this.spaceship.position.z);
     
     return matrix;
+  }
+
+  /**
+   * Renderiza el sistema de retícula (FASE 2)
+   */
+  private renderReticleSystem(): void {
+    if (!this.reticleManager) return;
+
+    const deltaTime = (performance.now() - this.lastFrameTime) / 1000;
+    this.reticleManager.render(deltaTime);
   }
 }

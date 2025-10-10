@@ -79,7 +79,7 @@ export class GameInitializer {
         throw new Error(webglResult.error || 'WebGL initialization failed');
       }
 
-      // Crear motor del juego con sistema de targeting
+      // Crear motor del juego con sistema de targeting completo
       const reticleManager = this.injector.get(ReticleManager);
       this.gameEngine = new GameEngine(this.webglService, this.particleEffectsService, reticleManager);
 

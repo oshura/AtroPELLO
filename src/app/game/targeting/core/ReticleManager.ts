@@ -16,7 +16,9 @@ import {
 import { ITargetable } from '../../types/targeting.types';
 import { TargetDetector } from './TargetDetector';
 import { InputHandler } from './InputHandler';
+import { ReticleRenderer } from '../rendering/ReticleRenderer';
 import { Camera } from '../../Camera';
+import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
 
 @Injectable({
@@ -29,6 +31,7 @@ export class ReticleManager {
   
   private targetDetector: TargetDetector;
   private inputHandler: InputHandler;
+  private reticleRenderer: ReticleRenderer;
   
   private isInitialized: boolean = false;
   private lastUpdateTime: number = 0;
@@ -36,10 +39,12 @@ export class ReticleManager {
   constructor(
     targetDetector: TargetDetector,
     inputHandler: InputHandler,
+    reticleRenderer: ReticleRenderer,
     private webglService: WebGLService
   ) {
     this.targetDetector = targetDetector;
     this.inputHandler = inputHandler;
+    this.reticleRenderer = reticleRenderer;
     this.config = { ...DEFAULT_TARGETING_CONFIG };
     
     // Estado inicial del sistema
@@ -66,7 +71,7 @@ export class ReticleManager {
   /**
    * Inicializa el sistema de retícula
    */
-  public initialize(camera: Camera): Promise<boolean> {
+  public initialize(camera: Camera, shaderManager: ShaderManager): Promise<boolean> {
     return new Promise((resolve) => {
       try {
         const canvas = this.webglService.getCanvas();
@@ -79,11 +84,19 @@ export class ReticleManager {
         // Inicializar componentes
         this.targetDetector.initialize(camera);
         this.inputHandler.initialize(canvas, this.events);
+        
+        // Inicializar renderizador de retícula
+        const rendererInit = this.reticleRenderer.initialize(shaderManager);
+        if (!rendererInit) {
+          console.error('❌ ReticleManager: Error inicializando ReticleRenderer');
+          resolve(false);
+          return;
+        }
 
         this.isInitialized = true;
         this.lastUpdateTime = performance.now();
 
-        console.log('🎯 ReticleManager inicializado correctamente');
+        console.log('🎯 ReticleManager inicializado correctamente con renderizador');
         resolve(true);
       } catch (error) {
         console.error('❌ Error inicializando ReticleManager:', error);
@@ -121,6 +134,20 @@ export class ReticleManager {
 
     // Actualizar máquina de estados
     this.updateStateMachine();
+  }
+
+  /**
+   * Renderiza la retícula en pantalla
+   */
+  public render(deltaTime: number): void {
+    if (!this.isInitialized || !this.state.isVisible) return;
+
+    // Renderizar retícula en la posición actual
+    this.reticleRenderer.render(
+      this.state.reticlePosition,
+      this.state.config,
+      deltaTime
+    );
   }
 
   /**
@@ -312,10 +339,18 @@ export class ReticleManager {
   }
 
   /**
+   * Actualiza el tamaño del canvas
+   */
+  public updateCanvasSize(width: number, height: number): void {
+    this.reticleRenderer.updateCanvasSize(width, height);
+  }
+
+  /**
    * Limpia recursos y destruye el manager
    */
   public destroy(): void {
     this.inputHandler.destroy();
+    this.reticleRenderer.dispose();
     this.isInitialized = false;
     
     console.log('🧹 ReticleManager destroyed');
