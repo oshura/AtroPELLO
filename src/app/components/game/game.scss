@@ -25,6 +25,7 @@
   image-rendering: pixelated;
   image-rendering: -moz-crisp-edges;
   image-rendering: crisp-edges;
+  cursor: none; /* Ocultar cursor cuando retícula está activa */
 }
 
 .game-overlay {

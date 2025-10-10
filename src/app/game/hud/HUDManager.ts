@@ -358,11 +358,11 @@ export class HUDManager {
     const marqueeY = 20;
     this.marqueePanel.render(ctx, marqueeX, marqueeY);
     
-    // === SPEEDOMETER DIGITAL === (recolocado)
-    // Posición: parte inferior derecha
+    // === SPEEDOMETER DIGITAL === (recolocado más arriba)
+    // Posición: parte superior derecha
     const speedometerPos = {
-      x: canvas.width - 180,  // Esquina inferior derecha
-      y: canvas.height - 120
+      x: canvas.width - 180,  // Esquina superior derecha
+      y: 60  // Más arriba, cerca del borde superior
     };
     this.speedometer.render(ctx, speedometerPos);
     
