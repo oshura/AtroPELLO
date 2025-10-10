@@ -1,10 +1,11 @@
 import { GameObject } from './GameObject';
 import { Vector3 } from '../types/game.types';
+import { ITargetable, TargetType } from './types/targeting.types';
 
 /**
  * Clase para los asteroides del juego
  */
-export class Asteroid extends GameObject {
+export class Asteroid extends GameObject implements ITargetable {
   // Propiedades específicas del asteroide
   public size: number;
   public baseSpeed: number = 5.0;
@@ -310,5 +311,37 @@ export class Asteroid extends GameObject {
       this.colors[colorIndex + 1] = g; // G  
       this.colors[colorIndex + 2] = b; // B
     }
+  }
+
+  // ===============================
+  // IMPLEMENTACIÓN DE ITargetable
+  // ===============================
+
+  /**
+   * Obtiene el nombre para mostrar del asteroide
+   */
+  public getDisplayName(): string {
+    return `Asteroid ${this.id}`;
+  }
+
+  /**
+   * Obtiene el tipo de target
+   */
+  public getTargetType(): TargetType {
+    return TargetType.ASTEROID;
+  }
+
+  /**
+   * Verifica si el asteroide está activo (siempre true para asteroides)
+   */
+  public isActive(): boolean {
+    return true; // Los asteroides siempre están activos
+  }
+
+  /**
+   * Radio del asteroide para detección de colisiones
+   */
+  public get radius(): number {
+    return this.size * 2; // Radio basado en el tamaño
   }
 }

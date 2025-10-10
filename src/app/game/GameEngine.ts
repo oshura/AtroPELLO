@@ -8,6 +8,7 @@ import { Camera, CameraMode } from './Camera';
 import { ShaderManager } from './ShaderManager';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
+import { ReticleManager } from './targeting';
 import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
 
 /**
@@ -27,6 +28,7 @@ export class GameEngine {
   private textureManager!: TextureManager;
   private particleEffects!: ParticleEffectsService;
   private hudManager!: HUDManager;
+  private reticleManager!: ReticleManager;
   
   // Objetos del juego
   private spaceship!: Spaceship;
@@ -49,7 +51,8 @@ export class GameEngine {
 
   constructor(
     private webglService: WebGLService,
-    private particleEffectsService: ParticleEffectsService
+    private particleEffectsService: ParticleEffectsService,
+    private reticleManagerService: ReticleManager
   ) {}
 
   /**
@@ -96,6 +99,11 @@ export class GameEngine {
       const canvas = canvasRef.nativeElement;
       const aspect = canvas.width / canvas.height;
       this.camera = new Camera(aspect);
+
+      // Inicializar sistema de retícula (FASE 1)
+      this.reticleManager = this.reticleManagerService;
+      await this.reticleManager.initialize(this.camera);
+      console.log('🎯 ReticleManager inicializado con targeting system');
 
       // Crear objetos del juego
       this.createGameObjects();
@@ -285,6 +293,13 @@ export class GameEngine {
       // Mantener asteroides dentro del mundo
       this.wrapPosition(asteroid);
     });
+
+    // Actualizar sistema de targeting con objetos disponibles
+    const availableTargets = [
+      ...this.asteroids.map(a => a as any), // Cast temporal para ITargetable
+      // TODO: Agregar otros objetos targetables (naves enemigas, planetas, etc.)
+    ];
+    this.reticleManager.update(deltaTime, availableTargets);
 
     // Detectar colisiones
     this.checkCollisions();
