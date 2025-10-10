@@ -5,6 +5,7 @@ import { Compass } from './elements/Compass';
 import { NavigationSphere } from './elements/NavigationSphere';
 import { SpeedometerDigital } from './elements/SpeedometerDigital';
 import { MarqueePanel } from './elements/MarqueePanel';
+import { TargetingSystem, TargetInfo } from '../types/targeting.types';
 
 /**
  * Administrador principal del sistema HUD
@@ -42,6 +43,9 @@ export class HUDManager {
     this.speedometer = new SpeedometerDigital();
     this.marqueePanel = new MarqueePanel();
     
+    // Inicializar sistema de targeting
+    this.targetingSystem = new TargetingSystem();
+    
     // Crear geometría del plano
     this.createHUDPlaneGeometry();
     
@@ -51,11 +55,12 @@ export class HUDManager {
     // KEYBOARD LISTENERS: F1 y F2 para debug
     this.setupKeyboardListeners();
     
-    console.log('🎯 HUDManager inicializado con FASE 4 completa:');
+    console.log('🎯 HUDManager inicializado con FASE 4+ completa:');
     console.log('   📺 MarqueePanel - Mensajes rotativos');
     console.log('   📊 VelocityBars - Barras laterales');
-    console.log('   🧭 Compass - Brújula central');  
+    console.log('   🎯 Compass - Sistema de targeting (Norte=cuadrado, Target=triángulo)');  
     console.log('   🏃 SpeedometerDigital - Recolocado');
+    console.log('   🎯 TargetingSystem - Listo para asteroides, naves, planetas...');
     console.log('🔧 DEBUG: Usa toggleHUDShader() en la consola para alternar shaders');
     console.log('⌨️  O usa las teclas: F1 (shaders) / F2 (canvas debug)');
   }
@@ -66,6 +71,9 @@ export class HUDManager {
   // Variables para debug
   private forceDebugShader: boolean = false; // DESACTIVADO para probar shader texturizado
   private showDebugCanvas: boolean = false; // Canvas debug se activa con F2
+  
+  // Sistema de targeting
+  private targetingSystem: TargetingSystem;
 
   public update(gameData: {
     velocity: number;
@@ -74,11 +82,19 @@ export class HUDManager {
     roll: number;
     altitude: number;
     speed: number;
+    position?: { x: number; y: number; z: number };
   }): void {
     // Actualizar elementos individuales
     this.velocityBarLeft.update(gameData.velocity);
     this.velocityBarRight.update(gameData.velocity);
-    this.compass.update(gameData.heading);
+    
+    // Actualizar compass con información de targeting
+    let targetInfo: TargetInfo | null = null;
+    if (gameData.position) {
+      targetInfo = this.targetingSystem.getTargetInfo(gameData.position);
+    }
+    this.compass.update(gameData.heading, targetInfo);
+    
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
     this.speedometer.update(gameData.speed);
     this.marqueePanel.update(); // Sin parámetros, usa su lógica interna
@@ -171,6 +187,31 @@ export class HUDManager {
    */
   public getCurrentMarqueeMessage(): string {
     return this.marqueePanel.getCurrentMessage();
+  }
+
+  // === MÉTODOS PÚBLICOS PARA SISTEMA DE TARGETING ===
+  
+  /**
+   * Obtener el sistema de targeting
+   */
+  public getTargetingSystem(): TargetingSystem {
+    return this.targetingSystem;
+  }
+  
+  /**
+   * Establecer target actual (null para limpiar)
+   */
+  public setTarget(target: any): void {
+    this.targetingSystem.setTarget(target);
+  }
+  
+  /**
+   * Obtener información del target actual
+   */
+  public getCurrentTargetInfo(): TargetInfo | null {
+    // Necesitamos la posición de la nave para calcular
+    // Por ahora retorna null, se completará cuando tengamos posición
+    return null; 
   }
 
   /**

@@ -1,16 +1,20 @@
+import { TargetInfo } from '../../types/targeting.types';
+
 /**
- * Elemento HUD: Brújula circular
- * Muestra la orientación compass/heading de la nave
- * FASE 4: Elementos HUD individuales
+ * Elemento HUD: Brújula con sistema de targeting
+ * Muestra dirección hacia targets seleccionados
+ * FASE 4: Elementos HUD individuales + Sistema de targeting
  */
 export class Compass {
   private heading: number = 0;
   private radius: number = 80; // Triplicado de tamaño
+  private targetInfo: TargetInfo | null = null;
   
   constructor() {}
 
-  public update(heading: number): void {
+  public update(heading: number, targetInfo?: TargetInfo | null): void {
     this.heading = ((heading % 360) + 360) % 360;
+    this.targetInfo = targetInfo || null;
   }
 
   public render(ctx: CanvasRenderingContext2D, position: { x: number; y: number }): void {
@@ -102,20 +106,17 @@ export class Compass {
     ctx.save();
     ctx.rotate((this.heading * Math.PI) / 180);
     
-    // Aguja Norte (amarilla) más grande y con brillo
+    // Aguja Norte (amarilla) - CUADRADO como solicitado
     ctx.strokeStyle = '#FFFF00';
     ctx.fillStyle = '#FFFF00';
     ctx.lineWidth = 4;
     ctx.shadowColor = '#FFFF00';
     ctx.shadowBlur = 6;
     
-    ctx.beginPath();
-    ctx.moveTo(0, -this.radius + 15);
-    ctx.lineTo(-6, -this.radius + 35);
-    ctx.lineTo(6, -this.radius + 35);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
+    // Dibujar cuadrado en lugar de triángulo
+    const squareSize = 8;
+    ctx.fillRect(-squareSize/2, -this.radius + 15, squareSize, squareSize);
+    ctx.strokeRect(-squareSize/2, -this.radius + 15, squareSize, squareSize);
     
     // Aguja Sur (roja) más grande
     ctx.strokeStyle = '#FF0000';
@@ -139,6 +140,37 @@ export class Compass {
     ctx.fill();
     
     ctx.restore();
+    
+    // Dibujar aguja hacia target (si existe)
+    this.drawTargetNeedle(ctx);
+  }
+
+  private drawTargetNeedle(ctx: CanvasRenderingContext2D): void {
+    if (!this.targetInfo) return; // No hay target, no dibujar aguja
+
+    ctx.save();
+    
+    // Rotar hacia el bearing del target (relativo al heading actual)
+    const targetAngle = this.targetInfo.bearing - this.heading;
+    ctx.rotate((targetAngle * Math.PI) / 180);
+    
+    // Aguja hacia target (roja, triángulo)
+    ctx.strokeStyle = '#FF0000';
+    ctx.fillStyle = '#FF0000';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#FF0000';
+    ctx.shadowBlur = 8;
+    
+    // Triángulo apuntando al target
+    ctx.beginPath();
+    ctx.moveTo(0, -this.radius + 10);
+    ctx.lineTo(-5, -this.radius + 25);
+    ctx.lineTo(5, -this.radius + 25);
+    ctx.closePath();
+    ctx.fill();
+    ctx.stroke();
+    
+    ctx.restore();
   }
 
   private drawHeadingValue(ctx: CanvasRenderingContext2D): void {
@@ -156,7 +188,14 @@ export class Compass {
       type: 'Compass',
       heading: this.heading,
       headingNormalized: Math.round(this.heading),
-      radius: this.radius
+      radius: this.radius,
+      hasTarget: !!this.targetInfo,
+      targetInfo: this.targetInfo ? {
+        targetId: this.targetInfo.target.id,
+        distance: Math.round(this.targetInfo.distance * 100) / 100,
+        bearing: Math.round(this.targetInfo.bearing),
+        elevation: Math.round(this.targetInfo.elevation)
+      } : null
     };
   }
 }
