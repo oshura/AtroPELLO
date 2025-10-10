@@ -237,11 +237,17 @@ export class GameEngine {
    * Inicia el bucle principal del juego
    */
   public start(): void {
+    console.log('🚀 GameEngine.start() LLAMADO:', {
+      wasRunning: this.isRunning
+    });
+    
     if (!this.isRunning) {
       this.isRunning = true;
       this.lastFrameTime = performance.now();
       this.gameLoop();
-      console.log('GameEngine iniciado');
+      console.log('✅ GameEngine iniciado - isRunning:', this.isRunning);
+    } else {
+      console.log('⚠️ GameEngine ya estaba corriendo');
     }
   }
 
@@ -257,11 +263,24 @@ export class GameEngine {
    * Bucle principal del juego
    */
   private gameLoop = (): void => {
-    if (!this.isRunning) return;
+    // DEBUG CRÍTICO - Verificar isRunning
+    if (!this.isRunning) {
+      console.log('⚠️ GameLoop BLOQUEADO - isRunning:', this.isRunning);
+      return;
+    }
 
     const currentTime = performance.now();
     const deltaTime = (currentTime - this.lastFrameTime) / 1000; // Convertir a segundos
     this.lastFrameTime = currentTime;
+
+    // DEBUG CRÍTICO - Verificar gameLoop
+    if (performance.now() % 2000 < 50) { // Cada 2 segundos
+      console.log('🔄 GameEngine.gameLoop() EJECUTADO:', {
+        deltaTime: Math.round(deltaTime * 1000) + 'ms',
+        isRunning: this.isRunning,
+        currentTime: Math.round(currentTime)
+      });
+    }
 
     // Actualizar lógica del juego
     this.update(deltaTime);
@@ -277,6 +296,15 @@ export class GameEngine {
    * Actualiza la lógica del juego
    */
   private update(deltaTime: number): void {
+    // DEBUG CRÍTICO - Verificar que update se ejecuta
+    if (performance.now() % 1500 < 50) { // Cada 1.5 segundos
+      console.log('🎮 GameEngine.update() EJECUTADO:', {
+        deltaTime: Math.round(deltaTime * 1000) + 'ms',
+        spaceship: !!this.spaceship,
+        asteroids: this.asteroids.length
+      });
+    }
+    
     // Actualizar nave si existe
     if (!this.spaceship) {
       console.error('❌ Spaceship is undefined in update method');
@@ -301,9 +329,30 @@ export class GameEngine {
 
     // Actualizar sistema de targeting con objetos disponibles
     const availableTargets = [
-      ...this.asteroids.map(a => a as any), // Cast temporal para ITargetable
+      ...this.asteroids, // Asteroids ya implementan ITargetable
       // TODO: Agregar otros objetos targetables (naves enemigas, planetas, etc.)
     ];
+    
+    // Debug ocasional para verificar targets
+    if (Math.random() < 0.001) { // 0.1% chance
+      console.log('🎯 GameEngine targets update:', {
+        asteroidCount: this.asteroids.length,
+        targetCount: availableTargets.length,
+        firstTarget: availableTargets[0]?.getDisplayName() || 'none'
+      });
+    }
+    
+    // DEBUG CRÍTICO - Verificar llamada
+    if (performance.now() % 2000 < 50) { // Cada 2 segundos aprox
+      console.log('🚀 GameEngine→ReticleManager.update():', {
+        deltaTime: Math.round(deltaTime * 1000) + 'ms',
+        asteroids: this.asteroids.length,
+        targets: availableTargets.length,
+        firstTarget: availableTargets[0]?.getDisplayName() || 'none',
+        reticleManager: !!this.reticleManager
+      });
+    }
+    
     this.reticleManager.update(deltaTime, availableTargets);
 
     // Detectar colisiones
@@ -356,6 +405,14 @@ export class GameEngine {
 
     // Usar programa con iluminación
     this.shaderManager.useLitProgram();
+    
+    // BYPASS TEMPORAL - Forzar update desde render
+    const currentTime = performance.now();
+    const deltaTime = (currentTime - this.lastFrameTime) / 1000;
+    if (deltaTime > 0) {
+      this.update(deltaTime);
+      this.lastFrameTime = currentTime;
+    }
     
     // Log detallado cada 60 frames para evitar spam
     if (Math.floor(performance.now() / 1000) % 3 === 0) {

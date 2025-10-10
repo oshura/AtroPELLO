@@ -14,5 +14,5 @@ export * from './core/InputHandler';
 // FASE 2 - Rendering components
 export * from './rendering/ReticleRenderer';
 
-// TODO: FASE 3 - Target highlighting
-// export * from './rendering/TargetHighlighter';
+// FASE 3 - Target highlighting
+export * from './rendering/TargetHighlighter';

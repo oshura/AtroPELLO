@@ -11,12 +11,14 @@ import {
   TargetingEvents,
   TargetingSystemConfig,
   DEFAULT_TARGETING_CONFIG,
-  RaycastHit
+  RaycastHit,
+  HighlightType
 } from '../types/reticle.types';
 import { ITargetable } from '../../types/targeting.types';
 import { TargetDetector } from './TargetDetector';
 import { InputHandler } from './InputHandler';
 import { ReticleRenderer } from '../rendering/ReticleRenderer';
+import { TargetHighlighter } from '../rendering/TargetHighlighter';
 import { Camera } from '../../Camera';
 import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
@@ -32,20 +34,33 @@ export class ReticleManager {
   private targetDetector: TargetDetector;
   private inputHandler: InputHandler;
   private reticleRenderer: ReticleRenderer;
+  private targetHighlighter: TargetHighlighter;
   
   private isInitialized: boolean = false;
   private lastUpdateTime: number = 0;
+  
+  // Tracking de velocidad del mouse para retícula dinámica
+  private lastMousePosition: ScreenPosition = { x: 0, y: 0 };
+  private mouseVelocity: number = 0;
+  private reticleOpenness: number = 0.5; // 0=cerrado, 1=abierto
+  private velocitySmoothing: number = 0.9; // Suavizado de velocidad
 
   constructor(
     targetDetector: TargetDetector,
     inputHandler: InputHandler,
     reticleRenderer: ReticleRenderer,
+    targetHighlighter: TargetHighlighter,
     private webglService: WebGLService
   ) {
     this.targetDetector = targetDetector;
     this.inputHandler = inputHandler;
     this.reticleRenderer = reticleRenderer;
+    this.targetHighlighter = targetHighlighter;
     this.config = { ...DEFAULT_TARGETING_CONFIG };
+    
+    // Deshabilitar animación de pulso (solo velocidad del mouse)
+    this.config.reticle.animated = false;
+    this.config.reticle.animationSpeed = 0;
     
     // Estado inicial del sistema (retícula centrada por defecto)
     this.state = {
@@ -84,6 +99,7 @@ export class ReticleManager {
         // Inicializar componentes
         this.targetDetector.initialize(camera);
         this.inputHandler.initialize(canvas, this.events);
+        this.targetHighlighter.initialize(shaderManager);
         
         // Inicializar renderizador de retícula
         const rendererInit = this.reticleRenderer.initialize(shaderManager);
@@ -110,7 +126,28 @@ export class ReticleManager {
    * Actualiza el sistema de retícula cada frame
    */
   public update(deltaTime: number, availableTargets: ITargetable[]): void {
-    if (!this.isInitialized) return;
+    if (!this.isInitialized) {
+      console.log('⚠️ ReticleManager.update() - NO inicializado', {
+        isInitialized: this.isInitialized,
+        deltaTime,
+        targetsReceived: availableTargets.length
+      });
+      return;
+    }
+    
+    // Debug crítico para verificar que update se ejecuta
+    if (performance.now() % 2000 < 50) { // Cada 2 segundos aprox
+      console.log('🔄 ReticleManager.update() EJECUTADO:', {
+        deltaTime: Math.round(deltaTime * 1000) + 'ms',
+        targetsReceived: availableTargets.length,
+        mousePos: this.state.mousePosition,
+        initialized: this.isInitialized,
+        currentState: this.state.currentState
+      });
+      
+      // DEBUG FORZADO - Verificar que se llama a updateTargetDetection
+      console.log('🔍 ABOUT TO CALL updateTargetDetection...');
+    }
 
     const currentTime = performance.now();
     
@@ -127,14 +164,21 @@ export class ReticleManager {
     // Actualizar posición del mouse
     this.state.mousePosition = this.inputHandler.getMousePosition();
     
+    // Calcular velocidad del mouse para retícula dinámica
+    this.updateMouseVelocity(deltaTime);
+    
     // Actualizar posición de la retícula (sigue al mouse por defecto)
     this.updateReticlePosition();
 
     // Detectar target bajo el cursor
+    console.log('🔍 CALLING updateTargetDetection...');
     this.updateTargetDetection();
 
     // Actualizar máquina de estados
     this.updateStateMachine();
+
+    // Actualizar sistema de highlighting
+    this.targetHighlighter.update(deltaTime);
   }
 
   /**
@@ -157,6 +201,9 @@ export class ReticleManager {
       this.state.config,
       deltaTime
     );
+
+    // Renderizar highlights de targets
+    this.targetHighlighter.render();
   }
 
   /**
@@ -179,14 +226,73 @@ export class ReticleManager {
    * Detecta targets bajo la posición actual
    */
   private updateTargetDetection(): void {
+    console.log('🔍 updateTargetDetection() EJECUTADO - mousePos:', this.state.mousePosition);
     const hit = this.targetDetector.detectTargetAt(this.state.mousePosition);
+    console.log('🔍 detectTargetAt result:', hit ? `HIT: ${hit.target.getDisplayName()}` : 'NO HIT');
     
     const newHoveredTarget = hit?.target || null;
+    
+    // Debug FORZADO para verificar detección
+    if (Math.random() < 0.01) { // 1% chance - más frecuente
+      console.log('🔍 Target detection DEBUG:', {
+        mousePos: this.state.mousePosition,
+        hit: hit ? `${hit.target.getDisplayName()} at ${Math.round(hit.distance)}` : 'none',
+        availableTargets: this.targetDetector.getVisibleTargets().length,
+        detectorInitialized: !!this.targetDetector
+      });
+    }
     
     // Verificar cambio en hover
     if (newHoveredTarget !== this.state.hoveredTarget) {
       this.state.hoveredTarget = newHoveredTarget;
+      console.log('🎯 Target hover changed:', 
+        this.state.hoveredTarget?.getDisplayName() || 'none');
       this.events.onTargetHovered(newHoveredTarget);
+    }
+  }
+
+  /**
+   * Calcula la velocidad del mouse para retícula dinámica
+   */
+  private updateMouseVelocity(deltaTime: number): void {
+    const currentPos = this.state.mousePosition;
+    const lastPos = this.lastMousePosition;
+    
+    // Calcular distancia euclidiana
+    const dx = currentPos.x - lastPos.x;
+    const dy = currentPos.y - lastPos.y;
+    const distance = Math.sqrt(dx * dx + dy * dy);
+    
+    // Calcular velocidad instantánea (píxeles por segundo)
+    const instantVelocity = deltaTime > 0 ? distance / deltaTime : 0;
+    
+    // Aplicar suavizado exponencial para evitar saltos bruscos
+    this.mouseVelocity = this.mouseVelocity * this.velocitySmoothing + 
+                        instantVelocity * (1 - this.velocitySmoothing);
+    
+    // Actualizar openness con curva logarítmica/exponencial
+    // Velocidades bajas: poco cambio. Velocidades altas: crecimiento rápido
+    const velocityNormalized = Math.min(this.mouseVelocity / 600, 2.0); // Normalizar hasta 600px/s
+    
+    // Curva exponencial: f(x) = x^2.5 para crecimiento rápido en extremos
+    const exponentialCurve = Math.pow(velocityNormalized, 2.5);
+    const targetOpenness = Math.min(exponentialCurve, 1.0);
+    
+    // Suavizar transición de openness
+    this.reticleOpenness += (targetOpenness - this.reticleOpenness) * deltaTime * 5.0;
+    
+    // Configuración con mayor rango dinámico
+    this.state.config.size = 25 + (this.reticleOpenness * 45); // 25-70px
+    this.state.config.thickness = 1.5 + (this.reticleOpenness * 2.5); // 1.5-4px  
+    this.state.config.opacity = 0.5 + (this.reticleOpenness * 0.5); // 0.5-1.0
+    
+    // Guardar posición para próximo frame
+    this.lastMousePosition = { ...currentPos };
+    
+    // Debug ocasional
+    if (Math.random() < 0.01) { // 1% de chance por frame
+      console.log('🏃 Mouse velocity:', Math.round(this.mouseVelocity), 
+                  'Openness:', Math.round(this.reticleOpenness * 100) + '%');
     }
   }
 
@@ -259,17 +365,53 @@ export class ReticleManager {
   // ===============================
 
   private handleTargetHovered(target: ITargetable | null): void {
-    console.log('🎯 Target hovered:', target?.getDisplayName() || 'none');
+    const previousTarget = this.state.hoveredTarget;
+    this.state.hoveredTarget = target;
+
+    if (target && target !== previousTarget) {
+      console.log('👁️ Target hovered:', target.getDisplayName());
+      
+      // Aplicar highlighting al target hovered
+      this.targetHighlighter.highlightTarget(target);
+      
+      // Remover highlighting del target anterior si existe
+      if (previousTarget && previousTarget !== this.state.currentTarget) {
+        this.targetHighlighter.removeHighlight(previousTarget);
+      }
+    } else if (!target && previousTarget) {
+      console.log('👁️ Target unhovered:', previousTarget.getDisplayName());
+      
+      // Remover highlighting solo si no está seleccionado
+      if (previousTarget !== this.state.currentTarget) {
+        this.targetHighlighter.removeHighlight(previousTarget);
+      }
+    }
   }
 
   private handleTargetSelected(target: ITargetable | null): void {
+    const previousTarget = this.state.currentTarget;
     this.state.currentTarget = target;
     
     if (target) {
       console.log('✅ Target selected:', target.getDisplayName());
+      
+      // Aplicar highlighting especial al target seleccionado
+      this.targetHighlighter.highlightTarget(target, {
+        type: HighlightType.PULSING,
+        color: [1.0, 1.0, 0.0, 0.9], // Amarillo brillante
+        intensity: 1.5,
+        pulseSpeed: 4.0
+      });
+      
       this.events.onTargetLocked(target);
     } else {
       console.log('❌ Target deselected');
+      
+      // Remover highlighting del target anterior
+      if (previousTarget) {
+        this.targetHighlighter.removeHighlight(previousTarget);
+      }
+      
       this.events.onTargetLost();
     }
   }

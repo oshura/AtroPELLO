@@ -85,8 +85,8 @@ export class ReticleRenderer implements IReticleRenderer {
 
     console.log('🎨 ReticleRenderer.render() ejecutando en posición:', position);
 
-    // Actualizar animaciones
-    this.update(deltaTime);
+    // Actualizar animaciones - DESHABILITADO para solo usar velocidad mouse
+    // this.update(deltaTime);
 
     // Usar programa retícula dedicado
     this.gl.useProgram(this.shaderManager.reticleProgram);

@@ -184,6 +184,14 @@ export class InputHandler {
    * Obtiene la posición actual del mouse
    */
   public getMousePosition(): ScreenPosition {
+    // Debug ocasional para verificar captura de mouse
+    if (performance.now() % 3000 < 50) { // Cada 3 segundos
+      console.log('🖱️ InputHandler.getMousePosition():', {
+        position: this.mousePosition,
+        canvas: !!this.canvas,
+        events: !!this.events
+      });
+    }
     return { ...this.mousePosition };
   }
 

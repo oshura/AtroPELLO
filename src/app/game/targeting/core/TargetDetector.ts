@@ -48,9 +48,21 @@ export class TargetDetector implements ITargetDetector {
    * Actualiza la lista de targets disponibles
    */
   public updateAvailableTargets(targets: ITargetable[]): void {
-    this.availableTargets = targets.filter(target => 
+    const filteredTargets = targets.filter(target => 
       this.config.targetTypes.includes(target.getTargetType())
     );
+    
+    // Debug ocasional para verificar que llegan targets
+    if (Math.random() < 0.001 || filteredTargets.length !== this.availableTargets.length) {
+      console.log('🎯 TargetDetector.updateAvailableTargets():', {
+        received: targets.length,
+        filtered: filteredTargets.length,
+        types: targets.map(t => t.getTargetType()),
+        acceptedTypes: this.config.targetTypes
+      });
+    }
+    
+    this.availableTargets = filteredTargets;
   }
 
   /**
@@ -62,21 +74,65 @@ export class TargetDetector implements ITargetDetector {
       return null;
     }
 
+    // Debug FORZADO para verificar funcionamiento
+    const shouldDebug = performance.now() % 1000 < 50; // Cada segundo
+    
+    if (shouldDebug) {
+      console.log('🔍 TargetDetector debug:', {
+        screenPos,
+        availableTargets: this.availableTargets.length,
+        camera: !!this.camera,
+        canvas: !!this.canvas
+      });
+    }
+
     // Convertir coordenadas de pantalla a mundo
     const worldRay = this.screenToWorldRay(screenPos);
-    if (!worldRay) return null;
+    if (!worldRay) {
+      if (shouldDebug) console.log('❌ No world ray generated');
+      return null;
+    }
 
     let closestHit: RaycastHit | null = null;
     let minDistance = Infinity;
 
-    // Probar intersección con cada target visible
+    // RAYCAST SIMPLIFICADO - Proyección 3D→2D directa
     for (const target of this.availableTargets) {
-      if (!this.isInViewFrustum(target)) continue;
-
-      const hit = this.raycastToTarget(worldRay, target);
-      if (hit && hit.distance < minDistance && hit.distance <= this.config.maxDistance) {
-        minDistance = hit.distance;
-        closestHit = hit;
+      // Convertir posición 3D del target a coordenadas de pantalla
+      const targetScreenPos = this.worldToScreen(target.position);
+      
+      if (targetScreenPos) {
+        // Calcular distancia en píxeles entre mouse y target proyectado
+        const dx = screenPos.x - targetScreenPos.x;
+        const dy = screenPos.y - targetScreenPos.y;
+        const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+        
+        // Si está cerca del mouse (radio de 50px), considerar hit
+        if (pixelDistance < 50) {
+          const worldDistance = this.getWorldDistance(target.position);
+          
+          if (worldDistance < minDistance && worldDistance <= this.config.maxDistance) {
+            minDistance = worldDistance;
+            closestHit = {
+              target,
+              distance: worldDistance,
+              screenPosition: targetScreenPos,
+              worldPosition: target.position,
+              normal: { x: 0, y: 0, z: 1 }
+            };
+            
+            if (shouldDebug) {
+              console.log('🎯 TARGET HIT FOUND:', target.getDisplayName(), 
+                         'pixelDist:', Math.round(pixelDistance), 'worldDist:', Math.round(worldDistance));
+            }
+          }
+        }
+      }
+      
+      // Debug ocasional para ver proyección
+      if (shouldDebug && this.availableTargets.indexOf(target) === 0) {
+        console.log('🔍 Target projection:', target.getDisplayName(), 
+                   '3D:', target.position, '2D:', targetScreenPos);
       }
     }
 
@@ -300,5 +356,19 @@ export class TargetDetector implements ITargetDetector {
    */
   public updateConfig(newConfig: Partial<TargetingSystemConfig['detection']>): void {
     this.config = { ...this.config, ...newConfig };
+  }
+
+  /**
+   * Calcula distancia euclidiana desde la cámara al target
+   */
+  private getWorldDistance(worldPos: { x: number; y: number; z: number }): number {
+    if (!this.camera) return Infinity;
+    
+    const camPos = this.camera.position;
+    const dx = worldPos.x - camPos.x;
+    const dy = worldPos.y - camPos.y; 
+    const dz = worldPos.z - camPos.z;
+    
+    return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 }
