@@ -6,7 +6,7 @@
 export class VelocityBar {
   private side: 'left' | 'right';
   private velocity: number = 0;
-  private maxVelocity: number = 100;
+  private maxVelocity: number = 5; // Velocidad 5 = barra llena
   
   constructor(side: 'left' | 'right') {
     this.side = side;

@@ -5,7 +5,7 @@
  */
 export class Compass {
   private heading: number = 0;
-  private radius: number = 40;
+  private radius: number = 80; // Triplicado de tamaño
   
   constructor() {}
 
@@ -26,17 +26,34 @@ export class Compass {
   }
 
   private drawCompassRing(ctx: CanvasRenderingContext2D): void {
-    ctx.strokeStyle = '#00FFFF';
-    ctx.fillStyle = '#00FFFF20';
-    ctx.lineWidth = 2;
+    // Efecto esférico 3D con gradientes radiales
+    const gradient = ctx.createRadialGradient(0, 0, 0, 0, 0, this.radius);
+    gradient.addColorStop(0, '#00FFFF40');
+    gradient.addColorStop(0.7, '#00FFFF20');
+    gradient.addColorStop(1, '#00FFFF60');
     
+    ctx.fillStyle = gradient;
     ctx.beginPath();
     ctx.arc(0, 0, this.radius, 0, 2 * Math.PI);
     ctx.fill();
+    
+    // Borde exterior con sombra
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 8;
+    ctx.stroke();
+    ctx.shadowBlur = 0; // Reset shadow
+    
+    // Anillos internos para efecto esférico
+    ctx.strokeStyle = '#00FFFF80';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius - 10, 0, 2 * Math.PI);
     ctx.stroke();
     
     ctx.beginPath();
-    ctx.arc(0, 0, this.radius - 5, 0, 2 * Math.PI);
+    ctx.arc(0, 0, this.radius - 20, 0, 2 * Math.PI);
     ctx.stroke();
   }
 
@@ -85,26 +102,41 @@ export class Compass {
     ctx.save();
     ctx.rotate((this.heading * Math.PI) / 180);
     
+    // Aguja Norte (amarilla) más grande y con brillo
     ctx.strokeStyle = '#FFFF00';
     ctx.fillStyle = '#FFFF00';
-    ctx.lineWidth = 3;
+    ctx.lineWidth = 4;
+    ctx.shadowColor = '#FFFF00';
+    ctx.shadowBlur = 6;
     
     ctx.beginPath();
-    ctx.moveTo(0, -this.radius + 8);
-    ctx.lineTo(-3, -this.radius + 18);
-    ctx.lineTo(3, -this.radius + 18);
+    ctx.moveTo(0, -this.radius + 15);
+    ctx.lineTo(-6, -this.radius + 35);
+    ctx.lineTo(6, -this.radius + 35);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
     
+    // Aguja Sur (roja) más grande
     ctx.strokeStyle = '#FF0000';
+    ctx.fillStyle = '#FF0000';
+    ctx.shadowColor = '#FF0000';
+    ctx.shadowBlur = 4;
+    
     ctx.beginPath();
-    ctx.moveTo(0, this.radius - 8);
-    ctx.lineTo(-2, this.radius - 15);
-    ctx.lineTo(2, this.radius - 15);
+    ctx.moveTo(0, this.radius - 15);
+    ctx.lineTo(-4, this.radius - 30);
+    ctx.lineTo(4, this.radius - 30);
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+    
+    // Centro de la aguja
+    ctx.fillStyle = '#FFFFFF';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(0, 0, 6, 0, 2 * Math.PI);
+    ctx.fill();
     
     ctx.restore();
   }

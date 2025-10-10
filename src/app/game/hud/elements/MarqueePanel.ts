@@ -7,11 +7,10 @@ export class MarqueePanel {
   private messages: string[] = [];
   private currentMessageIndex: number = 0;
   private scrollPosition: number = 0;
-  private scrollSpeed: number = 1; // pixels por frame
-  private messageChangeInterval: number = 3000; // ms
-  private lastMessageChange: number = 0;
-  private panelWidth: number = 300;
-  private panelHeight: number = 40;
+  private scrollSpeed: number = 1.5; // pixels por frame (un poco más rápido)
+  private panelWidth: number = 450; // 1.5x anchura (300 * 1.5)
+  private panelHeight: number = 80;  // 2x altura (40 * 2)
+  private messageSpacing: number = 100; // Espacio entre mensajes
   
   // Colores del panel
   private readonly backgroundColor = '#0a3d0a'; // Verde oscuro
@@ -28,31 +27,28 @@ export class MarqueePanel {
       'RUMBO ESTABLECIDO - MANTENER CURSO',
       'ENERGÍA AL 100% - SISTEMAS OK'
     ];
-    
-    this.lastMessageChange = Date.now();
   }
 
   public update(): void {
-    const currentTime = Date.now();
+    if (this.messages.length === 0) return;
     
-    // Actualizar scroll horizontal
+    // Scroll continuo sin pausas
     this.scrollPosition += this.scrollSpeed;
     
-    // Cambiar mensaje cada cierto tiempo
-    if (currentTime - this.lastMessageChange > this.messageChangeInterval) {
-      this.currentMessageIndex = (this.currentMessageIndex + 1) % this.messages.length;
-      this.scrollPosition = 0; // Reiniciar scroll
-      this.lastMessageChange = currentTime;
-    }
-    
-    // Reiniciar scroll si se sale del panel
+    // Calcular cuando pasar al siguiente mensaje
     const currentMessage = this.messages[this.currentMessageIndex] || '';
-    if (this.scrollPosition > currentMessage.length * 12 + this.panelWidth) {
-      this.scrollPosition = -this.panelWidth;
+    const messageWidth = currentMessage.length * 16; // Estimado de ancho del texto
+    
+    // Si el mensaje actual salió completamente, pasar al siguiente
+    if (this.scrollPosition > messageWidth + this.messageSpacing) {
+      this.currentMessageIndex = (this.currentMessageIndex + 1) % this.messages.length;
+      this.scrollPosition = 0;
     }
   }
 
   public render(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+    if (this.messages.length === 0) return;
+    
     // Configurar contexto
     ctx.save();
     
@@ -62,36 +58,45 @@ export class MarqueePanel {
     
     // Dibujar borde
     ctx.strokeStyle = this.borderColor;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 3; // Borde más grueso para panel más grande
     ctx.strokeRect(x, y, this.panelWidth, this.panelHeight);
     
     // Crear área de clipping para el texto
     ctx.beginPath();
-    ctx.rect(x + 4, y + 4, this.panelWidth - 8, this.panelHeight - 8);
+    ctx.rect(x + 6, y + 6, this.panelWidth - 12, this.panelHeight - 12);
     ctx.clip();
     
-    // Configurar texto
+    // Configurar texto más grande
     ctx.fillStyle = this.textColor;
-    ctx.font = 'bold 16px "Courier New", monospace';
+    ctx.font = 'bold 24px "Courier New", monospace'; // Texto más grande para panel más grande
     ctx.textAlign = 'left';
     ctx.textBaseline = 'middle';
     
     // Efecto de brillo (sombra verde)
     ctx.shadowColor = this.textColor;
-    ctx.shadowBlur = 4;
+    ctx.shadowBlur = 6;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
     
-    // Dibujar texto con scroll
+    // Dibujar mensaje actual
     const currentMessage = this.messages[this.currentMessageIndex] || '';
     const textY = y + this.panelHeight / 2;
-    const textX = x + 10 - this.scrollPosition;
+    const currentTextX = x + 15 - this.scrollPosition;
     
-    ctx.fillText(currentMessage, textX, textY);
+    ctx.fillText(currentMessage, currentTextX, textY);
     
-    // Si el texto está saliendo por la izquierda, dibujarlo también por la derecha
-    if (this.scrollPosition > 50) {
-      ctx.fillText(currentMessage, textX + currentMessage.length * 12 + 50, textY);
+    // Dibujar próximo mensaje si es necesario (flujo continuo)
+    const messageWidth = currentMessage.length * 16;
+    if (this.scrollPosition > 50) { // Empezar a mostrar el siguiente temprano
+      const nextIndex = (this.currentMessageIndex + 1) % this.messages.length;
+      const nextMessage = this.messages[nextIndex] || '';
+      
+      // CORREGIDO: El siguiente mensaje entra desde la derecha
+      // Calculamos donde debe estar basado en la posición actual del mensaje anterior
+      const nextStartPosition = messageWidth + this.messageSpacing;
+      const nextTextX = x + 15 + (nextStartPosition - this.scrollPosition);
+      
+      ctx.fillText(nextMessage, nextTextX, textY);
     }
     
     ctx.restore();
@@ -127,7 +132,4 @@ export class MarqueePanel {
     this.scrollSpeed = Math.max(0.1, Math.min(5, speed));
   }
 
-  public setMessageInterval(intervalMs: number): void {
-    this.messageChangeInterval = Math.max(1000, intervalMs);
-  }
 }

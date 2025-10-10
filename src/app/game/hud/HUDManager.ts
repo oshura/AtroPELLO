@@ -312,9 +312,9 @@ export class HUDManager {
     const centerY = canvas.height / 2;
     
     // === MARQUEE PANEL === (reemplaza "SPEEDOMETER TEST")
-    // Posición: parte superior central
-    const marqueeX = centerX - 150; // Centrar panel de 300px
-    const marqueeY = 30;
+    // Posición: parte superior central (ahora más grande: 450x80)
+    const marqueeX = centerX - 225; // Centrar panel de 450px
+    const marqueeY = 20;
     this.marqueePanel.render(ctx, marqueeX, marqueeY);
     
     // === SPEEDOMETER DIGITAL === (recolocado)
@@ -341,10 +341,10 @@ export class HUDManager {
     this.velocityBarRight.render(ctx, rightBarPos);
     
     // === COMPASS === 
-    // Posición: parte superior central (debajo de marquee)
+    // Posición: parte superior central (debajo de marquee más grande)
     const compassPos = {
       x: centerX,
-      y: 120
+      y: 180  // Más abajo para no chocar con marquee de 80px altura
     };
     this.compass.render(ctx, compassPos);
     
