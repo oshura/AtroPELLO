@@ -4,6 +4,7 @@ import { VelocityBar } from './elements/VelocityBar';
 import { Compass } from './elements/Compass';
 import { NavigationSphere } from './elements/NavigationSphere';
 import { SpeedometerDigital } from './elements/SpeedometerDigital';
+import { MarqueePanel } from './elements/MarqueePanel';
 
 /**
  * Administrador principal del sistema HUD
@@ -20,6 +21,7 @@ export class HUDManager {
   private compass: Compass;
   private navigationSphere: NavigationSphere;
   private speedometer: SpeedometerDigital;
+  private marqueePanel: MarqueePanel;
   
   // Geometría del plano HUD
   private hudGeometry: { vertices: Float32Array; indices: Uint16Array } | null = null;
@@ -38,6 +40,7 @@ export class HUDManager {
     this.compass = new Compass();
     this.navigationSphere = new NavigationSphere();
     this.speedometer = new SpeedometerDigital();
+    this.marqueePanel = new MarqueePanel();
     
     // Crear geometría del plano
     this.createHUDPlaneGeometry();
@@ -48,7 +51,11 @@ export class HUDManager {
     // KEYBOARD LISTENERS: F1 y F2 para debug
     this.setupKeyboardListeners();
     
-    console.log('🎯 HUDManager inicializado con texturas dinámicas');
+    console.log('🎯 HUDManager inicializado con FASE 4 completa:');
+    console.log('   📺 MarqueePanel - Mensajes rotativos');
+    console.log('   📊 VelocityBars - Barras laterales');
+    console.log('   🧭 Compass - Brújula central');  
+    console.log('   🏃 SpeedometerDigital - Recolocado');
     console.log('🔧 DEBUG: Usa toggleHUDShader() en la consola para alternar shaders');
     console.log('⌨️  O usa las teclas: F1 (shaders) / F2 (canvas debug)');
   }
@@ -74,6 +81,7 @@ export class HUDManager {
     this.compass.update(gameData.heading);
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
     this.speedometer.update(gameData.speed);
+    this.marqueePanel.update(); // Sin parámetros, usa su lógica interna
     
     // Renderizar todos los elementos en la textura
     this.renderToTexture();
@@ -133,6 +141,36 @@ export class HUDManager {
     console.log('⌨️  Controles debug configurados:');
     console.log('   🔄 F1: Alternar shader (HUD ↔ Fallback)');
     console.log('   🎨 F2: Alternar canvas debug');
+  }
+
+  // === MÉTODOS PÚBLICOS PARA MARQUEE PANEL ===
+  
+  /**
+   * Establecer mensajes del panel de marquesina
+   */
+  public setMarqueeMessages(messages: string[]): void {
+    this.marqueePanel.setMessages(messages);
+  }
+
+  /**
+   * Agregar un mensaje al panel de marquesina
+   */
+  public addMarqueeMessage(message: string): void {
+    this.marqueePanel.addMessage(message);
+  }
+
+  /**
+   * Limpiar mensajes del panel de marquesina
+   */
+  public clearMarqueeMessages(): void {
+    this.marqueePanel.clearMessages();
+  }
+
+  /**
+   * Obtener el mensaje actual del panel
+   */
+  public getCurrentMarqueeMessage(): string {
+    return this.marqueePanel.getCurrentMessage();
   }
 
   /**
@@ -266,42 +304,81 @@ export class HUDManager {
     const canvas = this.hudTexture.getCanvas();
     const ctx = canvas.getContext('2d')!;
     
-    // Limpiar canvas con fondo semi-transparente para debug
+    // Limpiar canvas con fondo transparente
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     
-    // Fondo de debug para ver que el canvas funciona
-    ctx.fillStyle = 'rgba(0, 100, 200, 0.3)';
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // SOLO SpeedometerDigital como pediste
+    // Definir layout del HUD (1024x768)
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
     
-    // Renderizar solo el velocímetro digital en el centro
-    this.speedometer.render(ctx, { x: centerX, y: centerY });
+    // === MARQUEE PANEL === (reemplaza "SPEEDOMETER TEST")
+    // Posición: parte superior central
+    const marqueeX = centerX - 150; // Centrar panel de 300px
+    const marqueeY = 30;
+    this.marqueePanel.render(ctx, marqueeX, marqueeY);
     
-    // Texto de prueba GRANDE Y VISIBLE para verificar que la textura funciona
-    ctx.fillStyle = 'rgba(255, 255, 0, 1.0)';
-    ctx.font = 'bold 48px Arial';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    ctx.fillText('SPEEDOMETER TEST', centerX, 50);
+    // === SPEEDOMETER DIGITAL === (recolocado)
+    // Posición: parte inferior derecha
+    const speedometerPos = {
+      x: canvas.width - 180,  // Esquina inferior derecha
+      y: canvas.height - 120
+    };
+    this.speedometer.render(ctx, speedometerPos);
     
-    // Dibujar marco visible para debug
-    ctx.strokeStyle = 'rgba(0, 255, 0, 1.0)';
-    ctx.lineWidth = 4;
-    ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+    // === VELOCITY BARS ===
+    // Barra izquierda
+    const leftBarPos = {
+      x: 50,
+      y: centerY - 100  // Centrada verticalmente
+    };
+    this.velocityBarLeft.render(ctx, leftBarPos);
+    
+    // Barra derecha  
+    const rightBarPos = {
+      x: canvas.width - 70,
+      y: centerY - 100  // Centrada verticalmente
+    };
+    this.velocityBarRight.render(ctx, rightBarPos);
+    
+    // === COMPASS === 
+    // Posición: parte superior central (debajo de marquee)
+    const compassPos = {
+      x: centerX,
+      y: 120
+    };
+    this.compass.render(ctx, compassPos);
+    
+    // Marco de debug opcional (solo si debug canvas está activo)
+    if (this.showDebugCanvas) {
+      ctx.strokeStyle = 'rgba(0, 255, 0, 0.3)';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(5, 5, canvas.width - 10, canvas.height - 10);
+      
+      // Grid de referencia para debug
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 100) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 100) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+    }
     
     console.log('🎨 Canvas 2D renderizado con debug visual');
     
-    // Forzar que el canvas se complete antes de actualizar textura
-    // ctx.flush() no existe en Canvas 2D, pero usamos getImageData para forzar el flush
-    ctx.getImageData(0, 0, 1, 1); // Fuerza flush del contexto
+    // Forzar flush del contexto Canvas 2D
+    ctx.getImageData(0, 0, 1, 1);
     
     // Actualizar textura WebGL
     this.hudTexture.updateTexture();
     
-    // Verificar que la textura se actualizó
     console.log('📸 Textura WebGL actualizada desde Canvas 2D');
   }
 
