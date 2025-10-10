@@ -12,6 +12,7 @@ export class ShaderManager {
   public texturedProgram: WebGLProgram | null = null;
   public hudProgram: WebGLProgram | null = null;
   public reticleProgram: WebGLProgram | null = null;
+  public outlineProgram: WebGLProgram | null = null;
   
   // Ubicaciones de uniformes para el programa básico
   public basicUniforms: { [key: string]: WebGLUniformLocation | null } = {};
@@ -28,12 +29,16 @@ export class ShaderManager {
   // Ubicaciones de uniformes para el programa retícula
   public reticleUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   
+  // Ubicaciones de uniformes para el programa outline
+  public outlineUniforms: { [key: string]: WebGLUniformLocation | null } = {};
+  
   // Ubicaciones de atributos
   public basicAttributes: { [key: string]: number } = {};
   public litAttributes: { [key: string]: number } = {};
   public texturedAttributes: { [key: string]: number } = {};
   public hudAttributes: { [key: string]: number } = {};
   public reticleAttributes: { [key: string]: number } = {};
+  public outlineAttributes: { [key: string]: number } = {};
 
   constructor(private webglService: WebGLService) {
     const context = webglService.getContext();
@@ -79,6 +84,12 @@ export class ShaderManager {
       this.getReticleFragmentShader()
     );
 
+    // Crear programa outline (post-procesamiento)
+    this.outlineProgram = this.createProgram(
+      this.getOutlineVertexShader(),
+      this.getOutlineFragmentShader()
+    );
+
     // Obtener ubicaciones de uniformes y atributos
     if (this.basicProgram) {
       this.getBasicProgramLocations();
@@ -98,6 +109,10 @@ export class ShaderManager {
 
     if (this.reticleProgram) {
       this.getReticleProgramLocations();
+    }
+
+    if (this.outlineProgram) {
+      this.getOutlineProgramLocations();
     }
   }
 
@@ -783,6 +798,107 @@ export class ShaderManager {
     console.log('🎯 Shader Retícula inicializado:', {
       attributes: Object.keys(this.reticleAttributes).length,
       uniforms: Object.keys(this.reticleUniforms).length
+    });
+  }
+
+  /**
+   * Vertex shader para outline post-procesamiento
+   */
+  private getOutlineVertexShader(): string {
+    return `#version 300 es
+      precision highp float;
+      
+      layout(location = 0) in vec2 a_position;
+      layout(location = 1) in vec2 a_uv;
+      
+      out vec2 v_uv;
+      
+      void main() {
+        v_uv = a_uv;
+        gl_Position = vec4(a_position, 0.0, 1.0);
+      }
+    `;
+  }
+
+  /**
+   * Fragment shader para outline post-procesamiento
+   */
+  private getOutlineFragmentShader(): string {
+    return `#version 300 es
+      precision highp float;
+      
+      in vec2 v_uv;
+      out vec4 fragColor;
+      
+      uniform sampler2D u_colorTexture;
+      uniform vec2 u_resolution;
+      uniform float u_time;
+      
+      // Configuración del outline
+      const float OUTLINE_THICKNESS = 2.0;
+      const vec3 OUTLINE_COLOR = vec3(0.0, 1.0, 1.0); // Cyan
+      const float GLOW_INTENSITY = 0.8;
+      
+      void main() {
+        vec2 texelSize = 1.0 / u_resolution;
+        vec4 centerColor = texture(u_colorTexture, v_uv);
+        
+        // Si ya hay color, renderizar normalmente
+        if (centerColor.a > 0.0) {
+          fragColor = centerColor;
+          return;
+        }
+        
+        // Detectar bordes usando kernel de convolucion
+        float outline = 0.0;
+        
+        // Sampling en cruz y diagonal
+        for (float x = -OUTLINE_THICKNESS; x <= OUTLINE_THICKNESS; x++) {
+          for (float y = -OUTLINE_THICKNESS; y <= OUTLINE_THICKNESS; y++) {
+            vec2 offset = vec2(x, y) * texelSize;
+            float sample = texture(u_colorTexture, v_uv + offset).a;
+            
+            // Distancia desde el centro
+            float distance = length(vec2(x, y));
+            if (distance <= OUTLINE_THICKNESS && sample > 0.0) {
+              outline = max(outline, 1.0 - distance / OUTLINE_THICKNESS);
+            }
+          }
+        }
+        
+        if (outline > 0.0) {
+          // Efecto de pulso
+          float pulse = 0.5 + 0.5 * sin(u_time * 4.0);
+          float intensity = GLOW_INTENSITY * outline * pulse;
+          
+          // Color del outline con efecto de glow
+          vec3 glowColor = OUTLINE_COLOR * intensity;
+          fragColor = vec4(glowColor, outline * 0.8);
+        } else {
+          fragColor = vec4(0.0, 0.0, 0.0, 0.0);
+        }
+      }
+    `;
+  }
+
+  /**
+   * Obtener ubicaciones de uniformes y atributos para programa outline
+   */
+  private getOutlineProgramLocations(): void {
+    if (!this.gl || !this.outlineProgram) return;
+
+    // Atributos
+    this.outlineAttributes['position'] = this.gl.getAttribLocation(this.outlineProgram, 'a_position');
+    this.outlineAttributes['uv'] = this.gl.getAttribLocation(this.outlineProgram, 'a_uv');
+
+    // Uniformes
+    this.outlineUniforms['colorTexture'] = this.gl.getUniformLocation(this.outlineProgram, 'u_colorTexture');
+    this.outlineUniforms['resolution'] = this.gl.getUniformLocation(this.outlineProgram, 'u_resolution');
+    this.outlineUniforms['time'] = this.gl.getUniformLocation(this.outlineProgram, 'u_time');
+
+    console.log('🟡 Shader Outline inicializado:', {
+      attributes: Object.keys(this.outlineAttributes).length,
+      uniforms: Object.keys(this.outlineUniforms).length
     });
   }
 }

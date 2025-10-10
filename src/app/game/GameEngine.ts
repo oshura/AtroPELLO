@@ -450,6 +450,9 @@ export class GameEngine {
     this.asteroids.forEach(asteroid => {
       this.renderObject(asteroid);
     });
+
+    // Renderizar outlines avanzados (FASE 4)
+    this.renderOutlineSystem();
   }
 
   /**
@@ -1444,5 +1447,22 @@ export class GameEngine {
 
     const deltaTime = (performance.now() - this.lastFrameTime) / 1000;
     this.reticleManager.render(deltaTime);
+  }
+
+  /**
+   * Renderiza el sistema de outlines avanzados (FASE 4)
+   */
+  private renderOutlineSystem(): void {
+    if (!this.reticleManager || !this.camera) return;
+
+    // Obtener todos los targets disponibles
+    const availableTargets = [...this.asteroids];
+
+    // Renderizar outlines con matrices actuales de la cámara
+    this.reticleManager.renderOutlines(
+      this.camera.viewMatrix,
+      this.camera.projectionMatrix,
+      availableTargets
+    );
   }
 }

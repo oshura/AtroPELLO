@@ -52,15 +52,13 @@ export class TargetDetector implements ITargetDetector {
       this.config.targetTypes.includes(target.getTargetType())
     );
     
-    // Debug ocasional para verificar que llegan targets
-    if (Math.random() < 0.001 || filteredTargets.length !== this.availableTargets.length) {
-      console.log('🎯 TargetDetector.updateAvailableTargets():', {
-        received: targets.length,
-        filtered: filteredTargets.length,
-        types: targets.map(t => t.getTargetType()),
-        acceptedTypes: this.config.targetTypes
-      });
-    }
+    // Debug FORZADO hasta que funcione
+    console.log('🎯 TargetDetector.updateAvailableTargets():', {
+      received: targets.length,
+      filtered: filteredTargets.length,
+      types: targets.map(t => t.getTargetType()),
+      acceptedTypes: this.config.targetTypes
+    });
     
     this.availableTargets = filteredTargets;
   }
@@ -74,8 +72,18 @@ export class TargetDetector implements ITargetDetector {
       return null;
     }
 
-    // Debug FORZADO para verificar funcionamiento
-    const shouldDebug = performance.now() % 1000 < 50; // Cada segundo
+    // Debug FORZADO para verificar funcionamiento  
+    const shouldDebug = true; // SIEMPRE debug hasta que funcione
+    
+    if (shouldDebug) {
+      console.log('🔍 TargetDetector.detectTargetAt() INICIO:', {
+        screenPos,
+        availableTargets: this.availableTargets.length,
+        camera: !!this.camera,
+        canvas: !!this.canvas,
+        canvasSize: { w: this.canvas.width, h: this.canvas.height }
+      });
+    }
     
     if (shouldDebug) {
       console.log('🔍 TargetDetector debug:', {
@@ -97,9 +105,21 @@ export class TargetDetector implements ITargetDetector {
     let minDistance = Infinity;
 
     // RAYCAST SIMPLIFICADO - Proyección 3D→2D directa
+    if (shouldDebug) {
+      console.log(`🔍 Iterando ${this.availableTargets.length} targets disponibles`);
+    }
+    
     for (const target of this.availableTargets) {
       // Convertir posición 3D del target a coordenadas de pantalla
       const targetScreenPos = this.worldToScreen(target.position);
+      
+      if (shouldDebug) {
+        console.log(`🔍 Target ${target.getTargetType()}-${target.id}:`, {
+          position3D: target.position,
+          screenPos2D: targetScreenPos,
+          mousePos: screenPos
+        });
+      }
       
       if (targetScreenPos) {
         // Calcular distancia en píxeles entre mouse y target proyectado
@@ -107,8 +127,17 @@ export class TargetDetector implements ITargetDetector {
         const dy = screenPos.y - targetScreenPos.y;
         const pixelDistance = Math.sqrt(dx * dx + dy * dy);
         
-        // Si está cerca del mouse (radio de 50px), considerar hit
-        if (pixelDistance < 50) {
+        if (shouldDebug) {
+          console.log(`🔍 Target ${target.getTargetType()}-${target.id} DISTANCE:`, {
+            mouse: screenPos,
+            target2D: targetScreenPos,
+            pixelDistance: Math.round(pixelDistance),
+            withinRadius: pixelDistance < 50
+          });
+        }
+        
+        // Si está cerca del mouse (radio de 600px para testing), considerar hit
+        if (pixelDistance < 600) {
           const worldDistance = this.getWorldDistance(target.position);
           
           if (worldDistance < minDistance && worldDistance <= this.config.maxDistance) {

@@ -19,9 +19,11 @@ import { TargetDetector } from './TargetDetector';
 import { InputHandler } from './InputHandler';
 import { ReticleRenderer } from '../rendering/ReticleRenderer';
 import { TargetHighlighter } from '../rendering/TargetHighlighter';
+import { OutlineRenderer, OutlineType } from '../rendering/OutlineRenderer';
 import { Camera } from '../../Camera';
 import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
+import { mat4 } from 'gl-matrix';
 
 @Injectable({
   providedIn: 'root'
@@ -35,6 +37,7 @@ export class ReticleManager {
   private inputHandler: InputHandler;
   private reticleRenderer: ReticleRenderer;
   private targetHighlighter: TargetHighlighter;
+  private outlineRenderer: OutlineRenderer;
   
   private isInitialized: boolean = false;
   private lastUpdateTime: number = 0;
@@ -50,12 +53,14 @@ export class ReticleManager {
     inputHandler: InputHandler,
     reticleRenderer: ReticleRenderer,
     targetHighlighter: TargetHighlighter,
+    outlineRenderer: OutlineRenderer,
     private webglService: WebGLService
   ) {
     this.targetDetector = targetDetector;
     this.inputHandler = inputHandler;
     this.reticleRenderer = reticleRenderer;
     this.targetHighlighter = targetHighlighter;
+    this.outlineRenderer = outlineRenderer;
     this.config = { ...DEFAULT_TARGETING_CONFIG };
     
     // Deshabilitar animación de pulso (solo velocidad del mouse)
@@ -105,6 +110,14 @@ export class ReticleManager {
         const rendererInit = this.reticleRenderer.initialize(shaderManager);
         if (!rendererInit) {
           console.error('❌ ReticleManager: Error inicializando ReticleRenderer');
+          resolve(false);
+          return;
+        }
+
+        // Inicializar outline renderer
+        const outlineInit = this.outlineRenderer.initialize(shaderManager);
+        if (!outlineInit) {
+          console.error('❌ ReticleManager: Error inicializando OutlineRenderer');
           resolve(false);
           return;
         }
@@ -179,6 +192,9 @@ export class ReticleManager {
 
     // Actualizar sistema de highlighting
     this.targetHighlighter.update(deltaTime);
+
+    // Actualizar outline renderer
+    this.outlineRenderer.update(deltaTime);
   }
 
   /**
@@ -204,6 +220,16 @@ export class ReticleManager {
 
     // Renderizar highlights de targets
     this.targetHighlighter.render();
+  }
+
+  /**
+   * Renderiza outlines de targets (debe llamarse desde el GameEngine)
+   */
+  public renderOutlines(viewMatrix: mat4, projectionMatrix: mat4, targets: ITargetable[]): void {
+    if (!this.isInitialized) return;
+    
+    // Renderizar outlines avanzados
+    this.outlineRenderer.renderOutlines(viewMatrix, projectionMatrix, targets);
   }
 
   /**
@@ -374,9 +400,17 @@ export class ReticleManager {
       // Aplicar highlighting al target hovered
       this.targetHighlighter.highlightTarget(target);
       
+      // Aplicar outline de hover (GLOW suave)
+      this.outlineRenderer.addOutline(target, OutlineType.GLOW, {
+        thickness: 3.0,
+        intensity: 0.6,
+        color: [0.0, 1.0, 1.0, 0.7] // Cyan suave
+      });
+      
       // Remover highlighting del target anterior si existe
       if (previousTarget && previousTarget !== this.state.currentTarget) {
         this.targetHighlighter.removeHighlight(previousTarget);
+        this.outlineRenderer.removeOutline(previousTarget.id);
       }
     } else if (!target && previousTarget) {
       console.log('👁️ Target unhovered:', previousTarget.getDisplayName());
@@ -384,6 +418,7 @@ export class ReticleManager {
       // Remover highlighting solo si no está seleccionado
       if (previousTarget !== this.state.currentTarget) {
         this.targetHighlighter.removeHighlight(previousTarget);
+        this.outlineRenderer.removeOutline(previousTarget.id);
       }
     }
   }
@@ -402,6 +437,14 @@ export class ReticleManager {
         intensity: 1.5,
         pulseSpeed: 4.0
       });
+
+      // Aplicar outline de selección (PULSE intenso)
+      this.outlineRenderer.addOutline(target, OutlineType.PULSE, {
+        thickness: 4.0,
+        intensity: 1.0,
+        frequency: 3.0,
+        color: [1.0, 0.8, 0.0, 1.0] // Dorado brillante
+      });
       
       this.events.onTargetLocked(target);
     } else {
@@ -410,6 +453,7 @@ export class ReticleManager {
       // Remover highlighting del target anterior
       if (previousTarget) {
         this.targetHighlighter.removeHighlight(previousTarget);
+        this.outlineRenderer.removeOutline(previousTarget.id);
       }
       
       this.events.onTargetLost();
