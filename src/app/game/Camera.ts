@@ -16,16 +16,16 @@ export abstract class BaseCamera {
   public viewMatrix: Float32Array = new Float32Array(16);
   public projectionMatrix: Float32Array = new Float32Array(16);
   
-  // Configuración de proyección
-  public fov: number = 120 * (Math.PI / 180);
+  // Configuración de proyección - FOV vertical realista tipo humano
+  public fov: number = 55 * (Math.PI / 180); // 55° vertical → ~90° horizontal en 16:9
   public aspect: number = 1.0;
   public near: number = 0.1;
   public far: number = 1000.0;
   
-  // Configuración de zoom dinámico
-  protected zoomDistance: number = 2.0;
-  protected minZoom: number = 0.8;
-  protected maxZoom: number = 8.0;
+  // Configuración de zoom dinámico - ajustado para FOV 55°
+  protected zoomDistance: number = 4.5; // Aumentado para compensar FOV más estrecho
+  protected minZoom: number = 1.5; // Zoom mínimo también aumentado
+  protected maxZoom: number = 12.0; // Zoom máximo también aumentado
   protected zoomSensitivity: number = 0.2;
   
   // Posición y orientación actuales
@@ -174,7 +174,8 @@ export abstract class BaseCamera {
  */
 export class RearExternalCamera extends BaseCamera {
   protected updateCameraMode(spaceship: Spaceship): void {
-    const REAR_EXTERNAL_OFFSET = { x: 0, y: 1.0, z: -this.zoomDistance };
+    // Compensar FOV 55° - alejar cámara trasera para mantener perspectiva original
+    const REAR_EXTERNAL_OFFSET = { x: 0, y: 2.5, z: -this.zoomDistance * 2.2 };
     
     this.position = {
       x: spaceship.position.x + REAR_EXTERNAL_OFFSET.x,
@@ -207,8 +208,8 @@ export class RearExternalCamera extends BaseCamera {
  */
 export class CockpitCamera extends BaseCamera {
   protected updateCameraMode(spaceship: Spaceship): void {
-    // Posición inicial relativa: -aZ, +bY, 0X (como especificaste)
-    const COCKPIT_OFFSET = { x: 0, y: 1.0, z: -this.zoomDistance };
+    // Compensar FOV 55° - alejar cámara externa para mantener perspectiva original
+    const COCKPIT_OFFSET = { x: 0, y: 2.0, z: -this.zoomDistance * 2.0 };
     
     // Obtener el cuaternión de orientación de la nave
     const spaceshipQuaternion = spaceship.getOrientationQuaternion();
@@ -277,9 +278,9 @@ export class CockpitCamera extends BaseCamera {
  */
 export class CockpitInternalCamera extends BaseCamera {
   protected updateCameraMode(spaceship: Spaceship): void {
-    // Posición exactamente en el centro de la cabina azul
-    // Basado en las dimensiones de createCockpitGeometry: offsetY=0.1, offsetZ=0.68
-    const COCKPIT_INTERNAL_OFFSET = { x: 0, y: 0.1, z: 0.68 }; // Centro exacto de la cabina
+    // Posición ajustada para FOV 55° y para ver HUD en parte inferior
+    // Y más bajo para que el HUD aparezca en la parte horizontal inferior de la visión
+    const COCKPIT_INTERNAL_OFFSET = { x: 0, y: -0.2, z: 1.2 }; // Más atrás y bajo para FOV 55°
     
     // Obtener el cuaternión de orientación de la nave
     const spaceshipQuaternion = spaceship.getOrientationQuaternion();

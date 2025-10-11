@@ -425,11 +425,11 @@ export class OutlineRenderer {
         for (float x = -OUTLINE_THICKNESS; x <= OUTLINE_THICKNESS; x++) {
           for (float y = -OUTLINE_THICKNESS; y <= OUTLINE_THICKNESS; y++) {
             vec2 offset = vec2(x, y) * texelSize;
-            float sample = texture(u_colorTexture, v_uv + offset).a;
+            float alpha = texture(u_colorTexture, v_uv + offset).a;
             
             // Distancia desde el centro
             float distance = length(vec2(x, y));
-            if (distance <= OUTLINE_THICKNESS && sample > 0.0) {
+            if (distance <= OUTLINE_THICKNESS && alpha > 0.0) {
               outline = max(outline, 1.0 - distance / OUTLINE_THICKNESS);
             }
           }

@@ -30,10 +30,12 @@ export class HUDManager {
   private indexBuffer: WebGLBuffer | null = null;
   
   constructor(gl: WebGL2RenderingContext) {
+    console.log('🎯 HUDManager constructor iniciado');
     this.gl = gl;
     
     // Inicializar sistema de texturas dinámicas
     this.hudTexture = new HUDTexture(gl, 1024, 768);
+    console.log('✅ HUDTexture creada:', !!this.hudTexture);
     
     // Inicializar elementos del HUD
     this.velocityBarLeft = new VelocityBar('left');
@@ -42,12 +44,15 @@ export class HUDManager {
     this.navigationSphere = new NavigationSphere();
     this.speedometer = new SpeedometerDigital();
     this.marqueePanel = new MarqueePanel();
+    console.log('✅ Elementos HUD creados');
     
     // Inicializar sistema de targeting
     this.targetingSystem = new TargetingSystem();
+    console.log('✅ Sistema targeting inicializado');
     
     // Crear geometría del plano
     this.createHUDPlaneGeometry();
+    console.log('✅ Geometría HUD creada:', !!this.hudGeometry);
     
     // DEBUG GLOBAL: Hacer método disponible en consola del navegador
     (window as any).toggleHUDShader = () => this.toggleDebugShader();
@@ -233,7 +238,18 @@ export class HUDManager {
    * ENFOQUE SISTEMÁTICO CON DEBUG DETALLADO
    */
   public render(cameraMode: CameraMode, shaderManager: any, viewMatrix: Float32Array, projectionMatrix: Float32Array, cameraPosition?: {x: number, y: number, z: number}): void {
+    console.log('🎯 HUDManager.render called with:', {
+      cameraMode: cameraMode,
+      isCockpit: cameraMode === CameraMode.COCKPIT,
+      hasGeometry: !!this.hudGeometry,
+      CockpitEnum: CameraMode.COCKPIT
+    });
+    
     if (cameraMode !== CameraMode.COCKPIT || !this.hudGeometry) {
+      console.log('🚫 HUD render rejected:', {
+        wrongMode: cameraMode !== CameraMode.COCKPIT,
+        noGeometry: !this.hudGeometry
+      });
       return;
     }
 
@@ -962,12 +978,12 @@ export class HUDManager {
    * CORREGIDO: Geometría en espacio de cámara para que sea FIJA (no rote con nave)
    */
   private createHUDPlaneGeometry(): void {
-    // HUD ajustado - base visible dentro del frustum
-    const width = 1.5;
-    const height = 0.4;
-    const baseY = -0.65; // Base ligeramente más arriba para evitar recorte
-    const baseZ = -0.3; // MUY CERCA de la cámara
-    const tilt = 15 * (Math.PI / 180);
+    // HUD ajustado para FOV 55° - más lejos y visible
+    const width = 2.0;  // Más ancho para FOV 55°
+    const height = 0.6; // Más alto para mejor visibilidad
+    const baseY = -0.8; // Más abajo para estar en zona visible
+    const baseZ = -1.5; // Más lejos para FOV 55° - dentro del near plane
+    const tilt = 10 * (Math.PI / 180); // Menos inclinación para mejor lectura
     
     console.log('🎯 === CREANDO GEOMETRÍA HUD ===');
     
@@ -1008,15 +1024,20 @@ export class HUDManager {
    * Crea los buffers WebGL para la geometría
    */
   private createBuffers(): void {
-    if (!this.hudGeometry) return;
+    if (!this.hudGeometry) {
+      console.error('❌ No hay geometría HUD para crear buffers');
+      return;
+    }
     
     this.vertexBuffer = this.gl.createBuffer();
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
     this.gl.bufferData(this.gl.ARRAY_BUFFER, this.hudGeometry.vertices, this.gl.STATIC_DRAW);
+    console.log('✅ Vertex buffer creado:', !!this.vertexBuffer);
     
     this.indexBuffer = this.gl.createBuffer();
     this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, this.hudGeometry.indices, this.gl.STATIC_DRAW);
+    console.log('✅ Index buffer creado:', !!this.indexBuffer);
   }
 
   /**

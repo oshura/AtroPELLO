@@ -1382,7 +1382,23 @@ export class GameEngine {
    * CORREGIDO: El HUD es FIJO relativo a la cámara, no rota con la nave
    */
   private renderHUDPlane(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship || !this.hudManager) return;
+    if (!this.gl || !this.shaderManager || !this.spaceship || !this.hudManager) {
+      console.log('🚫 HUD render skipped - missing components:', {
+        hasGL: !!this.gl,
+        hasShaderManager: !!this.shaderManager,
+        hasSpaceship: !!this.spaceship,
+        hasHudManager: !!this.hudManager
+      });
+      return;
+    }
+
+    // DEBUG: Verificar modo de cámara actual
+    const currentCameraMode = this.camera.getCurrentMode();
+    console.log('🎥 HUD render attempt - Camera mode:', {
+      currentMode: currentCameraMode,
+      isCockpit: currentCameraMode === CameraMode.COCKPIT,
+      CockpitEnum: CameraMode.COCKPIT
+    });
 
     // Obtener datos del juego para el HUD
     const velocityMagnitude = Math.sqrt(
