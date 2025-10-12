@@ -53,6 +53,15 @@ export class OutlineRenderer {
   private billboardVBO: WebGLBuffer | null = null;
   private billboardEBO: WebGLBuffer | null = null;
 
+  // Programa aislado para primera pasada (evita atributos compartidos)
+  private firstPassProgram: WebGLProgram | null = null;
+  private firstPassUniforms: {
+    modelMatrix: WebGLUniformLocation | null;
+    viewMatrix: WebGLUniformLocation | null;
+    projectionMatrix: WebGLUniformLocation | null;
+  } = { modelMatrix: null, viewMatrix: null, projectionMatrix: null };
+  private firstPassPositionLoc: number = -1;
+
   // Targets con outline activo
   private activeOutlines: Map<string, OutlineTarget> = new Map();
 
@@ -82,6 +91,9 @@ export class OutlineRenderer {
 
       // Crear shaders específicos para outlines
       this.createOutlineShaders();
+
+  // Crear shader de primera pasada dedicado (solo posición + matrices)
+  this.createFirstPassShader();
 
   // Configurar framebuffer para renderizado en dos pasadas
   // Asegurar tamaños iniciales usando drawingBuffer actual
@@ -324,10 +336,10 @@ export class OutlineRenderer {
     projectionMatrix: mat4, 
     config: OutlineConfig
   ): void {
-    if (!this.gl || !this.shaderManager?.basicProgram) return;
+    if (!this.gl || !this.firstPassProgram) return;
 
-    // Usar el programa básico y establecer matrices correctas
-    this.shaderManager.useBasicProgram();
+    // Usar el programa aislado y establecer matrices correctas
+    this.gl.useProgram(this.firstPassProgram);
 
     // Calcular matriz modelo para un QUAD billboard: siempre paralelo al plano de la cámara
     const position = target.position;
@@ -346,25 +358,13 @@ export class OutlineRenderer {
     const scale = Math.max(1, radius * 2);
     mat4.scale(modelMatrix, modelMatrix, [scale, scale, 1]);
 
-    // Establecer matrices en el shader básico
-    this.shaderManager.setBasicMatrices(
-      modelMatrix as unknown as Float32Array,
-      viewMatrix as unknown as Float32Array,
-      projectionMatrix as unknown as Float32Array
-    );
-
-    // Preparar atributos: posición y color constante
-    const posLoc = this.shaderManager.basicAttributes['position'];
-    const colorLoc = this.shaderManager.basicAttributes['color'];
-
-    // Asegurar que el atributo de color tenga un valor constante (usar color del outline)
-    if (colorLoc !== -1) {
-      // Deshabilitar array para usar valor constante y setear RGB (ignorar alpha)
-      this.gl.disableVertexAttribArray(colorLoc);
-      this.gl.vertexAttrib3f(colorLoc, config.color[0], config.color[1], config.color[2]);
-    }
+    // Establecer matrices en el shader de primera pasada
+    this.gl.uniformMatrix4fv(this.firstPassUniforms.modelMatrix, false, modelMatrix as unknown as Float32Array);
+    this.gl.uniformMatrix4fv(this.firstPassUniforms.viewMatrix, false, viewMatrix as unknown as Float32Array);
+    this.gl.uniformMatrix4fv(this.firstPassUniforms.projectionMatrix, false, projectionMatrix as unknown as Float32Array);
 
     // Renderizar quad billboard (solo frente a la cámara)
+    const posLoc = this.firstPassPositionLoc;
     this.renderBillboardQuad(posLoc);
   }
 
@@ -571,6 +571,42 @@ export class OutlineRenderer {
     if (outlineProgram) {
       (this.shaderManager as any).outlineProgram = outlineProgram;
     }
+  }
+
+  /**
+   * Crea un shader simple para la primera pasada (solo posición + matrices, color constante)
+   * Evita tocar atributos compartidos como a_color que puedan colisionar con otros programas.
+   */
+  private createFirstPassShader(): void {
+    if (!this.gl) return;
+
+    const vs = `#version 300 es
+      precision highp float;
+      in vec3 a_position;
+      uniform mat4 u_modelMatrix;
+      uniform mat4 u_viewMatrix;
+      uniform mat4 u_projectionMatrix;
+      void main() {
+        vec4 world = u_modelMatrix * vec4(a_position, 1.0);
+        vec4 view = u_viewMatrix * world;
+        gl_Position = u_projectionMatrix * view;
+      }
+    `;
+    const fs = `#version 300 es
+      precision highp float;
+      out vec4 fragColor;
+      void main() {
+        fragColor = vec4(1.0, 1.0, 1.0, 1.0);
+      }
+    `;
+
+    const program = this.compileShaderProgram(vs, fs);
+    if (!program) return;
+    this.firstPassProgram = program;
+    this.firstPassPositionLoc = this.gl.getAttribLocation(program, 'a_position');
+    this.firstPassUniforms.modelMatrix = this.gl.getUniformLocation(program, 'u_modelMatrix');
+    this.firstPassUniforms.viewMatrix = this.gl.getUniformLocation(program, 'u_viewMatrix');
+    this.firstPassUniforms.projectionMatrix = this.gl.getUniformLocation(program, 'u_projectionMatrix');
   }
 
   /**

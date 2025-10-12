@@ -48,6 +48,9 @@ export class GameEngine {
   
   // Matrices auxiliares
   private normalMatrix = new Float32Array(16);
+  // Debug: track potential attribute collisions/state
+  private onceLoggedAttribCollision: boolean = false;
+  private lastNormalAttribEnabled: boolean | null = null;
 
   constructor(
     private webglService: WebGLService,
@@ -429,7 +432,7 @@ export class GameEngine {
     );
 
     // Renderizar nave con shader texturizado
-    this.renderSpaceship();
+  this.renderSpaceship();
     
     // Renderizar efectos de partículas
     this.particleEffects.render(this.camera);
@@ -472,6 +475,14 @@ export class GameEngine {
     // Usar programa texturizado
     this.shaderManager.useTexturedProgram();
 
+    // Debug: attribute collision check once
+    if (!this.onceLoggedAttribCollision) {
+      const litNormalIdx = this.shaderManager.litAttributes['normal'];
+      const basicColorIdx = this.shaderManager.basicAttributes['color'];
+      console.log('🔬 Attrib indices (lit.a_normal vs basic.a_color):', { litNormalIdx, basicColorIdx, equal: litNormalIdx === basicColorIdx });
+      this.onceLoggedAttribCollision = true;
+    }
+
     // Obtener texturas
     const metallicTexture = this.textureManager.getTexture('metallic');
     const gradientTexture = this.textureManager.getTexture('gradient');
@@ -505,8 +516,14 @@ export class GameEngine {
     // Configurar texturas
     this.shaderManager.setTexturedTextures(metallicTexture, gradientTexture);
 
-    // Renderizar usando el método texturizado personalizado
-    this.renderModularSpaceship();
+  // Debug: before ship modules, check a_normal enabled state
+  this.debugNormalAttribEnabled('before-ship-modules');
+
+  // Renderizar usando el método texturizado personalizado
+  this.renderModularSpaceship();
+
+  // Debug: after ship modules
+  this.debugNormalAttribEnabled('after-ship-modules');
   }
 
   /**
@@ -572,6 +589,12 @@ export class GameEngine {
     
     // Renderizar sistema de retícula (FASE 2)
     this.renderReticleSystem();
+
+    // Debug: after reticle render, check which program is active
+    if (this.gl) {
+      const prog = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
+      console.log('🔬 Program after reticle render:', { programId: prog ? (prog as any) : null });
+    }
   }
 
   /**
@@ -1045,6 +1068,18 @@ export class GameEngine {
 
     // Renderizar objeto
     object.render(this.gl, this.shaderManager.litProgram!, this.camera.viewMatrix, this.camera.projectionMatrix);
+  }
+
+  // Debug helper: check if lit.a_normal attribute array is enabled in default VAO
+  private debugNormalAttribEnabled(where: string): void {
+    if (!this.gl || !this.shaderManager) return;
+    const idx = this.shaderManager.litAttributes['normal'];
+    if (idx < 0) return;
+    const enabled = !!this.gl.getVertexAttrib(idx, this.gl.VERTEX_ATTRIB_ARRAY_ENABLED);
+    if (this.lastNormalAttribEnabled !== enabled) {
+      console.log('🔬 a_normal enabled state changed:', { where, enabled });
+      this.lastNormalAttribEnabled = enabled;
+    }
   }
 
   /**
