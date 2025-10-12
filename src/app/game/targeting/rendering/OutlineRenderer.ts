@@ -184,6 +184,16 @@ export class OutlineRenderer {
   const prevDepth = this.gl.isEnabled(this.gl.DEPTH_TEST);
   const prevDepthFunc = this.gl.getParameter(this.gl.DEPTH_FUNC);
   const prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
+  const prevClearColor = this.gl.getParameter(this.gl.COLOR_CLEAR_VALUE) as Float32List;
+  // Guardar blend func completo (RGB/Alpha)
+  const prevBlendSrcRGB = this.gl.getParameter(this.gl.BLEND_SRC_RGB);
+  const prevBlendDstRGB = this.gl.getParameter(this.gl.BLEND_DST_RGB);
+  const prevBlendSrcAlpha = this.gl.getParameter(this.gl.BLEND_SRC_ALPHA);
+  const prevBlendDstAlpha = this.gl.getParameter(this.gl.BLEND_DST_ALPHA);
+  // Guardar textura activa y binding de TEXTURE0
+  const prevActiveTex = this.gl.getParameter(this.gl.ACTIVE_TEXTURE);
+  this.gl.activeTexture(this.gl.TEXTURE0);
+  const prevTex0Binding = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
     // Asegurar que las dimensiones del framebuffer coinciden cada frame (por si hubo resize sin evento)
     const glAny = this.gl as any;
     const dw = glAny?.drawingBufferWidth;
@@ -199,7 +209,7 @@ export class OutlineRenderer {
         activeOutlines: this.activeOutlines.size,
         targetsCount: targets.length
       });
-      this.renderFirstPass(viewMatrix, projectionMatrix, targets);
+  this.renderFirstPass(viewMatrix, projectionMatrix, targets);
       
       // Segunda pasada: Post-procesamiento de outlines
   this.renderSecondPass();
@@ -215,6 +225,13 @@ export class OutlineRenderer {
       if (prevDepth) this.gl.enable(this.gl.DEPTH_TEST); else this.gl.disable(this.gl.DEPTH_TEST);
       this.gl.depthFunc(prevDepthFunc);
       if (prevProgram) this.gl.useProgram(prevProgram);
+      // Restaurar clearColor
+      this.gl.clearColor(prevClearColor[0], prevClearColor[1], prevClearColor[2], prevClearColor[3]);
+      // Restaurar blend func
+      this.gl.blendFuncSeparate(prevBlendSrcRGB, prevBlendDstRGB, prevBlendSrcAlpha, prevBlendDstAlpha);
+      // Restaurar textura activa y binding de TEXTURE0
+      this.gl.bindTexture(this.gl.TEXTURE_2D, prevTex0Binding);
+      this.gl.activeTexture(prevActiveTex);
     }
   }
 
@@ -228,8 +245,9 @@ export class OutlineRenderer {
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.outlineFramebuffer);
     this.gl.viewport(0, 0, this.canvasWidth, this.canvasHeight);
 
-    // Clear
-    this.gl.clearColor(0, 0, 0, 0);
+  // Clear (guardar y restaurar clearColor localmente)
+  const prevClear = this.gl.getParameter(this.gl.COLOR_CLEAR_VALUE) as Float32List;
+  this.gl.clearColor(0, 0, 0, 0);
     this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
 
   // Estado GL (solo primera pasada)
@@ -249,6 +267,9 @@ export class OutlineRenderer {
       drawn++;
     }
     console.log('🟡 Outline FirstPass drawn proxies:', drawn);
+
+    // Restaurar clear color
+    this.gl.clearColor(prevClear[0], prevClear[1], prevClear[2], prevClear[3]);
   }
 
   /**
@@ -268,8 +289,8 @@ export class OutlineRenderer {
     this.gl.useProgram(outlineProgram);
 
     // Bind textura de color del framebuffer
-    this.gl.activeTexture(this.gl.TEXTURE0);
-    this.gl.bindTexture(this.gl.TEXTURE_2D, this.colorTexture);
+  this.gl.activeTexture(this.gl.TEXTURE0);
+  this.gl.bindTexture(this.gl.TEXTURE_2D, this.colorTexture);
     
     // Configurar uniformes
     const uColorTexture = this.gl.getUniformLocation(outlineProgram, 'u_colorTexture');
@@ -289,6 +310,8 @@ export class OutlineRenderer {
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 6);
     this.gl.bindVertexArray(null);
 
+    // Unbind textura y deshabilitar blend como limpieza local (restauración global se hace en caller)
+    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
     this.gl.disable(this.gl.BLEND);
   }
 
