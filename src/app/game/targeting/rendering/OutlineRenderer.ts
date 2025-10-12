@@ -48,6 +48,10 @@ export class OutlineRenderer {
   // Buffers de post-procesamiento  
   private screenQuadVAO: WebGLVertexArrayObject | null = null;
   private screenQuadVBO: WebGLBuffer | null = null;
+  // Billboard quad for first pass
+  private billboardVAO: WebGLVertexArrayObject | null = null;
+  private billboardVBO: WebGLBuffer | null = null;
+  private billboardEBO: WebGLBuffer | null = null;
 
   // Targets con outline activo
   private activeOutlines: Map<string, OutlineTarget> = new Map();
@@ -97,8 +101,11 @@ export class OutlineRenderer {
         });
       }
 
-      // Crear geometría de screen quad para post-procesamiento
+  // Crear geometría de screen quad para post-procesamiento
       this.setupScreenQuad();
+
+  // Crear geometría de billboard para primera pasada
+  this.setupBillboardQuad();
 
       console.log('🟡 OutlineRenderer inicializado correctamente');
       return true;
@@ -170,8 +177,13 @@ export class OutlineRenderer {
       return;
     }
 
-    // Guardar estado actual
-    const originalViewport = this.gl.getParameter(this.gl.VIEWPORT);
+  // Guardar estado actual básico
+  const originalViewport = this.gl.getParameter(this.gl.VIEWPORT);
+  const prevBlend = this.gl.isEnabled(this.gl.BLEND);
+  const prevCull = this.gl.isEnabled(this.gl.CULL_FACE);
+  const prevDepth = this.gl.isEnabled(this.gl.DEPTH_TEST);
+  const prevDepthFunc = this.gl.getParameter(this.gl.DEPTH_FUNC);
+  const prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
     // Asegurar que las dimensiones del framebuffer coinciden cada frame (por si hubo resize sin evento)
     const glAny = this.gl as any;
     const dw = glAny?.drawingBufferWidth;
@@ -198,6 +210,11 @@ export class OutlineRenderer {
     } finally {
       // Restaurar estado
       this.gl.viewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
+      if (prevBlend) this.gl.enable(this.gl.BLEND); else this.gl.disable(this.gl.BLEND);
+      if (prevCull) this.gl.enable(this.gl.CULL_FACE); else this.gl.disable(this.gl.CULL_FACE);
+      if (prevDepth) this.gl.enable(this.gl.DEPTH_TEST); else this.gl.disable(this.gl.DEPTH_TEST);
+      this.gl.depthFunc(prevDepthFunc);
+      if (prevProgram) this.gl.useProgram(prevProgram);
     }
   }
 
@@ -215,10 +232,11 @@ export class OutlineRenderer {
     this.gl.clearColor(0, 0, 0, 0);
     this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
 
-  // Estado GL
+  // Estado GL (solo primera pasada)
   this.gl.enable(this.gl.DEPTH_TEST);
   this.gl.depthFunc(this.gl.LEQUAL);
   this.gl.disable(this.gl.CULL_FACE);
+  this.gl.disable(this.gl.BLEND);
 
     // Renderizar solo los targets que tienen outline activo
     let drawn = 0;
@@ -226,8 +244,8 @@ export class OutlineRenderer {
       const outlineTarget = this.activeOutlines.get(target.id);
       if (!outlineTarget || !outlineTarget.isVisible) continue;
 
-      // Renderizar geometría del target con shader específico
-      this.renderTargetGeometry(target, viewMatrix, projectionMatrix, outlineTarget.config);
+  // Renderizar geometría del target con shader específico
+  this.renderTargetGeometry(target, viewMatrix, projectionMatrix, outlineTarget.config);
       drawn++;
     }
     console.log('🟡 Outline FirstPass drawn proxies:', drawn);
@@ -288,39 +306,22 @@ export class OutlineRenderer {
     // Usar el programa básico y establecer matrices correctas
     this.shaderManager.useBasicProgram();
 
-    // Calcular matriz modelo del target (aprox. bounding box orientada hacia la cámara)
+    // Calcular matriz modelo para un QUAD billboard: siempre paralelo al plano de la cámara
     const position = target.position;
-
-    // Derivar posición de la cámara a partir de la matriz de vista
+    // Extraer rotación de la cámara (usar invView para orientar el quad)
     const invView = mat4.create();
     mat4.invert(invView, viewMatrix);
-    const camPos = { x: invView[12], y: invView[13], z: invView[14] };
-
-    // Ejes de billboard: forward hacia cámara, right y up ortogonales
-    const fwd = vec3.fromValues(camPos.x - position.x, camPos.y - position.y, camPos.z - position.z);
-    vec3.normalize(fwd, fwd);
-    const worldUp = vec3.fromValues(0, 1, 0);
-    // Evitar degeneración si fwd ~ worldUp
-    const dotUp = Math.abs(vec3.dot(fwd, worldUp));
-    const refUp = dotUp > 0.98 ? vec3.fromValues(0, 0, 1) : worldUp;
-    const right = vec3.create();
-    vec3.cross(right, refUp, fwd);
-    vec3.normalize(right, right);
-    const up = vec3.create();
-    vec3.cross(up, fwd, right);
-
-    // Construir matriz de rotación+traslación con base [right, up, fwd]
-    const modelMatrix = mat4.fromValues(
-      right[0], right[1], right[2], 0,
-      up[0],    up[1],    up[2],    0,
-      fwd[0],   fwd[1],   fwd[2],   0,
-      position.x, position.y, position.z, 1
-    );
-
-    // Escalar por radio aproximado del target
+    // Construir modelo: traslación a target, orientación igual a cámara (para quedar paralelo) y escalado por radio
+    const modelMatrix = mat4.create();
+    mat4.translate(modelMatrix, modelMatrix, [position.x, position.y, position.z]);
+    // Copiar la parte rotacional de la invView (columna 0..2 y fila 0..2)
+    modelMatrix[0] = invView[0]; modelMatrix[1] = invView[1]; modelMatrix[2] = invView[2];
+    modelMatrix[4] = invView[4]; modelMatrix[5] = invView[5]; modelMatrix[6] = invView[6];
+    modelMatrix[8] = invView[8]; modelMatrix[9] = invView[9]; modelMatrix[10] = invView[10];
+    // Escalado: el quad será del tamaño del diámetro del objeto (en X/Y), sin profundidad
     const radius = (target as any).radius ? Number((target as any).radius) : 10;
     const scale = Math.max(1, radius * 2);
-    mat4.scale(modelMatrix, modelMatrix, [scale, scale, scale]);
+    mat4.scale(modelMatrix, modelMatrix, [scale, scale, 1]);
 
     // Establecer matrices en el shader básico
     this.shaderManager.setBasicMatrices(
@@ -340,8 +341,8 @@ export class OutlineRenderer {
       this.gl.vertexAttrib3f(colorLoc, config.color[0], config.color[1], config.color[2]);
     }
 
-    // Renderizar geometría básica (cubo simple para targets) usando la ubicación de posición
-    this.renderBasicCube(posLoc);
+    // Renderizar quad billboard (solo frente a la cámara)
+    this.renderBillboardQuad(posLoc);
   }
 
   /**
@@ -482,6 +483,57 @@ export class OutlineRenderer {
     this.gl.enableVertexAttribArray(1);
     this.gl.vertexAttribPointer(1, 2, this.gl.FLOAT, false, 4 * 4, 2 * 4);
 
+    this.gl.bindVertexArray(null);
+  }
+
+  /**
+   * Crea la geometría para un quad billboard (para primera pasada)
+   */
+  private setupBillboardQuad(): void {
+    if (!this.gl) return;
+
+    // Quad en el plano XY, centrado en el origen
+    const vertices = new Float32Array([
+      -0.5, -0.5, 0.0,
+       0.5, -0.5, 0.0,
+       0.5,  0.5, 0.0,
+      -0.5,  0.5, 0.0
+    ]);
+
+    const indices = new Uint16Array([
+      0, 1, 2,
+      0, 2, 3
+    ]);
+
+    this.billboardVAO = this.gl.createVertexArray();
+    this.billboardVBO = this.gl.createBuffer();
+    this.billboardEBO = this.gl.createBuffer();
+
+    this.gl.bindVertexArray(this.billboardVAO);
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.billboardVBO);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, vertices, this.gl.STATIC_DRAW);
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.billboardEBO);
+    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, indices, this.gl.STATIC_DRAW);
+
+    // El atributo de posición real se habilita en renderTargetGeometry con la ubicación del shader
+    this.gl.bindVertexArray(null);
+  }
+
+  /**
+   * Dibuja el quad billboard usando la ubicación de atributo de posición proporcionada
+   */
+  private renderBillboardQuad(positionLocation: number): void {
+    if (!this.gl || !this.billboardVAO || !this.billboardVBO || !this.billboardEBO) return;
+
+    this.gl.bindVertexArray(this.billboardVAO);
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.billboardVBO);
+    if (positionLocation >= 0) {
+      this.gl.enableVertexAttribArray(positionLocation);
+      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
+    }
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.billboardEBO);
+    this.gl.drawElements(this.gl.TRIANGLES, 6, this.gl.UNSIGNED_SHORT, 0);
+    if (positionLocation >= 0) this.gl.disableVertexAttribArray(positionLocation);
     this.gl.bindVertexArray(null);
   }
 

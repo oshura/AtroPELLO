@@ -27,6 +27,10 @@ interface HighlightedTarget {
 export class TargetHighlighter implements ITargetHighlighter {
   private gl: WebGL2RenderingContext | null = null;
   private shaderManager: ShaderManager | null = null;
+  // Snapshot de estado GL para restaurar tras render
+  private prevBlendEnabled: boolean = false;
+  private prevDepthTestEnabled: boolean = true;
+  private prevProgram: WebGLProgram | null = null;
   
   // Targets actualmente resaltados
   private highlightedTargets: Map<string, HighlightedTarget> = new Map();
@@ -225,6 +229,11 @@ export class TargetHighlighter implements ITargetHighlighter {
     if (!this.gl) return;
 
     // Habilitar blending para efectos translúcidos
+    // Snapshot de estado previo
+    this.prevBlendEnabled = this.gl.isEnabled(this.gl.BLEND);
+    this.prevDepthTestEnabled = this.gl.isEnabled(this.gl.DEPTH_TEST);
+    this.prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
+
     this.gl.enable(this.gl.BLEND);
     this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
     
@@ -269,10 +278,23 @@ export class TargetHighlighter implements ITargetHighlighter {
     if (!this.gl) return;
 
     // Restaurar depth test
-    this.gl.enable(this.gl.DEPTH_TEST);
-    
-    // Mantener blending habilitado para otros elementos transparentes
-    // this.gl.disable(this.gl.BLEND);
+    if (this.prevDepthTestEnabled) {
+      this.gl.enable(this.gl.DEPTH_TEST);
+    } else {
+      this.gl.disable(this.gl.DEPTH_TEST);
+    }
+
+    // Restaurar blending
+    if (this.prevBlendEnabled) {
+      this.gl.enable(this.gl.BLEND);
+    } else {
+      this.gl.disable(this.gl.BLEND);
+    }
+
+    // Restaurar programa previo si existía
+    if (this.prevProgram) {
+      this.gl.useProgram(this.prevProgram);
+    }
   }
 
   /**
