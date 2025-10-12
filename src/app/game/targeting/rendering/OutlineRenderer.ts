@@ -79,8 +79,23 @@ export class OutlineRenderer {
       // Crear shaders específicos para outlines
       this.createOutlineShaders();
 
-      // Configurar framebuffer para renderizado en dos pasadas
-      this.setupFramebuffer();
+  // Configurar framebuffer para renderizado en dos pasadas
+  // Asegurar tamaños iniciales usando drawingBuffer actual
+  const glAny = this.gl as any;
+  this.canvasWidth = glAny?.drawingBufferWidth || this.canvasWidth;
+  this.canvasHeight = glAny?.drawingBufferHeight || this.canvasHeight;
+  this.setupFramebuffer();
+
+      // Reaccionar a cambios de tamaño del canvas para mantener buffers correctos
+      const canvas = this.webglService.getCanvas();
+      if (canvas) {
+        canvas.addEventListener('webgl-resize', (e: Event) => {
+          const detail: any = (e as CustomEvent).detail || {};
+          const w = Number(detail.width ?? (this.gl as any)?.drawingBufferWidth ?? canvas.width);
+          const h = Number(detail.height ?? (this.gl as any)?.drawingBufferHeight ?? canvas.height);
+          this.resizeFramebuffer(w, h);
+        });
+      }
 
       // Crear geometría de screen quad para post-procesamiento
       this.setupScreenQuad();
@@ -110,8 +125,7 @@ export class OutlineRenderer {
     };
 
     this.activeOutlines.set(target.id, outlineTarget);
-    
-    console.log(`🟡 Outline agregado para target ${target.id}:`, type);
+    console.log(`🟡 Outline+ add id=${target.id} type=${type}`, outlineTarget.config);
   }
 
   /**
@@ -144,19 +158,40 @@ export class OutlineRenderer {
     projectionMatrix: mat4,
     targets: ITargetable[]
   ): void {
-    if (!this.gl || !this.shaderManager || this.activeOutlines.size === 0) {
+    if (!this.gl || !this.shaderManager) {
+      return;
+    }
+
+  if (this.activeOutlines.size === 0) {
+      // Debug puntual para confirmar estado
+      if (Math.random() < 0.01) {
+        console.log('🟡 Outline: sin activos, skip frame');
+      }
       return;
     }
 
     // Guardar estado actual
     const originalViewport = this.gl.getParameter(this.gl.VIEWPORT);
-    
+    // Asegurar que las dimensiones del framebuffer coinciden cada frame (por si hubo resize sin evento)
+    const glAny = this.gl as any;
+    const dw = glAny?.drawingBufferWidth;
+    const dh = glAny?.drawingBufferHeight;
+    if ((dw && dh) && (dw !== this.canvasWidth || dh !== this.canvasHeight)) {
+      this.resizeFramebuffer(dw, dh);
+    }
+
     try {
       // Primera pasada: Renderizar geometría a framebuffer
+      console.log('🟡 Outline FirstPass start', {
+        framebufferSize: { w: this.canvasWidth, h: this.canvasHeight },
+        activeOutlines: this.activeOutlines.size,
+        targetsCount: targets.length
+      });
       this.renderFirstPass(viewMatrix, projectionMatrix, targets);
       
       // Segunda pasada: Post-procesamiento de outlines
-      this.renderSecondPass();
+  this.renderSecondPass();
+  console.log('🟡 Outline SecondPass done');
 
     } catch (error) {
       console.error('❌ Error renderizando outlines:', error);
@@ -180,17 +215,22 @@ export class OutlineRenderer {
     this.gl.clearColor(0, 0, 0, 0);
     this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
 
-    // Habilitar depth test
-    this.gl.enable(this.gl.DEPTH_TEST);
+  // Estado GL
+  this.gl.enable(this.gl.DEPTH_TEST);
+  this.gl.depthFunc(this.gl.LEQUAL);
+  this.gl.disable(this.gl.CULL_FACE);
 
     // Renderizar solo los targets que tienen outline activo
+    let drawn = 0;
     for (const target of targets) {
       const outlineTarget = this.activeOutlines.get(target.id);
       if (!outlineTarget || !outlineTarget.isVisible) continue;
 
       // Renderizar geometría del target con shader específico
       this.renderTargetGeometry(target, viewMatrix, projectionMatrix, outlineTarget.config);
+      drawn++;
     }
+    console.log('🟡 Outline FirstPass drawn proxies:', drawn);
   }
 
   /**
@@ -245,28 +285,63 @@ export class OutlineRenderer {
   ): void {
     if (!this.gl || !this.shaderManager?.basicProgram) return;
 
-    this.gl.useProgram(this.shaderManager.basicProgram);
+    // Usar el programa básico y establecer matrices correctas
+    this.shaderManager.useBasicProgram();
 
-    // Calcular matriz modelo del target
-    const modelMatrix = mat4.create();
+    // Calcular matriz modelo del target (aprox. bounding box orientada hacia la cámara)
     const position = target.position;
-    mat4.translate(modelMatrix, modelMatrix, [position.x, position.y, position.z]);
 
-    // Configurar matrices
-    const mvpMatrix = mat4.create();
-    const mvMatrix = mat4.create();
-    mat4.multiply(mvMatrix, viewMatrix, modelMatrix);
-    mat4.multiply(mvpMatrix, projectionMatrix, mvMatrix);
+    // Derivar posición de la cámara a partir de la matriz de vista
+    const invView = mat4.create();
+    mat4.invert(invView, viewMatrix);
+    const camPos = { x: invView[12], y: invView[13], z: invView[14] };
 
-    // Uniformes
-    const uMVPMatrix = this.gl.getUniformLocation(this.shaderManager.basicProgram, 'u_mvpMatrix');
-    const uColor = this.gl.getUniformLocation(this.shaderManager.basicProgram, 'u_color');
+    // Ejes de billboard: forward hacia cámara, right y up ortogonales
+    const fwd = vec3.fromValues(camPos.x - position.x, camPos.y - position.y, camPos.z - position.z);
+    vec3.normalize(fwd, fwd);
+    const worldUp = vec3.fromValues(0, 1, 0);
+    // Evitar degeneración si fwd ~ worldUp
+    const dotUp = Math.abs(vec3.dot(fwd, worldUp));
+    const refUp = dotUp > 0.98 ? vec3.fromValues(0, 0, 1) : worldUp;
+    const right = vec3.create();
+    vec3.cross(right, refUp, fwd);
+    vec3.normalize(right, right);
+    const up = vec3.create();
+    vec3.cross(up, fwd, right);
 
-    this.gl.uniformMatrix4fv(uMVPMatrix, false, mvpMatrix);
-    this.gl.uniform4fv(uColor, config.color);
+    // Construir matriz de rotación+traslación con base [right, up, fwd]
+    const modelMatrix = mat4.fromValues(
+      right[0], right[1], right[2], 0,
+      up[0],    up[1],    up[2],    0,
+      fwd[0],   fwd[1],   fwd[2],   0,
+      position.x, position.y, position.z, 1
+    );
 
-    // Renderizar geometría básica (cubo simple para targets)
-    this.renderBasicCube();
+    // Escalar por radio aproximado del target
+    const radius = (target as any).radius ? Number((target as any).radius) : 10;
+    const scale = Math.max(1, radius * 2);
+    mat4.scale(modelMatrix, modelMatrix, [scale, scale, scale]);
+
+    // Establecer matrices en el shader básico
+    this.shaderManager.setBasicMatrices(
+      modelMatrix as unknown as Float32Array,
+      viewMatrix as unknown as Float32Array,
+      projectionMatrix as unknown as Float32Array
+    );
+
+    // Preparar atributos: posición y color constante
+    const posLoc = this.shaderManager.basicAttributes['position'];
+    const colorLoc = this.shaderManager.basicAttributes['color'];
+
+    // Asegurar que el atributo de color tenga un valor constante (usar color del outline)
+    if (colorLoc !== -1) {
+      // Deshabilitar array para usar valor constante y setear RGB (ignorar alpha)
+      this.gl.disableVertexAttribArray(colorLoc);
+      this.gl.vertexAttrib3f(colorLoc, config.color[0], config.color[1], config.color[2]);
+    }
+
+    // Renderizar geometría básica (cubo simple para targets) usando la ubicación de posición
+    this.renderBasicCube(posLoc);
   }
 
   /**
@@ -278,8 +353,9 @@ export class OutlineRenderer {
     const canvas = this.webglService.getCanvas();
     if (!canvas) return;
 
-    this.canvasWidth = canvas.width;
-    this.canvasHeight = canvas.height;
+    // Tomar tamaño del drawing buffer para resolución real
+    this.canvasWidth = (this.gl as any).drawingBufferWidth || canvas.width;
+    this.canvasHeight = (this.gl as any).drawingBufferHeight || canvas.height;
 
     // Crear framebuffer
     this.outlineFramebuffer = this.gl.createFramebuffer();
@@ -288,8 +364,9 @@ export class OutlineRenderer {
     // Crear textura de color
     this.colorTexture = this.gl.createTexture();
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.colorTexture);
+    // Usar formato con tamaño explícito en WebGL2
     this.gl.texImage2D(
-      this.gl.TEXTURE_2D, 0, this.gl.RGBA,
+      this.gl.TEXTURE_2D, 0, this.gl.RGBA8,
       this.canvasWidth, this.canvasHeight, 0,
       this.gl.RGBA, this.gl.UNSIGNED_BYTE, null
     );
@@ -317,11 +394,59 @@ export class OutlineRenderer {
       this.gl.TEXTURE_2D, this.depthTexture, 0
     );
 
+    // Definir draw buffers para el framebuffer (WebGL2 requiere especificarlo)
+    (this.gl as any).drawBuffers([this.gl.COLOR_ATTACHMENT0]);
+
     // Verificar completeness
     if (this.gl.checkFramebufferStatus(this.gl.FRAMEBUFFER) !== this.gl.FRAMEBUFFER_COMPLETE) {
       console.error('❌ Framebuffer incompleto');
     }
 
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+  }
+
+  /**
+   * Recrea los attachments del framebuffer al cambiar de tamaño
+   */
+  private resizeFramebuffer(width: number, height: number): void {
+    if (!this.gl) return;
+
+    this.canvasWidth = Math.max(1, Math.floor(width));
+    this.canvasHeight = Math.max(1, Math.floor(height));
+
+    // Re-crear color texture
+    if (this.colorTexture) this.gl.deleteTexture(this.colorTexture);
+    this.colorTexture = this.gl.createTexture();
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.colorTexture);
+    this.gl.texImage2D(
+      this.gl.TEXTURE_2D, 0, this.gl.RGBA8,
+      this.canvasWidth, this.canvasHeight, 0,
+      this.gl.RGBA, this.gl.UNSIGNED_BYTE, null
+    );
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+
+    // Re-crear depth texture
+    if (this.depthTexture) this.gl.deleteTexture(this.depthTexture);
+    this.depthTexture = this.gl.createTexture();
+    this.gl.bindTexture(this.gl.TEXTURE_2D, this.depthTexture);
+    this.gl.texImage2D(
+      this.gl.TEXTURE_2D, 0, this.gl.DEPTH_COMPONENT24,
+      this.canvasWidth, this.canvasHeight, 0,
+      this.gl.DEPTH_COMPONENT, this.gl.UNSIGNED_INT, null
+    );
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
+    this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+
+    // Re-attach
+    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.outlineFramebuffer);
+    this.gl.framebufferTexture2D(this.gl.FRAMEBUFFER, this.gl.COLOR_ATTACHMENT0, this.gl.TEXTURE_2D, this.colorTexture, 0);
+    this.gl.framebufferTexture2D(this.gl.FRAMEBUFFER, this.gl.DEPTH_ATTACHMENT, this.gl.TEXTURE_2D, this.depthTexture, 0);
+    this.gl.drawBuffers([this.gl.COLOR_ATTACHMENT0]);
+    const status = this.gl.checkFramebufferStatus(this.gl.FRAMEBUFFER);
+    if (status !== this.gl.FRAMEBUFFER_COMPLETE) {
+      console.error('❌ Framebuffer incompleto tras resize:', status);
+    }
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
   }
 
@@ -412,12 +537,6 @@ export class OutlineRenderer {
         vec2 texelSize = 1.0 / u_resolution;
         vec4 centerColor = texture(u_colorTexture, v_uv);
         
-        // Si ya hay color, renderizar normalmente
-        if (centerColor.a > 0.0) {
-          fragColor = centerColor;
-          return;
-        }
-        
         // Detectar bordes usando kernel Sobel
         float outline = 0.0;
         
@@ -442,7 +561,7 @@ export class OutlineRenderer {
           
           // Color del outline con efecto de glow
           vec3 glowColor = OUTLINE_COLOR * intensity;
-          fragColor = vec4(glowColor, outline * 0.8);
+          fragColor = vec4(glowColor, clamp(outline * 0.9, 0.0, 1.0));
         } else {
           fragColor = vec4(0.0, 0.0, 0.0, 0.0);
         }
@@ -559,7 +678,7 @@ export class OutlineRenderer {
   /**
    * Renderiza un cubo básico para representar targets
    */
-  private renderBasicCube(): void {
+  private renderBasicCube(positionLocation: number): void {
     if (!this.gl) return;
 
     // Vértices básicos de un cubo unitario
@@ -585,26 +704,35 @@ export class OutlineRenderer {
       1, 0, 4, 1, 4, 7     // bottom
     ]);
 
-    // Crear buffers temporales
+    // Crear VAO y buffers temporales
+    const vao = this.gl.createVertexArray();
     const vertexBuffer = this.gl.createBuffer();
     const indexBuffer = this.gl.createBuffer();
 
+    this.gl.bindVertexArray(vao);
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, vertexBuffer);
     this.gl.bufferData(this.gl.ARRAY_BUFFER, vertices, this.gl.STATIC_DRAW);
 
     this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, indexBuffer);
     this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, indices, this.gl.STATIC_DRAW);
 
-    // Configurar atributos
-    this.gl.enableVertexAttribArray(0);
-    this.gl.vertexAttribPointer(0, 3, this.gl.FLOAT, false, 0, 0);
+    // Configurar atributo de posición según ubicación del shader
+    if (positionLocation >= 0) {
+      this.gl.enableVertexAttribArray(positionLocation);
+      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
+    }
 
     // Renderizar
     this.gl.drawElements(this.gl.TRIANGLES, indices.length, this.gl.UNSIGNED_SHORT, 0);
 
     // Limpiar
+    if (positionLocation >= 0) {
+      this.gl.disableVertexAttribArray(positionLocation);
+    }
+    this.gl.bindVertexArray(null);
     this.gl.deleteBuffer(vertexBuffer);
     this.gl.deleteBuffer(indexBuffer);
+    if (vao) this.gl.deleteVertexArray(vao);
   }
 
   /**

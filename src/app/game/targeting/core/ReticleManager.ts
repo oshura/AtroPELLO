@@ -259,10 +259,29 @@ export class ReticleManager {
    */
   private updateTargetDetection(): void {
     console.log('🔍 updateTargetDetection() EJECUTADO - mousePos:', this.state.mousePosition);
-    // Usar un radio de detección coherente con el tamaño visual de la retícula
-    // Referencia: reticle size representa el diámetro; usamos ~0.75× como tolerancia de acierto
-    const reticleSize = this.state.config.size; // px
-    const detectionRadius = Math.max(10, Math.min(120, reticleSize * 0.75));
+    // Radio de detección inversamente proporcional al tamaño de la retícula
+    // Objetivo UX: cuando la retícula es pequeña (mouse quieto), el radio de acierto es grande.
+    // Cuando la retícula es grande (mouse rápido), el radio se reduce.
+    // Además, aplicar un boost extra cuando la velocidad del mouse es baja para facilitar el apuntado fino.
+    const reticleSize = this.state.config.size; // px (ver updateMouseVelocity: 25..70 aprox)
+
+    // Rango esperado de tamaño dinámico de la retícula (ver updateMouseVelocity)
+    const MIN_SIZE = 25;
+    const MAX_SIZE = 70;
+    const sizeT = Math.max(0, Math.min(1, (reticleSize - MIN_SIZE) / (MAX_SIZE - MIN_SIZE))); // 0..1
+
+    // Rango del radio base (en píxeles): grande cuando sizeT=0, pequeño cuando sizeT=1
+    const MIN_R = 20;  // radio mínimo cuando la retícula está grande
+    const MAX_R = 160; // radio máximo cuando la retícula está pequeña / quieta
+    const baseRadius = MAX_R - (MAX_R - MIN_R) * sizeT; // inverse lerp
+
+    // Factor por velocidad del mouse: más boost cuanto más quieto
+    const vNorm = Math.min(1, this.mouseVelocity / 600); // 0..1 (ver normalización en updateMouseVelocity)
+    const velFactor = 1.3 - 0.5 * vNorm; // 1.3 en reposo → 0.8 a velocidad alta
+
+  // Reducir ligeramente el radio resultante (≈2/3 del valor actual)
+  const SCALE = 2 / 3;
+  const detectionRadius = Math.max(16, Math.min(160, baseRadius * velFactor * SCALE));
     this.lastDetectionRadiusPx = detectionRadius;
     const hit = this.targetDetector.detectTargetAt(this.state.mousePosition, detectionRadius);
     this.lastHit = hit || null;
@@ -287,9 +306,10 @@ export class ReticleManager {
     
     // Verificar cambio en hover
     if (newHoveredTarget !== this.state.hoveredTarget) {
-      this.state.hoveredTarget = newHoveredTarget;
+      // Importante: NO mutar state.hoveredTarget aquí. Dejamos que el handler lo actualice,
+      // así puede comparar correctamente contra el valor previo y disparar efectos (outline/highlight).
       console.log('🎯 Target hover changed:', 
-        this.state.hoveredTarget?.getDisplayName() || 'none');
+        newHoveredTarget?.getDisplayName() || 'none');
       this.events.onTargetHovered(newHoveredTarget);
     }
   }
@@ -456,6 +476,7 @@ export class ReticleManager {
       this.targetHighlighter.highlightTarget(target);
       
       // Aplicar outline de hover (GLOW suave)
+      console.log('🟡 ReticleManager: llamando a addOutline para', target.id);
       this.outlineRenderer.addOutline(target, OutlineType.GLOW, {
         thickness: 3.0,
         intensity: 0.6,
