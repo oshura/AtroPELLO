@@ -603,42 +603,30 @@ export class OutlineRenderer {
       uniform vec2 u_resolution;
       uniform float u_time;
       
-      // Configuración del outline
-      const float OUTLINE_THICKNESS = 2.0;
+      // Wireframe-only configuration
       const vec3 OUTLINE_COLOR = vec3(0.0, 1.0, 1.0); // Cyan
-      const float GLOW_INTENSITY = 0.8;
       
       void main() {
-        vec2 texelSize = 1.0 / u_resolution;
-        vec4 centerColor = texture(u_colorTexture, v_uv);
+        vec2 texel = 1.0 / u_resolution;
+        float aC = texture(u_colorTexture, v_uv).a;
+        // 4-neighborhood sampling
+        float aL = texture(u_colorTexture, v_uv + vec2(-texel.x, 0.0)).a;
+        float aR = texture(u_colorTexture, v_uv + vec2( texel.x, 0.0)).a;
+        float aT = texture(u_colorTexture, v_uv + vec2(0.0,  texel.y)).a;
+        float aB = texture(u_colorTexture, v_uv + vec2(0.0, -texel.y)).a;
         
-        // Detectar bordes usando kernel Sobel
-        float outline = 0.0;
+        // Edge if alpha changes between center and any neighbor
+        float edge = 0.0;
+        edge += float(aC != aL);
+        edge += float(aC != aR);
+        edge += float(aC != aT);
+        edge += float(aC != aB);
+        edge = clamp(edge, 0.0, 1.0);
         
-        // Sampling en cruz y diagonal
-        for (float x = -OUTLINE_THICKNESS; x <= OUTLINE_THICKNESS; x++) {
-          for (float y = -OUTLINE_THICKNESS; y <= OUTLINE_THICKNESS; y++) {
-            vec2 offset = vec2(x, y) * texelSize;
-            float alpha = texture(u_colorTexture, v_uv + offset).a;
-            
-            // Distancia desde el centro
-            float distance = length(vec2(x, y));
-            if (distance <= OUTLINE_THICKNESS && alpha > 0.0) {
-              outline = max(outline, 1.0 - distance / OUTLINE_THICKNESS);
-            }
-          }
-        }
-        
-        if (outline > 0.0) {
-          // Efecto de pulso
-          float pulse = 0.5 + 0.5 * sin(u_time * 4.0);
-          float intensity = GLOW_INTENSITY * outline * pulse;
-          
-          // Color del outline con efecto de glow
-          vec3 glowColor = OUTLINE_COLOR * intensity;
-          fragColor = vec4(glowColor, clamp(outline * 0.9, 0.0, 1.0));
+        if (edge > 0.0) {
+          fragColor = vec4(OUTLINE_COLOR, 1.0); // thin, 1px outline
         } else {
-          fragColor = vec4(0.0, 0.0, 0.0, 0.0);
+          fragColor = vec4(0.0);
         }
       }
     `;
@@ -707,9 +695,9 @@ export class OutlineRenderer {
 
     this.presetConfigs.set(OutlineType.GLOW, {
       type: OutlineType.GLOW,
-      color: [1.0, 0.8, 0.0, 0.8], // Dorado
-      thickness: 4.0,
-      intensity: 0.8,
+      color: [0.0, 1.0, 1.0, 1.0], // Cyan (coherente con wireframe)
+      thickness: 1.0,
+      intensity: 0.6,
       frequency: 2.0,
       fadeDistance: 800.0
     });

@@ -478,9 +478,9 @@ export class ReticleManager {
       // Aplicar outline de hover (GLOW suave)
       console.log('🟡 ReticleManager: llamando a addOutline para', target.id);
       this.outlineRenderer.addOutline(target, OutlineType.GLOW, {
-        thickness: 3.0,
+        thickness: 1.0,
         intensity: 0.6,
-        color: [0.0, 1.0, 1.0, 0.7] // Cyan suave
+        color: [0.0, 1.0, 1.0, 1.0] // Wireframe cyan
       });
       
       // Remover highlighting del target anterior si existe
