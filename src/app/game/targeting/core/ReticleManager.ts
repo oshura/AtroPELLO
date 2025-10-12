@@ -24,6 +24,7 @@ import { Camera } from '../../Camera';
 import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
 import { mat4 } from 'gl-matrix';
+import { SpaceshipDebugCollector } from '../../../services/debug/spaceship-debug-collector.service';
 
 @Injectable({
   providedIn: 'root'
@@ -48,13 +49,18 @@ export class ReticleManager {
   private reticleOpenness: number = 0.5; // 0=cerrado, 1=abierto
   private velocitySmoothing: number = 0.9; // Suavizado de velocidad
 
+  // Debug snapshot storage
+  private lastHit: RaycastHit | null = null;
+  private lastDetectionRadiusPx: number = 0;
+
   constructor(
     targetDetector: TargetDetector,
     inputHandler: InputHandler,
     reticleRenderer: ReticleRenderer,
     targetHighlighter: TargetHighlighter,
     outlineRenderer: OutlineRenderer,
-    private webglService: WebGLService
+    private webglService: WebGLService,
+    private debugCollector: SpaceshipDebugCollector
   ) {
     this.targetDetector = targetDetector;
     this.inputHandler = inputHandler;
@@ -253,8 +259,19 @@ export class ReticleManager {
    */
   private updateTargetDetection(): void {
     console.log('🔍 updateTargetDetection() EJECUTADO - mousePos:', this.state.mousePosition);
-    const hit = this.targetDetector.detectTargetAt(this.state.mousePosition);
+    // Usar un radio de detección coherente con el tamaño visual de la retícula
+    // Referencia: reticle size representa el diámetro; usamos ~0.75× como tolerancia de acierto
+    const reticleSize = this.state.config.size; // px
+    const detectionRadius = Math.max(10, Math.min(120, reticleSize * 0.75));
+    this.lastDetectionRadiusPx = detectionRadius;
+    const hit = this.targetDetector.detectTargetAt(this.state.mousePosition, detectionRadius);
+    this.lastHit = hit || null;
     console.log('🔍 detectTargetAt result:', hit ? `HIT: ${hit.target.getDisplayName()}` : 'NO HIT');
+
+    // Exportar snapshot para overlay de debug (si está activo)
+    try {
+      this.debugCollector.setTargetingSnapshot(this.getDebugSnapshot());
+    } catch {}
     
     const newHoveredTarget = hit?.target || null;
     
@@ -275,6 +292,44 @@ export class ReticleManager {
         this.state.hoveredTarget?.getDisplayName() || 'none');
       this.events.onTargetHovered(newHoveredTarget);
     }
+  }
+
+  /**
+   * Devuelve un snapshot de debug con info de targeting y mouse
+   */
+  public getDebugSnapshot(): {
+    mouse: { x: number; y: number; velocity: number };
+    hovered?: { id: string; name: string; type: string } | null;
+    selected?: { id: string; name: string; type: string } | null;
+    hit?: {
+      distance?: number;
+      screenPosition?: { x: number; y: number } | null;
+      radiusPx: number;
+    } | null;
+  } {
+    const hovered = this.state.hoveredTarget
+      ? { id: String(this.state.hoveredTarget.id), name: this.state.hoveredTarget.getDisplayName(), type: this.state.hoveredTarget.getTargetType() }
+      : null;
+    const selected = this.state.currentTarget
+      ? { id: String(this.state.currentTarget.id), name: this.state.currentTarget.getDisplayName(), type: this.state.currentTarget.getTargetType() }
+      : null;
+
+    const hit = this.lastHit
+      ? {
+          distance: this.lastHit.distance,
+          screenPosition: this.lastHit.screenPosition,
+          radiusPx: this.lastDetectionRadiusPx,
+        }
+      : this.lastDetectionRadiusPx
+      ? { radiusPx: this.lastDetectionRadiusPx }
+      : null;
+
+    return {
+      mouse: { x: this.state.mousePosition.x, y: this.state.mousePosition.y, velocity: this.mouseVelocity },
+      hovered,
+      selected,
+      hit,
+    };
   }
 
   /**

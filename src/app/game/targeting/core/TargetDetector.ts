@@ -4,6 +4,7 @@
  */
 
 import { Injectable } from '@angular/core';
+import { mat4, vec4 } from 'gl-matrix';
 import { ITargetable } from '../../types/targeting.types';
 import { 
   ITargetDetector, 
@@ -25,7 +26,7 @@ export class TargetDetector implements ITargetDetector {
   
   constructor(private webglService: WebGLService) {
     this.config = {
-      maxDistance: 1000,
+      maxDistance: Infinity,
       raycastPrecision: 0.1,
       targetTypes: ['asteroid', 'spaceship', 'planet', 'portal']
     };
@@ -66,7 +67,7 @@ export class TargetDetector implements ITargetDetector {
   /**
    * Detecta targets en una posición de pantalla usando raycast
    */
-  public detectTargetAt(screenPos: ScreenPosition): RaycastHit | null {
+  public detectTargetAt(screenPos: ScreenPosition, detectionRadiusPx: number = 50): RaycastHit | null {
     if (!this.camera || !this.canvas) {
       console.warn('❌ TargetDetector: Camera o Canvas no inicializados');
       return null;
@@ -136,8 +137,8 @@ export class TargetDetector implements ITargetDetector {
           });
         }
         
-        // Si está cerca del mouse (radio de 600px para testing), considerar hit
-        if (pixelDistance < 600) {
+  // Si está cerca del mouse (radio configurable en píxeles), considerar hit
+  if (pixelDistance < detectionRadiusPx) {
           const worldDistance = this.getWorldDistance(target.position);
           
           if (worldDistance < minDistance && worldDistance <= this.config.maxDistance) {
@@ -185,12 +186,33 @@ export class TargetDetector implements ITargetDetector {
     if (!screenPos) return false;
 
     // Verificar que está dentro de los límites de pantalla
+    const dims = this.getCanvasCssDimensions();
     return (
       screenPos.x >= 0 && 
-      screenPos.x <= this.canvas.width &&
+      screenPos.x <= dims.width &&
       screenPos.y >= 0 && 
-      screenPos.y <= this.canvas.height
+      screenPos.y <= dims.height
     );
+  }
+
+  // Dimensiones CSS del canvas (coinciden con InputHandler)
+  private getCanvasCssDimensions(): { width: number; height: number } {
+    const state = this.webglService.getState();
+    const width = state.width || this.canvas?.clientWidth || this.canvas?.width || 0;
+    const height = state.height || this.canvas?.clientHeight || this.canvas?.height || 0;
+    return { width: Number(width), height: Number(height) };
+  }
+
+  // Vector forward normalizado de la cámara
+  private getCameraForward(): { x: number; y: number; z: number } {
+    if (!this.camera) return { x: 0, y: 0, z: -1 };
+    const pos = this.camera.position;
+    const tgt = this.camera.target;
+    const fx = tgt.x - pos.x;
+    const fy = tgt.y - pos.y;
+    const fz = tgt.z - pos.z;
+    const l = Math.hypot(fx, fy, fz) || 1;
+    return { x: fx / l, y: fy / l, z: fz / l };
   }
 
   /**
@@ -198,50 +220,39 @@ export class TargetDetector implements ITargetDetector {
    */
   private screenToWorldRay(screenPos: ScreenPosition): { origin: any; direction: any } | null {
     if (!this.camera || !this.canvas) return null;
+    // Normalizar coordenadas de pantalla a NDC (-1 a 1) usando dimensiones CSS
+    const dims = this.getCanvasCssDimensions();
+    const x = (2.0 * screenPos.x) / dims.width - 1.0;
+    const y = 1.0 - (2.0 * screenPos.y) / dims.height;
 
-    // Normalizar coordenadas de pantalla a NDC (-1 a 1)
-    const x = (2.0 * screenPos.x) / this.canvas.width - 1.0;
-    const y = 1.0 - (2.0 * screenPos.y) / this.canvas.height;
+    // ViewProjection e inversa con gl-matrix
+    const proj = this.camera.projectionMatrix as unknown as mat4;
+    const view = this.camera.viewMatrix as unknown as mat4;
+    const vp = mat4.create();
+    mat4.multiply(vp, proj, view);
+    const invVp = mat4.create();
+    if (!mat4.invert(invVp, vp)) return null;
 
-    // Crear matrices de transformación
-    const projMatrix = this.camera.projectionMatrix;
-    const viewMatrix = this.camera.viewMatrix;
-    
-    // Calcular matriz inversa view-projection
-    const vpMatrix = this.multiplyMatrices(projMatrix, viewMatrix);
-    const invVpMatrix = this.invertMatrix(vpMatrix);
+    // Puntos en near y far plane en clip -> mundo
+    const nearV = vec4.fromValues(x, y, -1.0, 1.0);
+    const farV = vec4.fromValues(x, y, 1.0, 1.0);
+    vec4.transformMat4(nearV, nearV, invVp);
+    vec4.transformMat4(farV, farV, invVp);
+    for (const v of [nearV, farV]) { v[0] /= v[3]; v[1] /= v[3]; v[2] /= v[3]; v[3] = 1.0; }
 
-    if (!invVpMatrix) return null;
+    // Dirección del rayo (cámara → escena)
+    const dir = { x: farV[0] - nearV[0], y: farV[1] - nearV[1], z: farV[2] - nearV[2] };
+    const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
+    dir.x /= len; dir.y /= len; dir.z /= len;
 
-    // Puntos en near y far plane
-    const nearPoint = this.transformVector(invVpMatrix, [x, y, -1.0, 1.0]);
-    const farPoint = this.transformVector(invVpMatrix, [x, y, 1.0, 1.0]);
-
-    // Dividir por w para obtener coordenadas homogéneas
-    nearPoint[0] /= nearPoint[3];
-    nearPoint[1] /= nearPoint[3];
-    nearPoint[2] /= nearPoint[3];
-    
-    farPoint[0] /= farPoint[3];
-    farPoint[1] /= farPoint[3];
-    farPoint[2] /= farPoint[3];
-
-    // Calcular dirección del rayo
-    const direction = {
-      x: farPoint[0] - nearPoint[0],
-      y: farPoint[1] - nearPoint[1],
-      z: farPoint[2] - nearPoint[2]
-    };
-
-    // Normalizar dirección
-    const length = Math.sqrt(direction.x ** 2 + direction.y ** 2 + direction.z ** 2);
-    direction.x /= length;
-    direction.y /= length;
-    direction.z /= length;
+    // Alinear sentido con forward de la cámara
+    const fwd = this.getCameraForward();
+    const dot = dir.x * fwd.x + dir.y * fwd.y + dir.z * fwd.z;
+    if (dot < 0) { dir.x = -dir.x; dir.y = -dir.y; dir.z = -dir.z; }
 
     return {
-      origin: { x: nearPoint[0], y: nearPoint[1], z: nearPoint[2] },
-      direction
+      origin: { x: nearV[0], y: nearV[1], z: nearV[2] },
+      direction: dir
     };
   }
 
@@ -250,24 +261,24 @@ export class TargetDetector implements ITargetDetector {
    */
   private worldToScreen(worldPos: { x: number; y: number; z: number }): ScreenPosition | null {
     if (!this.camera || !this.canvas) return null;
-
-    const projMatrix = this.camera.projectionMatrix;
-    const viewMatrix = this.camera.viewMatrix;
-    const vpMatrix = this.multiplyMatrices(projMatrix, viewMatrix);
+    const proj = this.camera.projectionMatrix as unknown as mat4;
+    const view = this.camera.viewMatrix as unknown as mat4;
+    const vp = mat4.create();
+    mat4.multiply(vp, proj, view);
 
     // Transformar posición mundial a clip space
-    const clipPos = this.transformVector(vpMatrix, [worldPos.x, worldPos.y, worldPos.z, 1.0]);
+    const v = vec4.fromValues(worldPos.x, worldPos.y, worldPos.z, 1.0);
+    vec4.transformMat4(v, v, vp);
     
     // Verificar que está delante de la cámara
-    if (clipPos[3] <= 0) return null;
+    if (v[3] <= 0) return null;
 
-    // Dividir por w
-    const ndcX = clipPos[0] / clipPos[3];
-    const ndcY = clipPos[1] / clipPos[3];
-    
-    // Convertir de NDC a coordenadas de pantalla
-    const screenX = (ndcX + 1.0) * this.canvas.width * 0.5;
-    const screenY = (1.0 - ndcY) * this.canvas.height * 0.5;
+    // Dividir por w y mapear a coordenadas de pantalla (CSS px)
+    const ndcX = v[0] / v[3];
+    const ndcY = v[1] / v[3];
+    const dims = this.getCanvasCssDimensions();
+    const screenX = (ndcX + 1.0) * dims.width * 0.5;
+    const screenY = (1.0 - ndcY) * dims.height * 0.5;
 
     return { x: screenX, y: screenY };
   }

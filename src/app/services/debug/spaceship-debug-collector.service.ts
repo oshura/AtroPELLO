@@ -12,6 +12,12 @@ export class SpaceshipDebugCollector {
   private updateInterval: number | null = null;
   private isActive: boolean = false;
   private gameEngine: GameEngine | null = null;
+  private pendingTargeting?: {
+    mouse: { x: number; y: number; velocity: number };
+    hovered?: { id: string; name: string; type: string } | null;
+    selected?: { id: string; name: string; type: string } | null;
+    hit?: { distance?: number; radiusPx: number; screenPosition?: { x: number; y: number } | null } | null;
+  };
 
   constructor(private debugOverlay: DebugOverlayService) {}
 
@@ -64,11 +70,26 @@ export class SpaceshipDebugCollector {
     try {
       const spaceshipData = this.getSpaceshipData();
       if (spaceshipData) {
+        if (this.pendingTargeting) {
+          (spaceshipData as any).targeting = this.pendingTargeting;
+        }
         this.debugOverlay.updateData(spaceshipData);
       }
     } catch (error) {
       console.error('Error collecting spaceship debug data:', error);
     }
+  }
+
+  /**
+   * Permite inyectar un snapshot de targeting (desde ReticleManager)
+   */
+  setTargetingSnapshot(snapshot: {
+    mouse: { x: number; y: number; velocity: number };
+    hovered?: { id: string; name: string; type: string } | null;
+    selected?: { id: string; name: string; type: string } | null;
+    hit?: { distance?: number; radiusPx: number; screenPosition?: { x: number; y: number } | null } | null;
+  }): void {
+    this.pendingTargeting = snapshot;
   }
 
   /**

@@ -110,7 +110,7 @@ export interface ITargetDetector {
   /**
    * Detecta targets en una posición de pantalla
    */
-  detectTargetAt(screenPos: ScreenPosition): RaycastHit | null;
+  detectTargetAt(screenPos: ScreenPosition, detectionRadiusPx?: number): RaycastHit | null;
   
   /**
    * Obtiene todos los targets visibles en pantalla
@@ -249,13 +249,13 @@ export const DEFAULT_TARGETING_CONFIG: TargetingSystemConfig = {
   highlight: DEFAULT_HIGHLIGHT_CONFIG,
   input: DEFAULT_INPUT_CONFIG,
   detection: {
-    maxDistance: 1000,
+    maxDistance: Infinity,
     raycastPrecision: 0.1,
     targetTypes: ['asteroid', 'spaceship', 'planet', 'portal']
   },
   performance: {
     updateFrequency: 60,
     maxTargetsPerFrame: 20,
-    cullingDistance: 500
+    cullingDistance: Infinity
   }
 };

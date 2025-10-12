@@ -16,6 +16,12 @@ export interface SpaceshipDebugData {
     modeName: string;
     zoomDistance: number;
   };
+  targeting?: {
+    mouse: { x: number; y: number; velocity: number };
+    hovered?: { id: string; name: string; type: string } | null;
+    selected?: { id: string; name: string; type: string } | null;
+    hit?: { distance?: number; radiusPx: number; screenPosition?: { x: number; y: number } | null } | null;
+  };
 }
 
 /**
@@ -108,6 +114,16 @@ export class DebugOverlayService {
             <span>Mode: <span id="camera-mode">N/A</span></span>
             <span>Name: <span id="camera-name">Unknown</span></span>
             <span>Zoom: <span id="camera-zoom">0.00</span></span>
+          </div>
+        </div>
+
+        <div class="debug-section">
+          <h4>🎯 Targeting</h4>
+          <div class="debug-values">
+            <span>Mouse: <span id="tgt-mouse">(0,0) v0</span></span>
+            <span>Hovered: <span id="tgt-hovered">none</span></span>
+            <span>Selected: <span id="tgt-selected">none</span></span>
+            <span>Hit: <span id="tgt-hit">none</span></span>
           </div>
         </div>
       </div>
@@ -273,6 +289,29 @@ export class DebugOverlayService {
     this.updateElementText('camera-mode', data.camera.mode);
     this.updateElementText('camera-name', data.camera.modeName);
     this.updateElementText('camera-zoom', data.camera.zoomDistance.toFixed(2));
+
+    // Actualizar targeting si llega
+    if (data.targeting) {
+      const m = data.targeting.mouse;
+      const mouseText = `(${Math.round(m.x)},${Math.round(m.y)}) v${Math.round(m.velocity)}`;
+      this.updateElementText('tgt-mouse', mouseText);
+
+      const hoveredText = data.targeting.hovered
+        ? `${data.targeting.hovered.name} [${data.targeting.hovered.type}]`
+        : 'none';
+      this.updateElementText('tgt-hovered', hoveredText);
+
+      const selectedText = data.targeting.selected
+        ? `${data.targeting.selected.name} [${data.targeting.selected.type}]`
+        : 'none';
+      this.updateElementText('tgt-selected', selectedText);
+
+      const hit = data.targeting.hit;
+      const hitText = hit
+        ? `r=${Math.round(hit.radiusPx)}${hit.distance != null ? `, d=${Math.round(hit.distance)}` : ''}${hit.screenPosition ? ` @(${Math.round(hit.screenPosition.x)},${Math.round(hit.screenPosition.y)})` : ''}`
+        : 'none';
+      this.updateElementText('tgt-hit', hitText);
+    }
   }
 
   /**

@@ -55,11 +55,20 @@ export class ReticleRenderer implements IReticleRenderer {
       return false;
     }
 
-    // Obtener dimensiones del canvas
+    // Obtener dimensiones del canvas (usar CSS px para coherencia con InputHandler)
     const canvas = this.webglService.getCanvas();
     if (canvas) {
-      this.canvasWidth = canvas.width;
-      this.canvasHeight = canvas.height;
+      const state = this.webglService.getState();
+      this.canvasWidth = state.width || canvas.clientWidth || canvas.width;
+      this.canvasHeight = state.height || canvas.clientHeight || canvas.height;
+
+      // Escuchar cambios de tamaño para mantener alineación con viewport CSS
+      canvas.addEventListener('webgl-resize', (e: Event) => {
+        const detail: any = (e as CustomEvent).detail || {};
+        const w = detail.width ?? canvas.clientWidth ?? canvas.width;
+        const h = detail.height ?? canvas.clientHeight ?? canvas.height;
+        this.updateCanvasSize(Number(w), Number(h));
+      });
     }
 
     // Crear recursos WebGL
