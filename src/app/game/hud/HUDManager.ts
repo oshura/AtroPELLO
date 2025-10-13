@@ -6,6 +6,7 @@ import { NavigationSphere } from './elements/NavigationSphere';
 import { SpeedometerDigital } from './elements/SpeedometerDigital';
 import { MarqueePanel } from './elements/MarqueePanel';
 import { TargetingSystem, TargetInfo } from '../types/targeting.types';
+import { TargetPanel, TargetPanelState, Relation } from './elements/TargetPanel';
 
 /**
  * Administrador principal del sistema HUD
@@ -23,6 +24,7 @@ export class HUDManager {
   private navigationSphere: NavigationSphere;
   private speedometer: SpeedometerDigital;
   private marqueePanel: MarqueePanel;
+  private targetPanel: TargetPanel;
   
   // Geometría del plano HUD
   private hudGeometry: { vertices: Float32Array; indices: Uint16Array } | null = null;
@@ -44,6 +46,7 @@ export class HUDManager {
     this.navigationSphere = new NavigationSphere();
     this.speedometer = new SpeedometerDigital();
     this.marqueePanel = new MarqueePanel();
+  this.targetPanel = new TargetPanel();
     console.log('✅ Elementos HUD creados');
     
     // Inicializar sistema de targeting
@@ -103,11 +106,17 @@ export class HUDManager {
     
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
     this.speedometer.update(gameData.speed);
-    this.marqueePanel.update(); // Sin parámetros, usa su lógica interna
+  this.marqueePanel.update(); // Sin parámetros, usa su lógica interna
     
     // Renderizar todos los elementos en la textura
     this.renderToTexture();
   }
+
+  // === Target Panel Public API ===
+  public updateTargetPanel(state: Partial<TargetPanelState>) {
+    this.targetPanel.setData({ active: true, ...state });
+  }
+  public clearTargetPanel() { this.targetPanel.clear(); }
 
   /**
    * Debug: Mostrar información de estado en consola (F1)
@@ -419,7 +428,16 @@ export class HUDManager {
     };
     this.compass.render(ctx, compassPos);
     
-    // Marco HUD permanente para inmersión cockpit
+  // === TARGET PANEL ===
+  // Centered and larger
+  const panelWidth = 840;   // doubled from 420
+  const panelHeight = 320;  // doubled from 160
+  const panelX = centerX - panelWidth / 2;
+  const panelYOffset = 80; // move slightly down to avoid compass overlap
+  const panelY = centerY - panelHeight / 2 + panelYOffset;
+  this.targetPanel.render(ctx, panelX, panelY, panelWidth, panelHeight);
+
+  // Marco HUD permanente para inmersión cockpit
     if (this.showHUDFrame) {
       // Marco principal más sutil y elegante
       ctx.strokeStyle = 'rgba(0, 150, 255, 0.4)'; // Azul cyan más elegante

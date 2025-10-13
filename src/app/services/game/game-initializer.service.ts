@@ -4,6 +4,8 @@ import { GameEngine } from '../../game/GameEngine';
 import { WebGLService } from '../webgl.service';
 import { ParticleEffectsService } from '../particle-effects.service';
 import { ReticleManager } from '../../game/targeting';
+import { TargetCatalogService } from '../../game/services/target-catalog.service';
+import { TargetDetailService } from '../../game/services/target-detail.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -79,9 +81,11 @@ export class GameInitializer {
         throw new Error(webglResult.error || 'WebGL initialization failed');
       }
 
-      // Crear motor del juego con sistema de targeting completo
-      const reticleManager = this.injector.get(ReticleManager);
-      this.gameEngine = new GameEngine(this.webglService, this.particleEffectsService, reticleManager);
+    // Crear motor del juego con sistema de targeting completo
+    const reticleManager = this.injector.get(ReticleManager);
+    const targetCatalog = this.injector.get(TargetCatalogService);
+    const targetDetails = this.injector.get(TargetDetailService);
+    this.gameEngine = new GameEngine(this.webglService, this.particleEffectsService, reticleManager, targetCatalog, targetDetails);
 
       // Inicializar motor del juego
       await this.gameEngine.initialize(canvasRef);

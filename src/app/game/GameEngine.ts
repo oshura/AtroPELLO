@@ -9,7 +9,11 @@ import { ShaderManager } from './ShaderManager';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
 import { ReticleManager } from './targeting';
+import { TargetCatalogService } from './services/target-catalog.service';
+import { TargetType, ITargetable } from './types/targeting.types';
 import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
+import { TargetDetailService } from './services/target-detail.service';
+import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -29,6 +33,9 @@ export class GameEngine {
   private particleEffects!: ParticleEffectsService;
   private hudManager!: HUDManager;
   private reticleManager!: ReticleManager;
+  private targetCatalog!: TargetCatalogService;
+  private targetDetails!: TargetDetailService;
+  private targetPreview!: TargetPreviewRenderer;
   
   // Objetos del juego
   private spaceship!: Spaceship;
@@ -55,9 +62,14 @@ export class GameEngine {
   constructor(
     private webglService: WebGLService,
     private particleEffectsService: ParticleEffectsService,
-    private reticleManagerService: ReticleManager
+    private reticleManagerService: ReticleManager,
+    private targetCatalogService: TargetCatalogService,
+    private targetDetailService: TargetDetailService
   ) {
     this.reticleManager = this.reticleManagerService;
+    this.targetCatalog = this.targetCatalogService;
+    this.targetDetails = this.targetDetailService;
+    this.targetPreview = new TargetPreviewRenderer(256, 192);
   }
 
   /**
@@ -115,6 +127,9 @@ export class GameEngine {
 
       // Crear objetos del juego
       this.createGameObjects();
+
+  // Registrar targets genéricos (por ahora solo asteroides)
+  this.registerTargetsGeneric();
 
       // Ejecutar tests de integración cámara-nave
       this.runIntegrationTests();
@@ -204,6 +219,12 @@ export class GameEngine {
     
     // ¡CRÍTICO! Inicializar buffers WebGL para todos los objetos
     this.initializeAllBuffers();
+  }
+
+  private registerTargetsGeneric(): void {
+    // Adaptar asteroides a ITargetable existente (ya implementan métodos requeridos)
+    const asteroidTargets: ITargetable[] = this.asteroids as unknown as ITargetable[];
+    this.targetCatalog.register(TargetType.ASTEROID, asteroidTargets);
   }
   
   /**
@@ -330,11 +351,8 @@ export class GameEngine {
       this.wrapPosition(asteroid);
     });
 
-    // Actualizar sistema de targeting con objetos disponibles
-    const availableTargets = [
-      ...this.asteroids, // Asteroids ya implementan ITargetable
-      // TODO: Agregar otros objetos targetables (naves enemigas, planetas, etc.)
-    ];
+    // Actualizar sistema de targeting con objetos disponibles (catálogo genérico)
+    const availableTargets = this.targetCatalog.getAllTargets();
     
     // Debug ocasional para verificar targets
     if (Math.random() < 0.001) { // 0.1% chance
@@ -358,8 +376,71 @@ export class GameEngine {
     
     this.reticleManager.update(deltaTime, availableTargets);
 
+    // Update target preview animation regardless of selection
+    this.targetPreview.update(deltaTime);
+
+    // Drive HUD Target Panel from hovered/selected targets
+    const hovered = this.reticleManager.getHoveredTarget();
+    const selected = this.reticleManager.getCurrentTarget() || hovered;
+    if (selected) {
+      // Distance
+      const dx = selected.position.x - this.camera.position.x;
+      const dy = selected.position.y - this.camera.position.y;
+      const dz = selected.position.z - this.camera.position.z;
+      const distance = Math.hypot(dx, dy, dz);
+
+      // Relation heuristic (asteroids neutral; extend later)
+      const relation: 'ally' | 'neutral' | 'enemy' = (selected.getTargetType() === TargetType.ASTEROID) ? 'neutral' : 'enemy';
+
+      // Render preview into offscreen canvas
+      this.targetPreview.renderPreview(selected);
+      const previewCanvas = this.targetPreview.getCanvas();
+
+      // Details: fetch async once per different selection (simple cache by id)
+      // For now, fire-and-forget; the HUD will be updated next frame when resolved
+      this.fetchAndCacheTargetDetails(selected);
+
+      const details = (this as any)._targetDetailsCache?.[selected.id] || this.getFallbackDetails(selected);
+
+      this.hudManager.updateTargetPanel({
+        name: selected.getDisplayName(),
+        distance,
+        relation,
+        previewCanvas,
+        details,
+        active: true
+      });
+    } else {
+      this.hudManager.clearTargetPanel();
+    }
+
     // Detectar colisiones
     this.checkCollisions();
+  }
+
+  private async fetchAndCacheTargetDetails(target: ITargetable) {
+    const cache = ((this as any)._targetDetailsCache ||= {});
+    if (cache[target.id]) return; // Already have details
+    try {
+      const res = await this.targetDetails.getDetails(target);
+      // Decorate asteroid details with fantastical metals when applicable
+      if (res.type === TargetType.ASTEROID) {
+        const variants = ['adamantium', 'mythril', 'quantum-iron', 'dark-nickel', 'starlight-opal'];
+        (res.data as any).composition = variants[Math.floor(Math.random()*variants.length)];
+        (res.data as any).albedo = Number((Math.random()*0.8+0.1).toFixed(2));
+        (res.data as any).massTons = Math.floor(Math.random()*5000)+100;
+      }
+      cache[target.id] = res.data;
+    } catch (e) {
+      console.warn('Target details fetch failed', e);
+    }
+  }
+
+  private getFallbackDetails(target: ITargetable) {
+    if (target.getTargetType() === TargetType.ASTEROID) {
+      return { composition: 'basalt', albedo: 0.3, massTons: 1200 };
+    }
+    return {};
   }
 
   // Los efectos de propulsión ahora se manejan en ParticleEffectsService
@@ -1506,8 +1587,8 @@ export class GameEngine {
   private renderOutlineSystem(): void {
     if (!this.reticleManager || !this.camera) return;
 
-    // Obtener todos los targets disponibles
-    const availableTargets = [...this.asteroids];
+    // Obtener todos los targets de forma genérica
+    const availableTargets = this.targetCatalog.getAllTargets();
 
     // Renderizar outlines con matrices actuales de la cámara
     this.reticleManager.renderOutlines(

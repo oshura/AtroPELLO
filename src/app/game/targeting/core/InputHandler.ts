@@ -22,6 +22,7 @@ export class InputHandler {
   private isMouseDown: boolean = false;
   private lastClickTime: number = 0;
   private doubleClickThreshold: number = 300; // ms
+  private clickPending: boolean = false;
 
   // Listeners para limpieza
   private mouseListeners: (() => void)[] = [];
@@ -150,18 +151,25 @@ export class InputHandler {
       // Manejar doble click
       if (timeSinceLastClick < this.doubleClickThreshold) {
         // Es un doble click - seleccionar target
-        if (this.events?.onTargetSelected) {
-          // El ReticleManager detectará el target en esta posición
-        }
+        this.clickPending = true; // ReticleManager consumirá y decidirá el target
       }
     } else if (!this.config.holdToLock) {
       // Click simple para seleccionar
-      if (this.events?.onTargetSelected) {
-        // El ReticleManager detectará el target en esta posición
-      }
+      this.clickPending = true; // ReticleManager consumirá y decidirá el target
     }
 
     this.lastClickTime = currentTime;
+  }
+
+  /**
+   * Devuelve true si hay un click pendiente y lo consume.
+   */
+  public consumeClick(): boolean {
+    if (this.clickPending) {
+      this.clickPending = false;
+      return true;
+    }
+    return false;
   }
 
   /**

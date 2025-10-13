@@ -33,6 +33,20 @@ export class TargetDetector implements ITargetDetector {
   }
 
   /**
+   * Proyecta una posición mundial a coordenadas de pantalla (CSS px)
+   */
+  public projectWorldToScreen(worldPos: { x: number; y: number; z: number }): ScreenPosition | null {
+    return this.worldToScreen(worldPos);
+  }
+
+  /**
+   * Distancia en unidades del mundo desde la cámara a una posición
+   */
+  public getDistanceTo(worldPos: { x: number; y: number; z: number }): number {
+    return this.getWorldDistance(worldPos);
+  }
+
+  /**
    * Inicializa el detector con cámara y canvas
    */
   public initialize(camera: Camera): void {

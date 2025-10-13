@@ -107,7 +107,7 @@ export class ReticleManager {
           return;
         }
 
-        // Inicializar componentes
+  // Inicializar componentes
         this.targetDetector.initialize(camera);
         this.inputHandler.initialize(canvas, this.events);
         this.targetHighlighter.initialize(shaderManager);
@@ -201,6 +201,24 @@ export class ReticleManager {
 
     // Actualizar outline renderer
     this.outlineRenderer.update(deltaTime);
+
+    // Click-to-select: si hay click pendiente, seleccionar hovered si existe
+    if (this.inputHandler.consumeClick()) {
+      const hovered = this.state.hoveredTarget;
+      if (hovered) {
+        this.events.onTargetSelected(hovered);
+      }
+    }
+
+    // Si el target seleccionado desaparece, limpiar selección
+    if (this.state.currentTarget) {
+      const stillExists = availableTargets.some(t => t.id === this.state.currentTarget!.id && t.isActive());
+      if (!stillExists) {
+        this.events.onTargetSelected(null);
+      }
+    }
+
+    // HUD hover info is handled by HUDManager texture, not here.
   }
 
   /**
@@ -472,7 +490,7 @@ export class ReticleManager {
     if (target && target !== previousTarget) {
       console.log('👁️ Target hovered:', target.getDisplayName());
       
-      // Aplicar highlighting al target hovered
+  // Aplicar highlighting al target hovered
       this.targetHighlighter.highlightTarget(target);
       
       // Aplicar outline de hover (GLOW suave)
@@ -496,6 +514,7 @@ export class ReticleManager {
         this.targetHighlighter.removeHighlight(previousTarget);
         this.outlineRenderer.removeOutline(previousTarget.id);
       }
+      // HUD overlay not used
     }
   }
 
