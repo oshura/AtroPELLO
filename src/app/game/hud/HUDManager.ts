@@ -409,7 +409,7 @@ export class HUDManager {
     // Posición: parte superior central (debajo de marquee más grande)
     const compassPos = {
       x: centerX,
-      y: 180  // Más abajo para no chocar con marquee de 80px altura
+      y: 200  // Bajada adicional para evitar solaparse con el marquee
     };
     this.compass.render(ctx, compassPos);
 
@@ -444,7 +444,7 @@ export class HUDManager {
   // Dimensiones conocidas del speedometer digital (ver SpeedometerDigital)
   const speedWidth = 120;
   const speedHeight = 40;
-  const marginAbovePanel = 10; // separación con el panel
+  const marginAbovePanel = 20; // separación con el panel (subido un poco más)
   const speedY = panelY - (speedHeight / 2) - marginAbovePanel;
   // Alineación: izquierda igual que barra izquierda (sobresale por derecha)
   const speedLeftPos = { x: leftBarPos.x + speedWidth / 2, y: speedY };
@@ -459,13 +459,13 @@ export class HUDManager {
 
   // Marco HUD permanente para inmersión cockpit
     if (this.showHUDFrame) {
-      // Marco principal más sutil y elegante
-      ctx.strokeStyle = 'rgba(0, 150, 255, 0.4)'; // Azul cyan más elegante
+      // Marco principal en verde fósforo
+      ctx.strokeStyle = 'rgba(0, 255, 0, 0.4)'; // Verde fósforo
       ctx.lineWidth = 1.5;
       ctx.strokeRect(8, 8, canvas.width - 16, canvas.height - 16);
       
       // Grid de referencia sutil
-      ctx.strokeStyle = 'rgba(0, 150, 255, 0.08)'; // Muy sutil
+      ctx.strokeStyle = 'rgba(0, 255, 0, 0.08)'; // Muy sutil (verde)
       ctx.lineWidth = 0.5;
       for (let x = 50; x < canvas.width; x += 50) { // Grid más fino cada 50px
         ctx.beginPath();
@@ -481,7 +481,7 @@ export class HUDManager {
       }
       
       // Esquinas reforzadas para look futurista
-      ctx.strokeStyle = 'rgba(0, 150, 255, 0.6)';
+      ctx.strokeStyle = 'rgba(0, 255, 0, 0.6)';
       ctx.lineWidth = 2;
       const cornerSize = 20;
       // Esquina superior izquierda

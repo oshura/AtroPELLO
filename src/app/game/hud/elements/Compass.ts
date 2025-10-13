@@ -23,8 +23,10 @@ export class Compass {
     
     this.drawCompassRing(ctx);
     this.drawDirectionMarkers(ctx);
-    this.drawCompassNeedle(ctx);
-    this.drawHeadingValue(ctx);
+    // Mostrar solo información del target si existe; si no, no marcar nada
+    if (this.targetInfo) {
+      this.drawTargetNeedle(ctx);
+    }
     
     ctx.restore();
   }
@@ -102,48 +104,8 @@ export class Compass {
     }
   }
 
-  private drawCompassNeedle(ctx: CanvasRenderingContext2D): void {
-    ctx.save();
-    ctx.rotate((this.heading * Math.PI) / 180);
-    
-    // Aguja Norte (amarilla) - CUADRADO como solicitado
-    ctx.strokeStyle = '#FFFF00';
-    ctx.fillStyle = '#FFFF00';
-    ctx.lineWidth = 4;
-    ctx.shadowColor = '#FFFF00';
-    ctx.shadowBlur = 6;
-    
-    // Dibujar cuadrado en lugar de triángulo
-    const squareSize = 8;
-    ctx.fillRect(-squareSize/2, -this.radius + 15, squareSize, squareSize);
-    ctx.strokeRect(-squareSize/2, -this.radius + 15, squareSize, squareSize);
-    
-    // Aguja Sur (roja) más grande
-    ctx.strokeStyle = '#FF0000';
-    ctx.fillStyle = '#FF0000';
-    ctx.shadowColor = '#FF0000';
-    ctx.shadowBlur = 4;
-    
-    ctx.beginPath();
-    ctx.moveTo(0, this.radius - 15);
-    ctx.lineTo(-4, this.radius - 30);
-    ctx.lineTo(4, this.radius - 30);
-    ctx.closePath();
-    ctx.fill();
-    ctx.stroke();
-    
-    // Centro de la aguja
-    ctx.fillStyle = '#FFFFFF';
-    ctx.shadowBlur = 0;
-    ctx.beginPath();
-    ctx.arc(0, 0, 6, 0, 2 * Math.PI);
-    ctx.fill();
-    
-    ctx.restore();
-    
-    // Dibujar aguja hacia target (si existe)
-    this.drawTargetNeedle(ctx);
-  }
+  // Eliminada la aguja N/S: cuando hay target mostramos solo la aguja del target;
+  // cuando no hay target, no se muestra ninguna aguja.
 
   private drawTargetNeedle(ctx: CanvasRenderingContext2D): void {
     if (!this.targetInfo) return; // No hay target, no dibujar aguja
@@ -151,14 +113,17 @@ export class Compass {
     ctx.save();
     
     // Rotar hacia el bearing del target (relativo al heading actual)
-    const targetAngle = this.targetInfo.bearing - this.heading;
+    const rawAngle = this.targetInfo.bearing - this.heading;
+    const targetAngle = ((rawAngle + 540) % 360) - 180; // Normalizar a [-180, 180]
     ctx.rotate((targetAngle * Math.PI) / 180);
     
-    // Aguja hacia target (roja, triángulo)
-    ctx.strokeStyle = '#FF0000';
-    ctx.fillStyle = '#FF0000';
+    // Color según "sentido": delante (|ang| <= 90) verde; detrás rojo
+    const isFrontHemisphere = Math.abs(targetAngle) <= 90;
+    const needleColor = isFrontHemisphere ? '#00FF66' : '#FF4444';
+    ctx.strokeStyle = needleColor;
+    ctx.fillStyle = needleColor;
     ctx.lineWidth = 3;
-    ctx.shadowColor = '#FF0000';
+    ctx.shadowColor = needleColor;
     ctx.shadowBlur = 8;
     
     // Triángulo apuntando al target
@@ -169,19 +134,31 @@ export class Compass {
     ctx.closePath();
     ctx.fill();
     ctx.stroke();
+
+    // Indicador de elevación simple: pequeña marca en el centro (arriba/abajo)
+    const elev = this.targetInfo.elevation || 0;
+    const elevClamped = Math.max(-45, Math.min(45, elev));
+    const elevLen = 12 * (Math.abs(elevClamped) / 45);
+    if (elevLen > 2) {
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = '#00FFFFAA';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      if (elevClamped > 0) {
+        // Arriba
+        ctx.moveTo(0, 4);
+        ctx.lineTo(0, 4 - elevLen);
+      } else {
+        // Abajo
+        ctx.moveTo(0, -4);
+        ctx.lineTo(0, -4 + elevLen);
+      }
+      ctx.stroke();
+    }
     
     ctx.restore();
   }
-
-  private drawHeadingValue(ctx: CanvasRenderingContext2D): void {
-    ctx.fillStyle = '#00FFFF';
-    ctx.font = 'bold 14px monospace';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'top';
-    
-    const headingText = Math.round(this.heading).toString().padStart(3, '0') + '°';
-    ctx.fillText(headingText, 0, this.radius + 10);
-  }
+  // Se elimina el valor numérico de heading para no "marcar" cuando no hay target
 
   public getDebugInfo(): any {
     return {

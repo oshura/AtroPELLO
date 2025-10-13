@@ -1545,8 +1545,20 @@ export class GameEngine {
       pitch: this.spaceship.rotation.x * (180 / Math.PI),
       roll: this.spaceship.rotation.z * (180 / Math.PI),
       altitude: this.spaceship.position.y,
-      speed: this.spaceship.getSpeedPercentage() * 2 // Escalar para mejor visualización
+      speed: this.spaceship.getSpeedPercentage() * 2, // Escalar para mejor visualización
+      // Pasar posición de la nave para cálculo de bearing/elevación en brújula
+      position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }
     };
+
+    // Sincronizar el target actual del sistema de retícula con el HUD
+    try {
+      const currentTarget = this.reticleManager?.getCurrentTarget ? this.reticleManager.getCurrentTarget() : null;
+      if (this.hudManager?.setTarget) {
+        this.hudManager.setTarget(currentTarget);
+      }
+    } catch (e) {
+      console.warn('⚠️ No se pudo sincronizar target con HUD:', e);
+    }
 
     // Actualizar elementos del HUD
     this.hudManager.update(gameData);

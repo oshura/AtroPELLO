@@ -43,9 +43,9 @@ export class TargetPanel {
     ctx.fillRect(x, y, width, height);
     ctx.restore();
 
-    // Outline frame
-    ctx.save();
-    ctx.strokeStyle = color;
+  // Outline frame (siempre verde fósforo, independiente de relación)
+  ctx.save();
+  ctx.strokeStyle = 'rgba(0,255,0,0.95)';
     ctx.lineWidth = 2;
     this.roundRect(ctx, x, y, width, height, 10);
     ctx.stroke();
@@ -64,7 +64,11 @@ export class TargetPanel {
   const pvX = x + 12;
   const pvY = y + 48; // Bajar un poco más el área de preview
     const pvW = Math.min(320, width * 0.4);
-    const pvH = Math.min(240, height - 60);
+    // Aumentar la altura ~1/6 por la parte inferior, sin salir del panel
+    const allowedMaxH = Math.max(0, height - 60);
+    const baseH = Math.min(240, allowedMaxH);
+    const extraH = Math.floor(baseH / 6);
+    const pvH = Math.min(baseH + extraH, allowedMaxH);
     // Backdrop para asegurar contraste
     ctx.save();
     ctx.fillStyle = 'rgba(0, 15, 25, 0.35)';
@@ -106,12 +110,15 @@ export class TargetPanel {
     const infoW = width - (infoX - x) - 12;
 
     ctx.save();
-  ctx.font = '26px Segoe UI, Roboto, sans-serif';
+  // Aumentar tamaño de fuente para mejor legibilidad
+  ctx.font = '28px Segoe UI, Roboto, sans-serif';
+    // Usar textBaseline 'top' para evitar recortes inferiores
+    ctx.textBaseline = 'top';
     ctx.fillStyle = color;
 
     // Preparar líneas, filtrando claves internas
     const details = this.state.details || {};
-    const lineHeight = 32;
+  const lineHeight = 34; // acorde con 28px de fuente
     const lines: string[] = [];
     // Forzar 'type' como primera línea si existe
     if ((details as any).type !== undefined) {
@@ -123,10 +130,11 @@ export class TargetPanel {
     }
     // Alinear por abajo con el límite del wireframe
     const totalHeight = lines.length * lineHeight;
-    const startY = infoY + pvH - totalHeight + (lineHeight - 8); // margen inferior suave
+    const bottomMargin = 6; // margen inferior para evitar recorte
+    const startY = infoY + pvH - totalHeight - bottomMargin;
     let yCursor = startY;
     for (const line of lines) {
-      if (yCursor > infoY + pvH) break; // seguridad
+      if (yCursor > infoY + pvH - lineHeight) break; // seguridad con baseline top
       ctx.fillText(line, infoX, yCursor);
       yCursor += lineHeight;
     }

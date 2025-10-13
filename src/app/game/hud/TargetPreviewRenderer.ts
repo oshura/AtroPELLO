@@ -17,12 +17,16 @@ export class TargetPreviewRenderer {
   private program: WebGLProgram | null = null;
   private aPos = -1;
   private uMVP: WebGLUniformLocation | null = null;
+  private uColor: WebGLUniformLocation | null = null;
 
   // Geometry buffers (a low-poly sphere-like proxy) in wireframe
   private vao: WebGLVertexArrayObject | null = null;
   private vbo: WebGLBuffer | null = null;
   private lineIbo: WebGLBuffer | null = null;
   private lineIndexCount = 0;
+  private triIbo: WebGLBuffer | null = null;
+  private triIndexCount = 0;
+  private lastMeshKey: string | null = null;
 
   constructor(width = 256, height = 192) {
     this.canvas = document.createElement('canvas');
@@ -69,6 +73,9 @@ export class TargetPreviewRenderer {
 
     gl.useProgram(this.program);
 
+    // Preparar geometría específica del target si está disponible
+    this.ensureTargetGeometry(target);
+
     // Build MVP (column-major) with simple Y rotation and scale
   const aspect = this.canvas.width / this.canvas.height;
   const fovRad = 45 * Math.PI / 180;
@@ -91,7 +98,45 @@ export class TargetPreviewRenderer {
     const mvp = this.mul4(proj, model);
     gl.uniformMatrix4fv(this.uMVP, false, mvp);
 
-    // Draw proxy geometry as wireframe
+    // Hidden-line style rendering
+    // 1) Depth prepass con triángulos (sin escribir color)
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    gl.colorMask(false, false, false, false);
+    if (this.triIbo && this.triIndexCount > 0) {
+      if (this.vao) { gl.bindVertexArray(this.vao); }
+      else {
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+        gl.enableVertexAttribArray(this.aPos);
+        gl.vertexAttribPointer(this.aPos, 3, gl.FLOAT, false, 0, 0);
+      }
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.triIbo);
+      gl.drawElements(gl.TRIANGLES, this.triIndexCount, gl.UNSIGNED_SHORT, 0);
+      if (this.vao) { gl.bindVertexArray(null); }
+      else { gl.disableVertexAttribArray(this.aPos); }
+    }
+    gl.colorMask(true, true, true, true);
+
+    // 2) Pasada tenue: todas las aristas, sin depth test (para mostrar líneas ocultas)
+    const faintColor = new Float32Array([0.0, 1.0, 1.0, 0.25]);
+    if (this.uColor) gl.uniform4fv(this.uColor, faintColor);
+    gl.disable(gl.DEPTH_TEST);
+    if (this.vao) { gl.bindVertexArray(this.vao); }
+    else {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+      gl.enableVertexAttribArray(this.aPos);
+      gl.vertexAttribPointer(this.aPos, 3, gl.FLOAT, false, 0, 0);
+    }
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.lineIbo);
+    gl.drawElements(gl.LINES, this.lineIndexCount, gl.UNSIGNED_SHORT, 0);
+    if (this.vao) { gl.bindVertexArray(null); }
+    else { gl.disableVertexAttribArray(this.aPos); }
+
+    // 3) Pasada brillante: aristas frontales con depth test habilitado para ocultar las traseras
+    const brightColor = new Float32Array([0.0, 1.0, 1.0, 0.95]);
+    if (this.uColor) gl.uniform4fv(this.uColor, brightColor);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthFunc(gl.LEQUAL);
     if (this.vao) {
       gl.bindVertexArray(this.vao);
     } else {
@@ -119,8 +164,9 @@ export class TargetPreviewRenderer {
     `;
     const fs = `#version 300 es
       precision highp float;
+      uniform vec4 u_color;
       out vec4 fragColor;
-      void main(){ fragColor = vec4(0.0,1.0,1.0,0.95); } // cian semitransparente
+      void main(){ fragColor = u_color; } // color parametrizable
     `;
 
     const program = this.link(vs, fs);
@@ -134,25 +180,29 @@ export class TargetPreviewRenderer {
     this.program = program;
     this.aPos = 0;
     this.uMVP = gl.getUniformLocation(program, 'u_mvp');
+    this.uColor = gl.getUniformLocation(program, 'u_color');
   this.status = 'webgl2-program-ok';
 
-    // Build a simple low-poly sphere-like geometry
-  const { vertices, indices } = this.buildIcosaProxy();
+    // Inicializar buffers vacíos; la geometría se cargará por target o caerá en proxy
     this.vbo = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(), gl.STATIC_DRAW);
   // Crear VAO para asegurar compatibilidad en WebGL2
   this.vao = gl.createVertexArray();
   gl.bindVertexArray(this.vao);
   gl.enableVertexAttribArray(this.aPos);
   gl.vertexAttribPointer(this.aPos, 3, gl.FLOAT, false, 0, 0);
   gl.bindVertexArray(null);
-    // Construir índices de líneas (wireframe) deduplicados a partir de triángulos
-    const lineIndices = this.trianglesToUniqueLines(indices);
+    // Crear IBO de líneas vacío inicialmente
     this.lineIbo = gl.createBuffer();
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.lineIbo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lineIndices, gl.STATIC_DRAW);
-    this.lineIndexCount = lineIndices.length;
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(), gl.STATIC_DRAW);
+    this.lineIndexCount = 0;
+    // Crear IBO de triángulos para prepass de profundidad
+    this.triIbo = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.triIbo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(), gl.STATIC_DRAW);
+    this.triIndexCount = 0;
   }
 
   private link(vsSrc: string, fsSrc: string): WebGLProgram | null {
@@ -217,6 +267,48 @@ export class TargetPreviewRenderer {
     return new Uint16Array(edges);
   }
 
+  // Carga geometría específica del target (si el objeto expone vertices/indices),
+  // o usa un proxy genérico si no está disponible.
+  private ensureTargetGeometry(target: ITargetable) {
+    const gl = this.gl!;
+    const anyT: any = target as any;
+    let meshKey = 'proxy';
+
+    const hasMesh = anyT && anyT.vertices instanceof Float32Array && anyT.indices instanceof Uint16Array && anyT.vertices.length > 0 && anyT.indices.length > 0;
+    if (hasMesh) {
+      meshKey = `${anyT.id || 'tgt'}:${anyT.vertices.length}:${anyT.indices.length}`;
+    }
+
+    if (this.lastMeshKey === meshKey) return; // ya configurado
+    this.lastMeshKey = meshKey;
+
+    let vertices: Float32Array;
+    let indices: Uint16Array;
+    if (hasMesh) {
+      vertices = anyT.vertices as Float32Array;
+      indices = anyT.indices as Uint16Array;
+    } else {
+      const proxy = this.buildIcosaProxy();
+      vertices = proxy.vertices;
+      indices = proxy.indices;
+    }
+
+    // Actualizar VBO
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW);
+
+    // Actualizar IBO de líneas a partir de triángulos
+    const lineIndices = this.trianglesToUniqueLines(indices);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.lineIbo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, lineIndices, gl.STATIC_DRAW);
+    this.lineIndexCount = lineIndices.length;
+
+    // Actualizar IBO de triángulos para prepass
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.triIbo!);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    this.triIndexCount = indices.length;
+  }
+
   // === FALLBACK 2D ===
   private render2DFallback(target: ITargetable) {
     if (!this.ctx2d) return;
@@ -235,26 +327,82 @@ export class TargetPreviewRenderer {
     const rel = targetR / refRadius;
     const scale = Math.min(baseMax, baseMax * Math.min(rel, 1));
     const c = Math.cos(this.angle), s = Math.sin(this.angle);
-    // Proyección simple de un cubo
-    const verts = [
-      [-1,-1, 1], [ 1,-1, 1], [ 1, 1, 1], [-1, 1, 1],
-      [-1,-1,-1], [ 1,-1,-1], [ 1, 1,-1], [-1, 1,-1]
-    ];
-    // Rotación Y
-    const rotY = (v: number[]) => [ v[0]*c + v[2]*s, v[1], -v[0]*s + v[2]*c ];
-    // Proyección ortográfica simple
-    const proj = (v: number[]) => [ v[0]*scale, v[1]*scale ];
-    const p: [number,number][] = verts.map(v => proj(rotY(v)) as [number,number]);
-    const edges = [
-      [0,1],[1,2],[2,3],[3,0],
-      [4,5],[5,6],[6,7],[7,4],
-      [0,4],[1,5],[2,6],[3,7]
-    ];
-    for (const [i,j] of edges) {
-      ctx.beginPath();
-      ctx.moveTo(p[i][0], p[i][1]);
-      ctx.lineTo(p[j][0], p[j][1]);
-      ctx.stroke();
+    // Intentar usar la malla del target si está disponible
+    const anyT: any = target as any;
+    const hasMesh = anyT && anyT.vertices instanceof Float32Array && anyT.indices instanceof Uint16Array && anyT.vertices.length > 0 && anyT.indices.length > 0;
+    if (hasMesh) {
+      const verts3 = anyT.vertices as Float32Array;
+      const tris = anyT.indices as Uint16Array;
+      const lineIdx = this.trianglesToUniqueLines(tris);
+      // 1) Todas las líneas tenues
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,255,255,0.25)';
+      for (let e = 0; e < lineIdx.length; e += 2) {
+        const i = lineIdx[e] * 3, j = lineIdx[e+1] * 3;
+        const x1 = verts3[i], y1 = verts3[i+1], z1 = verts3[i+2];
+        const x2 = verts3[j], y2 = verts3[j+1], z2 = verts3[j+2];
+        const rx1 = x1 * c + z1 * s; const rz1 = -x1 * s + z1 * c;
+        const rx2 = x2 * c + z2 * s; const rz2 = -x2 * s + z2 * c;
+        ctx.beginPath();
+        ctx.moveTo(rx1 * scale, y1 * scale);
+        ctx.lineTo(rx2 * scale, y2 * scale);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // 2) Solo aristas de triángulos frontales en brillante
+      ctx.save();
+      ctx.strokeStyle = 'rgba(0,255,255,0.95)';
+      for (let t = 0; t < tris.length; t += 3) {
+        const i0 = tris[t]*3, i1 = tris[t+1]*3, i2 = tris[t+2]*3;
+        const v0 = [verts3[i0], verts3[i0+1], verts3[i0+2]];
+        const v1 = [verts3[i1], verts3[i1+1], verts3[i1+2]];
+        const v2 = [verts3[i2], verts3[i2+1], verts3[i2+2]];
+        const rv0 = [v0[0]*c + v0[2]*s, v0[1], -v0[0]*s + v0[2]*c];
+        const rv1 = [v1[0]*c + v1[2]*s, v1[1], -v1[0]*s + v1[2]*c];
+        const rv2 = [v2[0]*c + v2[2]*s, v2[1], -v2[0]*s + v2[2]*c];
+        const e1 = [rv1[0]-rv0[0], rv1[1]-rv0[1], rv1[2]-rv0[2]];
+        const e2 = [rv2[0]-rv0[0], rv2[1]-rv0[1], rv2[2]-rv0[2]];
+        const n = [
+          e1[1]*e2[2] - e1[2]*e2[1],
+          e1[2]*e2[0] - e1[0]*e2[2],
+          e1[0]*e2[1] - e1[1]*e2[0]
+        ];
+        if (n[2] > 0) {
+          const drawEdge = (a: number[], b: number[]) => {
+            ctx.beginPath();
+            ctx.moveTo(a[0]*scale, a[1]*scale);
+            ctx.lineTo(b[0]*scale, b[1]*scale);
+            ctx.stroke();
+          };
+          drawEdge(rv0, rv1);
+          drawEdge(rv1, rv2);
+          drawEdge(rv2, rv0);
+        }
+      }
+      ctx.restore();
+    } else {
+      // Proyección simple de un cubo como fallback
+      const verts = [
+        [-1,-1, 1], [ 1,-1, 1], [ 1, 1, 1], [-1, 1, 1],
+        [-1,-1,-1], [ 1,-1,-1], [ 1, 1,-1], [-1, 1,-1]
+      ];
+      // Rotación Y
+      const rotY = (v: number[]) => [ v[0]*c + v[2]*s, v[1], -v[0]*s + v[2]*c ];
+      // Proyección ortográfica simple
+      const proj = (v: number[]) => [ v[0]*scale, v[1]*scale ];
+      const p: [number,number][] = verts.map(v => proj(rotY(v)) as [number,number]);
+      const edges = [
+        [0,1],[1,2],[2,3],[3,0],
+        [4,5],[5,6],[6,7],[7,4],
+        [0,4],[1,5],[2,6],[3,7]
+      ];
+      for (const [i,j] of edges) {
+        ctx.beginPath();
+        ctx.moveTo(p[i][0], p[i][1]);
+        ctx.lineTo(p[j][0], p[j][1]);
+        ctx.stroke();
+      }
     }
     ctx.restore();
   }
