@@ -115,6 +115,12 @@ export class HUDManager {
   // === Target Panel Public API ===
   public updateTargetPanel(state: Partial<TargetPanelState>) {
     this.targetPanel.setData({ active: true, ...state });
+    const pc = (state as any).previewCanvas as HTMLCanvasElement | null | undefined;
+    if (pc) {
+      console.log('🖼️ TargetPanel.update: previewCanvas', { w: pc.width, h: pc.height });
+    } else {
+      console.log('🖼️ TargetPanel.update: SIN previewCanvas');
+    }
   }
   public clearTargetPanel() { this.targetPanel.clear(); }
 
@@ -397,28 +403,7 @@ export class HUDManager {
     const marqueeY = 20;
     this.marqueePanel.render(ctx, marqueeX, marqueeY);
     
-    // === SPEEDOMETER DIGITAL === (recolocado más arriba)
-    // Posición: parte superior derecha
-    const speedometerPos = {
-      x: canvas.width - 180,  // Esquina superior derecha
-      y: 60  // Más arriba, cerca del borde superior
-    };
-    this.speedometer.render(ctx, speedometerPos);
-    
-    // === VELOCITY BARS ===
-    // Barra izquierda
-    const leftBarPos = {
-      x: 50,
-      y: centerY - 100  // Centrada verticalmente
-    };
-    this.velocityBarLeft.render(ctx, leftBarPos);
-    
-    // Barra derecha  
-    const rightBarPos = {
-      x: canvas.width - 70,
-      y: centerY - 100  // Centrada verticalmente
-    };
-    this.velocityBarRight.render(ctx, rightBarPos);
+    // (El velocímetro superior derecho se elimina; ahora se duplican sobre cada barra)
     
     // === COMPASS === 
     // Posición: parte superior central (debajo de marquee más grande)
@@ -427,15 +412,50 @@ export class HUDManager {
       y: 180  // Más abajo para no chocar con marquee de 80px altura
     };
     this.compass.render(ctx, compassPos);
+
+    // === TARGET PANEL ===
+    // Centered and larger (más alto) y un poco más abajo
+    const panelWidth = 840;   // ancho actual
+    const panelHeight = 360;  // más alto que antes (320 → 360)
+    const panelX = centerX - panelWidth / 2;
+    const panelYOffset = 100; // bajar un poco más el panel
+    const panelY = centerY - panelHeight / 2 + panelYOffset;
+    this.targetPanel.render(ctx, panelX, panelY, panelWidth, panelHeight);
+
+    // === VELOCITY BARS ===
+    // Alinear su base con la base del panel de targets y usar misma altura
+  const barHeight = this.velocityBarLeft.setExternalHeight(panelHeight); // nuevo API: fija altura
+  this.velocityBarRight.setExternalHeight(panelHeight);
+    const baseY = panelY + panelHeight - barHeight; // garantizar que toque abajo del panel
+    const leftBarPos = {
+      x: 50,
+      y: baseY
+    };
+    this.velocityBarLeft.render(ctx, leftBarPos);
+
+    const rightBarPos = {
+      x: canvas.width - 70,
+      y: baseY
+    };
+    this.velocityBarRight.render(ctx, rightBarPos);
+
+    // === SPEEDOMETER DUPLICADO SOBRE CADA BARRA ===
+    // Renderizar dos instancias: izquierda y derecha, alineadas con cada barra
+  // Dimensiones conocidas del speedometer digital (ver SpeedometerDigital)
+  const speedWidth = 120;
+  const speedHeight = 40;
+  const marginAbovePanel = 10; // separación con el panel
+  const speedY = panelY - (speedHeight / 2) - marginAbovePanel;
+  // Alineación: izquierda igual que barra izquierda (sobresale por derecha)
+  const speedLeftPos = { x: leftBarPos.x + speedWidth / 2, y: speedY };
+  // Alineación: derecha igual que barra derecha (sobresale por izquierda)
+  const rightBarRightEdge = rightBarPos.x + 20; // 20 = ancho de la barra
+  const speedRightPos = { x: rightBarRightEdge - speedWidth / 2, y: speedY };
+  // Render duplicado
+  this.speedometer.render(ctx, speedLeftPos);
+  this.speedometer.render(ctx, speedRightPos);
     
-  // === TARGET PANEL ===
-  // Centered and larger
-  const panelWidth = 840;   // doubled from 420
-  const panelHeight = 320;  // doubled from 160
-  const panelX = centerX - panelWidth / 2;
-  const panelYOffset = 80; // move slightly down to avoid compass overlap
-  const panelY = centerY - panelHeight / 2 + panelYOffset;
-  this.targetPanel.render(ctx, panelX, panelY, panelWidth, panelHeight);
+  // Nota: panel y elementos ya renderizados más arriba
 
   // Marco HUD permanente para inmersión cockpit
     if (this.showHUDFrame) {

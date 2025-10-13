@@ -53,27 +53,52 @@ export class TargetPanel {
 
     // Title (name + distance)
     ctx.save();
-  ctx.font = '28px Segoe UI, Roboto, sans-serif';
+  ctx.font = '32px Segoe UI, Roboto, sans-serif';
     ctx.fillStyle = color;
     const title = `${this.state.name}  •  ${Math.round(this.state.distance)}u`;
-    ctx.fillText(title, x + 14, y + 22);
+    // Bajar ligeramente el título
+  ctx.fillText(title, x + 14, y + 38);
     ctx.restore();
 
     // Preview region
-    const pvX = x + 12;
-    const pvY = y + 32;
-  const pvW = Math.min(320, width * 0.4);
-  const pvH = Math.min(240, height - 60);
+  const pvX = x + 12;
+  const pvY = y + 48; // Bajar un poco más el área de preview
+    const pvW = Math.min(320, width * 0.4);
+    const pvH = Math.min(240, height - 60);
+    // Backdrop para asegurar contraste
+    ctx.save();
+    ctx.fillStyle = 'rgba(0, 15, 25, 0.35)';
+    ctx.fillRect(pvX - 2, pvY - 2, pvW + 4, pvH + 4);
+    ctx.restore();
+
     if (this.state.previewCanvas) {
+      ctx.save();
+      ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(this.state.previewCanvas, pvX, pvY, pvW, pvH);
+      // Overlay informativo fijo
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.fillRect(pvX + 6, pvY + pvH - 22, 180, 16);
+  ctx.fillStyle = 'rgba(0,255,255,0.95)';
+  ctx.font = '12px Segoe UI, Roboto, sans-serif';
+  ctx.fillText('Target acquisition OK', pvX + 10, pvY + pvH - 10);
+      ctx.restore();
     } else {
-      // Placeholder frame
+      // Placeholder y etiqueta de debug
       ctx.save();
       ctx.strokeStyle = color;
-      ctx.globalAlpha = 0.5;
+      ctx.globalAlpha = 0.6;
       ctx.strokeRect(pvX, pvY, pvW, pvH);
+      ctx.fillStyle = 'rgba(0,255,255,0.6)';
+      ctx.font = '12px Segoe UI, Roboto, sans-serif';
+      ctx.fillText('Preview no disponible', pvX + 8, pvY + 18);
       ctx.restore();
     }
+    // Borde siempre visible para diagnóstico
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = 0.6;
+    ctx.strokeRect(pvX, pvY, pvW, pvH);
+    ctx.restore();
 
     // Details list on the right
     const infoX = pvX + pvW + 16;
@@ -81,16 +106,29 @@ export class TargetPanel {
     const infoW = width - (infoX - x) - 12;
 
     ctx.save();
-  ctx.font = '24px Segoe UI, Roboto, sans-serif';
+  ctx.font = '26px Segoe UI, Roboto, sans-serif';
     ctx.fillStyle = color;
 
+    // Preparar líneas, filtrando claves internas
     const details = this.state.details || {};
-    let offset = 0;
+    const lineHeight = 32;
+    const lines: string[] = [];
+    // Forzar 'type' como primera línea si existe
+    if ((details as any).type !== undefined) {
+      lines.push(`Type: ${this.prettyVal((details as any).type)}`);
+    }
     for (const [key, value] of Object.entries(details)) {
-      const line = `${this.prettyKey(key)}: ${this.prettyVal(value)}`;
-      ctx.fillText(line, infoX, infoY + offset);
-  offset += 32;
-      if (offset > pvH) break;
+      if (key === 'previewStatus' || key === 'type') continue; // ocultar internos y evitar duplicar
+      lines.push(`${this.prettyKey(key)}: ${this.prettyVal(value)}`);
+    }
+    // Alinear por abajo con el límite del wireframe
+    const totalHeight = lines.length * lineHeight;
+    const startY = infoY + pvH - totalHeight + (lineHeight - 8); // margen inferior suave
+    let yCursor = startY;
+    for (const line of lines) {
+      if (yCursor > infoY + pvH) break; // seguridad
+      ctx.fillText(line, infoX, yCursor);
+      yCursor += lineHeight;
     }
 
     ctx.restore();

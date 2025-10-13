@@ -7,6 +7,7 @@ export class VelocityBar {
   private side: 'left' | 'right';
   private velocity: number = 0;
   private maxVelocity: number = 5; // Velocidad 5 = barra llena
+  private externalHeight: number | null = null;
   
   constructor(side: 'left' | 'right') {
     this.side = side;
@@ -18,7 +19,7 @@ export class VelocityBar {
 
   public render(ctx: CanvasRenderingContext2D, position: { x: number; y: number }): void {
     const barWidth = 20;
-    const barHeight = 200;
+    const barHeight = this.externalHeight ?? 200;
     const fillHeight = (this.velocity / this.maxVelocity) * barHeight;
     
     ctx.strokeStyle = '#00FF00';
@@ -79,5 +80,11 @@ export class VelocityBar {
       maxVelocity: this.maxVelocity,
       percentage: (this.velocity / this.maxVelocity) * 100
     };
+  }
+
+  /** Permite forzar la altura de la barra desde el layout externo. Devuelve la altura efectiva. */
+  public setExternalHeight(h: number): number {
+    this.externalHeight = Math.max(20, Math.floor(h));
+    return this.externalHeight;
   }
 }

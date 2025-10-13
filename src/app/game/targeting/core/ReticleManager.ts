@@ -260,16 +260,9 @@ export class ReticleManager {
    * Actualiza la posición de la retícula
    */
   private updateReticlePosition(): void {
-    if (this.state.currentState === ReticleState.LOCKED && this.state.currentTarget) {
-      // Si está locked, seguir al target
-      const targetScreenPos = this.getTargetScreenPosition(this.state.currentTarget);
-      if (targetScreenPos) {
-        this.state.reticlePosition = targetScreenPos;
-      }
-    } else {
-      // Seguir al mouse
-      this.state.reticlePosition = { ...this.state.mousePosition };
-    }
+    // Siempre seguir al mouse para evitar congelamiento al seleccionar
+    // (Podremos reintroducir seguimiento al target en un modo específico más adelante)
+    this.state.reticlePosition = { ...this.state.mousePosition };
   }
 
   /**
@@ -524,6 +517,11 @@ export class ReticleManager {
     
     if (target) {
       console.log('✅ Target selected:', target.getDisplayName());
+      // Si había un target previamente seleccionado y es distinto, limpiar su estado visual
+      if (previousTarget && previousTarget !== target) {
+        this.targetHighlighter.removeHighlight(previousTarget);
+        this.outlineRenderer.removeOutline(previousTarget.id);
+      }
       
       // Aplicar highlighting especial al target seleccionado
       this.targetHighlighter.highlightTarget(target, {

@@ -390,17 +390,22 @@ export class GameEngine {
       const distance = Math.hypot(dx, dy, dz);
 
       // Relation heuristic (asteroids neutral; extend later)
-      const relation: 'ally' | 'neutral' | 'enemy' = (selected.getTargetType() === TargetType.ASTEROID) ? 'neutral' : 'enemy';
+  const selType = selected.getTargetType();
+  const relation: 'ally' | 'neutral' | 'enemy' = (selType === TargetType.ASTEROID) ? 'neutral' : 'enemy';
 
       // Render preview into offscreen canvas
       this.targetPreview.renderPreview(selected);
+      if (Math.random() < 0.01) {
+        console.log('🎯 TargetPreview status:', (this.targetPreview as any).getStatus?.());
+      }
       const previewCanvas = this.targetPreview.getCanvas();
 
       // Details: fetch async once per different selection (simple cache by id)
       // For now, fire-and-forget; the HUD will be updated next frame when resolved
       this.fetchAndCacheTargetDetails(selected);
 
-      const details = (this as any)._targetDetailsCache?.[selected.id] || this.getFallbackDetails(selected);
+  const baseDetails = (this as any)._targetDetailsCache?.[selected.id] || this.getFallbackDetails(selected);
+  const details = { ...baseDetails, type: this.typeToLabel(selType), previewStatus: (this.targetPreview as any).getStatus?.() } as any;
 
       this.hudManager.updateTargetPanel({
         name: selected.getDisplayName(),
@@ -441,6 +446,17 @@ export class GameEngine {
       return { composition: 'basalt', albedo: 0.3, massTons: 1200 };
     }
     return {};
+  }
+
+  private typeToLabel(t: TargetType): string {
+    switch (t) {
+      case TargetType.ASTEROID: return 'Asteroid';
+      case TargetType.SPACESHIP: return 'Spaceship';
+      case TargetType.PLANET: return 'Planet';
+      case TargetType.PORTAL: return 'Portal';
+      case TargetType.WAYPOINT: return 'Waypoint';
+      default: return 'Unknown';
+    }
   }
 
   // Los efectos de propulsión ahora se manejan en ParticleEffectsService
