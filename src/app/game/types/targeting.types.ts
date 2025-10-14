@@ -16,6 +16,9 @@ export interface ITargetable {
   getDisplayName(): string;
   getTargetType(): TargetType;
   isActive(): boolean;
+  // Salud actual y máxima (opcional). Si no existen, se asume full health.
+  healthCurrent: number;
+  healthMax: number;
 }
 
 /**

@@ -55,6 +55,10 @@ export class Asteroid extends GameObject implements ITargetable {
 
     // Aplicar rotación continua
     this.angularVelocity = { ...this.rotationRate };
+
+  // Salud aleatoria entre 25 y 150 (entera)
+  this.healthMax = Math.floor(25 + Math.random() * 126); // 25..150
+  this.healthCurrent = this.healthMax;
   }
 
   /**

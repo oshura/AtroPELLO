@@ -15,6 +15,10 @@ export abstract class GameObject {
   public visible: boolean;
   public boundingSphere: { center: Vector3; radius: number } | null = null;
 
+  // Sistema de salud básico común a todos los objetos espaciales
+  public healthCurrent: number;
+  public healthMax: number;
+
   // Matrices de transformación (se calculan automáticamente)
   public modelMatrix: Float32Array;
   public normalMatrix: Float32Array;
@@ -48,6 +52,10 @@ export abstract class GameObject {
     this.color = { r: 1, g: 1, b: 1, a: 1 };
     this.active = true;
     this.visible = true;
+
+  // Salud por defecto (se puede sobreescribir en subclases después de super())
+  this.healthMax = 100;
+  this.healthCurrent = this.healthMax;
 
     // Inicializar matrices
     this.modelMatrix = new Float32Array(16);

@@ -64,7 +64,7 @@ export class OutlineRenderer {
     size: WebGLUniformLocation | null;
     sampler: WebGLUniformLocation | null;
   } = { screenSize: null, translate: null, size: null, sampler: null };
-  private labelTextureCache: Map<string, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; tex: WebGLTexture; w: number; h: number; lastType: string; lastDist: string; lastColorKey: string }>= new Map();
+  private labelTextureCache: Map<string, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; tex: WebGLTexture; w: number; h: number; lastType: string; lastDist: string; lastColorKey: string; lastHealthPct?: string }>= new Map();
   private lastViewMatrix: mat4 | null = null;
   private lastProjectionMatrix: mat4 | null = null;
   private lastTargets: ITargetable[] = [];
@@ -199,7 +199,8 @@ export class OutlineRenderer {
       
       // Actualizar visibilidad basada en distancia
       const distance = this.calculateTargetDistance(outlineTarget.target);
-      outlineTarget.isVisible = distance <= outlineTarget.config.fadeDistance;
+  // Siempre visibles (removemos fadeDistance para labels persistentes a largas distancias)
+  outlineTarget.isVisible = true;
     }
   }
 
@@ -576,17 +577,24 @@ export class OutlineRenderer {
       const target = outlineTarget.target;
       const typeLabel = this.typeToLabel(target.getTargetType?.());
       const distLabel = `${Math.round(dist)}u`;
-      // Modulación de alpha por distancia cercana al fadeDistance
+      // Sin modulación de alpha por distancia: color constante
       const baseCol = outlineTarget.config.color;
-      const fadeMax = Math.max(1e-3, outlineTarget.config.fadeDistance || 10000);
-      const fadeStart = 0.8 * fadeMax;
-      let fadeT = 0;
-      if (dist > fadeStart) {
-        fadeT = Math.min(1, (dist - fadeStart) / (fadeMax - fadeStart));
+      const textColor = `rgba(${Math.round(baseCol[0]*255)}, ${Math.round(baseCol[1]*255)}, ${Math.round(baseCol[2]*255)}, ${ (baseCol[3] ?? 1.0).toFixed(3) })`;
+      // Calcular porcentaje de salud
+      let hc = (target as any).healthCurrent ?? (target as any).health;
+      let hm = (target as any).healthMax;
+      if (hc === undefined && hm === undefined) {
+        // Por defecto 100%
+        hc = 1; hm = 1;
+      } else if (hc !== undefined && hm === undefined) {
+        hm = hc; // asumir full
       }
-      const alphaEff = (baseCol[3] ?? 1.0) * (1.0 - fadeT);
-      const textColor = `rgba(${Math.round(baseCol[0]*255)}, ${Math.round(baseCol[1]*255)}, ${Math.round(baseCol[2]*255)}, ${alphaEff.toFixed(3)})`;
-      const texEntry = this.getOrCreateLabelTexture(id, typeLabel, distLabel, textColor);
+      let healthPctLabel = '';
+      if (hc !== undefined && hm !== undefined && hm > 0) {
+        const pct = Math.min(999, Math.max(0, (hc / hm) * 100));
+        healthPctLabel = `${Math.round(pct)}%`;
+      }
+      const texEntry = this.getOrCreateLabelTexture(id, typeLabel, distLabel, textColor, healthPctLabel);
 
       // Model matrix: translate to target, orient to camera (copy rotation from invView), scale to a readable size
   const model = mat4.create();
@@ -598,15 +606,17 @@ export class OutlineRenderer {
       model[8] = invView[8]; model[9] = invView[9]; model[10] = invView[10];
 
   // Tamaño constante en pantalla (independiente de radio y distancia): elegir un ancho fijo en píxeles
-  const constantPxWidth = 220; // ajustar si quieres más grande/pequeño
+  const constantPxWidth = 220; // tamaño fijo ajustado (pedido: 220px)
   const distance = Math.max(0.001, dist);
-  const widthWorld = (constantPxWidth / viewportW) * 2 * distance * tanHalfFovx;
-  mat4.scale(model, model, [widthWorld, widthWorld * (texEntry.h/texEntry.w), 1]);
-      this.gl.uniformMatrix4fv(this.worldBillboardUniforms.model, false, model as unknown as Float32Array);
+  // Escalado realmente constante: ancho en mundo proporcional a distancia * tanHalfFovx para sostener constantPxWidth
+  const widthWorld = (constantPxWidth / viewportW) * 2.0 * distance * tanHalfFovx;
+  const heightWorld = widthWorld * (texEntry!.h/texEntry!.w);
+  mat4.scale(model, model, [widthWorld, heightWorld, 1]);
+  this.gl.uniformMatrix4fv(this.worldBillboardUniforms.model, false, model as unknown as Float32Array);
 
       // Bind texture
       this.gl.activeTexture(this.gl.TEXTURE0);
-      this.gl.bindTexture(this.gl.TEXTURE_2D, texEntry.tex);
+  this.gl.bindTexture(this.gl.TEXTURE_2D, texEntry!.tex);
       this.gl.uniform1i(this.worldBillboardUniforms.sampler, 0);
 
       // Draw
@@ -650,11 +660,11 @@ export class OutlineRenderer {
   const cache = this.getOrCreateLabelTexture(id, typeLabel, distLabel, rgbaCss);
       // Posicionar y dibujar (centrado en el target)
       gl.activeTexture(gl.TEXTURE0);
-      gl.bindTexture(gl.TEXTURE_2D, cache.tex);
+  gl.bindTexture(gl.TEXTURE_2D, cache!.tex);
       gl.uniform1i(this.labelUniforms.sampler, 0);
       gl.uniform2f(this.labelUniforms.translate, scr.x, scr.y);
   // Escala 1:1 con un pequeño factor para legibilidad en distancia
-  gl.uniform2f(this.labelUniforms.size, cache.w, cache.h);
+  gl.uniform2f(this.labelUniforms.size, cache!.w, cache!.h);
       gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
     }
 
@@ -679,16 +689,16 @@ export class OutlineRenderer {
     return { x: sx, y: sy, w: cw };
   }
 
-  private getOrCreateLabelTexture(id: string, typeLabel: string, distLabel: string, textColorCss: string) {
+  private getOrCreateLabelTexture(id: string, typeLabel: string, distLabel: string, textColorCss: string, healthPctLabel: string = '') {
     if (!this.gl) throw new Error('GL missing');
-    let entry = this.labelTextureCache.get(id);
-    const dirty = !entry || entry.lastType !== typeLabel || entry.lastDist !== distLabel || entry.lastColorKey !== textColorCss;
-    if (!entry) {
+  let entry = this.labelTextureCache.get(id);
+  const dirty = !entry || entry.lastType !== typeLabel || entry.lastDist !== distLabel || entry.lastColorKey !== textColorCss || (entry as any).lastHealthPct !== healthPctLabel;
+  if (!entry) {
       const canvas = document.createElement('canvas');
       canvas.width = 256; canvas.height = 72;
       const ctx = canvas.getContext('2d')!;
       const tex = this.gl.createTexture()!;
-      entry = { canvas, ctx, tex, w: canvas.width, h: canvas.height, lastType: '', lastDist: '', lastColorKey: '' };
+  entry = { canvas, ctx, tex, w: canvas.width, h: canvas.height, lastType: '', lastDist: '', lastColorKey: '', lastHealthPct: '' };
       this.labelTextureCache.set(id, entry);
       // Inicializar textura
       this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
@@ -697,14 +707,14 @@ export class OutlineRenderer {
       this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
       this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
     }
-    if (dirty) {
+  if (dirty && entry) {
       // Redibujar label
-      const ctx = entry.ctx;
+  const ctx = entry.ctx;
       // Aumentar altura para más espacio vertical
-      if (entry.h < 88) {
+  if (entry.h < 88) {
         entry.canvas.height = 88; entry.h = 88;
       }
-      const W = entry.w, H = entry.h;
+  const W = entry.w, H = entry.h;
       ctx.clearRect(0,0,W,H);
   // fondo totalmente transparente (sin placa)
   // Nota: clearRect ya deja el canvas transparente
@@ -720,8 +730,10 @@ export class OutlineRenderer {
       const typeMetrics = ctx.measureText(typeLabel);
       const typeWidth = typeMetrics.width;
       ctx.font = '300 16px Segoe UI, Roboto, sans-serif';
-      const distMetrics = ctx.measureText(distLabel);
-      const distWidth = distMetrics.width;
+  const distMetrics = ctx.measureText(distLabel);
+  const distWidth = distMetrics.width;
+  ctx.font = '300 16px Segoe UI, Roboto, sans-serif';
+  const healthWidth = healthPctLabel ? ctx.measureText(healthPctLabel).width : 0;
 
       const padX = 12; // margen desde los lados
       const gapPad = 8; // margen interno alrededor del texto dentro de la línea
@@ -735,29 +747,104 @@ export class OutlineRenderer {
       ctx.lineTo(W-0.5, H-0.5);
       ctx.stroke();
 
-      // Líneas superior e inferior con huecos: separamos en segmentos antes y después del texto
-      // Segmentos superior
+      // --- Líneas superior e inferior con esquinas siempre marcadas ---
       const topY = 0.5;
       const bottomY = H - 0.5;
       const typeStart = (W - typeWidth) / 2 - gapPad;
       const typeEnd = (W + typeWidth) / 2 + gapPad;
-      const distStart = (W - distWidth) / 2 - gapPad;
-      const distEnd = (W + distWidth) / 2 + gapPad;
-      ctx.setLineDash([6,4]);
+      const cornerLen = 10; // longitud fija de segmento sólido en esquina
+      const dash = 6, gap = 4;
+
+      // Función para dibujar una línea discontinua asegurando que empieza con trazo
+      const drawDashedSegment = (x1: number, x2: number, y: number) => {
+        if (x2 - x1 <= 1) return; // demasiado corto
+        // Primer trazo sólido para no dejar hueco al inicio
+        const startSolid = Math.min(x2, x1 + dash);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(x1, y);
+        ctx.lineTo(startSolid, y);
+        ctx.stroke();
+        // Resto en patrón dash/gap
+        let cx = startSolid;
+        ctx.setLineDash([dash, gap]);
+        ctx.beginPath();
+        while (cx < x2) {
+          const segEnd = Math.min(x2, cx + dash);
+          ctx.moveTo(cx, y);
+          ctx.lineTo(segEnd, y);
+          cx = segEnd + gap;
+        }
+        ctx.stroke();
+        ctx.setLineDash([]);
+      };
+
+      // Superior: dos tramos (izquierda antes del hueco central y derecha después)
+      // Esquinas: segmentos sólidos reforzados (línea más gruesa)
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      // Superior: tramo izquierdo
       ctx.moveTo(padX, topY);
-      ctx.lineTo(Math.max(padX, typeStart), topY);
-      // Superior: tramo derecho
-      ctx.moveTo(Math.min(typeEnd, W-padX), topY);
-      ctx.lineTo(W-padX, topY);
-      // Inferior: tramo izquierdo
-      ctx.moveTo(padX, bottomY);
-      ctx.lineTo(Math.max(padX, distStart), bottomY);
-      // Inferior: tramo derecho
-      ctx.moveTo(Math.min(distEnd, W-padX), bottomY);
-      ctx.lineTo(W-padX, bottomY);
+      ctx.lineTo(Math.min(padX + cornerLen, Math.max(padX, typeStart)), topY);
+      ctx.moveTo(Math.max(typeEnd, W - padX - cornerLen), topY);
+      ctx.lineTo(W - padX, topY);
       ctx.stroke();
+      ctx.lineWidth = 1;
+      // Segmentos dash (si queda espacio entre corner y hueco central)
+      const leftDashStart = Math.min(padX + cornerLen, Math.max(padX, typeStart));
+      const rightDashEnd = Math.max(typeEnd, W - padX - cornerLen);
+      if (leftDashStart > padX + cornerLen && padX + cornerLen < Math.max(padX, typeStart)) {
+        // ya cubierto
+      }
+      // tramo izquierdo dash
+      if (leftDashStart > padX + cornerLen) {
+        drawDashedSegment(padX + cornerLen, leftDashStart, topY);
+      }
+      // tramo derecho dash
+      if (W - padX - cornerLen > rightDashEnd) {
+        drawDashedSegment(rightDashEnd, W - padX - cornerLen, topY);
+      }
+
+      // Inferior: calcular huecos de distancia y salud
+      ctx.font = '300 16px Segoe UI, Roboto, sans-serif';
+      const distLeftX = padX;
+      const distRightX = padX + distWidth;
+      const healthRightX = W - padX;
+      const healthLeftX = healthPctLabel ? (healthRightX - healthWidth) : healthRightX; 
+      const gapDistPad = 4;
+      const gapHealthPad = 4;
+      // Esquinas inferiores sólidas reforzadas
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(padX, bottomY);
+      ctx.lineTo(padX + cornerLen, bottomY);
+      ctx.moveTo(W - padX - cornerLen, bottomY);
+      ctx.lineTo(W - padX, bottomY);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      // Calcular intervalos dash disponibles entre esquinas y huecos
+      interface Interval { a:number; b:number; }
+      const intervals: Interval[] = [{ a: padX + cornerLen, b: W - padX - cornerLen }];
+      const subtract = (list: Interval[], a: number, b: number) => {
+        for (let i = 0; i < list.length; i++) {
+          const iv = list[i];
+            if (b <= iv.a || a >= iv.b) continue; // no overlap
+            // overlap
+            const left: Interval | null = a > iv.a ? { a: iv.a, b: a } : null;
+            const right: Interval | null = b < iv.b ? { a: b, b: iv.b } : null;
+            // replace
+            list.splice(i, 1, ...(left ? [left] : []), ...(right ? [right] : []));
+            i += (left?1:0) + (right?1:0) - 1;
+        }
+      };
+      // Hueco para distancia
+      subtract(intervals, distLeftX - gapDistPad, distRightX + gapDistPad);
+      // Hueco para salud
+      if (healthPctLabel) subtract(intervals, healthLeftX - gapHealthPad, healthRightX + gapHealthPad);
+      // Dibujar segmentos dash inferiores
+      for (const iv of intervals) {
+        if (iv.b - iv.a > 2) drawDashedSegment(iv.a, iv.b, bottomY);
+      }
+      // Restaurar sin dash
       ctx.setLineDash([]);
 
   // top: type
@@ -771,24 +858,33 @@ export class OutlineRenderer {
   ctx.shadowBlur = 2;
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 1;
-  // Aún más arriba (muy cercano al borde superior)
-  ctx.fillText(typeLabel, W/2, 2);
-      // bottom: distance
-  ctx.font = '300 16px Segoe UI, Roboto, sans-serif';
+  // Más arriba todavía
+  ctx.fillText(typeLabel, W/2, 1);
+      // bottom: distancia (izquierda) y salud (derecha)
+      ctx.font = '300 16px Segoe UI, Roboto, sans-serif';
       ctx.textBaseline = 'bottom';
-  // Aún más abajo (muy cercano al borde inferior)
-  ctx.fillText(distLabel, W/2, H-2);
+      ctx.textAlign = 'left';
+      ctx.fillText(distLabel, padX, H-2);
+      ctx.textAlign = 'right';
+      ctx.fillText(healthPctLabel, W - padX, H-1);
+      // Distancia y salud más pegados a los bordes verticales
+      // (ya movimos salud a H-1, ajustar distancia también)
+      ctx.textAlign = 'left';
+      ctx.fillText(distLabel, padX, H-1);
+      ctx.textAlign = 'center';
+      ctx.textAlign = 'center';
   // Limpiar sombra para futuros trazos si hiciera falta
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
       // Subir a textura
-      this.gl.bindTexture(this.gl.TEXTURE_2D, entry.tex);
+  this.gl.bindTexture(this.gl.TEXTURE_2D, entry.tex);
   // Asegurar orientación consistente: no realizar UNPACK_FLIP_Y, usamos UVs ya corregidas
   this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
-      this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, entry.canvas);
-      entry.lastType = typeLabel;
-      entry.lastDist = distLabel;
-      entry.lastColorKey = textColorCss;
+  this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, entry.canvas);
+  entry.lastType = typeLabel;
+  entry.lastDist = distLabel;
+  entry.lastColorKey = textColorCss;
+  entry.lastHealthPct = healthPctLabel;
     }
     return entry;
   }
