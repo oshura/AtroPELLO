@@ -53,6 +53,22 @@ export class OutlineRenderer {
   private billboardVBO: WebGLBuffer | null = null;
   private billboardEBO: WebGLBuffer | null = null;
 
+  // Label overlay (2D texture without HTML)
+  private labelProgram: WebGLProgram | null = null;
+  private labelVAO: WebGLVertexArrayObject | null = null;
+  private labelVBO: WebGLBuffer | null = null;
+  private labelEBO: WebGLBuffer | null = null;
+  private labelUniforms: {
+    screenSize: WebGLUniformLocation | null;
+    translate: WebGLUniformLocation | null;
+    size: WebGLUniformLocation | null;
+    sampler: WebGLUniformLocation | null;
+  } = { screenSize: null, translate: null, size: null, sampler: null };
+  private labelTextureCache: Map<string, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; tex: WebGLTexture; w: number; h: number; lastType: string; lastDist: string; lastColorKey: string }>= new Map();
+  private lastViewMatrix: mat4 | null = null;
+  private lastProjectionMatrix: mat4 | null = null;
+  private lastTargets: ITargetable[] = [];
+
   // Programa aislado para primera pasada (evita atributos compartidos)
   private firstPassProgram: WebGLProgram | null = null;
   private firstPassUniforms: {
@@ -118,6 +134,9 @@ export class OutlineRenderer {
 
   // Crear geometría de billboard para primera pasada
   this.setupBillboardQuad();
+
+    // Crear shader y geometría para labels 2D
+    this.setupLabelPipeline();
 
       console.log('🟡 OutlineRenderer inicializado correctamente');
       return true;
@@ -221,6 +240,9 @@ export class OutlineRenderer {
         activeOutlines: this.activeOutlines.size,
         targetsCount: targets.length
       });
+  this.lastViewMatrix = mat4.clone(viewMatrix);
+  this.lastProjectionMatrix = mat4.clone(projectionMatrix);
+  this.lastTargets = targets.slice();
   this.renderFirstPass(viewMatrix, projectionMatrix, targets);
       
       // Segunda pasada: Post-procesamiento de outlines
@@ -324,6 +346,8 @@ export class OutlineRenderer {
 
     // Unbind textura y deshabilitar blend como limpieza local (restauración global se hace en caller)
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+    // Renderizar labels 2D encima
+    this.renderLabelsOverlay();
     this.gl.disable(this.gl.BLEND);
   }
 
@@ -427,6 +451,204 @@ export class OutlineRenderer {
     }
 
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
+  }
+
+  // === LABEL OVERLAY PIPELINE ===
+  private setupLabelPipeline(): void {
+    if (!this.gl) return;
+    const vs = `#version 300 es
+      precision highp float;
+      layout(location=0) in vec2 a_pos; // [-0.5,0.5] quad
+      layout(location=1) in vec2 a_uv;
+      uniform vec2 u_screenSize;
+      uniform vec2 u_translate; // center in pixels
+      uniform vec2 u_size;      // size in pixels
+      out vec2 v_uv;
+      void main(){
+        vec2 posPx = u_translate + a_pos * u_size;
+        vec2 ndc = vec2((posPx.x / u_screenSize.x) * 2.0 - 1.0,
+                        1.0 - (posPx.y / u_screenSize.y) * 2.0);
+        gl_Position = vec4(ndc, 0.0, 1.0);
+        // Aplicar solo flip vertical; mantener orientación horizontal
+        v_uv = vec2(a_uv.x, 1.0 - a_uv.y);
+      }
+    `;
+    const fs = `#version 300 es
+      precision highp float;
+      uniform sampler2D u_tex;
+      in vec2 v_uv;
+      out vec4 fragColor;
+      void main(){
+        vec4 c = texture(u_tex, v_uv);
+        fragColor = c;
+      }
+    `;
+    const prog = this.createProgram(vs, fs);
+    if (!prog) return;
+    this.labelProgram = prog;
+    this.labelUniforms.screenSize = this.gl.getUniformLocation(prog, 'u_screenSize');
+    this.labelUniforms.translate = this.gl.getUniformLocation(prog, 'u_translate');
+    this.labelUniforms.size = this.gl.getUniformLocation(prog, 'u_size');
+    this.labelUniforms.sampler = this.gl.getUniformLocation(prog, 'u_tex');
+
+    // Quad centrado [-0.5,0.5]
+    const verts = new Float32Array([
+      // x, y,   u, v  (UVs mapeadas a canvas sin UNPACK_FLIP_Y: v=1 es la parte superior del canvas)
+      -0.5, -0.5, 0, 1, // top-left
+       0.5, -0.5, 1, 1, // top-right
+       0.5,  0.5, 1, 0, // bottom-right
+      -0.5,  0.5, 0, 0  // bottom-left
+    ]);
+    const idx = new Uint16Array([0,1,2, 0,2,3]);
+    this.labelVAO = this.gl.createVertexArray();
+    this.labelVBO = this.gl.createBuffer();
+    this.labelEBO = this.gl.createBuffer();
+    this.gl.bindVertexArray(this.labelVAO);
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.labelVBO);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, verts, this.gl.STATIC_DRAW);
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.labelEBO);
+    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, idx, this.gl.STATIC_DRAW);
+    this.gl.enableVertexAttribArray(0);
+    this.gl.vertexAttribPointer(0, 2, this.gl.FLOAT, false, 4*4, 0);
+    this.gl.enableVertexAttribArray(1);
+    this.gl.vertexAttribPointer(1, 2, this.gl.FLOAT, false, 4*4, 2*4);
+    this.gl.bindVertexArray(null);
+  }
+
+  private renderLabelsOverlay(): void {
+    if (!this.gl || !this.labelProgram || !this.lastViewMatrix || !this.lastProjectionMatrix) return;
+    const gl = this.gl;
+    gl.useProgram(this.labelProgram);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.bindVertexArray(this.labelVAO);
+    gl.uniform2f(this.labelUniforms.screenSize, this.canvasWidth, this.canvasHeight);
+
+    // Obtener posición de cámara a partir de invView
+    const invView = mat4.create();
+    mat4.invert(invView, this.lastViewMatrix);
+    const camPos = { x: invView[12], y: invView[13], z: invView[14] };
+
+    for (const [id, outlineTarget] of this.activeOutlines) {
+      if (!outlineTarget.isVisible) continue;
+      const target = outlineTarget.target;
+      // Proyectar a pantalla
+      const scr = this.worldToScreen(target.position, this.lastViewMatrix, this.lastProjectionMatrix);
+      if (!scr || scr.w <= 0) continue; // detrás de cámara
+      // Crear/actualizar textura de label
+  const typeLabel = this.typeToLabel(target.getTargetType?.());
+      const dist = Math.hypot(target.position.x - camPos.x, target.position.y - camPos.y, target.position.z - camPos.z);
+      const distLabel = `${Math.round(dist)}u`;
+  // Color heredado del outline (animosidad)
+  const col = outlineTarget.config.color || [0,1,1,0.95];
+  const rgbaCss = `rgba(${Math.round(col[0]*255)}, ${Math.round(col[1]*255)}, ${Math.round(col[2]*255)}, ${col[3] ?? 0.95})`;
+  const cache = this.getOrCreateLabelTexture(id, typeLabel, distLabel, rgbaCss);
+      // Posicionar y dibujar (centrado en el target)
+      gl.activeTexture(gl.TEXTURE0);
+      gl.bindTexture(gl.TEXTURE_2D, cache.tex);
+      gl.uniform1i(this.labelUniforms.sampler, 0);
+      gl.uniform2f(this.labelUniforms.translate, scr.x, scr.y);
+  // Escala 1:1 con un pequeño factor para legibilidad en distancia
+  gl.uniform2f(this.labelUniforms.size, cache.w, cache.h);
+      gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+    }
+
+    gl.bindVertexArray(null);
+  }
+
+  private worldToScreen(pos: {x:number;y:number;z:number}, view: mat4, proj: mat4): {x:number;y:number;w:number} | null {
+    // clip = proj * view * pos4
+    const x = pos.x, y = pos.y, z = pos.z;
+    const m = mat4.create();
+    mat4.multiply(m, proj, view);
+    const cx = m[0]*x + m[4]*y + m[8]*z + m[12]*1.0;
+    const cy = m[1]*x + m[5]*y + m[9]*z + m[13]*1.0;
+    const cz = m[2]*x + m[6]*y + m[10]*z + m[14]*1.0;
+    const cw = m[3]*x + m[7]*y + m[11]*z + m[15]*1.0;
+    if (cw === 0) return null;
+    const nx = cx / cw, ny = cy / cw; // NDC
+    // Fuera del rango visible: aún así podemos dibujar si quieres, pero mejor descartar
+    if (nx < -1 || nx > 1 || ny < -1 || ny > 1) return null;
+    const sx = (nx * 0.5 + 0.5) * this.canvasWidth;
+    const sy = (1 - (ny * 0.5 + 0.5)) * this.canvasHeight;
+    return { x: sx, y: sy, w: cw };
+  }
+
+  private getOrCreateLabelTexture(id: string, typeLabel: string, distLabel: string, textColorCss: string) {
+    if (!this.gl) throw new Error('GL missing');
+    let entry = this.labelTextureCache.get(id);
+    const dirty = !entry || entry.lastType !== typeLabel || entry.lastDist !== distLabel || entry.lastColorKey !== textColorCss;
+    if (!entry) {
+      const canvas = document.createElement('canvas');
+      canvas.width = 256; canvas.height = 72;
+      const ctx = canvas.getContext('2d')!;
+      const tex = this.gl.createTexture()!;
+      entry = { canvas, ctx, tex, w: canvas.width, h: canvas.height, lastType: '', lastDist: '', lastColorKey: '' };
+      this.labelTextureCache.set(id, entry);
+      // Inicializar textura
+      this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+    }
+    if (dirty) {
+      // Redibujar label
+      const ctx = entry.ctx;
+      // Aumentar altura para más espacio vertical
+      if (entry.h < 88) {
+        entry.canvas.height = 88; entry.h = 88;
+      }
+      const W = entry.w, H = entry.h;
+      ctx.clearRect(0,0,W,H);
+  // fondo totalmente transparente (sin placa)
+  // Nota: clearRect ya deja el canvas transparente
+  // ctx.clearRect(0,0,W,H);
+  // top: type
+  ctx.fillStyle = textColorCss;
+  // Tipografía más fina y un poco más pequeña
+  ctx.font = '400 18px Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      ctx.fillText(typeLabel, W/2, 8);
+      // bottom: distance
+  ctx.font = '300 16px Segoe UI, Roboto, sans-serif';
+      ctx.textBaseline = 'bottom';
+      ctx.fillText(distLabel, W/2, H-8);
+      // Subir a textura
+      this.gl.bindTexture(this.gl.TEXTURE_2D, entry.tex);
+  // Asegurar orientación consistente: no realizar UNPACK_FLIP_Y, usamos UVs ya corregidas
+  this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
+      this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, entry.canvas);
+      entry.lastType = typeLabel;
+      entry.lastDist = distLabel;
+      entry.lastColorKey = textColorCss;
+    }
+    return entry;
+  }
+
+  private typeToLabel(tt: any): string {
+    const t = String(tt || 'unknown').toLowerCase();
+    if (t.includes('asteroid')) return 'Asteroid';
+    if (t.includes('spaceship')) return 'Spaceship';
+    if (t.includes('planet')) return 'Planet';
+    if (t.includes('portal')) return 'Portal';
+    if (t.includes('waypoint')) return 'Waypoint';
+    return 'Unknown';
+  }
+
+  private createProgram(vsSrc: string, fsSrc: string): WebGLProgram | null {
+    if (!this.gl) return null;
+    const vs = this.gl.createShader(this.gl.VERTEX_SHADER)!;
+    this.gl.shaderSource(vs, vsSrc); this.gl.compileShader(vs);
+    if (!this.gl.getShaderParameter(vs, this.gl.COMPILE_STATUS)) { console.error(this.gl.getShaderInfoLog(vs)); return null; }
+    const fs = this.gl.createShader(this.gl.FRAGMENT_SHADER)!;
+    this.gl.shaderSource(fs, fsSrc); this.gl.compileShader(fs);
+    if (!this.gl.getShaderParameter(fs, this.gl.COMPILE_STATUS)) { console.error(this.gl.getShaderInfoLog(fs)); return null; }
+    const prog = this.gl.createProgram()!;
+    this.gl.attachShader(prog, vs); this.gl.attachShader(prog, fs); this.gl.linkProgram(prog);
+    if (!this.gl.getProgramParameter(prog, this.gl.LINK_STATUS)) { console.error(this.gl.getProgramInfoLog(prog)); return null; }
+    return prog;
   }
 
   /**
