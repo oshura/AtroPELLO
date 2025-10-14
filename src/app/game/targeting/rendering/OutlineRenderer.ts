@@ -549,16 +549,14 @@ export class OutlineRenderer {
   mat4.invert(invView, view);
   const camPos = { x: invView[12], y: invView[13], z: invView[14] };
 
-    // Precálculos para clamp por tamaño en píxeles (horizontal)
-    const viewportW = Math.max(1, this.canvasWidth);
-    const viewportH = Math.max(1, this.canvasHeight);
-    const aspect = viewportW / viewportH;
-    // En matriz de proyección estándar: proj[5] = 1/tan(fovy/2)
-    const tanHalfFovy = 1 / (proj[5] || 1);
-    const tanHalfFovx = tanHalfFovy * aspect;
-    // Límites deseados en píxeles para el ancho del label
-    const minPx = 96;   // ancho mínimo visible
-    const maxPx = 384;  // ancho máximo para evitar dominancia
+  // Parámetros para tamaño fijo en pantalla:
+  // Queremos que el billboard mantenga el mismo tamaño aparente que tendría a una distancia de referencia (30u)
+  const viewportW = Math.max(1, this.canvasWidth);
+  const viewportH = Math.max(1, this.canvasHeight);
+  const aspect = viewportW / viewportH;
+  const tanHalfFovy = 1 / (proj[5] || 1); // proj[5] = 1 / tan(fovy/2)
+  const tanHalfFovx = tanHalfFovy * aspect;
+  const distRef = 30; // distancia de referencia solicitada
 
     // Preparar lista ordenada por distancia (lejos primero) para mejorar blending
     const sorted = Array.from(this.activeOutlines.entries())
@@ -599,14 +597,11 @@ export class OutlineRenderer {
       model[4] = invView[4]; model[5] = invView[5]; model[6] = invView[6];
       model[8] = invView[8]; model[9] = invView[9]; model[10] = invView[10];
 
-      // Ancho base por radio
-  const baseWidth = Math.max(2.0, radius * 2.2);
-      // Clamp por píxeles: convertir límites de px a unidades de mundo a la distancia de este target
+  // Tamaño constante en pantalla (independiente de radio y distancia): elegir un ancho fijo en píxeles
+  const constantPxWidth = 220; // ajustar si quieres más grande/pequeño
   const distance = Math.max(0.001, dist);
-  const minWorldW = 2 * distance * tanHalfFovx * (minPx / viewportW);
-  const maxWorldW = 2 * distance * tanHalfFovx * (maxPx / viewportW);
-      const width = Math.min(Math.max(baseWidth, minWorldW), maxWorldW);
-      mat4.scale(model, model, [width, width * (texEntry.h/texEntry.w), 1]);
+  const widthWorld = (constantPxWidth / viewportW) * 2 * distance * tanHalfFovx;
+  mat4.scale(model, model, [widthWorld, widthWorld * (texEntry.h/texEntry.w), 1]);
       this.gl.uniformMatrix4fv(this.worldBillboardUniforms.model, false, model as unknown as Float32Array);
 
       // Bind texture
@@ -714,11 +709,56 @@ export class OutlineRenderer {
   // fondo totalmente transparente (sin placa)
   // Nota: clearRect ya deja el canvas transparente
   // ctx.clearRect(0,0,W,H);
-      // Optional border rectangle for better visibility
+      // Borde compuesto: laterales sólidos + líneas superior/inferior discontinuas con huecos bajo el texto
       ctx.lineWidth = 1;
-      ctx.strokeStyle = textColorCss.replace('rgba(', 'rgba(').replace(/\)$/, '')
+      const strokeColor = textColorCss.replace('rgba(', 'rgba(').replace(/\)$/, '')
         .replace(/,\s*([0-9]*\.?[0-9]+)\s*$/, (_, a)=>`, ${Math.min(1, Math.max(0, Number(a)*0.6))}`) + ')';
-      ctx.strokeRect(0.5, 0.5, W-1, H-1);
+      ctx.strokeStyle = strokeColor;
+
+      // Medir textos para determinar huecos
+      ctx.font = '400 18px Segoe UI, Roboto, sans-serif';
+      const typeMetrics = ctx.measureText(typeLabel);
+      const typeWidth = typeMetrics.width;
+      ctx.font = '300 16px Segoe UI, Roboto, sans-serif';
+      const distMetrics = ctx.measureText(distLabel);
+      const distWidth = distMetrics.width;
+
+      const padX = 12; // margen desde los lados
+      const gapPad = 8; // margen interno alrededor del texto dentro de la línea
+
+      // Verticales sólidas completas
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(0.5, 0.5);
+      ctx.lineTo(0.5, H-0.5);
+      ctx.moveTo(W-0.5, 0.5);
+      ctx.lineTo(W-0.5, H-0.5);
+      ctx.stroke();
+
+      // Líneas superior e inferior con huecos: separamos en segmentos antes y después del texto
+      // Segmentos superior
+      const topY = 0.5;
+      const bottomY = H - 0.5;
+      const typeStart = (W - typeWidth) / 2 - gapPad;
+      const typeEnd = (W + typeWidth) / 2 + gapPad;
+      const distStart = (W - distWidth) / 2 - gapPad;
+      const distEnd = (W + distWidth) / 2 + gapPad;
+      ctx.setLineDash([6,4]);
+      ctx.beginPath();
+      // Superior: tramo izquierdo
+      ctx.moveTo(padX, topY);
+      ctx.lineTo(Math.max(padX, typeStart), topY);
+      // Superior: tramo derecho
+      ctx.moveTo(Math.min(typeEnd, W-padX), topY);
+      ctx.lineTo(W-padX, topY);
+      // Inferior: tramo izquierdo
+      ctx.moveTo(padX, bottomY);
+      ctx.lineTo(Math.max(padX, distStart), bottomY);
+      // Inferior: tramo derecho
+      ctx.moveTo(Math.min(distEnd, W-padX), bottomY);
+      ctx.lineTo(W-padX, bottomY);
+      ctx.stroke();
+      ctx.setLineDash([]);
 
   // top: type
   ctx.fillStyle = textColorCss;
@@ -731,11 +771,13 @@ export class OutlineRenderer {
   ctx.shadowBlur = 2;
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 1;
-      ctx.fillText(typeLabel, W/2, 8);
+  // Aún más arriba (muy cercano al borde superior)
+  ctx.fillText(typeLabel, W/2, 2);
       // bottom: distance
   ctx.font = '300 16px Segoe UI, Roboto, sans-serif';
       ctx.textBaseline = 'bottom';
-      ctx.fillText(distLabel, W/2, H-8);
+  // Aún más abajo (muy cercano al borde inferior)
+  ctx.fillText(distLabel, W/2, H-2);
   // Limpiar sombra para futuros trazos si hiciera falta
   ctx.shadowColor = 'transparent';
   ctx.shadowBlur = 0;
