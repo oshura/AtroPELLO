@@ -69,6 +69,18 @@ export class OutlineRenderer {
   private lastProjectionMatrix: mat4 | null = null;
   private lastTargets: ITargetable[] = [];
 
+  // World-space billboard pipeline (simple replacement for complex outlines)
+  private worldBillboardProgram: WebGLProgram | null = null;
+  private worldBillboardVAO: WebGLVertexArrayObject | null = null;
+  private worldBillboardVBO: WebGLBuffer | null = null;
+  private worldBillboardEBO: WebGLBuffer | null = null;
+  private worldBillboardUniforms: {
+    model: WebGLUniformLocation | null;
+    view: WebGLUniformLocation | null;
+    proj: WebGLUniformLocation | null;
+    sampler: WebGLUniformLocation | null;
+  } = { model: null, view: null, proj: null, sampler: null };
+
   // Programa aislado para primera pasada (evita atributos compartidos)
   private firstPassProgram: WebGLProgram | null = null;
   private firstPassUniforms: {
@@ -138,6 +150,9 @@ export class OutlineRenderer {
     // Crear shader y geometría para labels 2D
     this.setupLabelPipeline();
 
+  // Crear pipeline para billboards en el mundo (texto 2D sobre quad)
+  this.setupWorldBillboardPipeline();
+
       console.log('🟡 OutlineRenderer inicializado correctamente');
       return true;
 
@@ -196,61 +211,28 @@ export class OutlineRenderer {
     projectionMatrix: mat4,
     targets: ITargetable[]
   ): void {
-    if (!this.gl || !this.shaderManager) {
-      return;
-    }
+    if (!this.gl || !this.shaderManager) return;
+    if (this.activeOutlines.size === 0) return;
 
-  if (this.activeOutlines.size === 0) {
-      // Debug puntual para confirmar estado
-      if (Math.random() < 0.01) {
-        console.log('🟡 Outline: sin activos, skip frame');
-      }
-      return;
-    }
-
-  // Guardar estado actual básico
-  const originalViewport = this.gl.getParameter(this.gl.VIEWPORT);
-  const prevBlend = this.gl.isEnabled(this.gl.BLEND);
-  const prevCull = this.gl.isEnabled(this.gl.CULL_FACE);
-  const prevDepth = this.gl.isEnabled(this.gl.DEPTH_TEST);
-  const prevDepthFunc = this.gl.getParameter(this.gl.DEPTH_FUNC);
-  const prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
-  const prevClearColor = this.gl.getParameter(this.gl.COLOR_CLEAR_VALUE) as Float32List;
-  // Guardar blend func completo (RGB/Alpha)
-  const prevBlendSrcRGB = this.gl.getParameter(this.gl.BLEND_SRC_RGB);
-  const prevBlendDstRGB = this.gl.getParameter(this.gl.BLEND_DST_RGB);
-  const prevBlendSrcAlpha = this.gl.getParameter(this.gl.BLEND_SRC_ALPHA);
-  const prevBlendDstAlpha = this.gl.getParameter(this.gl.BLEND_DST_ALPHA);
-  // Guardar textura activa y binding de TEXTURE0
-  const prevActiveTex = this.gl.getParameter(this.gl.ACTIVE_TEXTURE);
-  this.gl.activeTexture(this.gl.TEXTURE0);
-  const prevTex0Binding = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
-    // Asegurar que las dimensiones del framebuffer coinciden cada frame (por si hubo resize sin evento)
-    const glAny = this.gl as any;
-    const dw = glAny?.drawingBufferWidth;
-    const dh = glAny?.drawingBufferHeight;
-    if ((dw && dh) && (dw !== this.canvasWidth || dh !== this.canvasHeight)) {
-      this.resizeFramebuffer(dw, dh);
-    }
+    // Guardar estado básico
+    const originalViewport = this.gl.getParameter(this.gl.VIEWPORT) as Int32Array;
+    const prevBlend = this.gl.isEnabled(this.gl.BLEND);
+    const prevCull = this.gl.isEnabled(this.gl.CULL_FACE);
+    const prevDepth = this.gl.isEnabled(this.gl.DEPTH_TEST);
+    const prevDepthFunc = this.gl.getParameter(this.gl.DEPTH_FUNC);
+    const prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
+    const prevActiveTex = this.gl.getParameter(this.gl.ACTIVE_TEXTURE);
+    this.gl.activeTexture(this.gl.TEXTURE0);
+    const prevTex0Binding = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
 
     try {
-      // Primera pasada: Renderizar geometría a framebuffer
-      console.log('🟡 Outline FirstPass start', {
-        framebufferSize: { w: this.canvasWidth, h: this.canvasHeight },
-        activeOutlines: this.activeOutlines.size,
-        targetsCount: targets.length
-      });
-  this.lastViewMatrix = mat4.clone(viewMatrix);
-  this.lastProjectionMatrix = mat4.clone(projectionMatrix);
-  this.lastTargets = targets.slice();
-  this.renderFirstPass(viewMatrix, projectionMatrix, targets);
-      
-      // Segunda pasada: Post-procesamiento de outlines
-  this.renderSecondPass();
-  console.log('🟡 Outline SecondPass done');
-
+      // Renderizado simplificado: quads 3D que miran a cámara con la textura del label
+      this.lastViewMatrix = mat4.clone(viewMatrix);
+      this.lastProjectionMatrix = mat4.clone(projectionMatrix);
+      this.lastTargets = targets.slice();
+      this.renderWorldBillboards(viewMatrix, projectionMatrix, targets);
     } catch (error) {
-      console.error('❌ Error renderizando outlines:', error);
+      console.error('❌ Error renderizando billboards:', error);
     } finally {
       // Restaurar estado
       this.gl.viewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
@@ -259,57 +241,15 @@ export class OutlineRenderer {
       if (prevDepth) this.gl.enable(this.gl.DEPTH_TEST); else this.gl.disable(this.gl.DEPTH_TEST);
       this.gl.depthFunc(prevDepthFunc);
       if (prevProgram) this.gl.useProgram(prevProgram);
-      // Restaurar clearColor
-      this.gl.clearColor(prevClearColor[0], prevClearColor[1], prevClearColor[2], prevClearColor[3]);
-      // Restaurar blend func
-      this.gl.blendFuncSeparate(prevBlendSrcRGB, prevBlendDstRGB, prevBlendSrcAlpha, prevBlendDstAlpha);
-      // Restaurar textura activa y binding de TEXTURE0
       this.gl.bindTexture(this.gl.TEXTURE_2D, prevTex0Binding);
       this.gl.activeTexture(prevActiveTex);
     }
   }
 
   /**
-   * Primera pasada: Renderizar geometría de targets a framebuffer
-   */
-  private renderFirstPass(viewMatrix: mat4, projectionMatrix: mat4, targets: ITargetable[]): void {
-    if (!this.gl || !this.outlineFramebuffer) return;
-
-    // Bind framebuffer para outline
-    this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, this.outlineFramebuffer);
-    this.gl.viewport(0, 0, this.canvasWidth, this.canvasHeight);
-
-  // Clear (guardar y restaurar clearColor localmente)
-  const prevClear = this.gl.getParameter(this.gl.COLOR_CLEAR_VALUE) as Float32List;
-  this.gl.clearColor(0, 0, 0, 0);
-    this.gl.clear(this.gl.COLOR_BUFFER_BIT | this.gl.DEPTH_BUFFER_BIT);
-
-  // Estado GL (solo primera pasada)
-  this.gl.enable(this.gl.DEPTH_TEST);
-  this.gl.depthFunc(this.gl.LEQUAL);
-  this.gl.disable(this.gl.CULL_FACE);
-  this.gl.disable(this.gl.BLEND);
-
-    // Renderizar solo los targets que tienen outline activo
-    let drawn = 0;
-    for (const target of targets) {
-      const outlineTarget = this.activeOutlines.get(target.id);
-      if (!outlineTarget || !outlineTarget.isVisible) continue;
-
-  // Renderizar geometría del target con shader específico
-  this.renderTargetGeometry(target, viewMatrix, projectionMatrix, outlineTarget.config);
-      drawn++;
-    }
-    console.log('🟡 Outline FirstPass drawn proxies:', drawn);
-
-    // Restaurar clear color
-    this.gl.clearColor(prevClear[0], prevClear[1], prevClear[2], prevClear[3]);
-  }
-
-  /**
    * Segunda pasada: Post-procesamiento para generar outlines
    */
-  private renderSecondPass(): void {
+  private renderSecondPass(outlineColor?: [number, number, number, number]): void {
     if (!this.gl || !this.screenQuadVAO) return;
 
     // Volver al framebuffer por defecto (pantalla)
@@ -327,28 +267,41 @@ export class OutlineRenderer {
   this.gl.bindTexture(this.gl.TEXTURE_2D, this.colorTexture);
     
     // Configurar uniformes
-    const uColorTexture = this.gl.getUniformLocation(outlineProgram, 'u_colorTexture');
-    const uResolution = this.gl.getUniformLocation(outlineProgram, 'u_resolution');
-    const uTime = this.gl.getUniformLocation(outlineProgram, 'u_time');
+  const uColorTexture = this.gl.getUniformLocation(outlineProgram, 'u_colorTexture');
+  const uResolution = this.gl.getUniformLocation(outlineProgram, 'u_resolution');
+  const uTime = this.gl.getUniformLocation(outlineProgram, 'u_time');
+  const uOutlineColor = this.gl.getUniformLocation(outlineProgram, 'u_outlineColor');
 
     this.gl.uniform1i(uColorTexture, 0);
     this.gl.uniform2f(uResolution, this.canvasWidth, this.canvasHeight);
-    this.gl.uniform1f(uTime, performance.now() * 0.001);
+  this.gl.uniform1f(uTime, performance.now() * 0.001);
+  const col = outlineColor || [0.0, 1.0, 1.0, 1.0];
+  this.gl.uniform4f(uOutlineColor, col[0], col[1], col[2], col[3]);
 
-    // Configurar blend para overlay
-    this.gl.enable(this.gl.BLEND);
-    this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+  // Configurar blend para overlay de outlines
+  const prevBlend = this.gl.isEnabled(this.gl.BLEND);
+  const prevBlendSrcRGB = this.gl.getParameter(this.gl.BLEND_SRC_RGB);
+  const prevBlendDstRGB = this.gl.getParameter(this.gl.BLEND_DST_RGB);
+  const prevBlendSrcAlpha = this.gl.getParameter(this.gl.BLEND_SRC_ALPHA);
+  const prevBlendDstAlpha = this.gl.getParameter(this.gl.BLEND_DST_ALPHA);
+  this.gl.enable(this.gl.BLEND);
+  this.gl.blendFuncSeparate(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA, this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
 
     // Renderizar screen quad
     this.gl.bindVertexArray(this.screenQuadVAO);
     this.gl.drawArrays(this.gl.TRIANGLES, 0, 6);
     this.gl.bindVertexArray(null);
 
-    // Unbind textura y deshabilitar blend como limpieza local (restauración global se hace en caller)
+    // Unbind textura y restaurar blend
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
-    // Renderizar labels 2D encima
+    this.gl.blendFuncSeparate(prevBlendSrcRGB, prevBlendDstRGB, prevBlendSrcAlpha, prevBlendDstAlpha);
+    if (!prevBlend) this.gl.disable(this.gl.BLEND);
+  }
+
+  // Componer labels una sola vez tras pintar todos los outlines
+  public compositeLabelsOnce(): void {
+    if (!this.gl) return;
     this.renderLabelsOverlay();
-    this.gl.disable(this.gl.BLEND);
   }
 
   /**
@@ -515,6 +468,163 @@ export class OutlineRenderer {
     this.gl.bindVertexArray(null);
   }
 
+  // === WORLD-SPACE BILLBOARD PIPELINE ===
+  private setupWorldBillboardPipeline(): void {
+    if (!this.gl) return;
+    const vs = `#version 300 es
+      precision highp float;
+      layout(location=0) in vec3 a_pos;   // quad in XY plane centered at origin
+      layout(location=1) in vec2 a_uv;
+      uniform mat4 u_model;
+      uniform mat4 u_view;
+      uniform mat4 u_proj;
+      out vec2 v_uv;
+      void main(){
+        // Flip vertical para alinear canvas (origen arriba-izquierda) con UV estándar
+        v_uv = vec2(a_uv.x, 1.0 - a_uv.y);
+        gl_Position = u_proj * u_view * u_model * vec4(a_pos, 1.0);
+      }
+    `;
+    const fs = `#version 300 es
+      precision highp float;
+      in vec2 v_uv;
+      uniform sampler2D u_tex;
+      out vec4 fragColor;
+      void main(){
+        vec4 c = texture(u_tex, v_uv);
+        fragColor = c;
+      }
+    `;
+    const prog = this.createProgram(vs, fs);
+    if (!prog) return;
+    this.worldBillboardProgram = prog;
+    this.worldBillboardUniforms.model = this.gl.getUniformLocation(prog, 'u_model');
+    this.worldBillboardUniforms.view = this.gl.getUniformLocation(prog, 'u_view');
+    this.worldBillboardUniforms.proj = this.gl.getUniformLocation(prog, 'u_proj');
+    this.worldBillboardUniforms.sampler = this.gl.getUniformLocation(prog, 'u_tex');
+
+    // Quad unitario en XY con UVs estándar (top v=1), centraremos con model matrix
+    const verts = new Float32Array([
+      // x, y, z,  u, v
+      -0.5, -0.5, 0,  0, 0,
+       0.5, -0.5, 0,  1, 0,
+       0.5,  0.5, 0,  1, 1,
+      -0.5,  0.5, 0,  0, 1,
+    ]);
+    const idx = new Uint16Array([0,1,2, 0,2,3]);
+    this.worldBillboardVAO = this.gl.createVertexArray();
+    this.worldBillboardVBO = this.gl.createBuffer();
+    this.worldBillboardEBO = this.gl.createBuffer();
+    this.gl.bindVertexArray(this.worldBillboardVAO);
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.worldBillboardVBO);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, verts, this.gl.STATIC_DRAW);
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.worldBillboardEBO);
+    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, idx, this.gl.STATIC_DRAW);
+    this.gl.enableVertexAttribArray(0);
+    this.gl.vertexAttribPointer(0, 3, this.gl.FLOAT, false, 5*4, 0);
+    this.gl.enableVertexAttribArray(1);
+    this.gl.vertexAttribPointer(1, 2, this.gl.FLOAT, false, 5*4, 3*4);
+    this.gl.bindVertexArray(null);
+  }
+
+  private renderWorldBillboards(view: mat4, proj: mat4, targets: ITargetable[]): void {
+    if (!this.gl || !this.worldBillboardProgram || !this.worldBillboardVAO) return;
+
+    // Estado para dibujar quads con alpha sobre la escena
+    const prevBlend = this.gl.isEnabled(this.gl.BLEND);
+    const prevCull = this.gl.isEnabled(this.gl.CULL_FACE);
+    const prevDepth = this.gl.isEnabled(this.gl.DEPTH_TEST);
+    this.gl.enable(this.gl.BLEND);
+    this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+    this.gl.disable(this.gl.CULL_FACE);
+    this.gl.disable(this.gl.DEPTH_TEST);
+
+    this.gl.useProgram(this.worldBillboardProgram);
+    this.gl.uniformMatrix4fv(this.worldBillboardUniforms.view, false, view as unknown as Float32Array);
+    this.gl.uniformMatrix4fv(this.worldBillboardUniforms.proj, false, proj as unknown as Float32Array);
+    this.gl.bindVertexArray(this.worldBillboardVAO);
+
+  // Invert view to orient the quads to camera
+  const invView = mat4.create();
+  mat4.invert(invView, view);
+  const camPos = { x: invView[12], y: invView[13], z: invView[14] };
+
+    // Precálculos para clamp por tamaño en píxeles (horizontal)
+    const viewportW = Math.max(1, this.canvasWidth);
+    const viewportH = Math.max(1, this.canvasHeight);
+    const aspect = viewportW / viewportH;
+    // En matriz de proyección estándar: proj[5] = 1/tan(fovy/2)
+    const tanHalfFovy = 1 / (proj[5] || 1);
+    const tanHalfFovx = tanHalfFovy * aspect;
+    // Límites deseados en píxeles para el ancho del label
+    const minPx = 96;   // ancho mínimo visible
+    const maxPx = 384;  // ancho máximo para evitar dominancia
+
+    // Preparar lista ordenada por distancia (lejos primero) para mejorar blending
+    const sorted = Array.from(this.activeOutlines.entries())
+      .filter(([_, ot]) => ot.isVisible)
+      .map(([id, ot]) => {
+        const t = ot.target;
+        const dx = t.position.x - camPos.x;
+        const dy = t.position.y - camPos.y;
+        const dz = t.position.z - camPos.z;
+        const dist = Math.hypot(dx, dy, dz);
+        return { id, ot, dx, dy, dz, dist };
+      })
+      .sort((a, b) => b.dist - a.dist); // más lejos primero (desc) para que cercanos dibujen al final
+
+    for (const entry of sorted) {
+      const { id, ot: outlineTarget, dx, dy, dz, dist } = entry;
+      const target = outlineTarget.target;
+      const typeLabel = this.typeToLabel(target.getTargetType?.());
+      const distLabel = `${Math.round(dist)}u`;
+      // Modulación de alpha por distancia cercana al fadeDistance
+      const baseCol = outlineTarget.config.color;
+      const fadeMax = Math.max(1e-3, outlineTarget.config.fadeDistance || 10000);
+      const fadeStart = 0.8 * fadeMax;
+      let fadeT = 0;
+      if (dist > fadeStart) {
+        fadeT = Math.min(1, (dist - fadeStart) / (fadeMax - fadeStart));
+      }
+      const alphaEff = (baseCol[3] ?? 1.0) * (1.0 - fadeT);
+      const textColor = `rgba(${Math.round(baseCol[0]*255)}, ${Math.round(baseCol[1]*255)}, ${Math.round(baseCol[2]*255)}, ${alphaEff.toFixed(3)})`;
+      const texEntry = this.getOrCreateLabelTexture(id, typeLabel, distLabel, textColor);
+
+      // Model matrix: translate to target, orient to camera (copy rotation from invView), scale to a readable size
+  const model = mat4.create();
+  // Centrado sobre el objetivo (sin desplazamiento vertical)
+  const radius = (target as any).radius ? Number((target as any).radius) : 2.0;
+  mat4.translate(model, model, [target.position.x, target.position.y, target.position.z]);
+      model[0] = invView[0]; model[1] = invView[1]; model[2] = invView[2];
+      model[4] = invView[4]; model[5] = invView[5]; model[6] = invView[6];
+      model[8] = invView[8]; model[9] = invView[9]; model[10] = invView[10];
+
+      // Ancho base por radio
+  const baseWidth = Math.max(2.0, radius * 2.2);
+      // Clamp por píxeles: convertir límites de px a unidades de mundo a la distancia de este target
+  const distance = Math.max(0.001, dist);
+  const minWorldW = 2 * distance * tanHalfFovx * (minPx / viewportW);
+  const maxWorldW = 2 * distance * tanHalfFovx * (maxPx / viewportW);
+      const width = Math.min(Math.max(baseWidth, minWorldW), maxWorldW);
+      mat4.scale(model, model, [width, width * (texEntry.h/texEntry.w), 1]);
+      this.gl.uniformMatrix4fv(this.worldBillboardUniforms.model, false, model as unknown as Float32Array);
+
+      // Bind texture
+      this.gl.activeTexture(this.gl.TEXTURE0);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, texEntry.tex);
+      this.gl.uniform1i(this.worldBillboardUniforms.sampler, 0);
+
+      // Draw
+      this.gl.drawElements(this.gl.TRIANGLES, 6, this.gl.UNSIGNED_SHORT, 0);
+    }
+
+    // Restore
+    this.gl.bindVertexArray(null);
+    if (!prevBlend) this.gl.disable(this.gl.BLEND);
+    if (prevCull) this.gl.enable(this.gl.CULL_FACE); else this.gl.disable(this.gl.CULL_FACE);
+    if (prevDepth) this.gl.enable(this.gl.DEPTH_TEST); else this.gl.disable(this.gl.DEPTH_TEST);
+  }
+
   private renderLabelsOverlay(): void {
     if (!this.gl || !this.labelProgram || !this.lastViewMatrix || !this.lastProjectionMatrix) return;
     const gl = this.gl;
@@ -604,17 +714,31 @@ export class OutlineRenderer {
   // fondo totalmente transparente (sin placa)
   // Nota: clearRect ya deja el canvas transparente
   // ctx.clearRect(0,0,W,H);
+      // Optional border rectangle for better visibility
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = textColorCss.replace('rgba(', 'rgba(').replace(/\)$/, '')
+        .replace(/,\s*([0-9]*\.?[0-9]+)\s*$/, (_, a)=>`, ${Math.min(1, Math.max(0, Number(a)*0.6))}`) + ')';
+      ctx.strokeRect(0.5, 0.5, W-1, H-1);
+
   // top: type
   ctx.fillStyle = textColorCss;
   // Tipografía más fina y un poco más pequeña
   ctx.font = '400 18px Segoe UI, Roboto, sans-serif';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'top';
+  // Sombra sutil para legibilidad
+  ctx.shadowColor = 'rgba(0,0,0,0.35)';
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
       ctx.fillText(typeLabel, W/2, 8);
       // bottom: distance
   ctx.font = '300 16px Segoe UI, Roboto, sans-serif';
       ctx.textBaseline = 'bottom';
       ctx.fillText(distLabel, W/2, H-8);
+  // Limpiar sombra para futuros trazos si hiciera falta
+  ctx.shadowColor = 'transparent';
+  ctx.shadowBlur = 0;
       // Subir a textura
       this.gl.bindTexture(this.gl.TEXTURE_2D, entry.tex);
   // Asegurar orientación consistente: no realizar UNPACK_FLIP_Y, usamos UVs ya corregidas
@@ -859,10 +983,8 @@ export class OutlineRenderer {
       
       uniform sampler2D u_colorTexture;
       uniform vec2 u_resolution;
-      uniform float u_time;
-      
-      // Wireframe-only configuration
-      const vec3 OUTLINE_COLOR = vec3(0.0, 1.0, 1.0); // Cyan
+  uniform float u_time;
+  uniform vec4 u_outlineColor;
       
       void main() {
         vec2 texel = 1.0 / u_resolution;
@@ -882,7 +1004,7 @@ export class OutlineRenderer {
         edge = clamp(edge, 0.0, 1.0);
         
         if (edge > 0.0) {
-          fragColor = vec4(OUTLINE_COLOR, 1.0); // thin, 1px outline
+          fragColor = u_outlineColor; // thin, 1px outline, color parametrizable
         } else {
           fragColor = vec4(0.0);
         }

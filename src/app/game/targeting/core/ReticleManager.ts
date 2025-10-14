@@ -15,6 +15,7 @@ import {
   HighlightType
 } from '../types/reticle.types';
 import { ITargetable } from '../../types/targeting.types';
+import { TargetType } from '../../types/targeting.types';
 import { TargetDetector } from './TargetDetector';
 import { InputHandler } from './InputHandler';
 import { ReticleRenderer } from '../rendering/ReticleRenderer';
@@ -481,17 +482,27 @@ export class ReticleManager {
     this.state.hoveredTarget = target;
 
     if (target && target !== previousTarget) {
+      // Si el nuevo hover es el mismo que el seleccionado, limpiar hover anterior y no aplicar hover al seleccionado
+      if (target === this.state.currentTarget) {
+        if (previousTarget && previousTarget !== this.state.currentTarget) {
+          this.targetHighlighter.removeHighlight(previousTarget);
+          this.outlineRenderer.removeOutline(previousTarget.id);
+        }
+        return;
+      }
       console.log('👁️ Target hovered:', target.getDisplayName());
       
   // Aplicar highlighting al target hovered
       this.targetHighlighter.highlightTarget(target);
       
       // Aplicar outline de hover (GLOW suave)
-      console.log('🟡 ReticleManager: llamando a addOutline para', target.id);
+      console.log('🟡 ReticleManager: llamando a addOutline (hover) para', target.id);
+      const relation = this.getRelationFor(target);
+      const hoverColor = this.getRelationColor(relation, false);
       this.outlineRenderer.addOutline(target, OutlineType.GLOW, {
-        thickness: 1.0,
-        intensity: 0.6,
-        color: [0.0, 1.0, 1.0, 1.0] // Wireframe cyan
+        thickness: 2.0,
+        intensity: 0.7,
+        color: hoverColor
       });
       
       // Remover highlighting del target anterior si existe
@@ -531,12 +542,14 @@ export class ReticleManager {
         pulseSpeed: 4.0
       });
 
-      // Aplicar outline de selección (PULSE intenso)
+      // Aplicar outline de selección (PULSE intenso) con color por relación
+      const relation = this.getRelationFor(target);
+      const selectedColor = this.getRelationColor(relation, true);
       this.outlineRenderer.addOutline(target, OutlineType.PULSE, {
         thickness: 4.0,
         intensity: 1.0,
         frequency: 3.0,
-        color: [1.0, 0.8, 0.0, 1.0] // Dorado brillante
+        color: selectedColor
       });
       
       this.events.onTargetLocked(target);
@@ -551,6 +564,35 @@ export class ReticleManager {
       
       this.events.onTargetLost();
     }
+  }
+
+  private getRelationFor(target: ITargetable): 'ally' | 'neutral' | 'enemy' {
+    const t = target.getTargetType?.();
+    switch (t) {
+      case TargetType.ASTEROID:
+        return 'neutral';
+      // TODO: integrar facciones reales cuando estén disponibles
+      default:
+        return 'enemy';
+    }
+  }
+
+  private getRelationColor(relation: 'ally' | 'neutral' | 'enemy', selected: boolean): [number, number, number, number] {
+    // Hover: tonos claros; Selected: versión viva pero más oscura
+    if (!selected) {
+      switch (relation) {
+        case 'ally': return [0.4, 1.0, 0.4, 1.0]; // verde claro
+        case 'neutral': return [0.5, 0.7, 1.0, 1.0]; // azul claro
+        case 'enemy': return [1.0, 0.5, 0.5, 1.0]; // rojo claro
+      }
+    } else {
+      switch (relation) {
+        case 'ally': return [0.05, 0.8, 0.05, 1.0]; // verde vivo más oscuro
+        case 'neutral': return [0.1, 0.4, 1.0, 1.0]; // azul vivo más oscuro
+        case 'enemy': return [0.9, 0.1, 0.1, 1.0]; // rojo vivo más oscuro
+      }
+    }
+    return [1,1,1,1];
   }
 
   private handleTargetLocked(target: ITargetable): void {
