@@ -80,6 +80,8 @@ export class OutlineRenderer {
     proj: WebGLUniformLocation | null;
     sampler: WebGLUniformLocation | null;
   } = { model: null, view: null, proj: null, sampler: null };
+  // Texturas sólidas para marcadores lejanos (color puro 1x1)
+  private solidColorTextures: Map<string, WebGLTexture> | null = null;
 
   // Programa aislado para primera pasada (evita atributos compartidos)
   private firstPassProgram: WebGLProgram | null = null;
@@ -594,7 +596,7 @@ export class OutlineRenderer {
         const pct = Math.min(999, Math.max(0, (hc / hm) * 100));
         healthPctLabel = `${Math.round(pct)}%`;
       }
-      const texEntry = this.getOrCreateLabelTexture(id, typeLabel, distLabel, textColor, healthPctLabel);
+  const texEntry = this.getOrCreateLabelTexture(id, typeLabel, distLabel, textColor, healthPctLabel);
 
       // Model matrix: translate to target, orient to camera (copy rotation from invView), scale to a readable size
   const model = mat4.create();
@@ -605,27 +607,53 @@ export class OutlineRenderer {
       model[4] = invView[4]; model[5] = invView[5]; model[6] = invView[6];
       model[8] = invView[8]; model[9] = invView[9]; model[10] = invView[10];
 
-  // Tamaño constante en pantalla (independiente de radio y distancia): elegir un ancho fijo en píxeles
-  const constantPxWidth = 162; // 35% mayor que 120 (increase outline size)
   const distance = Math.max(0.001, dist);
-  // Escalado realmente constante: ancho en mundo proporcional a distancia * tanHalfFovx para sostener constantPxWidth
-  // Escalado clásico constante (sin proyección forward que provocó desaparición):
-  let widthWorld = (constantPxWidth / viewportW) * 2.0 * distance * tanHalfFovx;
-  // Clamp mínimo por si distance muy pequeña u otras condiciones numéricas
-  const minWidthWorld = 0.01;
-  if (widthWorld < minWidthWorld) widthWorld = minWidthWorld;
-  // Altura basada en la textura (aspect ratio) para no deformar al reducir ancho
-  const heightWorld = widthWorld * (texEntry!.h / texEntry!.w);
-  mat4.scale(model, model, [widthWorld, heightWorld, 1]);
-  this.gl.uniformMatrix4fv(this.worldBillboardUniforms.model, false, model as unknown as Float32Array);
-
-      // Bind texture
-      this.gl.activeTexture(this.gl.TEXTURE0);
-  this.gl.bindTexture(this.gl.TEXTURE_2D, texEntry!.tex);
-      this.gl.uniform1i(this.worldBillboardUniforms.sampler, 0);
-
-      // Draw
-      this.gl.drawElements(this.gl.TRIANGLES, 6, this.gl.UNSIGNED_SHORT, 0);
+  const distantThreshold = 300;
+  if (distance > distantThreshold) {
+        // Renderizar marcador compacto: cuadrado pequeño fijo (ej: 18px) manteniendo orientación a cámara.
+        const markerPx = 18;
+        const markerWorld = (markerPx / viewportW) * 2.0 * distance * tanHalfFovx;
+        mat4.scale(model, model, [markerWorld, markerWorld, 1]);
+        this.gl.uniformMatrix4fv(this.worldBillboardUniforms.model, false, model as unknown as Float32Array);
+        // Generar un color sólido en una mini-textura 1x1 cacheada por color clave
+        const colorKey = baseCol.join('_');
+        if (!this.solidColorTextures) this.solidColorTextures = new Map();
+        let solidTex = this.solidColorTextures.get(colorKey);
+        if (!solidTex) {
+          const tmp = this.gl.createTexture()!;
+          this.gl.bindTexture(this.gl.TEXTURE_2D, tmp);
+          const rgba = new Uint8Array([
+            Math.min(255, Math.max(0, Math.round(baseCol[0]*255))),
+            Math.min(255, Math.max(0, Math.round(baseCol[1]*255))),
+            Math.min(255, Math.max(0, Math.round(baseCol[2]*255))),
+            Math.min(255, Math.max(0, Math.round((baseCol[3] ?? 1)*255)))
+          ]);
+          this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, 1, 1, 0, this.gl.RGBA, this.gl.UNSIGNED_BYTE, rgba);
+          this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.NEAREST);
+          this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.NEAREST);
+          this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+          this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+          this.solidColorTextures.set(colorKey, tmp);
+          solidTex = tmp;
+        }
+        this.gl.activeTexture(this.gl.TEXTURE0);
+        this.gl.bindTexture(this.gl.TEXTURE_2D, solidTex!);
+        this.gl.uniform1i(this.worldBillboardUniforms.sampler, 0);
+        this.gl.drawElements(this.gl.TRIANGLES, 6, this.gl.UNSIGNED_SHORT, 0);
+      } else {
+        // Billboard normal con textura
+        const constantPxWidth = 162; // ancho base cercano
+        let widthWorld = (constantPxWidth / viewportW) * 2.0 * distance * tanHalfFovx;
+        const minWidthWorld = 0.01;
+        if (widthWorld < minWidthWorld) widthWorld = minWidthWorld;
+        const heightWorld = widthWorld * (texEntry!.h / texEntry!.w);
+        mat4.scale(model, model, [widthWorld, heightWorld, 1]);
+        this.gl.uniformMatrix4fv(this.worldBillboardUniforms.model, false, model as unknown as Float32Array);
+        this.gl.activeTexture(this.gl.TEXTURE0);
+        this.gl.bindTexture(this.gl.TEXTURE_2D, texEntry!.tex);
+        this.gl.uniform1i(this.worldBillboardUniforms.sampler, 0);
+        this.gl.drawElements(this.gl.TRIANGLES, 6, this.gl.UNSIGNED_SHORT, 0);
+      }
     }
 
     // Restore
