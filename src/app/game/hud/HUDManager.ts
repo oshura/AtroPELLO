@@ -416,14 +416,15 @@ export class HUDManager {
     };
     this.compass.render(ctx, compassPos);
 
-    // === VOID ENERGY METER (top-right) ===
+    // === VOID ENERGY METER (top-right, adjusted thickness + legend) ===
     const vem = (this as any)._voidEnergyHUD as { current: number; max: number; pct: number } | undefined;
     if (vem) {
+      // Restore original width, increase height (thicker), keep vertical offset = 2x height
       const meterW = 280;
-      const meterH = 18;
+      const meterH = 28;
       const margin = 16;
       const x1 = canvas.width - meterW - margin;
-      const y1 = 80; // espacio superior derecho libre
+  const y1 = 80 + meterH * 3; // move a bit further down
       // fondo
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -439,18 +440,52 @@ export class HUDManager {
       else if (pct >= 50) col = 'rgba(255,220,0,0.95)';
       else if (pct >= 25) col = 'rgba(255,128,0,0.95)';
       ctx.fillStyle = col;
+      // reverse fill: start from right edge and fill leftwards
       const fillW = Math.round((pct / 100) * meterW);
-      ctx.fillRect(x1, y1, fillW, meterH);
+      const fillX = x1 + (meterW - fillW);
+      ctx.fillRect(fillX, y1, fillW, meterH);
+
+      // segment lines and legend (100%, 75%, 50%, 25%) under the bar
+      const ticks = [1.0, 0.75, 0.5, 0.25];
+      ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.fillStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1;
+      ctx.font = '12px Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'top';
+      const labelY = y1 + meterH + 8;
+      ticks.forEach(p => {
+        const xTick = x1 + (1 - p) * meterW; // 100% at left, 25% near right
+        // draw vertical tick spanning through bar and slightly below
+        ctx.beginPath();
+        ctx.moveTo(xTick, y1 - 2);
+        ctx.lineTo(xTick, y1 + meterH + 6);
+        ctx.stroke();
+        // label text under the tick
+        const pctLabel = Math.round(p * 100) + '%';
+        ctx.fillText(pctLabel, xTick, labelY);
+      });
       // etiqueta
-      ctx.fillStyle = 'rgba(255,255,255,0.95)';
-      ctx.font = '16px Segoe UI, Roboto, sans-serif';
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  // reduce label font size for a subtler title
+  ctx.font = '20px Segoe UI, Roboto, sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'bottom';
       ctx.shadowColor = 'rgba(0,0,0,0.6)';
       ctx.shadowBlur = 2;
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 1;
-  ctx.fillText(`Energía del vacío: ${Math.round(pct)}%`, x1 + meterW, y1 - 4);
+      // Show only current units (no /max)
+      const unitsStr = `${Math.round(vem.current)}u`;
+      // Render label taller but not wider: apply vertical scale transform
+  const labelText = `Void Energy: ${unitsStr}`;
+  const labelX = x1 + meterW;
+  const labelYTitle = y1 - 8;
+      ctx.save();
+  ctx.translate(labelX, labelYTitle);
+      ctx.scale(1, 1.35); // taller without wider appearance
+      ctx.fillText(labelText, 0, 0);
+      ctx.restore();
       ctx.restore();
     }
 

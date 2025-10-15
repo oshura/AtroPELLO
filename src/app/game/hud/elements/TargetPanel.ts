@@ -150,15 +150,18 @@ export class TargetPanel {
     const infoW = width - (infoX - x) - 12;
 
     ctx.save();
-  // Aumentar tamaño de fuente para mejor legibilidad
-  ctx.font = '28px Segoe UI, Roboto, sans-serif';
+    // Aumentar tamaño de fuente para mejor legibilidad
+    ctx.font = '28px Segoe UI, Roboto, sans-serif';
     // Usar textBaseline 'top' para evitar recortes inferiores
     ctx.textBaseline = 'top';
+    ctx.textAlign = 'left';
     ctx.fillStyle = color;
 
     // Preparar líneas, filtrando claves internas
     // details already defined above
-    const lineHeight = 34; // acorde con 28px de fuente
+  // Hacer la letra más alta (no más ancha) usando escala vertical
+  const detailsScaleY = 1.2; // factor de altura
+  const lineHeight = Math.ceil(34 * detailsScaleY); // acorde con 28px y escala
     const lines: string[] = [];
     for (const [key, value] of Object.entries(details)) {
       if (key === 'previewStatus' || key === 'type') continue; // ocultar internos y evitar duplicar
@@ -189,7 +192,12 @@ export class TargetPanel {
     let yCursor = startY;
     for (const line of lines) {
       if (yCursor > infoY + pvH - lineHeight) break; // seguridad con baseline top
-      ctx.fillText(line, infoX, yCursor);
+      // Dibujar con escala vertical sin ensanchar
+      ctx.save();
+      ctx.translate(infoX, yCursor);
+      ctx.scale(1, detailsScaleY);
+      ctx.fillText(line, 0, 0);
+      ctx.restore();
       yCursor += lineHeight;
     }
 
