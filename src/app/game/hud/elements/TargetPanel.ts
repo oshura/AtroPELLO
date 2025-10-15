@@ -35,6 +35,8 @@ export class TargetPanel {
 
     // Colors by relation
     const color = this.getAccentColor(this.state.relation);
+    // Current details snapshot (used across title and list)
+    const details = this.state.details || {};
 
     // Panel background (transparent overall, but draw semi-transparent box)
     ctx.save();
@@ -51,14 +53,47 @@ export class TargetPanel {
     ctx.stroke();
     ctx.restore();
 
-    // Title (name + distance)
+    // Title (type + name), distance moved to fixed badge on the right
     ctx.save();
-  ctx.font = '32px Segoe UI, Roboto, sans-serif';
+    ctx.font = '32px Segoe UI, Roboto, sans-serif';
     ctx.fillStyle = color;
-    const title = `${this.state.name}  •  ${Math.round(this.state.distance)}u`;
+    const typeStr = (details as any).type !== undefined ? String((details as any).type) : '';
+    const title = typeStr ? `${typeStr}  ${this.state.name}` : `${this.state.name}`;
     // Bajar ligeramente el título
-  ctx.fillText(title, x + 14, y + 38);
+    ctx.fillText(title, x + 14, y + 38);
     ctx.restore();
+
+  // Fixed-position distance badge (top-right), right-aligned inside, fixed width
+  ctx.save();
+  ctx.font = '20px Segoe UI, Roboto, sans-serif';
+  const rawDist = this.state.distance;
+  const distText = rawDist >= 1000 ? `${(rawDist / 1000).toFixed(1)}ku` : `${Math.round(rawDist)}u`;
+  // Reserve width for the widest possible label ('50.0ku' vs '999u')
+  const padX = 10;
+  const padY = 4;
+  const w1 = ctx.measureText('999u').width;
+  const w2 = ctx.measureText('50.0ku').width;
+  const badgeW = Math.ceil(Math.max(w1, w2)) + padX * 2;
+  const badgeH = 24; // fixed height for neat box
+  const badgeX = x + width - badgeW - 14; // fixed right margin
+  const badgeY = y + 12; // fixed top margin
+  // Background for legibility
+  ctx.fillStyle = 'rgba(0, 15, 25, 0.35)';
+  ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+  // Frame
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 2;
+  ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+  // Text (right-aligned within the badge)
+  ctx.fillStyle = color;
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
+  ctx.fillText(distText, badgeX + badgeW - padX, badgeY + badgeH / 2);
+  ctx.restore();
 
     // Preview region
   const pvX = x + 12;
@@ -117,15 +152,23 @@ export class TargetPanel {
     ctx.fillStyle = color;
 
     // Preparar líneas, filtrando claves internas
-    const details = this.state.details || {};
-  const lineHeight = 34; // acorde con 28px de fuente
+    // details already defined above
+    const lineHeight = 34; // acorde con 28px de fuente
     const lines: string[] = [];
-    // Forzar 'type' como primera línea si existe
-    if ((details as any).type !== undefined) {
-      lines.push(`Type: ${this.prettyVal((details as any).type)}`);
-    }
     for (const [key, value] of Object.entries(details)) {
       if (key === 'previewStatus' || key === 'type') continue; // ocultar internos y evitar duplicar
+      // Renombrar 'albedo' a 'Reflectancia' y mostrar en %
+      if (key.toLowerCase() === 'albedo') {
+        const pct = Math.max(0, Math.min(100, Math.round(Number(value) * 100)));
+        lines.push(`Reflectancia: ${pct}%`);
+        continue;
+      }
+      // Mostrar salud como porcentaje si viene explícita
+      if (key === 'healthPct') {
+        const pct = Math.max(0, Math.min(100, Math.round(Number(value))));
+        lines.push(`Salud: ${pct}%`);
+        continue;
+      }
       lines.push(`${this.prettyKey(key)}: ${this.prettyVal(value)}`);
     }
     // Alinear por abajo con el límite del wireframe
@@ -140,6 +183,53 @@ export class TargetPanel {
     }
 
     ctx.restore();
+
+  // === Barra de salud a la derecha (pegada al borde del panel) ===
+  const healthPct = this.resolveHealthPct(details);
+  const barMargin = 12; // un poco más de margen del lado derecho
+  const barW = 28; // barra más gruesa
+  const barX = x + width - barW - barMargin;
+  // Reservar espacio superior para texto dentro del mismo alto total pvH
+  const labelH = 24; // alto del texto (ajustado para 20px + sombra)
+  const labelGap = 4; // separación bajo el texto
+  const totalAvailH = pvH;
+  const barY = pvY + labelH + labelGap;
+  const barH = Math.max(10, totalAvailH - (labelH + labelGap));
+  // Texto del porcentaje encima de la barra (centrado)
+  ctx.save();
+  ctx.font = '20px Segoe UI, Roboto, sans-serif';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.shadowColor = 'rgba(0,0,0,0.6)';
+  ctx.shadowBlur = 2;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
+  ctx.fillText(`${healthPct}%`, barX + barW/2, pvY);
+  ctx.restore();
+  // Marco de la barra
+  ctx.save();
+  const radius = 6;
+  // Path para el marco exterior ligeramente más grande
+  this.roundRect(ctx, barX - 1, barY - 1, barW + 2, barH + 2, radius + 1);
+  ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  // Fondo con esquinas redondeadas
+  this.roundRect(ctx, barX, barY, barW, barH, radius);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  ctx.fill();
+  // Color por tramos
+  const hpColor = this.healthColor(healthPct);
+  // Relleno desde abajo hacia arriba
+  const fillH = Math.round((healthPct / 100) * barH);
+  const fillY = barY + (barH - fillH);
+  // Clip al rectángulo redondeado para que el relleno respete las esquinas
+  this.roundRect(ctx, barX, barY, barW, barH, radius);
+  ctx.clip();
+  ctx.fillStyle = hpColor;
+  ctx.fillRect(barX, fillY, barW, fillH);
+  ctx.restore();
   }
 
   private getAccentColor(relation: Relation): string {
@@ -171,5 +261,20 @@ export class TargetPanel {
     if (Array.isArray(v)) return v.join(', ');
     if (typeof v === 'object') return JSON.stringify(v);
     return String(v);
+  }
+
+  private resolveHealthPct(details: Record<string, any> | undefined): number {
+    const d = details || {};
+  if (typeof d['healthPct'] === 'number') return Math.max(0, Math.min(100, Math.round(d['healthPct'] as number)));
+  const hc = typeof d['healthCurrent'] === 'number' ? (d['healthCurrent'] as number) : 1;
+  const hm = typeof d['healthMax'] === 'number' ? (d['healthMax'] as number) : (hc || 1);
+    if (hm <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((hc / hm) * 100)));
+  }
+  private healthColor(pct: number): string {
+    if (pct >= 75) return 'rgba(0,255,0,0.95)'; // verde
+    if (pct >= 50) return 'rgba(255,220,0,0.95)'; // amarillo
+    if (pct >= 25) return 'rgba(255,128,0,0.95)'; // naranja
+    return 'rgba(255,0,0,0.95)'; // rojo
   }
 }
