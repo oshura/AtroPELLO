@@ -28,7 +28,7 @@ export class TargetDetector implements ITargetDetector {
     this.config = {
       maxDistance: Infinity,
       raycastPrecision: 0.1,
-      targetTypes: ['asteroid', 'spaceship', 'planet', 'portal']
+  targetTypes: ['asteroid', 'super_asteroid', 'spaceship', 'planet', 'portal']
     };
   }
 

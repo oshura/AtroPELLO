@@ -6,6 +6,7 @@ import { ParticleEffectsService } from '../particle-effects.service';
 import { ReticleManager } from '../../game/targeting';
 import { TargetCatalogService } from '../../game/services/target-catalog.service';
 import { TargetDetailService } from '../../game/services/target-detail.service';
+import { AsteroidClusterService } from '../../game/services/game/asteroid-cluster.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -85,7 +86,15 @@ export class GameInitializer {
     const reticleManager = this.injector.get(ReticleManager);
     const targetCatalog = this.injector.get(TargetCatalogService);
     const targetDetails = this.injector.get(TargetDetailService);
-    this.gameEngine = new GameEngine(this.webglService, this.particleEffectsService, reticleManager, targetCatalog, targetDetails);
+    const asteroidClusterService = this.injector.get(AsteroidClusterService);
+    this.gameEngine = new GameEngine(
+      this.webglService,
+      this.particleEffectsService,
+      reticleManager,
+      targetCatalog,
+      targetDetails,
+      asteroidClusterService
+    );
 
       // Inicializar motor del juego
       await this.gameEngine.initialize(canvasRef);

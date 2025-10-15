@@ -8,7 +8,9 @@ import { Camera, CameraMode } from './Camera';
 import { ShaderManager } from './ShaderManager';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
+import { SuperAsteroid } from './SuperAsteroid';
 import { ReticleManager } from './targeting';
+import { AsteroidClusterService } from './services/game/asteroid-cluster.service';
 import { TargetCatalogService } from './services/target-catalog.service';
 import { TargetType, ITargetable } from './types/targeting.types';
 import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
@@ -33,6 +35,7 @@ export class GameEngine {
   private particleEffects!: ParticleEffectsService;
   private hudManager!: HUDManager;
   private reticleManager!: ReticleManager;
+  private asteroidClusterService!: AsteroidClusterService;
   private targetCatalog!: TargetCatalogService;
   private targetDetails!: TargetDetailService;
   private targetPreview!: TargetPreviewRenderer;
@@ -40,6 +43,7 @@ export class GameEngine {
   // Objetos del juego
   private spaceship!: Spaceship;
   private asteroids: Asteroid[] = [];
+  private superAsteroids: SuperAsteroid[] = [];
   
   // Configuración del mundo
   private readonly WORLD_SIZE = 50;
@@ -64,12 +68,14 @@ export class GameEngine {
     private particleEffectsService: ParticleEffectsService,
     private reticleManagerService: ReticleManager,
     private targetCatalogService: TargetCatalogService,
-    private targetDetailService: TargetDetailService
+    private targetDetailService: TargetDetailService,
+    asteroidClusterService: AsteroidClusterService
   ) {
     this.reticleManager = this.reticleManagerService;
     this.targetCatalog = this.targetCatalogService;
     this.targetDetails = this.targetDetailService;
     this.targetPreview = new TargetPreviewRenderer(256, 192);
+    this.asteroidClusterService = asteroidClusterService;
   }
 
   /**
@@ -128,8 +134,7 @@ export class GameEngine {
       // Crear objetos del juego
       this.createGameObjects();
 
-  // Registrar targets genéricos (por ahora solo asteroides)
-  this.registerTargetsGeneric();
+  // Registro de targets se realiza al crear los clusters (initializeAllBuffers)
 
       // Ejecutar tests de integración cámara-nave
       this.runIntegrationTests();
@@ -185,47 +190,11 @@ export class GameEngine {
       visible: this.spaceship.visible,
       active: this.spaceship.active
     });
-
-    // Crear asteroides
-    this.asteroids = [];
-    for (let i = 0; i < this.ASTEROID_COUNT; i++) {
-      // Posición inicial más cerca para debugging
-      let x, y, z;
-      if (i < 3) {
-        // Los primeros 3 asteroides muy cerca para debug
-        x = (i - 1) * 5;  // -5, 0, 5
-        y = 0;
-        z = 10 + i * 3;   // 10, 13, 16
-      } else {
-        // Los demás aleatorios pero cerca
-        do {
-          x = (Math.random() - 0.5) * 20; // Mundo más pequeño
-          y = (Math.random() - 0.5) * 20;
-          z = (Math.random() - 0.5) * 20;
-        } while (Math.sqrt(x*x + y*y + z*z) < 5); // No muy cerca de la nave
-      }
-      
-      const asteroid = new Asteroid(`asteroid-${i}`, { x, y, z }, 0.5 + Math.random() * 1.5);
-      
-      // Velocidad aleatoria
-      asteroid.velocity = {
-        x: (Math.random() - 0.5) * 2,
-        y: (Math.random() - 0.5) * 2,
-        z: (Math.random() - 0.5) * 2
-      };
-
-      this.asteroids.push(asteroid);
-    }
-    
-    // ¡CRÍTICO! Inicializar buffers WebGL para todos los objetos
+    // ¡CRÍTICO! Inicializar buffers WebGL para los objetos iniciales
     this.initializeAllBuffers();
   }
 
-  private registerTargetsGeneric(): void {
-    // Adaptar asteroides a ITargetable existente (ya implementan métodos requeridos)
-    const asteroidTargets: ITargetable[] = this.asteroids as unknown as ITargetable[];
-    this.targetCatalog.register(TargetType.ASTEROID, asteroidTargets);
-  }
+  // Registro de targets ahora se hace tras crear los clusters en initializeAllBuffers()
   
   /**
    * Inicializa los buffers WebGL para todos los objetos del juego
@@ -245,16 +214,26 @@ export class GameEngine {
       indices: this.spaceship.indices.length
     });
     
-    // Inicializar buffers de todos los asteroides
-    this.asteroids.forEach((asteroid, index) => {
-      asteroid.initBuffers(this.gl!);
+    // Crear clusters asteroidales (nuevo modelo de creación)
+    const dir = this.normalize({ x: 0.6, y: 0.2, z: 0.1 });
+    const cluster = this.asteroidClusterService.createCluster({
+      id: 'cluster-0',
+      center: { x: 20, y: 0, z: 30 },
+      direction: dir,
+      speed: 1.5, // más lento que asteroides sueltos
+      count: 8,
+      includeSuper: true,
+      radius: 12,
+      centerSpeedFactor: 0.5
     });
-    console.log(`⭐ Initialized buffers for ${this.asteroids.length} asteroids`);
-    console.log('📊 First asteroid buffer info:', {
-      vertexBuffer: !!this.asteroids[0]?.vertexBuffer,
-      vertices: this.asteroids[0]?.vertices.length,
-      indices: this.asteroids[0]?.indices.length
-    });
+    // Inicializar buffers de los objetos del cluster
+    cluster.objects.forEach(o => o.initBuffers(this.gl!));
+    // Registrar los objetos del cluster como targets (buckets separados)
+    const clusterTargets: ITargetable[] = cluster.objects as unknown as ITargetable[];
+    const smalls = clusterTargets.filter(t => !((t as any) instanceof SuperAsteroid));
+    const supers = clusterTargets.filter(t => ((t as any) instanceof SuperAsteroid));
+    this.targetCatalog.register(TargetType.ASTEROID, smalls);
+    this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
   }
 
   /**
@@ -343,16 +322,23 @@ export class GameEngine {
     // Actualizar cámara con nueva posición
     this.camera.update(this.spaceship, deltaTime);
 
-    // Actualizar asteroides
-    this.asteroids.forEach(asteroid => {
-      asteroid.update(deltaTime);
-      
-      // Mantener asteroides dentro del mundo
-      this.wrapPosition(asteroid);
+    // Asteroides sueltos eliminados: gestionamos solo clusters
+  // Actualizar clusters: mueven su centro y arrastran objetos a misma velocidad/dirección
+  this.asteroidClusterService.updateClusters(deltaTime);
+  // Aplicar update a cada objeto del cluster (mueve posición según direction/driftSpeed)
+  this.asteroidClusterService.getClusters().forEach(c => {
+    c.objects.forEach(obj => {
+      obj.update(deltaTime);
+      // No hacer wrap para miembros del clúster: sin teletransporte en bordes
     });
+  });
+  // Persistencia: no re-centrar por defecto; dejamos vivir alrededor del centro
+  // (Si se desea contención, llamar a enforceBoundsRelativeToCenter(threshold) aquí)
+
+    // Superasteroides sueltos eliminados: vienen del cluster
 
     // Actualizar sistema de targeting con objetos disponibles (catálogo genérico)
-    const availableTargets = this.targetCatalog.getAllTargets();
+  const availableTargets = this.targetCatalog.getAllTargets();
     
     // Debug ocasional para verificar targets
     if (Math.random() < 0.001) { // 0.1% chance
@@ -367,7 +353,7 @@ export class GameEngine {
     if (performance.now() % 2000 < 50) { // Cada 2 segundos aprox
       console.log('🚀 GameEngine→ReticleManager.update():', {
         deltaTime: Math.round(deltaTime * 1000) + 'ms',
-        asteroids: this.asteroids.length,
+  asteroids: this.targetCatalog.getByType(TargetType.ASTEROID).length,
         targets: availableTargets.length,
         firstTarget: availableTargets[0]?.getDisplayName() || 'none',
         reticleManager: !!this.reticleManager
@@ -389,16 +375,17 @@ export class GameEngine {
       const dz = selected.position.z - this.camera.position.z;
       const distance = Math.hypot(dx, dy, dz);
 
-      // Relation heuristic (asteroids neutral; extend later)
+    // Relation heuristic: asteroids and super-asteroids are neutral
   const selType = selected.getTargetType();
-  const relation: 'ally' | 'neutral' | 'enemy' = (selType === TargetType.ASTEROID) ? 'neutral' : 'enemy';
+  const isNeutral = selType === TargetType.ASTEROID || selType === TargetType.SUPER_ASTEROID;
+  const relation: 'ally' | 'neutral' | 'enemy' = isNeutral ? 'neutral' : 'enemy';
 
       // Render preview into offscreen canvas
       this.targetPreview.renderPreview(selected);
       if (Math.random() < 0.01) {
         console.log('🎯 TargetPreview status:', (this.targetPreview as any).getStatus?.());
       }
-      const previewCanvas = this.targetPreview.getCanvas();
+  const previewCanvas = this.targetPreview.getCanvas();
 
     // Details: fetch async once per different selection (simple cache by id)
       // For now, fire-and-forget; the HUD will be updated next frame when resolved
@@ -407,7 +394,10 @@ export class GameEngine {
   const baseDetails = (this as any)._targetDetailsCache?.[selected.id] || this.getFallbackDetails(selected);
   // Añadir propiedades visibles comunes: masa del vacío del objeto si existe
   const voidMass = (selected as any).voidMassUnits ?? 0;
-  const details = { ...baseDetails, type: this.typeToLabel(selType), previewStatus: (this.targetPreview as any).getStatus?.(), voidMassUnits: voidMass } as any;
+  // Mostrar etiqueta explícita para SuperAsteroid en el HUD
+  const isSuper = (selected instanceof SuperAsteroid);
+  const typeLabel = isSuper ? 'SuperAsteroid' : this.typeToLabel(selType);
+  const details = { ...baseDetails, type: typeLabel, previewStatus: (this.targetPreview as any).getStatus?.(), voidMassUnits: voidMass } as any;
 
       this.hudManager.updateTargetPanel({
         name: selected.getDisplayName(),
@@ -454,6 +444,7 @@ export class GameEngine {
 
   private typeToLabel(t: TargetType): string {
     switch (t) {
+      case TargetType.SUPER_ASTEROID: return 'SuperAsteroid';
       case TargetType.ASTEROID: return 'Asteroid';
       case TargetType.SPACESHIP: return 'Spaceship';
       case TargetType.PLANET: return 'Planet';
@@ -464,6 +455,11 @@ export class GameEngine {
   }
 
   // Los efectos de propulsión ahora se manejan en ParticleEffectsService
+
+  private normalize(v: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+    const len = Math.hypot(v.x, v.y, v.z) || 1;
+    return { x: v.x / len, y: v.y / len, z: v.z / len };
+  }
 
   /**
    * Mantiene objetos dentro de los límites del mundo
@@ -547,12 +543,12 @@ export class GameEngine {
       this.ambientStrength
     );
 
-    // Renderizar asteroides con shader estándar
-    // Establecer color marrón por defecto para asteroides
+    // Renderizar asteroides del cluster con shader estándar
     this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4])); // Color gris-marrón rocoso
-    
-    this.asteroids.forEach(asteroid => {
-      this.renderObject(asteroid);
+
+    // Renderizar objetos de clusters
+    this.asteroidClusterService.getClusters().forEach(c => {
+      c.objects.forEach(o => this.renderObject(o));
     });
 
     // Renderizar outlines avanzados (FASE 4)

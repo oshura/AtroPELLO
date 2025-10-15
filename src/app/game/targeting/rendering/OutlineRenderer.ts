@@ -7,6 +7,7 @@ import { Injectable } from '@angular/core';
 import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
 import { ITargetable } from '../../types/targeting.types';
+import { SuperAsteroid } from '../../SuperAsteroid';
 import { mat4, vec3 } from 'gl-matrix';
 
 export enum OutlineType {
@@ -577,7 +578,8 @@ export class OutlineRenderer {
     for (const entry of sorted) {
       const { id, ot: outlineTarget, dx, dy, dz, dist } = entry;
       const target = outlineTarget.target;
-      const typeLabel = this.typeToLabel(target.getTargetType?.());
+  // Mostrar etiqueta explícita para SuperAsteroid si aplica
+  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : this.typeToLabel(target.getTargetType?.());
       const distLabel = `${Math.round(dist)}u`;
       // Sin modulación de alpha por distancia: color constante
       const baseCol = outlineTarget.config.color;
@@ -684,7 +686,8 @@ export class OutlineRenderer {
       const scr = this.worldToScreen(target.position, this.lastViewMatrix, this.lastProjectionMatrix);
       if (!scr || scr.w <= 0) continue; // detrás de cámara
       // Crear/actualizar textura de label
-  const typeLabel = this.typeToLabel(target.getTargetType?.());
+  // Mostrar etiqueta explícita para SuperAsteroid si aplica
+  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : this.typeToLabel(target.getTargetType?.());
       const dist = Math.hypot(target.position.x - camPos.x, target.position.y - camPos.y, target.position.z - camPos.z);
       const distLabel = `${Math.round(dist)}u`;
   // Color heredado del outline (animosidad)
@@ -907,6 +910,7 @@ export class OutlineRenderer {
 
   private typeToLabel(tt: any): string {
     const t = String(tt || 'unknown').toLowerCase();
+    if (t.includes('super_asteroid') || t === 'superasteroid') return 'SuperAsteroid';
     if (t.includes('asteroid')) return 'Asteroid';
     if (t.includes('spaceship')) return 'Spaceship';
     if (t.includes('planet')) return 'Planet';
