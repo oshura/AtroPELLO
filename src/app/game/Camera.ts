@@ -20,7 +20,7 @@ export abstract class BaseCamera {
   public fov: number = 55 * (Math.PI / 180); // 55° vertical → ~90° horizontal en 16:9
   public aspect: number = 1.0;
   public near: number = 0.1;
-  public far: number = 1000.0;
+  public far: number = 100000.0; // Aumentado para soportar distancias de hasta ~50ku sin recorte
   
   // Configuración de zoom dinámico - ajustado para FOV 55°
   protected zoomDistance: number = 4.5; // Aumentado para compensar FOV más estrecho

@@ -19,6 +19,9 @@ export abstract class GameObject {
   public healthCurrent: number;
   public healthMax: number;
 
+  // Masa del vacío disponible para conversión (unidades hipotéticas)
+  public voidMassUnits: number;
+
   // Matrices de transformación (se calculan automáticamente)
   public modelMatrix: Float32Array;
   public normalMatrix: Float32Array;
@@ -56,6 +59,9 @@ export abstract class GameObject {
   // Salud por defecto (se puede sobreescribir en subclases después de super())
   this.healthMax = 100;
   this.healthCurrent = this.healthMax;
+
+  // Por defecto, sin masa del vacío (las subclases pueden asignar)
+  this.voidMassUnits = 0;
 
     // Inicializar matrices
     this.modelMatrix = new Float32Array(16);

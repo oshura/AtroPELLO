@@ -59,6 +59,9 @@ export class Asteroid extends GameObject implements ITargetable {
   // Salud aleatoria entre 25 y 150 (entera)
   this.healthMax = Math.floor(25 + Math.random() * 126); // 25..150
   this.healthCurrent = this.healthMax;
+
+  // Masa del vacío disponible en el asteroide (0..32u)
+  this.voidMassUnits = Math.floor(Math.random() * 33); // hasta 32u
   }
 
   /**

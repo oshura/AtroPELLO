@@ -92,6 +92,7 @@ export class HUDManager {
     altitude: number;
     speed: number;
     position?: { x: number; y: number; z: number };
+    voidEnergy?: { current: number; max: number; pct: number };
   }): void {
     // Actualizar elementos individuales
     this.velocityBarLeft.update(gameData.velocity);
@@ -109,6 +110,8 @@ export class HUDManager {
   this.marqueePanel.update(); // Sin parámetros, usa su lógica interna
     
     // Renderizar todos los elementos en la textura
+    // Guardar temporalmente energía del vacío para el render
+    (this as any)._voidEnergyHUD = gameData.voidEnergy;
     this.renderToTexture();
   }
 
@@ -412,6 +415,44 @@ export class HUDManager {
       y: 200  // Bajada adicional para evitar solaparse con el marquee
     };
     this.compass.render(ctx, compassPos);
+
+    // === VOID ENERGY METER (top-right) ===
+    const vem = (this as any)._voidEnergyHUD as { current: number; max: number; pct: number } | undefined;
+    if (vem) {
+      const meterW = 280;
+      const meterH = 18;
+      const margin = 16;
+      const x1 = canvas.width - meterW - margin;
+      const y1 = 80; // espacio superior derecho libre
+      // fondo
+      ctx.save();
+      ctx.fillStyle = 'rgba(0,0,0,0.35)';
+      ctx.fillRect(x1, y1, meterW, meterH);
+      // marco
+      ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(x1 - 1, y1 - 1, meterW + 2, meterH + 2);
+      // color por tramos similar a salud
+      const pct = Math.max(0, Math.min(100, vem.pct));
+      let col = 'rgba(255,0,0,0.95)';
+      if (pct >= 75) col = 'rgba(0,255,0,0.95)';
+      else if (pct >= 50) col = 'rgba(255,220,0,0.95)';
+      else if (pct >= 25) col = 'rgba(255,128,0,0.95)';
+      ctx.fillStyle = col;
+      const fillW = Math.round((pct / 100) * meterW);
+      ctx.fillRect(x1, y1, fillW, meterH);
+      // etiqueta
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.font = '16px Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'right';
+      ctx.textBaseline = 'bottom';
+      ctx.shadowColor = 'rgba(0,0,0,0.6)';
+      ctx.shadowBlur = 2;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 1;
+  ctx.fillText(`Energía del vacío: ${Math.round(pct)}%`, x1 + meterW, y1 - 4);
+      ctx.restore();
+    }
 
     // === TARGET PANEL ===
     // Centered and larger (más alto) y un poco más abajo

@@ -37,6 +37,13 @@ export class Spaceship extends GameObject {
   public thrusterIntensity: number = 0.0;
   public thrusterState: ThrusterState = ThrusterState.IDLE;
   public thrusterScaleFactor: number = 1.0; // Factor de escala dinámico del thruster
+
+  // Energía del vacío (sistema hipotético)
+  public voidConversionPower: number = 0.05; // 5% de conversión de masa → energía
+  public voidEnergyMax: number = 100; // capacidad máxima
+  public voidEnergyCurrent: number = 100; // inicia llena (100%)
+  public voidEnergyConsumptionPerUnit: number = 0.01; // consumo por unidad recorrida
+  private lastPositionForEnergy: Vector3 | null = null; // track recorrido
   
   // Control de entrada
   public controls = {
@@ -130,6 +137,7 @@ export class Spaceship extends GameObject {
     this.updateMovement(deltaTime);
     this.thrusterScaleFactor = this.calculateThrusterScale(); // Actualizar escala del thruster
     super.update(deltaTime);
+    this.updateVoidEnergy(deltaTime);
   }
 
   /**
@@ -304,6 +312,26 @@ export class Spaceship extends GameObject {
   }
 
   /**
+   * Actualiza la energía del vacío consumida por distancia recorrida
+   */
+  private updateVoidEnergy(deltaTime: number): void {
+    const pos = this.position;
+    if (!this.lastPositionForEnergy) {
+      this.lastPositionForEnergy = { ...pos };
+      return;
+    }
+    const dx = pos.x - this.lastPositionForEnergy.x;
+    const dy = pos.y - this.lastPositionForEnergy.y;
+    const dz = pos.z - this.lastPositionForEnergy.z;
+    const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
+    if (distance > 0) {
+      const energySpent = distance * this.voidEnergyConsumptionPerUnit;
+      this.voidEnergyCurrent = Math.max(0, Math.min(this.voidEnergyMax, this.voidEnergyCurrent - energySpent));
+      this.lastPositionForEnergy = { ...pos };
+    }
+  }
+
+  /**
    * Actualiza la dirección hacia adelante usando la matriz de orientación
    */
   private updateForwardDirection(): void {
@@ -374,7 +402,12 @@ export class Spaceship extends GameObject {
       speedPercentage: this.getSpeedPercentage(),
       position: { ...this.position },
       rotation: { ...this.rotation },
-      forwardDirection: { ...this.forwardDirection }
+      forwardDirection: { ...this.forwardDirection },
+      voidEnergy: {
+        current: this.voidEnergyCurrent,
+        max: this.voidEnergyMax,
+        pct: (this.voidEnergyCurrent / this.voidEnergyMax) * 100
+      }
     };
   }
 

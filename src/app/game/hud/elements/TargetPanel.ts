@@ -38,12 +38,15 @@ export class TargetPanel {
     // Current details snapshot (used across title and list)
     const details = this.state.details || {};
 
-    // Panel background (transparent overall, but draw semi-transparent box)
+  // Panel background (transparent overall, but draw semi-transparent box)
     ctx.save();
     ctx.globalAlpha = 0.0; // keep fully transparent background by default
     ctx.fillStyle = 'rgba(0,0,0,0)';
     ctx.fillRect(x, y, width, height);
     ctx.restore();
+
+  // Reservar espacio superior en la columna derecha para el badge de distancia
+  let rightTopReserve = 0;
 
   // Outline frame (siempre verde fósforo, independiente de relación)
   ctx.save();
@@ -65,16 +68,16 @@ export class TargetPanel {
 
   // Fixed-position distance badge (top-right), right-aligned inside, fixed width
   ctx.save();
-  ctx.font = '20px Segoe UI, Roboto, sans-serif';
+  ctx.font = '26px Segoe UI, Roboto, sans-serif';
   const rawDist = this.state.distance;
   const distText = rawDist >= 1000 ? `${(rawDist / 1000).toFixed(1)}ku` : `${Math.round(rawDist)}u`;
   // Reserve width for the widest possible label ('50.0ku' vs '999u')
-  const padX = 10;
-  const padY = 4;
+  const padX = 12;
+  const padY = 6;
   const w1 = ctx.measureText('999u').width;
   const w2 = ctx.measureText('50.0ku').width;
   const badgeW = Math.ceil(Math.max(w1, w2)) + padX * 2;
-  const badgeH = 24; // fixed height for neat box
+  const badgeH = 36; // más alto para mejor legibilidad
   const badgeX = x + width - badgeW - 14; // fixed right margin
   const badgeY = y + 12; // fixed top margin
   // Background for legibility
@@ -94,6 +97,8 @@ export class TargetPanel {
   ctx.shadowOffsetY = 1;
   ctx.fillText(distText, badgeX + badgeW - padX, badgeY + badgeH / 2);
   ctx.restore();
+  // Aplicar reserva superior en la columna derecha equivalente a la altura del badge
+  rightTopReserve = badgeH + 8;
 
     // Preview region
   const pvX = x + 12;
@@ -157,16 +162,22 @@ export class TargetPanel {
     const lines: string[] = [];
     for (const [key, value] of Object.entries(details)) {
       if (key === 'previewStatus' || key === 'type') continue; // ocultar internos y evitar duplicar
-      // Renombrar 'albedo' a 'Reflectancia' y mostrar en %
+      // Renombrar 'albedo' a 'Albedo(Refl.)' y mostrar en %
       if (key.toLowerCase() === 'albedo') {
         const pct = Math.max(0, Math.min(100, Math.round(Number(value) * 100)));
-        lines.push(`Reflectancia: ${pct}%`);
+        lines.push(`Albedo(Refl.): ${pct}%`);
         continue;
       }
       // Mostrar salud como porcentaje si viene explícita
       if (key === 'healthPct') {
         const pct = Math.max(0, Math.min(100, Math.round(Number(value))));
         lines.push(`Salud: ${pct}%`);
+        continue;
+      }
+      // Mostrar masa del vacío si está presente
+      if (key === 'voidMassUnits') {
+        const v = Math.max(0, Math.round(Number(value)));
+        lines.push(`Void mass: ${v}u`);
         continue;
       }
       lines.push(`${this.prettyKey(key)}: ${this.prettyVal(value)}`);
@@ -190,14 +201,14 @@ export class TargetPanel {
   const barW = 28; // barra más gruesa
   const barX = x + width - barW - barMargin;
   // Reservar espacio superior para texto dentro del mismo alto total pvH
-  const labelH = 24; // alto del texto (ajustado para 20px + sombra)
+  const labelH = 18; // más compacto para liberar espacio al badge de distancia
   const labelGap = 4; // separación bajo el texto
-  const totalAvailH = pvH;
-  const barY = pvY + labelH + labelGap;
+  const totalAvailH = Math.max(0, pvH - rightTopReserve);
+  const barY = pvY + rightTopReserve + labelH + labelGap;
   const barH = Math.max(10, totalAvailH - (labelH + labelGap));
   // Texto del porcentaje encima de la barra (centrado)
   ctx.save();
-  ctx.font = '20px Segoe UI, Roboto, sans-serif';
+  ctx.font = '18px Segoe UI, Roboto, sans-serif';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
@@ -205,7 +216,7 @@ export class TargetPanel {
   ctx.shadowBlur = 2;
   ctx.shadowOffsetX = 0;
   ctx.shadowOffsetY = 1;
-  ctx.fillText(`${healthPct}%`, barX + barW/2, pvY);
+  ctx.fillText(`${healthPct}%`, barX + barW/2, pvY + rightTopReserve);
   ctx.restore();
   // Marco de la barra
   ctx.save();

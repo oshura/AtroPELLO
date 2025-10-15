@@ -400,12 +400,14 @@ export class GameEngine {
       }
       const previewCanvas = this.targetPreview.getCanvas();
 
-      // Details: fetch async once per different selection (simple cache by id)
+    // Details: fetch async once per different selection (simple cache by id)
       // For now, fire-and-forget; the HUD will be updated next frame when resolved
       this.fetchAndCacheTargetDetails(selected);
 
   const baseDetails = (this as any)._targetDetailsCache?.[selected.id] || this.getFallbackDetails(selected);
-  const details = { ...baseDetails, type: this.typeToLabel(selType), previewStatus: (this.targetPreview as any).getStatus?.() } as any;
+  // Añadir propiedades visibles comunes: masa del vacío del objeto si existe
+  const voidMass = (selected as any).voidMassUnits ?? 0;
+  const details = { ...baseDetails, type: this.typeToLabel(selType), previewStatus: (this.targetPreview as any).getStatus?.(), voidMassUnits: voidMass } as any;
 
       this.hudManager.updateTargetPanel({
         name: selected.getDisplayName(),
@@ -434,6 +436,8 @@ export class GameEngine {
         (res.data as any).composition = variants[Math.floor(Math.random()*variants.length)];
         (res.data as any).albedo = Number((Math.random()*0.8+0.1).toFixed(2));
         (res.data as any).massTons = Math.floor(Math.random()*5000)+100;
+        // Incluir masa del vacío si el target la expone
+        (res.data as any).voidMassUnits = (target as any).voidMassUnits ?? 0;
       }
       cache[target.id] = res.data;
     } catch (e) {
@@ -1546,6 +1550,11 @@ export class GameEngine {
       roll: this.spaceship.rotation.z * (180 / Math.PI),
       altitude: this.spaceship.position.y,
       speed: this.spaceship.getSpeedPercentage() * 2, // Escalar para mejor visualización
+      voidEnergy: {
+        current: this.spaceship.voidEnergyCurrent,
+        max: this.spaceship.voidEnergyMax,
+        pct: (this.spaceship.voidEnergyCurrent / this.spaceship.voidEnergyMax) * 100
+      },
       // Pasar posición de la nave para cálculo de bearing/elevación en brújula
       position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }
     };
