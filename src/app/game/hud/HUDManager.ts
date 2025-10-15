@@ -93,6 +93,7 @@ export class HUDManager {
     speed: number;
     position?: { x: number; y: number; z: number };
     voidEnergy?: { current: number; max: number; pct: number };
+    weapons?: any[];
   }): void {
     // Actualizar elementos individuales
     this.velocityBarLeft.update(gameData.velocity);
@@ -112,6 +113,8 @@ export class HUDManager {
     // Renderizar todos los elementos en la textura
     // Guardar temporalmente energía del vacío para el render
     (this as any)._voidEnergyHUD = gameData.voidEnergy;
+    // Guardar armas de la nave para panel izquierdo
+    (this as any)._weaponsHUD = gameData.weapons || [];
     this.renderToTexture();
   }
 
@@ -419,12 +422,16 @@ export class HUDManager {
     // === VOID ENERGY METER (top-right, adjusted thickness + legend) ===
     const vem = (this as any)._voidEnergyHUD as { current: number; max: number; pct: number } | undefined;
     if (vem) {
-      // Restore original width, increase height (thicker), keep vertical offset = 2x height
-      const meterW = 280;
-      const meterH = 28;
+      // 25% shorter horizontally, double thickness vertically
+      const meterW = Math.round(280 * 0.75); // 210px
+      const meterH = 56; // double previous 28px height
       const margin = 16;
       const x1 = canvas.width - meterW - margin;
-  const y1 = 80 + meterH * 3; // move a bit further down
+      // Keep the bottom of the bar anchored in the same place as before,
+      // so the extra thickness grows upward (label moves up accordingly).
+      const oldH = 28;
+      const yBottom = 80 + oldH * 4 - 20; // move everything a bit up in the HUD
+      const y1 = yBottom - meterH;
       // fondo
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -486,6 +493,60 @@ export class HUDManager {
       ctx.scale(1, 1.35); // taller without wider appearance
       ctx.fillText(labelText, 0, 0);
       ctx.restore();
+      ctx.restore();
+    }
+
+    // === WEAPONS PANEL (top-left, mirrored size/height) ===
+    // Always reserve symmetric space on the left side
+    {
+      const weapons: any[] = (this as any)._weaponsHUD as any[];
+      const meterW = Math.round(280 * 0.75); // same width as energy bar (210px)
+      const meterH = 56; // same height
+      const margin = 16;
+      const xL = margin;
+      const oldH = 28;
+      const yBottom = 80 + oldH * 4 - 20; // match energy meter baseline movement
+      const yL = yBottom - meterH;
+
+      // background
+      ctx.save();
+      ctx.fillStyle = 'rgba(0, 64, 32, 0.35)'; // dark greenish transparent
+      ctx.fillRect(xL, yL, meterW, meterH);
+      // frame
+      ctx.strokeStyle = 'rgba(0,255,0,0.9)';
+      ctx.lineWidth = 1;
+      ctx.strokeRect(xL - 1, yL - 1, meterW + 2, meterH + 2);
+
+      if (!weapons || weapons.length === 0) {
+        // Show NO WEAPONS centered in the panel
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        // Slightly taller text without widening
+        ctx.font = '20px Segoe UI, Roboto, sans-serif';
+        const cx = xL + meterW / 2;
+        const cy = yL + meterH / 2;
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(1, 1.25);
+        ctx.fillText('NO WEAPONS', 0, 0);
+        ctx.restore();
+      } else {
+        // Placeholder schematic (if weapons exist): draw slots as small boxes
+        const slotCount = Math.min(5, weapons.length);
+        const gap = 6;
+        const slotW = Math.max(24, Math.floor((meterW - gap * (slotCount + 1)) / slotCount));
+        const slotH = meterH - 16;
+        let sx = xL + gap;
+        const sy = yL + (meterH - slotH) / 2;
+        for (let i = 0; i < slotCount; i++) {
+          ctx.fillStyle = 'rgba(0,128,64,0.4)';
+          ctx.fillRect(sx, sy, slotW, slotH);
+          ctx.strokeStyle = 'rgba(0,255,128,0.9)';
+          ctx.strokeRect(sx - 1, sy - 1, slotW + 2, slotH + 2);
+          sx += slotW + gap;
+        }
+      }
       ctx.restore();
     }
 

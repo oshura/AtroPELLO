@@ -45,6 +45,9 @@ export class Spaceship extends GameObject {
   public voidEnergyConsumptionPerUnit: number = 0.01; // consumo por unidad recorrida
   private lastPositionForEnergy: Vector3 | null = null; // track recorrido
   
+  // Armamento disponible (por ahora vacío)
+  public weapons: any[] = [];
+  
   // Control de entrada
   public controls = {
     forward: false,

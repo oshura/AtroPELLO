@@ -1555,6 +1555,7 @@ export class GameEngine {
         max: this.spaceship.voidEnergyMax,
         pct: (this.spaceship.voidEnergyCurrent / this.spaceship.voidEnergyMax) * 100
       },
+      weapons: this.spaceship.weapons,
       // Pasar posición de la nave para cálculo de bearing/elevación en brújula
       position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }
     };
