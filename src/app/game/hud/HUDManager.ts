@@ -425,13 +425,10 @@ export class HUDManager {
       // 25% shorter horizontally, double thickness vertically
       const meterW = Math.round(280 * 0.75); // 210px
       const meterH = 56; // double previous 28px height
-      const margin = 16;
+      const margin = 28; // side/top margin
       const x1 = canvas.width - meterW - margin;
-      // Keep the bottom of the bar anchored in the same place as before,
-      // so the extra thickness grows upward (label moves up accordingly).
-      const oldH = 28;
-      const yBottom = 80 + oldH * 4 - 20; // move everything a bit up in the HUD
-      const y1 = yBottom - meterH;
+      // Place the bar lower on the HUD (increase top offset)
+  const y1 = margin + 56; // move panel further down by 56px
       // fondo
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -472,25 +469,22 @@ export class HUDManager {
         const pctLabel = Math.round(p * 100) + '%';
         ctx.fillText(pctLabel, xTick, labelY);
       });
-      // etiqueta
-  ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  // reduce label font size for a subtler title
-  ctx.font = '20px Segoe UI, Roboto, sans-serif';
+      // etiqueta: draw above the bar with vertical-only stretch (safe with save/restore)
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
+      ctx.font = '20px Segoe UI, Roboto, sans-serif';
       ctx.textAlign = 'right';
       ctx.textBaseline = 'bottom';
       ctx.shadowColor = 'rgba(0,0,0,0.6)';
       ctx.shadowBlur = 2;
       ctx.shadowOffsetX = 0;
       ctx.shadowOffsetY = 1;
-      // Show only current units (no /max)
       const unitsStr = `${Math.round(vem.current)}u`;
-      // Render label taller but not wider: apply vertical scale transform
-  const labelText = `Void Energy: ${unitsStr}`;
-  const labelX = x1 + meterW;
-  const labelYTitle = y1 - 8;
+      const labelText = `Void Energy: ${unitsStr}`;
+      const labelX = x1 + meterW;
+      const labelYTitle = y1 - 8;
       ctx.save();
-  ctx.translate(labelX, labelYTitle);
-      ctx.scale(1, 1.35); // taller without wider appearance
+      ctx.translate(labelX, labelYTitle);
+      ctx.scale(1, 1.35);
       ctx.fillText(labelText, 0, 0);
       ctx.restore();
       ctx.restore();
@@ -500,13 +494,13 @@ export class HUDManager {
     // Always reserve symmetric space on the left side
     {
       const weapons: any[] = (this as any)._weaponsHUD as any[];
-      const meterW = Math.round(280 * 0.75); // same width as energy bar (210px)
-      const meterH = 56; // same height
-      const margin = 16;
-      const xL = margin;
-      const oldH = 28;
-      const yBottom = 80 + oldH * 4 - 20; // match energy meter baseline movement
-      const yL = yBottom - meterH;
+  const meterW = Math.round(280 * 0.75); // same width as energy bar (210px)
+  const meterHBase = 56; // base height matching energy bar
+  const meterH = Math.round(meterHBase * 2.5); // 2.5x vertical size
+  const margin = 28; // side/top margin
+  const xL = margin;
+  // Place with a slightly larger top margin to account for perspective
+  const yL = margin + 24; // lowered slightly for better balance
 
       // background
       ctx.save();

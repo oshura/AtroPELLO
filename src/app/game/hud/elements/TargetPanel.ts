@@ -228,24 +228,18 @@ export class TargetPanel {
   ctx.restore();
   // Marco de la barra
   ctx.save();
-  const radius = 6;
-  // Path para el marco exterior ligeramente más grande
-  this.roundRect(ctx, barX - 1, barY - 1, barW + 2, barH + 2, radius + 1);
+  // Borde rectangular (sin esquinas redondeadas)
   ctx.strokeStyle = 'rgba(255,255,255,0.8)';
   ctx.lineWidth = 1;
-  ctx.stroke();
-  // Fondo con esquinas redondeadas
-  this.roundRect(ctx, barX, barY, barW, barH, radius);
+  ctx.strokeRect(barX - 1, barY - 1, barW + 2, barH + 2);
+  // Fondo rectangular liso
   ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  ctx.fill();
+  ctx.fillRect(barX, barY, barW, barH);
   // Color por tramos
   const hpColor = this.healthColor(healthPct);
   // Relleno desde abajo hacia arriba
   const fillH = Math.round((healthPct / 100) * barH);
   const fillY = barY + (barH - fillH);
-  // Clip al rectángulo redondeado para que el relleno respete las esquinas
-  this.roundRect(ctx, barX, barY, barW, barH, radius);
-  ctx.clip();
   ctx.fillStyle = hpColor;
   ctx.fillRect(barX, fillY, barW, fillH);
   ctx.restore();
