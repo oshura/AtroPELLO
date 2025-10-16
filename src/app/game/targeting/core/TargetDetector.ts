@@ -141,18 +141,22 @@ export class TargetDetector implements ITargetDetector {
         const dx = screenPos.x - targetScreenPos.x;
         const dy = screenPos.y - targetScreenPos.y;
         const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+
+        // Calcular tolerancia adaptativa en píxeles según tamaño y distancia
+        const adaptiveTol = this.getAdaptiveTolerancePx(target, detectionRadiusPx);
         
         if (shouldDebug) {
           console.log(`🔍 Target ${target.getTargetType()}-${target.id} DISTANCE:`, {
             mouse: screenPos,
             target2D: targetScreenPos,
             pixelDistance: Math.round(pixelDistance),
-            withinRadius: pixelDistance < 50
+            tolPx: Math.round(adaptiveTol),
+            withinRadius: pixelDistance < adaptiveTol
           });
         }
         
-  // Si está cerca del mouse (radio configurable en píxeles), considerar hit
-  if (pixelDistance < detectionRadiusPx) {
+  // Si está dentro de la tolerancia adaptativa, considerar hit
+  if (pixelDistance < adaptiveTol) {
           const worldDistance = this.getWorldDistance(target.position);
           
           if (worldDistance < minDistance && worldDistance <= this.config.maxDistance) {
@@ -181,6 +185,70 @@ export class TargetDetector implements ITargetDetector {
     }
 
     return closestHit;
+  }
+
+  /**
+   * Tolerancia adaptativa por target en píxeles, basada en su radio proyectado y distancia.
+   * - Máximo decreciente con distancia: 30px cerca → 3px a 150u
+   * - Mínimo absoluto: 1px
+   * - Respeta un límite superior opcional vía detectionRadiusPx
+   */
+  private getAdaptiveTolerancePx(target: ITargetable, maxTolParamPx: number): number {
+    const dims = this.getCanvasCssDimensions();
+    const radiusWorld = (target as any).radius ?? 10;
+    const distance = this.getWorldDistance(target.position);
+    let pixelRadius = this.estimateOnScreenPixelRadius(target, radiusWorld, dims);
+
+    // Límite superior que decrece con la distancia: 30 → 3 al llegar a 150u
+    const farRef = 150;
+    const t = Math.max(0, Math.min(1, distance / farRef));
+    const dynamicMax = 30 - 27 * t; // 30 en 0u, 3 en 150u+
+    const capped = Math.min(pixelRadius, dynamicMax, maxTolParamPx);
+    // Mínimo absoluto de 1px
+    return Math.max(1, capped);
+  }
+
+  /**
+   * Estima el radio en píxeles en pantalla de un target con cierto radio en mundo.
+   * Intenta proyectar un punto desplazado en la dirección "right" de la cámara.
+   * Si falla la proyección, usa una aproximación por FOV vertical.
+   */
+  private estimateOnScreenPixelRadius(target: ITargetable, radiusWorld: number, dims: { width: number; height: number }): number {
+    if (!this.camera) return 1;
+    const center2D = this.worldToScreen(target.position);
+    if (center2D) {
+      // Calcular vector right de la cámara: right = forward × up
+      const fwd = this.getCameraForward();
+      const up = this.camera.up;
+      // cross(fwd, up)
+      let rx = fwd.y * up.z - fwd.z * up.y;
+      let ry = fwd.z * up.x - fwd.x * up.z;
+      let rz = fwd.x * up.y - fwd.y * up.x;
+      const rl = Math.hypot(rx, ry, rz) || 1;
+      rx /= rl; ry /= rl; rz /= rl;
+
+      const edgeWorld = {
+        x: target.position.x + rx * radiusWorld,
+        y: target.position.y + ry * radiusWorld,
+        z: target.position.z + rz * radiusWorld
+      };
+      const edge2D = this.worldToScreen(edgeWorld);
+      if (edge2D) {
+        const dx = edge2D.x - center2D.x;
+        const dy = edge2D.y - center2D.y;
+        const pr = Math.sqrt(dx * dx + dy * dy);
+        if (isFinite(pr) && pr > 0) return pr;
+      }
+    }
+    // Aproximación por FOV vertical: angular ≈ r / d; píxeles ≈ angular / fov * altura
+  // Derivar FOV vertical a partir de la matriz de proyección: m[5] = 1/tan(fov/2)
+  const proj = this.camera.projectionMatrix as unknown as Float32Array;
+  const f = proj && proj.length >= 6 && proj[5] !== 0 ? proj[5] : 1.0;
+  const fovV = 2 * Math.atan(1 / f);
+    const distance = this.getWorldDistance(target.position) || 1;
+    const angular = radiusWorld / distance;
+    const approxPx = (angular / fovV) * dims.height;
+    return isFinite(approxPx) && approxPx > 0 ? approxPx : 1;
   }
 
   /**
