@@ -570,6 +570,8 @@ export class ReticleManager {
     const t = target.getTargetType?.();
     switch (t) {
       case TargetType.ASTEROID:
+      case TargetType.SUPER_ASTEROID:
+      case TargetType.CLUSTER:
         return 'neutral';
       // TODO: integrar facciones reales cuando estén disponibles
       default:

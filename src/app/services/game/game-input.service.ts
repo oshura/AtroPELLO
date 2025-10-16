@@ -24,7 +24,7 @@ export class GameInputHandler {
    * Inicializa el estado de las teclas
    */
   private initializeKeyState(): void {
-    const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', '+', '=', '-', '_', 'shift', 'control', 'escape', '0', '8', '9'];
+    const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', '+', '=', '-', '_', 'shift', 'control', 'escape', '0', '7', '8', '9'];
     gameKeys.forEach(key => {
       this.keyState[key.toLowerCase()] = false;
     });
@@ -76,7 +76,7 @@ export class GameInputHandler {
     }
 
     // Actualizar estado de la tecla
-    if (key in this.keyState || ['+', '=', '-', '_', '0', '8', '9'].includes(key)) {
+    if (key in this.keyState || ['+', '=', '-', '_', '0', '7', '8', '9'].includes(key)) {
       this.keyState[key] = true;
       this.gameEngine.handleKeyDown(event.key);
       event.preventDefault();
@@ -97,7 +97,7 @@ export class GameInputHandler {
     const key = event.key.toLowerCase();
 
     // Actualizar estado de la tecla
-    if (key in this.keyState || ['0', '8', '9'].includes(key)) {
+    if (key in this.keyState || ['0', '7', '8', '9'].includes(key)) {
       this.keyState[key] = false;
       this.gameEngine.handleKeyUp(event.key);
       event.preventDefault();

@@ -33,6 +33,7 @@ export class Asteroid extends GameObject implements ITargetable {
     );
 
     this.size = size;
+  this.objectType = TargetType.ASTEROID;
     this.color = { r: 0.6, g: 0.5, b: 0.4, a: 1.0 }; // Color gris-marrón rocoso
 
     // Dirección de movimiento (si no se especifica, aleatoria)
@@ -334,9 +335,7 @@ export class Asteroid extends GameObject implements ITargetable {
   /**
    * Obtiene el tipo de target
    */
-  public getTargetType(): TargetType {
-    return TargetType.ASTEROID;
-  }
+  public getTargetType(): TargetType { return this.objectType; }
 
   /**
    * Verifica si el asteroide está activo (siempre true para asteroides)

@@ -1,4 +1,5 @@
 import { Vector3, Color } from '../types/game.types';
+import { TargetType } from './types/targeting.types';
 
 /**
  * Clase base para todos los objetos 3D del juego
@@ -32,6 +33,8 @@ export abstract class GameObject {
   public normals: Float32Array;
   public uvs: Float32Array;
   public colors: Float32Array; // Colores por vértice
+  // Tipo del objeto espacial (fuente única de verdad para tipo/target)
+  protected objectType: TargetType = TargetType.UNKNOWN;
   
   // Buffers WebGL (se crean una vez)
   public vertexBuffer: WebGLBuffer | null = null;
@@ -84,6 +87,11 @@ export abstract class GameObject {
    * Inicializa la geometría del objeto (implementado por subclases)
    */
   protected abstract initGeometry(): void;
+
+  /**
+   * Tipo de objeto/target unificado
+   */
+  public getObjectType(): TargetType { return this.objectType; }
 
   /**
    * Genera colores por vértice basados en el color del objeto

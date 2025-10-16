@@ -9,6 +9,7 @@ import { ShaderManager } from './ShaderManager';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
 import { SuperAsteroid } from './SuperAsteroid';
+import { ClusterObject } from './Cluster';
 import { ReticleManager } from './targeting';
 import { AsteroidClusterService } from './services/game/asteroid-cluster.service';
 import { TargetCatalogService } from './services/target-catalog.service';
@@ -323,14 +324,71 @@ export class GameEngine {
     this.camera.update(this.spaceship, deltaTime);
 
     // Asteroides sueltos eliminados: gestionamos solo clusters
-  // Actualizar clusters: mueven su centro y arrastran objetos a misma velocidad/dirección
+  // Actualizar clusters: mueven su centro y sincronizan física común
   this.asteroidClusterService.updateClusters(deltaTime);
-  // Aplicar update a cada objeto del cluster (mueve posición según direction/driftSpeed)
-  this.asteroidClusterService.getClusters().forEach(c => {
-    c.objects.forEach(obj => {
-      obj.update(deltaTime);
-      // No hacer wrap para miembros del clúster: sin teletransporte en bordes
+  // LOD por distancia con histéresis: toProxy=600u, toFull=550u, dwell=0.4s
+  const lodChanged = this.asteroidClusterService.updateLOD(this.spaceship.position, deltaTime, { toProxy: 600, toFull: 550, dwell: 0.4 });
+  if (lodChanged && this.gl) {
+    // Re-crear buffers para objetos nuevos (y liberar proxies antiguos)
+    this.asteroidClusterService.getClusters().forEach(c => {
+      if (c.lodMode === 'proxy') {
+        if (c.proxy && !c.proxy.vertexBuffer) c.proxy.initBuffers(this.gl!);
+      } else {
+        c.objects.forEach(o => { if (!o.vertexBuffer) o.initBuffers(this.gl!); });
+      }
     });
+    // Re-registrar targets según modo
+    const normals: ITargetable[] = [];
+    const supers: ITargetable[] = [];
+    const clusters: ITargetable[] = [];
+    this.asteroidClusterService.getClusters().forEach(c => {
+      if (c.lodMode === 'proxy' && c.proxy) clusters.push(c.proxy as unknown as ITargetable);
+      if (c.lodMode === 'full') {
+        c.objects.forEach(o => {
+          if ((o as any) instanceof SuperAsteroid) supers.push(o as unknown as ITargetable);
+          else normals.push(o as unknown as ITargetable);
+        });
+      }
+    });
+    this.targetCatalog.register(TargetType.ASTEROID, normals);
+    this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
+    this.targetCatalog.register(TargetType.CLUSTER, clusters);
+
+    // Transferencia estable de selección
+    const current = this.reticleManager.getCurrentTarget();
+    if (current) {
+      // 1) Si colapsó a proxy: seleccionar el ClusterObject del clúster más cercano al target actual
+      const collapsed = this.asteroidClusterService.getClusters().find(c => c.lodMode === 'proxy' && c.proxy);
+      if (collapsed) {
+        // Elegir el clúster cuyo centro esté más cerca del target actual
+        let best: any = null; let bestD = Infinity;
+        for (const c of this.asteroidClusterService.getClusters()) {
+          if (!c.proxy) continue;
+          const d = Math.hypot(current.position.x - c.center.x, current.position.y - c.center.y, current.position.z - c.center.z);
+          if (d < bestD) { bestD = d; best = c; }
+        }
+        if (best && best.proxy) this.reticleManager.selectTarget(best.proxy as unknown as ITargetable);
+      }
+      // 2) Si expandió a full y el seleccionado es un cluster: pasar al primer miembro
+      const becameFull = this.asteroidClusterService.getClusters().find(c => c.lodMode === 'full');
+      if (becameFull && current.getTargetType() === TargetType.CLUSTER) {
+        // Buscar el clúster cuya posición coincide con el seleccionado
+        const owner = this.asteroidClusterService.getClusters().find(c => !c.proxy && Math.hypot(current.position.x - c.center.x, current.position.y - c.center.y, current.position.z - c.center.z) < (c.config.radius ?? 10) * 0.75);
+        const first = owner?.objects?.[0];
+        if (first) this.reticleManager.selectTarget(first as unknown as ITargetable);
+      }
+    }
+  }
+  // Aplicar update a cada objeto del cluster (mueve posición según direction/driftSpeed) o proxy
+  this.asteroidClusterService.getClusters().forEach(c => {
+    if (c.lodMode === 'proxy') {
+      if (c.proxy) c.proxy.update(deltaTime);
+    } else {
+      c.objects.forEach(obj => {
+        obj.update(deltaTime);
+        // No hacer wrap para miembros del clúster: sin teletransporte en bordes
+      });
+    }
   });
   // Persistencia: no re-centrar por defecto; dejamos vivir alrededor del centro
   // (Si se desea contención, llamar a enforceBoundsRelativeToCenter(threshold) aquí)
@@ -375,9 +433,9 @@ export class GameEngine {
       const dz = selected.position.z - this.camera.position.z;
       const distance = Math.hypot(dx, dy, dz);
 
-    // Relation heuristic: asteroids and super-asteroids are neutral
+    // Relation heuristic: asteroids, super-asteroids, and clusters are neutral
   const selType = selected.getTargetType();
-  const isNeutral = selType === TargetType.ASTEROID || selType === TargetType.SUPER_ASTEROID;
+  const isNeutral = selType === TargetType.ASTEROID || selType === TargetType.SUPER_ASTEROID || selType === TargetType.CLUSTER;
   const relation: 'ally' | 'neutral' | 'enemy' = isNeutral ? 'neutral' : 'enemy';
 
       // Render preview into offscreen canvas
@@ -444,6 +502,7 @@ export class GameEngine {
 
   private typeToLabel(t: TargetType): string {
     switch (t) {
+      case TargetType.CLUSTER: return 'Cluster';
       case TargetType.SUPER_ASTEROID: return 'SuperAsteroid';
       case TargetType.ASTEROID: return 'Asteroid';
       case TargetType.SPACESHIP: return 'Spaceship';
@@ -546,9 +605,13 @@ export class GameEngine {
     // Renderizar asteroides del cluster con shader estándar
     this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4])); // Color gris-marrón rocoso
 
-    // Renderizar objetos de clusters
+    // Renderizar objetos de clusters o proxy según LOD
     this.asteroidClusterService.getClusters().forEach(c => {
-      c.objects.forEach(o => this.renderObject(o));
+      if (c.lodMode === 'proxy') {
+        if (c.proxy) this.renderObject(c.proxy);
+      } else {
+        c.objects.forEach(o => this.renderObject(o));
+      }
     });
 
     // Renderizar outlines avanzados (FASE 4)
@@ -1200,6 +1263,9 @@ export class GameEngine {
     // Manejo de cambio de modos de cámara
     if (key === '0') {
       this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+      return;
+    } else if (key === '7') {
+      this.camera.setCameraMode(CameraMode.REAR_VIEW);
       return;
     } else if (key === '8') {
       this.camera.setCameraMode(CameraMode.COCKPIT);

@@ -32,7 +32,7 @@ export class AsteroidFactoryService {
     return a;
   }
 
-  /** Crea un superasteroide 3..5x tamaño con misma física del cluster */
+  /** Crea un superasteroide 4..6x tamaño con misma física del cluster */
   createSuperAsteroid(
     id: string,
     position: Vector3,
@@ -40,8 +40,8 @@ export class AsteroidFactoryService {
     speed: number,
     opts?: { baseSize?: number; sizeMultiplierRange?: [number, number]; massMultiplierRange?: [number, number]; rotationScale?: number }
   ): SuperAsteroid {
-    const baseSize = opts?.baseSize ?? (0.5 + Math.random() * 1.5);
-    const [minMul, maxMul] = opts?.sizeMultiplierRange ?? [3, 5];
+  const baseSize = opts?.baseSize ?? (0.5 + Math.random() * 1.5);
+  const [minMul, maxMul] = opts?.sizeMultiplierRange ?? [4, 6];
     const sizeMul = minMul + Math.random() * (maxMul - minMul);
     const sa = new SuperAsteroid(id, position, baseSize * sizeMul, { ...direction });
     sa.direction = { ...direction };
@@ -55,7 +55,7 @@ export class AsteroidFactoryService {
     };
     sa.angularVelocity = { ...sa.rotationRate };
   // Masa 3..5x de un pequeño
-  const [mMin, mMax] = opts?.massMultiplierRange ?? [3, 5];
+  const [mMin, mMax] = opts?.massMultiplierRange ?? [4, 6];
     const smallMass = 10 + Math.floor(Math.random() * 21);
     (sa as any).massTons = Math.floor(smallMass * (mMin + Math.random() * (mMax - mMin)));
     return sa;

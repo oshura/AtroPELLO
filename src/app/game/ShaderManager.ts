@@ -244,15 +244,15 @@ export class ShaderManager {
       // Componente difusa
       vec3 diffuse = v_lightIntensity * u_lightColor;
 
-      // Usar u_baseColor como color base (se establece por uniform)
+      // Usar u_baseColor como color base
       vec3 baseColor = u_baseColor;
-      
+
       // Color final
       vec3 finalColor = baseColor * (ambient + diffuse);
-      
+
       // Asegurar que el color no sea demasiado oscuro
       finalColor = max(finalColor, baseColor * 0.2);
-      
+
       fragColor = vec4(finalColor, 1.0);
     }`;
   }
@@ -335,34 +335,21 @@ export class ShaderManager {
       // Muestrear textura metálica
       vec3 metallicColor = texture(u_metallicTexture, v_uv).rgb;
       
-      // Crear gradiente vertical basado en la normal
-      // Usar la componente Y de la normal para determinar si es parte superior o inferior
-      float verticalGradient = (v_normal.y + 1.0) * 0.5; // Mapear de [-1,1] a [0,1]
-      verticalGradient = pow(verticalGradient, 2.0); // Hacer el gradiente más pronunciado
+      // Gradiente vertical basado en la normal Y
+      float verticalGradient = (v_normal.y + 1.0) * 0.5;
+      verticalGradient = pow(verticalGradient, 2.0);
       
-      // Color base metálico más oscuro en la parte inferior
       vec3 baseMetallic = u_baseColor * metallicColor;
-      vec3 darkMetallic = baseMetallic * 0.4; // Parte inferior más oscura
-      vec3 lightMetallic = baseMetallic * 1.2; // Parte superior más clara
-      
-      // Interpolar entre oscuro (abajo) y claro (arriba)
+      vec3 darkMetallic = baseMetallic * 0.4;
+      vec3 lightMetallic = baseMetallic * 1.2;
       vec3 gradientColor = mix(darkMetallic, lightMetallic, verticalGradient);
       
-      // Componente ambiental
       vec3 ambient = u_ambientStrength * u_ambientColor;
-
-      // Componente difusa con efecto metálico
-      vec3 diffuse = v_lightIntensity * u_lightColor * 1.5; // Más intenso para metal
-      
-      // Efecto especular simple para aspecto metálico
+      vec3 diffuse = v_lightIntensity * u_lightColor * 1.5;
       float specular = pow(max(v_lightIntensity, 0.0), 32.0) * 0.8;
       
-      // Color final con brillo metálico
       vec3 finalColor = gradientColor * (ambient + diffuse) + vec3(specular);
-      
-      // Asegurar que el color no sea demasiado oscuro ni demasiado claro
       finalColor = clamp(finalColor, gradientColor * 0.3, gradientColor * 2.0);
-      
       fragColor = vec4(finalColor, 1.0);
     }`;
   }

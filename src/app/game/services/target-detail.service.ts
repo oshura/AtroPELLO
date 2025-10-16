@@ -21,6 +21,7 @@ export interface PlanetInfo {
 
 export type TargetDetails =
   | { type: TargetType.ASTEROID; data: AsteroidInfo }
+  | { type: TargetType.CLUSTER; data: Record<string, unknown> }
   | { type: TargetType.SPACESHIP; data: ShipInfo }
   | { type: TargetType.PLANET; data: PlanetInfo }
   | { type: TargetType.UNKNOWN; data: Record<string, unknown> };
@@ -36,6 +37,44 @@ export class TargetDetailService {
             composition: 'mixed'
           }
         };
+      case TargetType.SUPER_ASTEROID: {
+        // Mismos campos que asteroide, con escalado (aprox.)
+        const scale = (target as any).scale?.x ?? 3.5; // 3..5 típico
+        const massTons = Math.floor((Math.random()*5000 + 100) * scale);
+        const albedo = Number((Math.random()*0.8+0.1).toFixed(2));
+        return {
+          type: TargetType.ASTEROID,
+          data: {
+            composition: 'mixed',
+            albedo,
+            massTons
+          }
+        };
+      }
+      case TargetType.CLUSTER: {
+        // Agregar valores de miembros: masa y voidMassUnits
+        // Nota: no tenemos servicio aquí, así que intentamos usar referencias guardadas opcionalmente
+        const anyT = target as any;
+        const composed = anyT._clusterMembers as ITargetable[] | undefined;
+        let massSum = 0;
+        let voidMassSum = 0;
+        if (Array.isArray(composed)) {
+          for (const m of composed) {
+            const details = await this.getDetails(m);
+            const md = (details as any).data;
+            if (md?.massTons) massSum += Number(md.massTons) || 0;
+            const vm = (m as any).voidMassUnits ?? 0;
+            voidMassSum += vm;
+          }
+        }
+        return {
+          type: TargetType.CLUSTER,
+          data: {
+            massTons: massSum,
+            voidMassUnits: voidMassSum
+          }
+        } as any;
+      }
       case TargetType.SPACESHIP:
         return {
           type: TargetType.SPACESHIP,

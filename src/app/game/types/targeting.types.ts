@@ -27,6 +27,7 @@ export interface ITargetable {
 export enum TargetType {
   ASTEROID = 'asteroid',
   SUPER_ASTEROID = 'super_asteroid',
+  CLUSTER = 'cluster',
   SPACESHIP = 'spaceship', 
   PLANET = 'planet',
   PORTAL = 'portal',

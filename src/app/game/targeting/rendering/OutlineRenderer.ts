@@ -911,6 +911,7 @@ export class OutlineRenderer {
   private typeToLabel(tt: any): string {
     const t = String(tt || 'unknown').toLowerCase();
     if (t.includes('super_asteroid') || t === 'superasteroid') return 'SuperAsteroid';
+    if (t.includes('cluster')) return 'Cluster';
     if (t.includes('asteroid')) return 'Asteroid';
     if (t.includes('spaceship')) return 'Spaceship';
     if (t.includes('planet')) return 'Planet';
