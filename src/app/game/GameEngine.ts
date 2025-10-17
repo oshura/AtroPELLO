@@ -480,12 +480,13 @@ export class GameEngine {
       const res = await this.targetDetails.getDetails(target);
       // Decorate asteroid details with fantastical metals when applicable
       if (res.type === TargetType.ASTEROID) {
-        const variants = ['adamantium', 'mythril', 'quantum-iron', 'dark-nickel', 'starlight-opal'];
-        (res.data as any).composition = variants[Math.floor(Math.random()*variants.length)];
-        (res.data as any).albedo = Number((Math.random()*0.8+0.1).toFixed(2));
-        (res.data as any).massTons = Math.floor(Math.random()*5000)+100;
+        // No sobreescribir composición/albedo/mass si ya vienen fijados por la factoría
+        const data: any = res.data as any;
+        data.composition = data.composition ?? (target as any).composition ?? 'mixed';
+        data.albedo = data.albedo ?? (target as any).albedo ?? Number((0.4 + Math.random() * 0.2).toFixed(2));
+        data.massTons = data.massTons ?? (target as any).massTons ?? (50 + Math.floor(Math.random() * 101));
         // Incluir masa del vacío si el target la expone
-        (res.data as any).voidMassUnits = (target as any).voidMassUnits ?? 0;
+        data.voidMassUnits = (target as any).voidMassUnits ?? 0;
       }
       cache[target.id] = res.data;
     } catch (e) {

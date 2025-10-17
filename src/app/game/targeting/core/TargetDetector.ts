@@ -24,6 +24,16 @@ export class TargetDetector implements ITargetDetector {
   private availableTargets: ITargetable[] = [];
   private config: TargetingSystemConfig['detection'];
   
+  // === Constantes de tolerancia adaptativa (configurables) ===
+  private readonly TOL_NEAR_MAX_PX = 30;   // tolerancia máxima cerca
+  private readonly TOL_FAR_MIN_PX = 3;     // tolerancia mínima al alejarse
+  private readonly TOL_FAR_REF_U = 150;    // distancia (u) a la que se alcanza FAR_MIN_PX
+  private readonly TOL_NEAR_REF_U = 7;     // distancia (u) a la que se espera NEAR_MAX para tamaño base
+  private readonly TOL_MIN_ABS_PX = 1;     // mínimo absoluto
+  private readonly DEFAULT_TARGET_RADIUS = 10; // radio por defecto si el target no expone radius
+  // Ganancia por tamaño unificada para todos los tipos (comportamiento igual entre asteroid y super_asteroid)
+  private readonly TOL_SIZE_GAIN_UNIFIED = 0.8;
+  
   constructor(private webglService: WebGLService) {
     this.config = {
       maxDistance: Infinity,
@@ -195,17 +205,33 @@ export class TargetDetector implements ITargetDetector {
    */
   private getAdaptiveTolerancePx(target: ITargetable, maxTolParamPx: number): number {
     const dims = this.getCanvasCssDimensions();
-    const radiusWorld = (target as any).radius ?? 10;
+  const radiusWorld = (target as any).radius ?? this.DEFAULT_TARGET_RADIUS;
     const distance = this.getWorldDistance(target.position);
-    let pixelRadius = this.estimateOnScreenPixelRadius(target, radiusWorld, dims);
+  let pixelRadius = this.estimateOnScreenPixelRadius(target, radiusWorld, dims);
 
-    // Límite superior que decrece con la distancia: 30 → 3 al llegar a 150u
-    const farRef = 150;
-    const t = Math.max(0, Math.min(1, distance / farRef));
-    const dynamicMax = 30 - 27 * t; // 30 en 0u, 3 en 150u+
-    const capped = Math.min(pixelRadius, dynamicMax, maxTolParamPx);
-    // Mínimo absoluto de 1px
-    return Math.max(1, capped);
+  // Factor por tamaño relativo (respecto a DEFAULT_TARGET_RADIUS)
+  const sizeRatio = Math.max(0.1, radiusWorld / this.DEFAULT_TARGET_RADIUS);
+  const sizeBoost = 1 + this.TOL_SIZE_GAIN_UNIFIED * Math.max(0, sizeRatio - 1);
+  pixelRadius *= sizeBoost;
+
+    // Baseline por distancia con referencia cercana escalada por tamaño.
+    // Objetivo: ~30px a ~7u para pequeños; ~30px a ~40u para super (ratio~6)
+    const nearRef = this.TOL_NEAR_REF_U * sizeRatio;
+    const denom = Math.max(1e-3, this.TOL_FAR_REF_U - nearRef);
+    const t = Math.max(0, Math.min(1, (distance - nearRef) / denom));
+    const baseline = this.TOL_NEAR_MAX_PX - (this.TOL_NEAR_MAX_PX - this.TOL_FAR_MIN_PX) * t;
+
+    // Combinar: usar el más permisivo entre radio proyectado y baseline
+    const desired = Math.max(pixelRadius, baseline);
+
+  // Techo dinámico decreciente con la distancia (y escalado por tipo). Sin efecto cerca, más estricto lejos.
+  const baseDynamicMax = this.TOL_NEAR_MAX_PX - (this.TOL_NEAR_MAX_PX - this.TOL_FAR_MIN_PX) * t; // mismo 't' usado en baseline
+    // Cap dinámico base por distancia (sin distinciones por tipo)
+    const typeDynamicMax = baseDynamicMax;
+
+    // Capear por techo dinámico y por el radio pasado por el caller
+    const capped = Math.min(desired, typeDynamicMax, maxTolParamPx);
+    return Math.max(this.TOL_MIN_ABS_PX, capped);
   }
 
   /**

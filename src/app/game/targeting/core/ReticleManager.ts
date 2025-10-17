@@ -91,7 +91,9 @@ export class ReticleManager {
       onTargetSelected: (target) => this.handleTargetSelected(target),
       onTargetLocked: (target) => this.handleTargetLocked(target),
       onTargetLost: () => this.handleTargetLost(),
-      onStateChanged: (newState, oldState) => this.handleStateChanged(newState, oldState)
+      onStateChanged: (newState, oldState) => this.handleStateChanged(newState, oldState),
+      onCycleNext: () => this.cycleTarget(1),
+      onCyclePrev: () => this.cycleTarget(-1)
     };
   }
 
@@ -109,8 +111,10 @@ export class ReticleManager {
         }
 
   // Inicializar componentes
-        this.targetDetector.initialize(camera);
-        this.inputHandler.initialize(canvas, this.events);
+  this.targetDetector.initialize(camera);
+  this.inputHandler.initialize(canvas, this.events);
+  // Propagar configuración de input (incluye cycleNextKey 't') al handler
+  this.inputHandler.updateConfig(this.config.input);
         this.targetHighlighter.initialize(shaderManager);
         
         // Inicializar renderizador de retícula
@@ -471,6 +475,39 @@ export class ReticleManager {
       return hit.screenPosition;
     }
     return null;
+  }
+
+  /**
+   * Cicla el target seleccionado entre los visibles en un orden fijo (izq→der, luego arriba→abajo)
+   */
+  private cycleTarget(direction: 1 | -1): void {
+    // Obtener targets visibles y ordenarlos por posición en pantalla
+    const visible = this.getVisibleTargets();
+    if (!visible.length) return;
+
+    const withPos: Array<{ t: ITargetable; p: ScreenPosition }> = [];
+    for (const t of visible) {
+      const p = this.targetDetector.projectWorldToScreen(t.position);
+      if (p) withPos.push({ t, p });
+    }
+    if (!withPos.length) return;
+
+    withPos.sort((a, b) => (a.p.x - b.p.x) || (a.p.y - b.p.y));
+
+    // Buscar índice actual
+    const current = this.state.currentTarget;
+    let idx = -1;
+    if (current) {
+      idx = withPos.findIndex(w => w.t.id === current.id);
+    }
+
+    // Avanzar/retroceder con wrap-around
+    const n = withPos.length;
+    const nextIdx = ((idx >= 0 ? idx : -1) + direction + n) % n;
+    const nextTarget = withPos[nextIdx].t;
+
+    // Seleccionar el nuevo target
+    this.events.onTargetSelected(nextTarget);
   }
 
   // ===============================

@@ -44,6 +44,13 @@ export class InputHandler {
     this.canvas = canvas;
     this.events = events;
     this.setupEventListeners();
+    try {
+      // Asegurar que el canvas es focusable y obtener el foco
+      if (!this.canvas.hasAttribute('tabindex')) {
+        this.canvas.setAttribute('tabindex', '0');
+      }
+      this.canvas.focus();
+    } catch {}
     
     console.log('🎮 InputHandler inicializado', {
       canvas: !!this.canvas,
@@ -83,12 +90,33 @@ export class InputHandler {
     const onKeyDown = (e: KeyboardEvent) => this.handleKeyDown(e);
     const onKeyUp = (e: KeyboardEvent) => this.handleKeyUp(e);
 
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
+    // Escuchar teclas en el canvas (el juego debe tener foco)
+    this.canvas.addEventListener('keydown', onKeyDown, { capture: true } as any);
+    this.canvas.addEventListener('keyup', onKeyUp, { capture: true } as any);
+
+    // Listener global SOLO para la tecla de ciclo (p. ej., 't'), para que funcione aunque el canvas pierda foco
+    const onDocCycleKey = (e: KeyboardEvent) => {
+      const key = (e.key || '').toLowerCase();
+      const cycleKey = (this.config.cycleNextKey || '').toLowerCase();
+      if (!cycleKey || key !== cycleKey) return;
+      // No interferir con inputs de texto/editables
+      const targetEl = e.target as HTMLElement | null;
+      const tag = targetEl?.tagName?.toLowerCase();
+      const isTextInput = !!(targetEl && (targetEl.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select'));
+      if (isTextInput) return;
+
+      const isPrev = !!(this.config.cyclePrevWithShift && e.shiftKey);
+      console.log('⌨️ Cycle key (global) pressed:', { key: e.key, shift: e.shiftKey, isPrev });
+      if (isPrev) this.events?.onCyclePrev?.();
+      else this.events?.onCycleNext?.();
+    };
+
+  document.addEventListener('keydown', onDocCycleKey, true);
 
     this.keyboardListeners.push(
-      () => document.removeEventListener('keydown', onKeyDown),
-      () => document.removeEventListener('keyup', onKeyUp)
+      () => this.canvas?.removeEventListener('keydown', onKeyDown, { capture: true } as any),
+      () => this.canvas?.removeEventListener('keyup', onKeyUp, { capture: true } as any),
+      () => document.removeEventListener('keydown', onDocCycleKey, true)
     );
   }
 
@@ -115,6 +143,9 @@ export class InputHandler {
    */
   private handleMouseDown(event: MouseEvent): void {
     if (event.button !== this.config.mouseButton) return;
+
+    // Intentar mantener el foco en el canvas
+    try { this.canvas?.focus(); } catch {}
 
     this.isMouseDown = true;
 
@@ -176,12 +207,28 @@ export class InputHandler {
    * Maneja teclas presionadas
    */
   private handleKeyDown(event: KeyboardEvent): void {
-    if (event.key === this.config.keyboardKey) {
+    const key = (event.key || '').toLowerCase();
+    // Escape: deseleccionar
+    if (key === (this.config.keyboardKey || '').toLowerCase()) {
       event.preventDefault();
       
       // Deseleccionar target actual
       if (this.events?.onTargetSelected) {
         this.events.onTargetSelected(null);
+      }
+      return;
+    }
+
+    // Ciclar targets con tecla de ciclo (por defecto 't') / Shift+tecla
+    if (this.config.cycleNextKey && key === this.config.cycleNextKey.toLowerCase()) {
+      event.preventDefault();
+      const isPrev = !!(this.config.cyclePrevWithShift && event.shiftKey);
+      // Debug ligero
+      console.log('⌨️ Cycle key pressed:', { key: event.key, shift: event.shiftKey, isPrev });
+      if (isPrev) {
+        this.events?.onCyclePrev?.();
+      } else {
+        this.events?.onCycleNext?.();
       }
     }
   }

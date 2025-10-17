@@ -40,7 +40,10 @@ export class AsteroidClusterService {
     const radius = cfg.radius ?? 10;
     const centerSpeedFactor = cfg.centerSpeedFactor ?? 0.5; // centro se mueve a mitad de la velocidad
 
-    const objs: (Asteroid | SuperAsteroid)[] = [];
+  const objs: (Asteroid | SuperAsteroid)[] = [];
+  // Elegir una composición única para todo el cluster
+  const compositions = ['iron', 'silicate', 'carbonaceous', 'nickel', 'mixed'] as const;
+  const composition = compositions[Math.floor(Math.random() * compositions.length)];
     for (let i = 0; i < cfg.count; i++) {
       const pos = this.randomAround(cfg.center, radius);
       const a = this.factory.createAsteroid(
@@ -48,10 +51,8 @@ export class AsteroidClusterService {
         pos,
         cfg.direction,
         cfg.speed,
-        { rotationScale: 0.2, massTons: 10 + Math.floor(Math.random() * 21) }
+        { rotationScale: 0.2, composition }
       );
-      // Factor de velocidad estable por miembro: ±5%
-      (a as any)._clusterSpeedFactor = 1 + ((Math.random() * 0.1) - 0.05);
       objs.push(a);
     }
     if (cfg.includeSuper) {
@@ -61,9 +62,8 @@ export class AsteroidClusterService {
         pos,
         cfg.direction,
         cfg.speed,
-        { sizeMultiplierRange: [4, 6], massMultiplierRange: [4, 6], rotationScale: 0.1 }
+        { sizeMultiplierRange: [4, 6], rotationScale: 0.1, composition }
       );
-      (sa as any)._clusterSpeedFactor = 1 + ((Math.random() * 0.1) - 0.05);
       objs.push(sa);
     }
 
@@ -86,14 +86,15 @@ export class AsteroidClusterService {
   updateClusters(deltaTime: number): void {
     for (const cluster of this.clusters.values()) {
       // mover el centro con la mitad de la velocidad configurada
-      cluster.center.x += cluster.direction.x * cluster.speed * 0.5 * deltaTime;
-      cluster.center.y += cluster.direction.y * cluster.speed * 0.5 * deltaTime;
-      cluster.center.z += cluster.direction.z * cluster.speed * 0.5 * deltaTime;
+      const centerFactor = cluster.config.centerSpeedFactor ?? 0.5;
+      cluster.center.x += cluster.direction.x * cluster.speed * centerFactor * deltaTime;
+      cluster.center.y += cluster.direction.y * cluster.speed * centerFactor * deltaTime;
+      cluster.center.z += cluster.direction.z * cluster.speed * centerFactor * deltaTime;
 
       // sincronizar dirección/driftSpeed por miembro; su propio update() moverá posición/velocidad
       for (const obj of cluster.objects) {
-        const factor = (obj as any)._clusterSpeedFactor ?? 1.0;
-        const effSpeed = cluster.speed * factor;
+        // Coherent drift: miembros se mueven al mismo factor que el centro
+        const effSpeed = cluster.speed * centerFactor;
         obj.direction = { ...cluster.direction };
         (obj as any).driftSpeed = effSpeed;
         // rotación lenta ya configurada en factory
@@ -136,8 +137,20 @@ export class AsteroidClusterService {
       const dy = cluster.center.y - playerPos.y;
       const dz = cluster.center.z - playerPos.z;
       const dist = Math.hypot(dx, dy, dz);
+      // Extensión actual del clúster (radio aproximado): usar el mayor entre config.radius y distancia real máxima de sus miembros al centro
+      const baseRadius = cluster.config.radius ?? 10;
+      let maxMemberDist = baseRadius;
+      for (const obj of cluster.objects) {
+        const mdx = obj.position.x - cluster.center.x;
+        const mdy = obj.position.y - cluster.center.y;
+        const mdz = obj.position.z - cluster.center.z;
+        const md = Math.hypot(mdx, mdy, mdz);
+        if (md > maxMemberDist) maxMemberDist = md;
+      }
+      // Distancia mínima al clúster (borde más cercano)
+      const minDistToCluster = Math.max(0, dist - maxMemberDist);
       if (cluster.lodMode === 'full') {
-        if (dist >= toProxy) {
+        if (minDistToCluster >= toProxy) {
           cluster.lodTimer += deltaTime;
           if (cluster.lodTimer >= dwell) {
             this.switchToProxy(cluster);
@@ -148,7 +161,7 @@ export class AsteroidClusterService {
           cluster.lodTimer = 0;
         }
       } else { // proxy
-        if (dist <= toFull) {
+        if (minDistToCluster <= toFull) {
           cluster.lodTimer += deltaTime;
           if (cluster.lodTimer >= dwell) {
             this.switchToFull(cluster);

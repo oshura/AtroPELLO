@@ -181,6 +181,8 @@ export interface TargetingEvents {
   onTargetLocked: (target: ITargetable) => void;
   onTargetLost: () => void;
   onStateChanged: (newState: ReticleState, oldState: ReticleState) => void;
+  onCycleNext?: () => void; // Invocado al pulsar tecla de ciclo (por defecto: 't')
+  onCyclePrev?: () => void; // Invocado al pulsar Shift+tecla de ciclo
 }
 
 /**
@@ -191,6 +193,8 @@ export interface InputConfig {
   keyboardKey: string;      // Tecla para deseleccionar ('Escape')
   holdToLock: boolean;      // Si requiere mantener presionado
   doubleClickToLock: boolean; // Si requiere doble click
+  cycleNextKey?: string;    // Tecla para ciclar siguiente (por defecto 't')
+  cyclePrevWithShift?: boolean; // Usar Shift+tecla para ciclar anterior
 }
 
 // ===============================
@@ -241,7 +245,9 @@ export const DEFAULT_INPUT_CONFIG: InputConfig = {
   mouseButton: 0, // Left click
   keyboardKey: 'Escape',
   holdToLock: false,
-  doubleClickToLock: false
+  doubleClickToLock: false,
+  cycleNextKey: 't',
+  cyclePrevWithShift: true
 };
 
 export const DEFAULT_TARGETING_CONFIG: TargetingSystemConfig = {

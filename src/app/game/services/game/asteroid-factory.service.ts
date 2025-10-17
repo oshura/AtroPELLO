@@ -11,10 +11,10 @@ export class AsteroidFactoryService {
     position: Vector3,
     direction: Vector3,
     speed: number,
-    opts?: { size?: number; massTons?: number; rotationScale?: number }
+    opts?: { size?: number; massTons?: number; rotationScale?: number; composition?: string }
   ): Asteroid {
     const size = opts?.size ?? (0.5 + Math.random() * 1.5);
-    const a = new Asteroid(id, position, size, { ...direction });
+  const a = new Asteroid(id, position, size, { ...direction });
     // Dirección/velocidad del cluster
     a.direction = { ...direction };
     a.driftSpeed = speed;
@@ -27,8 +27,14 @@ export class AsteroidFactoryService {
       z: a.rotationRate.z * rotScale
     };
     a.angularVelocity = { ...a.rotationRate };
-    // Masa
-    (a as any).massTons = opts?.massTons ?? (10 + Math.floor(Math.random() * 21)); // 10..30
+    // Composición y propiedades físicas visibles
+  (a as any).composition = opts?.composition ?? 'mixed';
+    // Masa (50..150 tons)
+    (a as any).massTons = opts?.massTons ?? (50 + Math.floor(Math.random() * 101));
+    // Void mass fija 1u para asteroide normal
+    (a as any).voidMassUnits = 1;
+    // Albedo 0.40..0.60
+    (a as any).albedo = Number((0.4 + Math.random() * 0.2).toFixed(2));
     return a;
   }
 
@@ -38,12 +44,12 @@ export class AsteroidFactoryService {
     position: Vector3,
     direction: Vector3,
     speed: number,
-    opts?: { baseSize?: number; sizeMultiplierRange?: [number, number]; massMultiplierRange?: [number, number]; rotationScale?: number }
+    opts?: { baseSize?: number; sizeMultiplierRange?: [number, number]; massMultiplierRange?: [number, number]; rotationScale?: number; composition?: string }
   ): SuperAsteroid {
   const baseSize = opts?.baseSize ?? (0.5 + Math.random() * 1.5);
   const [minMul, maxMul] = opts?.sizeMultiplierRange ?? [4, 6];
     const sizeMul = minMul + Math.random() * (maxMul - minMul);
-    const sa = new SuperAsteroid(id, position, baseSize * sizeMul, { ...direction });
+  const sa = new SuperAsteroid(id, position, baseSize * sizeMul, { ...direction });
     sa.direction = { ...direction };
     sa.driftSpeed = speed;
     sa.velocity = { x: direction.x * speed, y: direction.y * speed, z: direction.z * speed };
@@ -54,10 +60,14 @@ export class AsteroidFactoryService {
       z: sa.rotationRate.z * rotScale
     };
     sa.angularVelocity = { ...sa.rotationRate };
-  // Masa 3..5x de un pequeño
-  const [mMin, mMax] = opts?.massMultiplierRange ?? [4, 6];
-    const smallMass = 10 + Math.floor(Math.random() * 21);
-    (sa as any).massTons = Math.floor(smallMass * (mMin + Math.random() * (mMax - mMin)));
+    // Composición y propiedades físicas visibles
+  (sa as any).composition = opts?.composition ?? 'mixed';
+    // Masa super (500..1000 tons)
+    (sa as any).massTons = 500 + Math.floor(Math.random() * 501);
+    // Void mass 5..10u para super
+    (sa as any).voidMassUnits = 5 + Math.floor(Math.random() * 6);
+    // Albedo 0.40..0.60
+    (sa as any).albedo = Number((0.4 + Math.random() * 0.2).toFixed(2));
     return sa;
   }
 }

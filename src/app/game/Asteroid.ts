@@ -61,8 +61,7 @@ export class Asteroid extends GameObject implements ITargetable {
   this.healthMax = Math.floor(25 + Math.random() * 126); // 25..150
   this.healthCurrent = this.healthMax;
 
-  // Masa del vacío disponible en el asteroide (0..32u)
-  this.voidMassUnits = Math.floor(Math.random() * 33); // hasta 32u
+  // Masa del vacío se establecerá desde la factoría (cluster o spawner)
   }
 
   /**
@@ -341,7 +340,8 @@ export class Asteroid extends GameObject implements ITargetable {
    * Verifica si el asteroide está activo (siempre true para asteroides)
    */
   public isActive(): boolean {
-    return true; // Los asteroides siempre están activos
+    // Considerar activo solo si el objeto está marcado como activo y visible
+    return this.active && this.visible;
   }
 
   /**

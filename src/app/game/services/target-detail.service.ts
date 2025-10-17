@@ -34,20 +34,18 @@ export class TargetDetailService {
         return {
           type: TargetType.ASTEROID,
           data: {
-            composition: 'mixed'
+            composition: (target as any).composition ?? 'mixed',
+            albedo: (target as any).albedo ?? Number((0.4 + Math.random() * 0.2).toFixed(2)),
+            massTons: (target as any).massTons ?? (50 + Math.floor(Math.random() * 101)),
           }
         };
       case TargetType.SUPER_ASTEROID: {
-        // Mismos campos que asteroide, con escalado (aprox.)
-        const scale = (target as any).scale?.x ?? 3.5; // 3..5 típico
-        const massTons = Math.floor((Math.random()*5000 + 100) * scale);
-        const albedo = Number((Math.random()*0.8+0.1).toFixed(2));
         return {
           type: TargetType.ASTEROID,
           data: {
-            composition: 'mixed',
-            albedo,
-            massTons
+            composition: (target as any).composition ?? 'mixed',
+            albedo: (target as any).albedo ?? Number((0.4 + Math.random() * 0.2).toFixed(2)),
+            massTons: (target as any).massTons ?? (500 + Math.floor(Math.random() * 501)),
           }
         };
       }
