@@ -7,22 +7,26 @@ export class SpeedometerDigital {
   private speed: number = 0;
   private maxSpeed: number = 200;
   private animatedSpeed: number = 0;
-  private lastUpdateTime: number = 0;
+  // Eliminamos dependencia de reloj para evitar saltos grandes en dt
+  // y estabilizamos con un suavizado exponencial por frame.
+  private readonly SMOOTHING_ALPHA: number = 0.15; // 0..1
   
   constructor() {}
 
   public update(speed: number): void {
+    // Clamp a rango esperado del velocímetro
     this.speed = Math.max(0, Math.min(this.maxSpeed, speed));
-    
-    const currentTime = Date.now();
-    const deltaTime = Math.min(currentTime - this.lastUpdateTime, 100) / 1000;
-    this.lastUpdateTime = currentTime;
-    
-    const speedDifference = this.speed - this.animatedSpeed;
-    const animationSpeed = 50;
-    
-    if (Math.abs(speedDifference) > 0.1) {
-      this.animatedSpeed += speedDifference * animationSpeed * deltaTime;
+
+    // Suavizado exponencial estable por frame (sin overshoot)
+    const diff = this.speed - this.animatedSpeed;
+    if (Math.abs(diff) > 0.001) {
+      this.animatedSpeed += diff * this.SMOOTHING_ALPHA;
+      // Clamp animado por seguridad
+      this.animatedSpeed = Math.max(0, Math.min(this.maxSpeed, this.animatedSpeed));
+      // Evitar pequeños rebotes por acumulación numérica
+      if (Math.abs(this.speed - this.animatedSpeed) < 0.01) {
+        this.animatedSpeed = this.speed;
+      }
     } else {
       this.animatedSpeed = this.speed;
     }
@@ -89,7 +93,8 @@ export class SpeedometerDigital {
     ctx.lineWidth = 1;
     ctx.strokeRect(-barWidth/2, barY, barWidth, barHeight);
     
-    const fillWidth = (this.animatedSpeed / this.maxSpeed) * barWidth;
+  const ratio = Math.max(0, Math.min(1, this.animatedSpeed / this.maxSpeed));
+  const fillWidth = ratio * barWidth;
     if (fillWidth > 0) {
       const gradient = ctx.createLinearGradient(-barWidth/2, 0, barWidth/2, 0);
       gradient.addColorStop(0, '#00FF80');

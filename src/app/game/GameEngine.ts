@@ -215,24 +215,86 @@ export class GameEngine {
       indices: this.spaceship.indices.length
     });
     
-    // Crear clusters asteroidales (nuevo modelo de creación)
-    const dir = this.normalize({ x: 0.6, y: 0.2, z: 0.1 });
-    const cluster = this.asteroidClusterService.createCluster({
-      id: 'cluster-0',
-      center: { x: 20, y: 0, z: 30 },
-      direction: dir,
-      speed: 1.5, // más lento que asteroides sueltos
-      count: 8,
-      includeSuper: true,
-      radius: 12,
-      centerSpeedFactor: 0.5
+    // Crear varios clusters asteroidales en una cuadrícula 5x10 (50 total)
+    // - 10 por línea alineados a lo largo de baseDir (50u de separación)
+    // - 5 líneas paralelas separadas 50u en una dirección perpendicular a baseDir
+  const CLUSTER_ROWS = 5; // líneas
+  const CLUSTER_COLS = 5; // por línea
+    const CLUSTER_SPACING_ALONG = 50; // separación a lo largo del vector base
+    const CLUSTER_ROW_SPACING = 50; // separación entre líneas (perpendicular)
+    const CLUSTER_SPEED = 1.5; // misma velocidad para todos
+    const CLUSTER_COUNT_PER = 8; // número de asteroides pequeños por clúster
+    const CLUSTER_INCLUDE_SUPER = true;
+    const CLUSTER_RADIUS = 12;
+    const CLUSTER_CENTER_FACTOR = 0.5;
+
+    const baseDir = this.normalize({ x: 0.6, y: 0.2, z: 0.1 });
+    const baseCenter = { x: 20, y: 0, z: 30 };
+
+    // Vector perpendicular a baseDir para desplazar entre filas
+    const up = { x: 0, y: 1, z: 0 };
+    // cross(baseDir, up)
+    let perp = {
+      x: baseDir.y * up.z - baseDir.z * up.y,
+      y: baseDir.z * up.x - baseDir.x * up.z,
+      z: baseDir.x * up.y - baseDir.y * up.x,
+    };
+    const perpLen = Math.hypot(perp.x, perp.y, perp.z);
+    if (perpLen < 1e-3) {
+      // baseDir casi paralelo a up; usar eje X para calcular un perpendicular
+      const right = { x: 1, y: 0, z: 0 };
+      perp = {
+        x: baseDir.y * right.z - baseDir.z * right.y,
+        y: baseDir.z * right.x - baseDir.x * right.z,
+        z: baseDir.x * right.y - baseDir.y * right.x,
+      };
+    }
+    // normalizar perp
+    const pLen = Math.hypot(perp.x, perp.y, perp.z) || 1;
+    perp = { x: perp.x / pLen, y: perp.y / pLen, z: perp.z / pLen };
+
+    const createdClusters: ReturnType<typeof this.asteroidClusterService.createCluster>[] = [];
+    for (let r = 0; r < CLUSTER_ROWS; r++) {
+      for (let c = 0; c < CLUSTER_COLS; c++) {
+        const center = {
+          x: baseCenter.x + baseDir.x * CLUSTER_SPACING_ALONG * c + perp.x * CLUSTER_ROW_SPACING * r,
+          y: baseCenter.y + baseDir.y * CLUSTER_SPACING_ALONG * c + perp.y * CLUSTER_ROW_SPACING * r,
+          z: baseCenter.z + baseDir.z * CLUSTER_SPACING_ALONG * c + perp.z * CLUSTER_ROW_SPACING * r,
+        };
+        // Pequeña perturbación para direcciones paralelas y mismo sentido
+        const jitter = {
+          x: (Math.random() - 0.5) * 0.02,
+          y: (Math.random() - 0.5) * 0.02,
+          z: (Math.random() - 0.5) * 0.02,
+        };
+        const dir = this.normalize({ x: baseDir.x + jitter.x, y: baseDir.y + jitter.y, z: baseDir.z + jitter.z });
+
+        const cluster = this.asteroidClusterService.createCluster({
+          id: `cluster-${r}-${c}`,
+          center,
+          direction: dir,
+          speed: CLUSTER_SPEED,
+          count: CLUSTER_COUNT_PER,
+          includeSuper: CLUSTER_INCLUDE_SUPER,
+          radius: CLUSTER_RADIUS,
+          centerSpeedFactor: CLUSTER_CENTER_FACTOR
+        });
+        createdClusters.push(cluster);
+      }
+    }
+
+    // Inicializar buffers de los objetos de todos los clusters
+    createdClusters.forEach(c => c.objects.forEach(o => o.initBuffers(this.gl!)));
+
+    // Registrar todos los objetos (buckets separados por tipo)
+    const smalls: ITargetable[] = [];
+    const supers: ITargetable[] = [];
+    createdClusters.forEach(c => {
+      c.objects.forEach(o => {
+        if ((o as any) instanceof SuperAsteroid) supers.push(o as unknown as ITargetable);
+        else smalls.push(o as unknown as ITargetable);
+      });
     });
-    // Inicializar buffers de los objetos del cluster
-    cluster.objects.forEach(o => o.initBuffers(this.gl!));
-    // Registrar los objetos del cluster como targets (buckets separados)
-    const clusterTargets: ITargetable[] = cluster.objects as unknown as ITargetable[];
-    const smalls = clusterTargets.filter(t => !((t as any) instanceof SuperAsteroid));
-    const supers = clusterTargets.filter(t => ((t as any) instanceof SuperAsteroid));
     this.targetCatalog.register(TargetType.ASTEROID, smalls);
     this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
   }
