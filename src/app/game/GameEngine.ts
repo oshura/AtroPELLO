@@ -425,28 +425,27 @@ export class GameEngine {
     this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
     this.targetCatalog.register(TargetType.CLUSTER, clusters);
 
-    // Transferencia estable de selección
+    // Transferencia estable de selección: solo si el clúster propietario del target actual cambia de LOD
     const current = this.reticleManager.getCurrentTarget();
     if (current) {
-      // 1) Si colapsó a proxy: seleccionar el ClusterObject del clúster más cercano al target actual
-      const collapsed = this.asteroidClusterService.getClusters().find(c => c.lodMode === 'proxy' && c.proxy);
-      if (collapsed) {
-        // Elegir el clúster cuyo centro esté más cerca del target actual
-        let best: any = null; let bestD = Infinity;
-        for (const c of this.asteroidClusterService.getClusters()) {
-          if (!c.proxy) continue;
-          const d = Math.hypot(current.position.x - c.center.x, current.position.y - c.center.y, current.position.z - c.center.z);
-          if (d < bestD) { bestD = d; best = c; }
+      const currentType = current.getTargetType();
+      // Caso A: seleccionado es un miembro (asteroide/super) y su clúster colapsa a proxy
+      if (currentType !== TargetType.CLUSTER) {
+        const owner = this.asteroidClusterService
+          .getClusters()
+          .find(c => c.objects.some(o => o.id === current.id));
+        if (owner && owner.lodMode === 'proxy' && owner.proxy) {
+          this.reticleManager.selectTarget(owner.proxy as unknown as ITargetable);
         }
-        if (best && best.proxy) this.reticleManager.selectTarget(best.proxy as unknown as ITargetable);
-      }
-      // 2) Si expandió a full y el seleccionado es un cluster: pasar al primer miembro
-      const becameFull = this.asteroidClusterService.getClusters().find(c => c.lodMode === 'full');
-      if (becameFull && current.getTargetType() === TargetType.CLUSTER) {
-        // Buscar el clúster cuya posición coincide con el seleccionado
-        const owner = this.asteroidClusterService.getClusters().find(c => !c.proxy && Math.hypot(current.position.x - c.center.x, current.position.y - c.center.y, current.position.z - c.center.z) < (c.config.radius ?? 10) * 0.75);
-        const first = owner?.objects?.[0];
-        if (first) this.reticleManager.selectTarget(first as unknown as ITargetable);
+      } else {
+        // Caso B: seleccionado es un proxy de clúster y su clúster expande a full
+        const owner = this.asteroidClusterService
+          .getClusters()
+          .find(c => c.proxy && c.proxy.id === current.id);
+        if (owner && owner.lodMode === 'full') {
+          const first = owner.objects?.[0];
+          if (first) this.reticleManager.selectTarget(first as unknown as ITargetable);
+        }
       }
     }
   }
@@ -1411,16 +1410,16 @@ export class GameEngine {
         this.spaceship.controls.up = pressed; // Pitch up (invertido)
         break;
       case 'a':
-        this.spaceship.controls.rollLeft = pressed; // Roll left
+        this.spaceship.controls.left = pressed; // Yaw left (remapeado)
         break;
       case 'd':
-        this.spaceship.controls.rollRight = pressed; // Roll right
+        this.spaceship.controls.right = pressed; // Yaw right (remapeado)
         break;
       case 'q':
-        this.spaceship.controls.left = pressed; // Yaw left
+        this.spaceship.controls.rollLeft = pressed; // Roll left (remapeado)
         break;
       case 'e':
-        this.spaceship.controls.right = pressed; // Yaw right
+        this.spaceship.controls.rollRight = pressed; // Roll right (remapeado)
         break;
       case '+':
       case '=':

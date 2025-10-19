@@ -80,12 +80,7 @@ export class TargetDetector implements ITargetDetector {
     );
     
     // Debug FORZADO hasta que funcione
-    console.log('🎯 TargetDetector.updateAvailableTargets():', {
-      received: targets.length,
-      filtered: filteredTargets.length,
-      types: targets.map(t => t.getTargetType()),
-      acceptedTypes: this.config.targetTypes
-    });
+    // Quiet — enable debugLogs to true to see detailed filtering info on demand
     
     this.availableTargets = filteredTargets;
   }
@@ -103,23 +98,10 @@ export class TargetDetector implements ITargetDetector {
   const shouldDebug = this.debugLogs;
     
     if (shouldDebug) {
-      console.log('🔍 TargetDetector.detectTargetAt() INICIO:', {
-        screenPos,
-        availableTargets: this.availableTargets.length,
-        camera: !!this.camera,
-        canvas: !!this.canvas,
-        canvasSize: { w: this.canvas.width, h: this.canvas.height }
-      });
+      console.log('🔍 detectTargetAt() start', { screenPos, availableTargets: this.availableTargets.length });
     }
     
-    if (shouldDebug) {
-      console.log('🔍 TargetDetector debug:', {
-        screenPos,
-        availableTargets: this.availableTargets.length,
-        camera: !!this.camera,
-        canvas: !!this.canvas
-      });
-    }
+    // extra debug trimmed
 
     // Convertir coordenadas de pantalla a mundo
     const worldRay = this.screenToWorldRay(screenPos);
@@ -132,21 +114,13 @@ export class TargetDetector implements ITargetDetector {
     let minDistance = Infinity;
 
     // RAYCAST SIMPLIFICADO - Proyección 3D→2D directa
-    if (shouldDebug) {
-      console.log(`🔍 Iterando ${this.availableTargets.length} targets disponibles`);
-    }
+    // quiet
     
     for (const target of this.availableTargets) {
       // Convertir posición 3D del target a coordenadas de pantalla
       const targetScreenPos = this.worldToScreen(target.position);
       
-      if (shouldDebug) {
-        console.log(`🔍 Target ${target.getTargetType()}-${target.id}:`, {
-          position3D: target.position,
-          screenPos2D: targetScreenPos,
-          mousePos: screenPos
-        });
-      }
+      // quiet per-target log
       
       if (targetScreenPos) {
         // Calcular distancia en píxeles entre mouse y target proyectado
@@ -157,15 +131,7 @@ export class TargetDetector implements ITargetDetector {
         // Calcular tolerancia adaptativa en píxeles según tamaño y distancia
         const adaptiveTol = this.getAdaptiveTolerancePx(target, detectionRadiusPx);
         
-        if (shouldDebug) {
-          console.log(`🔍 Target ${target.getTargetType()}-${target.id} DISTANCE:`, {
-            mouse: screenPos,
-            target2D: targetScreenPos,
-            pixelDistance: Math.round(pixelDistance),
-            tolPx: Math.round(adaptiveTol),
-            withinRadius: pixelDistance < adaptiveTol
-          });
-        }
+        // quiet distance/tolerance debug
         
   // Si está dentro de la tolerancia adaptativa, considerar hit
   if (pixelDistance < adaptiveTol) {
@@ -181,21 +147,48 @@ export class TargetDetector implements ITargetDetector {
               normal: { x: 0, y: 0, z: 1 }
             };
             
-            if (shouldDebug) {
-              console.log('🎯 TARGET HIT FOUND:', target.getDisplayName(), 
-                         'pixelDist:', Math.round(pixelDistance), 'worldDist:', Math.round(worldDistance));
-            }
+            // quiet hit log
           }
         }
       }
       
       // Debug ocasional para ver proyección
-      if (shouldDebug && this.availableTargets.indexOf(target) === 0) {
-        console.log('🔍 Target projection:', target.getDisplayName(), 
-                   '3D:', target.position, '2D:', targetScreenPos);
-      }
+      // quiet occasional projection log
     }
 
+    return closestHit;
+  }
+
+  /**
+   * Detecta targets entre una lista específica de candidatos (preciso) en una posición de pantalla.
+   */
+  public detectAmong(screenPos: ScreenPosition, detectionRadiusPx: number, candidates: ITargetable[]): RaycastHit | null {
+    if (!this.camera || !this.canvas) return null;
+
+    let closestHit: RaycastHit | null = null;
+    let minDistance = Infinity;
+
+    for (const target of candidates) {
+      const targetScreenPos = this.worldToScreen(target.position);
+      if (!targetScreenPos) continue;
+      const dx = screenPos.x - targetScreenPos.x;
+      const dy = screenPos.y - targetScreenPos.y;
+      const pixelDistance = Math.sqrt(dx * dx + dy * dy);
+      const adaptiveTol = this.getAdaptiveTolerancePx(target, detectionRadiusPx);
+      if (pixelDistance < adaptiveTol) {
+        const worldDistance = this.getWorldDistance(target.position);
+        if (worldDistance < minDistance && worldDistance <= this.config.maxDistance) {
+          minDistance = worldDistance;
+          closestHit = {
+            target,
+            distance: worldDistance,
+            screenPosition: targetScreenPos,
+            worldPosition: target.position,
+            normal: { x: 0, y: 0, z: 1 }
+          };
+        }
+      }
+    }
     return closestHit;
   }
 

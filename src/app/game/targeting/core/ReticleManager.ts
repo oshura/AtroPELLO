@@ -26,6 +26,7 @@ import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
 import { mat4 } from 'gl-matrix';
 import { SpaceshipDebugCollector } from '../../../services/debug/spaceship-debug-collector.service';
+import { TargetingWorkerService, WorkerResult } from '../worker/TargetingWorker.service';
 
 @Injectable({
   providedIn: 'root'
@@ -56,6 +57,17 @@ export class ReticleManager {
   // Debug snapshot storage
   private lastHit: RaycastHit | null = null;
   private lastDetectionRadiusPx: number = 0;
+  // Worker integration
+  private workerService: TargetingWorkerService;
+  private lastViewProjection: Float32Array | null = null;
+  private lastViewport: { width: number; height: number } | null = null;
+  private lastTargetsCompact: { positions: Float32Array; ids: string[] } | null = null;
+  // Worker gating
+  private snapshotVersion: number = 0; // increments when compact targets change
+  private lastSentRequestTime: number = 0;
+  private lastAccepted: { time: number; version: number } = { time: 0, version: -1 };
+  private lastTargetsSignature: string = '';
+  private lastViewportSize: { width: number; height: number } | null = null;
 
   constructor(
     targetDetector: TargetDetector,
@@ -64,7 +76,8 @@ export class ReticleManager {
     targetHighlighter: TargetHighlighter,
     outlineRenderer: OutlineRenderer,
     private webglService: WebGLService,
-    private debugCollector: SpaceshipDebugCollector
+    private debugCollector: SpaceshipDebugCollector,
+    workerService: TargetingWorkerService
   ) {
     this.targetDetector = targetDetector;
     this.inputHandler = inputHandler;
@@ -72,6 +85,7 @@ export class ReticleManager {
     this.targetHighlighter = targetHighlighter;
     this.outlineRenderer = outlineRenderer;
     this.config = { ...DEFAULT_TARGETING_CONFIG };
+  this.workerService = workerService;
     
     // Deshabilitar animación de pulso (solo velocidad del mouse)
     this.config.reticle.animated = false;
@@ -136,7 +150,9 @@ export class ReticleManager {
           return;
         }
 
-        this.isInitialized = true;
+  this.isInitialized = true;
+  // Initialize worker
+  this.workerService.init();
         this.lastUpdateTime = performance.now();
 
         console.log('🎯 ReticleManager inicializado correctamente con renderizador');
@@ -154,27 +170,12 @@ export class ReticleManager {
    */
   public update(deltaTime: number, availableTargets: ITargetable[]): void {
     if (!this.isInitialized) {
-      console.log('⚠️ ReticleManager.update() - NO inicializado', {
-        isInitialized: this.isInitialized,
-        deltaTime,
-        targetsReceived: availableTargets.length
-      });
+      // Quiet when not initialized
       return;
     }
     
     // Debug crítico para verificar que update se ejecuta
-    if (performance.now() % 2000 < 50) { // Cada 2 segundos aprox
-      console.log('🔄 ReticleManager.update() EJECUTADO:', {
-        deltaTime: Math.round(deltaTime * 1000) + 'ms',
-        targetsReceived: availableTargets.length,
-        mousePos: this.state.mousePosition,
-        initialized: this.isInitialized,
-        currentState: this.state.currentState
-      });
-      
-      // DEBUG FORZADO - Verificar que se llama a updateTargetDetection
-      console.log('🔍 ABOUT TO CALL updateTargetDetection...');
-    }
+    // Reduce periodic debug spam
 
     const currentTime = performance.now();
     
@@ -198,7 +199,7 @@ export class ReticleManager {
     this.updateReticlePosition();
 
     // Detectar target bajo el cursor
-    console.log('🔍 CALLING updateTargetDetection...');
+  // Quiet
     this.updateTargetDetection();
 
     // Actualizar máquina de estados
@@ -234,14 +235,11 @@ export class ReticleManager {
    */
   public render(deltaTime: number): void {
     if (!this.isInitialized || !this.state.isVisible) {
-      console.log('🎯 Retícula NO renderizada:', { 
-        initialized: this.isInitialized, 
-        visible: this.state.isVisible 
-      });
+      // Quiet when not visible
       return;
     }
 
-    console.log('🎯 Renderizando retícula en:', this.state.reticlePosition);
+  // Quiet frequent render logs
 
     // Renderizar retícula en la posición actual
     this.reticleRenderer.render(
@@ -262,6 +260,46 @@ export class ReticleManager {
     
     // Renderizar outlines avanzados
     this.outlineRenderer.renderOutlines(viewMatrix, projectionMatrix, targets);
+
+    // Cache combined viewProjection and viewport for worker snapshot
+    try {
+      const vp = new Float32Array(16);
+      // vp = projection * view (column-major) using minimal multiply to avoid extra dependency
+      // mat4.multiply(out, a, b)
+      const a = projectionMatrix as unknown as Float32Array;
+      const b = viewMatrix as unknown as Float32Array;
+      // Compute out = a*b
+      for (let i = 0; i < 4; i++) {
+        const ai0 = a[i];      const ai1 = a[i + 4];  const ai2 = a[i + 8];  const ai3 = a[i + 12];
+        vp[i]      = ai0 * b[0]  + ai1 * b[1]  + ai2 * b[2]  + ai3 * b[3];
+        vp[i + 4]  = ai0 * b[4]  + ai1 * b[5]  + ai2 * b[6]  + ai3 * b[7];
+        vp[i + 8]  = ai0 * b[8]  + ai1 * b[9]  + ai2 * b[10] + ai3 * b[11];
+        vp[i + 12] = ai0 * b[12] + ai1 * b[13] + ai2 * b[14] + ai3 * b[15];
+      }
+  this.lastViewProjection = vp;
+  const canvas = this.webglService.getCanvas();
+  if (canvas) this.lastViewport = { width: canvas.width, height: canvas.height };
+      // Prepare compact targets buffer
+      const active = targets.filter(t => t.isActive());
+      const positions = new Float32Array(active.length * 3);
+      const ids: string[] = new Array(active.length);
+      for (let i = 0; i < active.length; i++) {
+        const p = active[i].position; ids[i] = active[i].id;
+        positions[i*3] = p.x; positions[i*3+1] = p.y; positions[i*3+2] = p.z;
+      }
+      // Compute a stable signature based on IDs only (order-sensitive)
+      const signature = ids.join('|');
+      const viewportChanged = !this.lastViewportSize ||
+        this.lastViewportSize.width !== this.lastViewport!.width ||
+        this.lastViewportSize.height !== this.lastViewport!.height;
+
+      this.lastTargetsCompact = { positions, ids };
+      if (signature !== this.lastTargetsSignature || viewportChanged) {
+        this.snapshotVersion++;
+        this.lastTargetsSignature = signature;
+        this.lastViewportSize = { ...this.lastViewport! };
+      }
+    } catch {}
   }
 
   /**
@@ -308,9 +346,19 @@ export class ReticleManager {
   const SCALE = 2 / 3;
   const detectionRadius = Math.max(16, Math.min(160, baseRadius * velFactor * SCALE));
     this.lastDetectionRadiusPx = detectionRadius;
-    const hit = this.targetDetector.detectTargetAt(this.state.mousePosition, detectionRadius);
-    this.lastHit = hit || null;
-    console.log('🔍 detectTargetAt result:', hit ? `HIT: ${hit.target.getDisplayName()}` : 'NO HIT');
+  // Try worker-assisted shortlist first
+  const hit = this.detectWithWorkerFallback(detectionRadius);
+  this.lastHit = hit || null;
+  // Quiet frequent hit logs
+
+    // If worker is in use and we haven't accepted a fresh result recently, clear hover to avoid sticky outlines
+    const workerActive = this.workerService.ready();
+    const staleMs = performance.now() - this.lastAccepted.time;
+    if (workerActive && staleMs > Math.max(250, this.detectIntervalMs * 3)) {
+      if (this.state.hoveredTarget) {
+        this.events.onTargetHovered(null);
+      }
+    }
 
     // Exportar snapshot para overlay de debug (si está activo)
     try {
@@ -320,23 +368,54 @@ export class ReticleManager {
     const newHoveredTarget = hit?.target || null;
     
     // Debug FORZADO para verificar detección
-    if (Math.random() < 0.01) { // 1% chance - más frecuente
-      console.log('🔍 Target detection DEBUG:', {
-        mousePos: this.state.mousePosition,
-        hit: hit ? `${hit.target.getDisplayName()} at ${Math.round(hit.distance)}` : 'none',
-        availableTargets: this.targetDetector.getVisibleTargets().length,
-        detectorInitialized: !!this.targetDetector
-      });
-    }
+    // Reduced debug noise
     
     // Verificar cambio en hover
     if (newHoveredTarget !== this.state.hoveredTarget) {
       // Importante: NO mutar state.hoveredTarget aquí. Dejamos que el handler lo actualice,
       // así puede comparar correctamente contra el valor previo y disparar efectos (outline/highlight).
-      console.log('🎯 Target hover changed:', 
-        newHoveredTarget?.getDisplayName() || 'none');
+      // Quiet hover change spam
       this.events.onTargetHovered(newHoveredTarget);
     }
+  }
+
+  // Sends a snapshot to the worker and uses the latest result to choose hovered target; falls back if needed
+  private detectWithWorkerFallback(detectionRadius: number): RaycastHit | null {
+    try {
+      if (this.workerService.ready() && this.lastViewProjection && this.lastViewport && this.lastTargetsCompact) {
+        // Request fresh computation
+        const reqTime = performance.now();
+        this.lastSentRequestTime = reqTime;
+        this.workerService.requestHover({
+          vp: Array.from(this.lastViewProjection),
+          viewport: this.lastViewport,
+          mouse: { x: this.state.mousePosition.x, y: this.state.mousePosition.y },
+          positions: this.lastTargetsCompact.positions,
+          time: reqTime,
+          targetsVersion: this.snapshotVersion,
+          topK: 8
+        });
+        const res: WorkerResult | null = this.workerService.getLastResult(200);
+        // Accept only if result is for the latest snapshot version and not older than the last accepted
+        if (res && res.indices.length && res.targetsVersion === this.snapshotVersion && res.time >= this.lastAccepted.time) {
+          this.lastAccepted = { time: res.time, version: res.targetsVersion };
+          // Build a tiny shortlist and re-check precisely in main thread
+          const shortlistIds: string[] = res.indices.map(i => this.lastTargetsCompact!.ids[i]);
+          const all = this.targetDetector.getVisibleTargets();
+          const candidates = all.filter(t => shortlistIds.includes(String(t.id)));
+          const precise = this.targetDetector.detectAmong(this.state.mousePosition, detectionRadius, candidates);
+          return precise;
+        }
+      }
+    } catch (e) {
+      console.warn('⚠️ Worker detect failed, ignoring this cycle:', e);
+    }
+    // If worker is ready but we didn't accept a result this cycle, avoid conflicting fallback to reduce jitter
+    if (this.workerService.ready()) {
+      return null;
+    }
+    // Fallback only when worker is not available
+    return this.targetDetector.detectTargetAt(this.state.mousePosition, detectionRadius);
   }
 
   /**
@@ -536,13 +615,13 @@ export class ReticleManager {
         }
         return;
       }
-      console.log('👁️ Target hovered:', target.getDisplayName());
+  // Quiet hover logs
       
   // Aplicar highlighting al target hovered
       this.targetHighlighter.highlightTarget(target);
       
       // Aplicar outline de hover (GLOW suave)
-      console.log('🟡 ReticleManager: llamando a addOutline (hover) para', target.id);
+  // Quiet outline add logs
       const relation = this.getRelationFor(target);
       const hoverColor = this.getRelationColor(relation, false);
       this.outlineRenderer.addOutline(target, OutlineType.GLOW, {
@@ -557,7 +636,7 @@ export class ReticleManager {
         this.outlineRenderer.removeOutline(previousTarget.id);
       }
     } else if (!target && previousTarget) {
-      console.log('👁️ Target unhovered:', previousTarget.getDisplayName());
+  // Quiet unhover logs
       
       // Remover highlighting solo si no está seleccionado
       if (previousTarget !== this.state.currentTarget) {
@@ -573,7 +652,7 @@ export class ReticleManager {
     this.state.currentTarget = target;
     
     if (target) {
-      console.log('✅ Target selected:', target.getDisplayName());
+  // Quiet selection logs
       // Si había un target previamente seleccionado y es distinto, limpiar su estado visual
       if (previousTarget && previousTarget !== target) {
         this.targetHighlighter.removeHighlight(previousTarget);
@@ -600,7 +679,7 @@ export class ReticleManager {
       
       this.events.onTargetLocked(target);
     } else {
-      console.log('❌ Target deselected');
+  // Quiet deselect logs
       
       // Remover highlighting del target anterior
       if (previousTarget) {
@@ -644,15 +723,15 @@ export class ReticleManager {
   }
 
   private handleTargetLocked(target: ITargetable): void {
-    console.log('🔒 Target locked:', target.getDisplayName());
+  // Quiet locked logs
   }
 
   private handleTargetLost(): void {
-    console.log('💨 Target lost');
+  // Quiet lost logs
   }
 
   private handleStateChanged(newState: ReticleState, oldState: ReticleState): void {
-    console.log('🔄 State changed:', oldState, '→', newState);
+  // Quiet state machine logs
   }
 
   // ===============================
@@ -731,6 +810,6 @@ export class ReticleManager {
     this.reticleRenderer.dispose();
     this.isInitialized = false;
     
-    console.log('🧹 ReticleManager destroyed');
+  // Quiet destroy logs
   }
 }
