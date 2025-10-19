@@ -29,7 +29,14 @@ export class ParticleEffectsService {
   
   // Efectos activos
   private thrusterParticles: ParticleEffect[] = [];
-  private maxThrusterParticles = 6;
+  // Permitir un poco más de partículas por mayor dispersión, manteniendo el throttle a 30 Hz
+  private maxThrusterParticles = 10;
+  // Parámetros de emisión del thruster (radio de la boquilla y jitter de profundidad, en unidades del mundo)
+  private thrusterEmissionRadius = 0.22; // antes parecía puntiforme; ampliar a cubrir toda la "bola" del thruster
+  private thrusterDepthJitter = 0.18;    // pequeña variación hacia atrás (-Z local)
+  // Throttle: update thruster effect at ~30 Hz
+  private thrusterAccum: number = 0;
+  private readonly thrusterStep: number = 1 / 30;
 
   constructor(private webglService: WebGLService) {}
 
@@ -81,44 +88,37 @@ export class ParticleEffectsService {
   public updateThrusterEffect(spaceship: Spaceship, deltaTime: number): void {
     if (!spaceship) return;
 
-    // Calcular intensidad del propulsor
-    const isAccelerating = spaceship.controls.speedUp || spaceship.currentSpeed > 0.1;
-    const speedRatio = spaceship.currentSpeed / spaceship.maxSpeed;
-    const accelerationBonus = spaceship.controls.speedUp ? 0.4 : 0.0;
-    
-    let thrusterIntensity = Math.max(0.0, (speedRatio + accelerationBonus));
-    
-    // Si está acelerando, intensidad mínima
-    if (isAccelerating && thrusterIntensity < 0.3) {
-      thrusterIntensity = 0.3;
-    }
+    this.thrusterAccum += deltaTime;
+    // Procesar en pasos fijos (30 Hz). Si el delta es grande, procesar varios pasos.
+    while (this.thrusterAccum >= this.thrusterStep) {
+      const step = this.thrusterStep;
+      this.thrusterAccum -= step;
 
-    // Limpiar partículas viejas
-    this.thrusterParticles = this.thrusterParticles.filter(particle => particle.life > 0.0);
+      // Calcular intensidad del propulsor
+      const isAccelerating = spaceship.controls.speedUp || spaceship.currentSpeed > 0.1;
+      const speedRatio = spaceship.currentSpeed / spaceship.maxSpeed;
+      const accelerationBonus = spaceship.controls.speedUp ? 0.4 : 0.0;
+      let thrusterIntensity = Math.max(0.0, (speedRatio + accelerationBonus));
+      if (isAccelerating && thrusterIntensity < 0.3) {
+        thrusterIntensity = 0.3;
+      }
 
-    // Crear nuevas partículas si hay propulsión
-    if (thrusterIntensity > 0.0) {
-      this.generateThrusterParticles(spaceship, thrusterIntensity, deltaTime);
-    }
+      // Limpiar partículas viejas
+      this.thrusterParticles = this.thrusterParticles.filter(particle => particle.life > 0.0);
 
-    // Actualizar partículas existentes
-    this.thrusterParticles.forEach(particle => {
-      particle.life -= deltaTime * 3.0; // Las partículas duran ~0.33 segundos
-      particle.size *= 0.99; // Se encogen ligeramente
-      
-      // Fade out del color
-      const fadeMultiplier = Math.max(0.0, particle.life);
-      particle.color.r *= fadeMultiplier;
-      particle.color.g *= fadeMultiplier;
-      particle.color.b *= fadeMultiplier;
-    });
+      // Crear nuevas partículas si hay propulsión
+      if (thrusterIntensity > 0.0) {
+        this.generateThrusterParticles(spaceship, thrusterIntensity, step);
+      }
 
-    // Log ocasional para debugging
-    if (Math.random() < 0.02) {
-      console.log('🔥 Thruster particles:', {
-        intensity: thrusterIntensity.toFixed(2),
-        accelerating: isAccelerating,
-        particleCount: this.thrusterParticles.length
+      // Actualizar partículas existentes
+      this.thrusterParticles.forEach(particle => {
+        particle.life -= step * 3.0; // Las partículas duran ~0.33 segundos
+        particle.size *= 0.99; // Se encogen ligeramente
+        const fadeMultiplier = Math.max(0.0, particle.life);
+        particle.color.r *= fadeMultiplier;
+        particle.color.g *= fadeMultiplier;
+        particle.color.b *= fadeMultiplier;
       });
     }
   }
@@ -130,27 +130,17 @@ export class ParticleEffectsService {
     // Limitar número de partículas
     if (this.thrusterParticles.length >= this.maxThrusterParticles) return;
 
-    // Generar 1-2 partículas por frame cuando hay propulsión alta
-    const particlesToCreate = intensity > 0.5 ? 2 : 1;
+    // Generar 1-3 partículas por paso según intensidad
+    const particlesToCreate = intensity > 0.8 ? 3 : (intensity > 0.4 ? 2 : 1);
 
     for (let i = 0; i < particlesToCreate; i++) {
-      const thrusterPos = this.calculateThrusterPosition(spaceship);
-      
-      // Añadir variación aleatoria
-      // Offset aleatorio más pequeño para mantener partículas cerca del propulsor
-      const randomOffset = {
-        x: (Math.random() - 0.5) * 0.08, // Reducido
-        y: (Math.random() - 0.5) * 0.04, // Reducido 
-        z: (Math.random() - 0.5) * 0.12  // Reducido
-      };
+      // Muestrear dentro de un disco en el plano XY local del thruster y transformar a mundo
+      const worldPos = this.sampleThrusterEmission(spaceship);
 
       const particle: ParticleEffect = {
-        position: {
-          x: thrusterPos.x + randomOffset.x,
-          y: thrusterPos.y + randomOffset.y,
-          z: thrusterPos.z + randomOffset.z
-        },
-        size: 0.05 + intensity * 0.08, // Partículas mucho más pequeñas
+        position: worldPos,
+        // Aumentar tamaño base y escala con intensidad para que se noten más grandes
+        size: 0.12 + intensity * 0.18,
         intensity: intensity,
         color: this.getThrusterColor(intensity, Math.random()),
         life: 1.0 // Vida completa al nacer
@@ -158,6 +148,37 @@ export class ParticleEffectsService {
 
       this.thrusterParticles.push(particle);
     }
+  }
+
+  /**
+   * Muestras una posición de emisión en la "boquilla" del thruster como un disco orientado por la nave.
+   * El plano del disco es el XY local; se añade un pequeño jitter en -Z local para profundidad.
+   */
+  private sampleThrusterEmission(spaceship: Spaceship): { x: number; y: number; z: number } {
+    // Centro local del thruster relativo al centro de la nave
+    const localCenter = vec3.fromValues(0, -0.05, -0.8);
+
+    // Muestreo uniforme en un disco: r = R * sqrt(u), theta = 2*pi*v
+    const u = Math.random();
+    const v = Math.random();
+    const r = this.thrusterEmissionRadius * Math.sqrt(u);
+    const theta = 2 * Math.PI * v;
+    const dx = r * Math.cos(theta);
+    const dy = r * Math.sin(theta);
+    const dz = -this.thrusterDepthJitter * Math.random(); // hacia atrás del thruster
+
+    const localPos = vec3.fromValues(localCenter[0] + dx, localCenter[1] + dy, localCenter[2] + dz);
+
+    // Rotar a espacio mundo con el cuaternión de la nave y trasladar
+    const q = spaceship.getOrientationQuaternion();
+    const worldOffset = vec3.create();
+    vec3.transformQuat(worldOffset, localPos, q);
+
+    return {
+      x: spaceship.position.x + worldOffset[0],
+      y: spaceship.position.y + worldOffset[1],
+      z: spaceship.position.z + worldOffset[2]
+    };
   }
 
   /**

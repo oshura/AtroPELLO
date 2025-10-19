@@ -17,6 +17,7 @@ export class HUDManager {
   private gl: WebGL2RenderingContext;
   private hudTexture: HUDTexture;
   
+  
   // Elementos del HUD
   private velocityBarLeft: VelocityBar;
   private velocityBarRight: VelocityBar;
@@ -56,6 +57,8 @@ export class HUDManager {
     // Crear geometría del plano
     this.createHUDPlaneGeometry();
     console.log('✅ Geometría HUD creada:', !!this.hudGeometry);
+
+    
     
     // DEBUG GLOBAL: Hacer método disponible en consola del navegador
     (window as any).toggleHUDShader = () => this.toggleDebugShader();
@@ -80,6 +83,8 @@ export class HUDManager {
   private forceDebugShader: boolean = false; // DESACTIVADO para probar shader texturizado
   private showDebugCanvas: boolean = false; // Canvas debug se activa con F2
   private showHUDFrame: boolean = true; // Marco y grid permanente para inmersión cockpit
+  // Reduce noisy logs by default unless explicitly debugging
+  private debugHudLogs: boolean = false;
   
   // Sistema de targeting
   private targetingSystem: TargetingSystem;
@@ -259,7 +264,7 @@ export class HUDManager {
    * ENFOQUE SISTEMÁTICO CON DEBUG DETALLADO
    */
   public render(cameraMode: CameraMode, shaderManager: any, viewMatrix: Float32Array, projectionMatrix: Float32Array, cameraPosition?: {x: number, y: number, z: number}): void {
-    console.log('🎯 HUDManager.render called with:', {
+    if (this.debugHudLogs) console.log('🎯 HUDManager.render called with:', {
       cameraMode: cameraMode,
       isCockpit: cameraMode === CameraMode.COCKPIT,
       hasGeometry: !!this.hudGeometry,
@@ -267,23 +272,23 @@ export class HUDManager {
     });
     
     if (cameraMode !== CameraMode.COCKPIT || !this.hudGeometry) {
-      console.log('🚫 HUD render rejected:', {
+      if (this.debugHudLogs) console.log('🚫 HUD render rejected:', {
         wrongMode: cameraMode !== CameraMode.COCKPIT,
         noGeometry: !this.hudGeometry
       });
       return;
     }
 
-    console.log('🎯 === INICIO RENDER HUD ===');
+    if (this.debugHudLogs) console.log('🎯 === INICIO RENDER HUD ===');
     
     // PASO 1: Verificar que la textura Canvas 2D está actualizada
-    this.debugCanvasContent();
+  if (this.showDebugCanvas) this.debugCanvasContent();
     
     // PASO 2: Verificar estado de componentes necesarios
     const hudProgram = shaderManager.hudProgram;
     const webglTexture = this.hudTexture?.getWebGLTexture();
     
-    console.log('🔍 Estado de componentes:', {
+    if (this.debugHudLogs) console.log('🔍 Estado de componentes:', {
       hasHUDProgram: !!hudProgram,
       hasHudTexture: !!this.hudTexture,
       hasWebGLTexture: !!webglTexture,
@@ -295,22 +300,22 @@ export class HUDManager {
     const useHUDShader = hasValidComponents && !this.forceDebugShader;
     
     if (useHUDShader) {
-      console.log('✅ Usando shader HUD');
+  if (this.debugHudLogs) console.log('✅ Usando shader HUD');
       this.gl.useProgram(hudProgram);
       
       // DEBUG CRÍTICO: Verificar el programa shader en detalle
-      this.debugShaderProgram(hudProgram, 'HUD');
+  if (this.debugHudLogs) this.debugShaderProgram(hudProgram, 'HUD');
       
       this.setupHUDRenderingState(shaderManager);
       this.setupHUDMatrices(shaderManager, viewMatrix, projectionMatrix);
     } else {
       const reason = this.forceDebugShader ? 'FORZADO' : 'COMPONENTES FALTANTES';
-      console.log(`⚠️ Usando shader FALLBACK (magenta) - Razón: ${reason}`);
+  if (this.debugHudLogs) console.log(`⚠️ Usando shader FALLBACK (magenta) - Razón: ${reason}`);
       const program = shaderManager.litProgram;
       this.gl.useProgram(program);
       
       // DEBUG: Verificar también el programa fallback
-      this.debugShaderProgram(program, 'FALLBACK');
+  if (this.debugHudLogs) this.debugShaderProgram(program, 'FALLBACK');
       
       this.setupBasicRenderingState(shaderManager);
       this.setupFallbackHUDMatrices(shaderManager, viewMatrix, projectionMatrix);
@@ -332,21 +337,22 @@ export class HUDManager {
     }
     
     // Debug: verificar estado del renderizado
-    const currentProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
-    const activeTexture = this.gl.getParameter(this.gl.ACTIVE_TEXTURE);
-    const boundTexture = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
-    
-    console.log('🔍 Estado HUD debug:', {
-      vertices: this.hudGeometry.vertices.length,
-      indices: this.hudGeometry.indices.length,
-      currentProgram: currentProgram,
-      activeTexture: activeTexture,
-      boundTexture: boundTexture,
-      isValidProgram: this.gl.isProgram(currentProgram),
-      isValidTexture: this.gl.isTexture(boundTexture),
-      cullFace: this.gl.getParameter(this.gl.CULL_FACE),
-      depthTest: this.gl.getParameter(this.gl.DEPTH_TEST)
-    });
+    if (this.debugHudLogs) {
+      const currentProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
+      const activeTexture = this.gl.getParameter(this.gl.ACTIVE_TEXTURE);
+      const boundTexture = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
+      console.log('🔍 Estado HUD debug:', {
+        vertices: this.hudGeometry.vertices.length,
+        indices: this.hudGeometry.indices.length,
+        currentProgram: currentProgram,
+        activeTexture: activeTexture,
+        boundTexture: boundTexture,
+        isValidProgram: this.gl.isProgram(currentProgram),
+        isValidTexture: this.gl.isTexture(boundTexture),
+        cullFace: this.gl.getParameter(this.gl.CULL_FACE),
+        depthTest: this.gl.getParameter(this.gl.DEPTH_TEST)
+      });
+    }
     
     // Desactivar depth test temporalmente para forzar visibilidad
     const depthTestEnabled = this.gl.getParameter(this.gl.DEPTH_TEST);
@@ -364,7 +370,7 @@ export class HUDManager {
     const error = this.gl.getError();
     if (error !== this.gl.NO_ERROR) {
       console.error('❌ Error GL al renderizar HUD:', error);
-    } else {
+    } else if (this.debugHudLogs) {
       console.log('✅ HUD renderizado sin errores GL');
     }
     
@@ -428,7 +434,7 @@ export class HUDManager {
       const margin = 28; // side/top margin
       const x1 = canvas.width - meterW - margin;
       // Place the bar lower on the HUD (increase top offset)
-  const y1 = margin + 56; // move panel further down by 56px
+      const y1 = margin + 56; // move panel further down by 56px
       // fondo
       ctx.save();
       ctx.fillStyle = 'rgba(0,0,0,0.35)';
@@ -494,13 +500,13 @@ export class HUDManager {
     // Always reserve symmetric space on the left side
     {
       const weapons: any[] = (this as any)._weaponsHUD as any[];
-  const meterW = Math.round(280 * 0.75); // same width as energy bar (210px)
-  const meterHBase = 56; // base height matching energy bar
-  const meterH = Math.round(meterHBase * 2.5); // 2.5x vertical size
-  const margin = 28; // side/top margin
-  const xL = margin;
-  // Place with a slightly larger top margin to account for perspective
-  const yL = margin + 24; // lowered slightly for better balance
+      const meterW = Math.round(280 * 0.75); // same width as energy bar (210px)
+      const meterHBase = 56; // base height matching energy bar
+      const meterH = Math.round(meterHBase * 2.5); // 2.5x vertical size
+      const margin = 28; // side/top margin
+      const xL = margin;
+      // Place with a slightly larger top margin to account for perspective
+      const yL = margin + 24; // lowered slightly for better balance
 
       // background
       ctx.save();
@@ -544,19 +550,21 @@ export class HUDManager {
       ctx.restore();
     }
 
-    // === TARGET PANEL ===
-    // Centered and larger (más alto) y un poco más abajo
-    const panelWidth = 840;   // ancho actual
-    const panelHeight = 360;  // más alto que antes (320 → 360)
-    const panelX = centerX - panelWidth / 2;
-    const panelYOffset = 100; // bajar un poco más el panel
-    const panelY = centerY - panelHeight / 2 + panelYOffset;
-    this.targetPanel.render(ctx, panelX, panelY, panelWidth, panelHeight);
+  // === TARGET PANEL ===
+  // Centered and larger (más alto) y un poco más abajo
+  const panelWidth = 840;   // ancho actual
+  const panelHeight = 360;  // más alto que antes (320 → 360)
+  const panelX = centerX - panelWidth / 2;
+  const panelYOffset = 100; // bajar un poco más el panel
+  const panelY = centerY - panelHeight / 2 + panelYOffset;
+  this.targetPanel.render(ctx, panelX, panelY, panelWidth, panelHeight);
 
     // === VELOCITY BARS ===
     // Alinear su base con la base del panel de targets y usar misma altura
-  const barHeight = this.velocityBarLeft.setExternalHeight(panelHeight); // nuevo API: fija altura
-  this.velocityBarRight.setExternalHeight(panelHeight);
+    // === VELOCITY BARS ===
+    // Alinear su base con la base del panel de targets y usar misma altura
+    const barHeight = this.velocityBarLeft.setExternalHeight(panelHeight); // nuevo API: fija altura
+    this.velocityBarRight.setExternalHeight(panelHeight);
     const baseY = panelY + panelHeight - barHeight; // garantizar que toque abajo del panel
     const leftBarPos = {
       x: 50,
@@ -572,6 +580,9 @@ export class HUDManager {
 
     // === SPEEDOMETER DUPLICADO SOBRE CADA BARRA ===
     // Renderizar dos instancias: izquierda y derecha, alineadas con cada barra
+  // Dimensiones conocidas del speedometer digital (ver SpeedometerDigital)
+  // === SPEEDOMETER DUPLICADO SOBRE CADA BARRA ===
+  // Renderizar dos instancias: izquierda y derecha, alineadas con cada barra
   // Dimensiones conocidas del speedometer digital (ver SpeedometerDigital)
   const speedWidth = 120;
   const speedHeight = 40;
@@ -648,16 +659,17 @@ export class HUDManager {
       ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
     }
     
-    console.log('🎨 Canvas 2D renderizado con debug visual');
+  if (this.debugHudLogs) console.log('🎨 Canvas 2D renderizado con debug visual');
     
     // Forzar flush del contexto Canvas 2D
-    ctx.getImageData(0, 0, 1, 1);
+  if (this.debugHudLogs) ctx.getImageData(0, 0, 1, 1);
     
     // Actualizar textura WebGL
     this.hudTexture.updateTexture();
     
-    console.log('📸 Textura WebGL actualizada desde Canvas 2D');
+    if (this.debugHudLogs) console.log('📸 Textura WebGL actualizada desde Canvas 2D');
   }
+
 
   /**
    * Debug: Verifica el contenido del canvas 2D
