@@ -2,6 +2,7 @@ import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { GameState } from './game-state.service';
 import { SpaceshipDebugCollector } from '../debug/spaceship-debug-collector.service';
+import { DebugStatsOverlayService } from '../debug/debug-stats-overlay.service';
 
 export interface UIState {
   canvasSize: { width: number; height: number };
@@ -47,7 +48,8 @@ export class GameUIManager {
 
   constructor(
     @Inject(PLATFORM_ID) private platformId: Object,
-    private debugCollector: SpaceshipDebugCollector
+    private debugCollector: SpaceshipDebugCollector,
+    private statsOverlay: DebugStatsOverlayService
   ) {}
 
   /**
@@ -67,6 +69,13 @@ export class GameUIManager {
     }
 
     this.updateUI();
+  }
+
+  /**
+   * Inicializa overlay de stats con referencia opcional al GameEngine
+   */
+  initializeStatsOverlay(gameEngine?: any): void {
+    this.statsOverlay.initialize(gameEngine);
   }
 
   /**
@@ -326,6 +335,13 @@ export class GameUIManager {
    */
   toggleSpaceshipDebug(): boolean {
     return this.debugCollector.toggleDebugOverlay();
+  }
+
+  /**
+   * Toggle del overlay de estadísticas (panel 'ñ')
+   */
+  toggleStatsOverlay(): boolean {
+    return this.statsOverlay.toggle();
   }
 
   /**

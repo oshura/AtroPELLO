@@ -1,4 +1,8 @@
 import { WebGLService } from '../services/webgl.service';
+import { InstancedLitShaderService } from './shaders/InstancedLitShaderService';
+import { HudShaderService } from './shaders/HudShaderService';
+import { ReticleShaderService } from './shaders/ReticleShaderService';
+import { OutlineShaderService } from './shaders/OutlineShaderService';
 
 /**
  * Shader programs para renderizado 3D
@@ -10,9 +14,12 @@ export class ShaderManager {
   public basicProgram: WebGLProgram | null = null;
   public litProgram: WebGLProgram | null = null;
   public texturedProgram: WebGLProgram | null = null;
-  public hudProgram: WebGLProgram | null = null;
-  public reticleProgram: WebGLProgram | null = null;
-  public outlineProgram: WebGLProgram | null = null;
+  // Modular services own these programs, we expose getters for back-compat
+  private hudSvc: HudShaderService | null = null;
+  private reticleSvc: ReticleShaderService | null = null;
+  private outlineSvc: OutlineShaderService | null = null;
+  // Instanced-lit handled by a dedicated service
+  private instancedLitSvc: InstancedLitShaderService | null = null;
   
   // Ubicaciones de uniformes para el programa básico
   public basicUniforms: { [key: string]: WebGLUniformLocation | null } = {};
@@ -39,6 +46,7 @@ export class ShaderManager {
   public hudAttributes: { [key: string]: number } = {};
   public reticleAttributes: { [key: string]: number } = {};
   public outlineAttributes: { [key: string]: number } = {};
+  // Attributes for instanced-lit are exposed via helper getters
 
   constructor(private webglService: WebGLService) {
     const context = webglService.getContext();
@@ -72,25 +80,14 @@ export class ShaderManager {
       this.getTexturedFragmentShader()
     );
 
-    // Crear programa HUD (texturas simples 2D)
-    console.log('🎯 Creando programa shader HUD...');
-    this.hudProgram = this.createProgram(
-      this.getHUDVertexShader(),
-      this.getHUDFragmentShader()
-    );
-    console.log('✅ Programa HUD creado:', !!this.hudProgram);
+    // Servicios modulares
+    this.hudSvc = new HudShaderService(this.webglService); this.hudSvc.initialize();
+    this.reticleSvc = new ReticleShaderService(this.webglService); this.reticleSvc.initialize();
+    this.outlineSvc = new OutlineShaderService(this.webglService); this.outlineSvc.initialize();
 
-    // Crear programa retícula (geometría sólida 2D)
-    this.reticleProgram = this.createProgram(
-      this.getReticleVertexShader(),
-      this.getReticleFragmentShader()
-    );
-
-    // Crear programa outline (post-procesamiento)
-    this.outlineProgram = this.createProgram(
-      this.getOutlineVertexShader(),
-      this.getOutlineFragmentShader()
-    );
+    // Inicializar servicio de instanced-lit
+    this.instancedLitSvc = new InstancedLitShaderService(this.webglService);
+    this.instancedLitSvc.initialize();
 
     // Obtener ubicaciones de uniformes y atributos
     if (this.basicProgram) {
@@ -105,17 +102,11 @@ export class ShaderManager {
       this.getTexturedProgramLocations();
     }
 
-    if (this.hudProgram) {
-      this.getHUDProgramLocations();
-    }
+    if (this.hudProgram) this.getHUDProgramLocations();
+    if (this.reticleProgram) this.getReticleProgramLocations();
+    if (this.outlineProgram) this.getOutlineProgramLocations();
 
-    if (this.reticleProgram) {
-      this.getReticleProgramLocations();
-    }
-
-    if (this.outlineProgram) {
-      this.getOutlineProgramLocations();
-    }
+    // Locations for instanced program are held inside the service
   }
 
   /**
@@ -214,6 +205,8 @@ export class ShaderManager {
       v_lightDirection = u_lightDirection;
     }`;
   }
+
+  // Instanced-lit shaders are supplied by the service; no embedded sources here
 
   /**
    * Fragment shader con iluminación
@@ -353,6 +346,14 @@ export class ShaderManager {
       fragColor = vec4(finalColor, 1.0);
     }`;
   }
+
+  // Adapter API expected by InstancedAsteroidRenderer
+  public get instancedLitProgram(): WebGLProgram | null { return this.instancedLitSvc?.program ?? null; }
+  public get instancedLitAttributes(): { [key: string]: number } { return this.instancedLitSvc?.attributes ?? {}; }
+  public useInstancedLitProgram(): void { this.instancedLitSvc?.useProgram(); }
+  public setInstancedMatrices(viewMatrix: Float32Array, projectionMatrix: Float32Array): void { this.instancedLitSvc?.setMatrices(viewMatrix, projectionMatrix); }
+  public setInstancedLighting(lightDirection: Float32Array, lightColor: Float32Array, ambientColor: Float32Array, ambientStrength: number): void { this.instancedLitSvc?.setLighting(lightDirection, lightColor, ambientColor, ambientStrength); }
+  public setInstancedBaseColor(color: Float32Array): void { this.instancedLitSvc?.setBaseColor(color); }
 
   /**
    * Crea un programa de shader
@@ -612,7 +613,7 @@ export class ShaderManager {
    * Verifica si los shaders están listos
    */
   public isReady(): boolean {
-    return this.basicProgram !== null && this.litProgram !== null && this.texturedProgram !== null && this.hudProgram !== null;
+    return this.basicProgram !== null && this.litProgram !== null && this.texturedProgram !== null && !!this.hudProgram;
   }
 
   /**
@@ -636,66 +637,10 @@ export class ShaderManager {
       this.texturedProgram = null;
     }
 
-    if (this.hudProgram) {
-      this.gl.deleteProgram(this.hudProgram);
-      this.hudProgram = null;
-    }
-  }
-
-  /**
-   * Vertex shader para HUD (texturas 2D simples)
-   */
-  private getHUDVertexShader(): string {
-    return `#version 300 es
-    precision highp float;
-
-    // Atributos de entrada
-    in vec3 a_position;
-    in vec2 a_uv;
-
-    // Uniformes de matrices
-    uniform mat4 u_modelMatrix;
-    uniform mat4 u_viewMatrix;
-    uniform mat4 u_projectionMatrix;
-
-    // Salidas al fragment shader
-    out vec2 v_uv;
-
-    void main() {
-      // Coordenadas UV directas sin transformación
-      v_uv = a_uv;
-      
-      // Transformación de posición completa
-      vec4 worldPos = u_modelMatrix * vec4(a_position, 1.0);
-      vec4 viewPos = u_viewMatrix * worldPos;
-      gl_Position = u_projectionMatrix * viewPos;
-    }`;
-  }
-
-  /**
-   * Fragment shader para HUD (texturas 2D simples)
-   */
-  private getHUDFragmentShader(): string {
-    return `#version 300 es
-    precision highp float;
-
-    // Entradas del vertex shader
-    in vec2 v_uv;
-
-    // Uniformes
-    uniform sampler2D u_texture;
-    uniform float u_opacity;
-
-    // Salida
-    out vec4 fragColor;
-
-    void main() {
-      // Muestrear la textura directamente
-      vec4 textureColor = texture(u_texture, v_uv);
-      
-      // Aplicar opacidad
-      fragColor = vec4(textureColor.rgb, textureColor.a * u_opacity);
-    }`;
+    // Modular services cleanup
+    this.hudSvc?.cleanup(); this.hudSvc = null;
+    this.reticleSvc?.cleanup(); this.reticleSvc = null;
+    this.outlineSvc?.cleanup(); this.outlineSvc = null;
   }
 
   /**
@@ -724,49 +669,6 @@ export class ShaderManager {
   }
 
   /**
-   * Vertex shader para retícula (geometría sólida 2D)
-   */
-  private getReticleVertexShader(): string {
-    return `#version 300 es
-    precision highp float;
-
-    // Atributos de entrada
-    in vec3 a_position;
-
-    // Uniformes de matrices
-    uniform mat4 u_modelMatrix;
-    uniform mat4 u_viewMatrix;
-    uniform mat4 u_projectionMatrix;
-
-    void main() {
-      // Transformación de posición completa
-      vec4 worldPos = u_modelMatrix * vec4(a_position, 1.0);
-      vec4 viewPos = u_viewMatrix * worldPos;
-      gl_Position = u_projectionMatrix * viewPos;
-    }`;
-  }
-
-  /**
-   * Fragment shader para retícula (color sólido)
-   */
-  private getReticleFragmentShader(): string {
-    return `#version 300 es
-    precision highp float;
-
-    // Uniformes
-    uniform vec4 u_color;
-    uniform float u_opacity;
-
-    // Salida
-    out vec4 fragColor;
-
-    void main() {
-      // Color sólido con opacidad
-      fragColor = vec4(u_color.rgb, u_color.a * u_opacity);
-    }`;
-  }
-
-  /**
    * Obtener ubicaciones de uniformes y atributos para programa retícula
    */
   private getReticleProgramLocations(): void {
@@ -791,86 +693,6 @@ export class ShaderManager {
   }
 
   /**
-   * Vertex shader para outline post-procesamiento
-   */
-  private getOutlineVertexShader(): string {
-    return `#version 300 es
-      precision highp float;
-      
-      layout(location = 0) in vec2 a_position;
-      layout(location = 1) in vec2 a_uv;
-      
-      out vec2 v_uv;
-      
-      void main() {
-        v_uv = a_uv;
-        gl_Position = vec4(a_position, 0.0, 1.0);
-      }
-    `;
-  }
-
-  /**
-   * Fragment shader para outline post-procesamiento
-   */
-  private getOutlineFragmentShader(): string {
-    return `#version 300 es
-      precision highp float;
-      
-      in vec2 v_uv;
-      out vec4 fragColor;
-      
-      uniform sampler2D u_colorTexture;
-      uniform vec2 u_resolution;
-      uniform float u_time;
-      
-      // Configuración del outline
-      const float OUTLINE_THICKNESS = 2.0;
-      const vec3 OUTLINE_COLOR = vec3(0.0, 1.0, 1.0); // Cyan
-      const float GLOW_INTENSITY = 0.8;
-      
-      void main() {
-        vec2 texelSize = 1.0 / u_resolution;
-        vec4 centerColor = texture(u_colorTexture, v_uv);
-        
-        // Si ya hay color, renderizar normalmente
-        if (centerColor.a > 0.0) {
-          fragColor = centerColor;
-          return;
-        }
-        
-        // Detectar bordes usando kernel de convolucion
-        float outline = 0.0;
-        
-        // Sampling en cruz y diagonal
-        for (float x = -OUTLINE_THICKNESS; x <= OUTLINE_THICKNESS; x++) {
-          for (float y = -OUTLINE_THICKNESS; y <= OUTLINE_THICKNESS; y++) {
-            vec2 offset = vec2(x, y) * texelSize;
-            float alpha = texture(u_colorTexture, v_uv + offset).a;
-            
-            // Distancia desde el centro
-            float distance = length(vec2(x, y));
-            if (distance <= OUTLINE_THICKNESS && alpha > 0.0) {
-              outline = max(outline, 1.0 - distance / OUTLINE_THICKNESS);
-            }
-          }
-        }
-        
-        if (outline > 0.0) {
-          // Efecto de pulso
-          float pulse = 0.5 + 0.5 * sin(u_time * 4.0);
-          float intensity = GLOW_INTENSITY * outline * pulse;
-          
-          // Color del outline con efecto de glow
-          vec3 glowColor = OUTLINE_COLOR * intensity;
-          fragColor = vec4(glowColor, outline * 0.8);
-        } else {
-          fragColor = vec4(0.0, 0.0, 0.0, 0.0);
-        }
-      }
-    `;
-  }
-
-  /**
    * Obtener ubicaciones de uniformes y atributos para programa outline
    */
   private getOutlineProgramLocations(): void {
@@ -881,13 +703,20 @@ export class ShaderManager {
     this.outlineAttributes['uv'] = this.gl.getAttribLocation(this.outlineProgram, 'a_uv');
 
     // Uniformes
-    this.outlineUniforms['colorTexture'] = this.gl.getUniformLocation(this.outlineProgram, 'u_colorTexture');
-    this.outlineUniforms['resolution'] = this.gl.getUniformLocation(this.outlineProgram, 'u_resolution');
-    this.outlineUniforms['time'] = this.gl.getUniformLocation(this.outlineProgram, 'u_time');
+  this.outlineUniforms['colorTexture'] = this.gl.getUniformLocation(this.outlineProgram, 'u_colorTexture');
+  this.outlineUniforms['resolution'] = this.gl.getUniformLocation(this.outlineProgram, 'u_resolution');
+  this.outlineUniforms['time'] = this.gl.getUniformLocation(this.outlineProgram, 'u_time');
+  // Symmetry: expose outline color uniform too
+  this.outlineUniforms['outlineColor'] = this.gl.getUniformLocation(this.outlineProgram, 'u_outlineColor');
 
     console.log('🟡 Shader Outline inicializado:', {
       attributes: Object.keys(this.outlineAttributes).length,
       uniforms: Object.keys(this.outlineUniforms).length
     });
   }
+
+  // Back-compat getters to keep existing consumers working
+  public get hudProgram(): WebGLProgram | null { return this.hudSvc?.program ?? null; }
+  public get reticleProgram(): WebGLProgram | null { return this.reticleSvc?.program ?? null; }
+  public get outlineProgram(): WebGLProgram | null { return this.outlineSvc?.program ?? null; }
 }

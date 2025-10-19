@@ -17,6 +17,7 @@ import { TargetType, ITargetable } from './types/targeting.types';
 import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
 import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
+import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -63,6 +64,9 @@ export class GameEngine {
   // Debug: track potential attribute collisions/state
   private onceLoggedAttribCollision: boolean = false;
   private lastNormalAttribEnabled: boolean | null = null;
+  // Feature flag: toggle instanced rendering for asteroids
+  private readonly USE_INSTANCING = true;
+  private instancedRenderer: InstancedAsteroidRenderer | null = null;
 
   constructor(
     private webglService: WebGLService,
@@ -123,6 +127,11 @@ export class GameEngine {
       const canvas = canvasRef.nativeElement;
       const aspect = canvas.width / canvas.height;
       this.camera = new Camera(aspect);
+
+      // Instanced renderer setup (optional)
+      if (this.USE_INSTANCING) {
+        this.instancedRenderer = new InstancedAsteroidRenderer(this.gl, this.shaderManager);
+      }
 
       // Inicializar sistema de retícula con renderizado (FASE 2)
       const reticleInit = await this.reticleManager.initialize(this.camera, this.shaderManager);
@@ -669,13 +678,40 @@ export class GameEngine {
     this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4])); // Color gris-marrón rocoso
 
     // Renderizar objetos de clusters o proxy según LOD
-    this.asteroidClusterService.getClusters().forEach(c => {
-      if (c.lodMode === 'proxy') {
-        if (c.proxy) this.renderObject(c.proxy);
-      } else {
-        c.objects.forEach(o => this.renderObject(o));
-      }
-    });
+    if (this.USE_INSTANCING && this.instancedRenderer) {
+      // Gather batches
+      const smalls: GameObject[] = [];
+      const supers: GameObject[] = [];
+      this.asteroidClusterService.getClusters().forEach(c => {
+        if (c.lodMode === 'proxy') {
+          if (c.proxy) this.renderObject(c.proxy); // proxy rendered normally
+        } else {
+          for (const o of c.objects) {
+            if ((o as any) instanceof SuperAsteroid) supers.push(o);
+            else smalls.push(o);
+          }
+        }
+      });
+      this.instancedRenderer.renderBatches(
+        smalls,
+        supers,
+        this.camera.viewMatrix,
+        this.camera.projectionMatrix,
+        this.lightDirection,
+        this.lightColor,
+        this.ambientColor,
+        this.ambientStrength,
+        new Float32Array([0.6, 0.5, 0.4])
+      );
+    } else {
+      this.asteroidClusterService.getClusters().forEach(c => {
+        if (c.lodMode === 'proxy') {
+          if (c.proxy) this.renderObject(c.proxy);
+        } else {
+          c.objects.forEach(o => this.renderObject(o));
+        }
+      });
+    }
 
     // Renderizar outlines avanzados (FASE 4)
     this.renderOutlineSystem();

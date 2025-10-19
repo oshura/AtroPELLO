@@ -94,6 +94,8 @@ export class Game implements AfterViewInit, OnDestroy {
           this.inputHandler.setGameEngine(gameEngine);
           this.inputHandler.setInputEnabled(true);
           this.uiManager.initializeDebugCollector(gameEngine);
+          // Also initialize the stats overlay with engine for richer data
+          this.uiManager.initializeStatsOverlay(gameEngine);
         }
 
         // Configurar listeners de estado
@@ -146,6 +148,14 @@ export class Game implements AfterViewInit, OnDestroy {
 
     if (event.key === 'F1') {
       this.toggleDebugOverlay();
+      event.preventDefault();
+      return;
+    }
+
+    // Toggle stats overlay with 'ñ' (Spanish keyboard)
+    if (event.key === 'ñ') {
+      const visible = this.uiManager.toggleStatsOverlay();
+      console.log(visible ? '📊 Stats overlay (ñ) shown' : '📊 Stats overlay (ñ) hidden');
       event.preventDefault();
       return;
     }

@@ -120,8 +120,7 @@ export class OutlineRenderer {
         return false;
       }
 
-      // Crear shaders específicos para outlines
-      this.createOutlineShaders();
+  // Outline post-process shader is now owned by OutlineShaderService via ShaderManager
 
   // Crear shader de primera pasada dedicado (solo posición + matrices)
   this.createFirstPassShader();
@@ -261,7 +260,7 @@ export class OutlineRenderer {
     this.gl.viewport(0, 0, this.canvasWidth, this.canvasHeight);
 
     // Usar shader de post-procesamiento
-    const outlineProgram = (this.shaderManager as any)?.outlineProgram;
+  const outlineProgram = this.shaderManager?.outlineProgram as WebGLProgram | null;
     if (!outlineProgram) return;
 
     this.gl.useProgram(outlineProgram);
@@ -1065,18 +1064,7 @@ export class OutlineRenderer {
     this.gl.bindVertexArray(null);
   }
 
-  /**
-   * Crea los shaders específicos para outlines
-   */
-  private createOutlineShaders(): void {
-    if (!this.gl || !this.shaderManager) return;
-
-    // Shader para post-procesamiento de outlines
-    const outlineProgram = this.createOutlinePostProcessShader();
-    if (outlineProgram) {
-      (this.shaderManager as any).outlineProgram = outlineProgram;
-    }
-  }
+  // Outline shaders are provided by OutlineShaderService; no creation here
 
   /**
    * Crea un shader simple para la primera pasada (solo posición + matrices, color constante)
@@ -1114,64 +1102,7 @@ export class OutlineRenderer {
     this.firstPassUniforms.projectionMatrix = this.gl.getUniformLocation(program, 'u_projectionMatrix');
   }
 
-  /**
-   * Crea el shader de post-procesamiento para outlines
-   */
-  private createOutlinePostProcessShader(): WebGLProgram | null {
-    if (!this.gl) return null;
-
-    const vertexShader = `#version 300 es
-      precision highp float;
-      
-      layout(location = 0) in vec2 a_position;
-      layout(location = 1) in vec2 a_uv;
-      
-      out vec2 v_uv;
-      
-      void main() {
-        v_uv = a_uv;
-        gl_Position = vec4(a_position, 0.0, 1.0);
-      }
-    `;
-
-    const fragmentShader = `#version 300 es
-      precision highp float;
-      
-      in vec2 v_uv;
-      out vec4 fragColor;
-      
-      uniform sampler2D u_colorTexture;
-      uniform vec2 u_resolution;
-  uniform float u_time;
-  uniform vec4 u_outlineColor;
-      
-      void main() {
-        vec2 texel = 1.0 / u_resolution;
-        float aC = texture(u_colorTexture, v_uv).a;
-        // 4-neighborhood sampling
-        float aL = texture(u_colorTexture, v_uv + vec2(-texel.x, 0.0)).a;
-        float aR = texture(u_colorTexture, v_uv + vec2( texel.x, 0.0)).a;
-        float aT = texture(u_colorTexture, v_uv + vec2(0.0,  texel.y)).a;
-        float aB = texture(u_colorTexture, v_uv + vec2(0.0, -texel.y)).a;
-        
-        // Edge if alpha changes between center and any neighbor
-        float edge = 0.0;
-        edge += float(aC != aL);
-        edge += float(aC != aR);
-        edge += float(aC != aT);
-        edge += float(aC != aB);
-        edge = clamp(edge, 0.0, 1.0);
-        
-        if (edge > 0.0) {
-          fragColor = u_outlineColor; // thin, 1px outline, color parametrizable
-        } else {
-          fragColor = vec4(0.0);
-        }
-      }
-    `;
-
-    return this.compileShaderProgram(vertexShader, fragmentShader);
-  }
+  // Removed: createOutlinePostProcessShader (outline program now comes from OutlineShaderService via ShaderManager)
 
   /**
    * Compila un programa de shader
