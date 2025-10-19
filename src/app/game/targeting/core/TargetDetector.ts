@@ -23,6 +23,8 @@ export class TargetDetector implements ITargetDetector {
   private canvas: HTMLCanvasElement | null = null;
   private availableTargets: ITargetable[] = [];
   private config: TargetingSystemConfig['detection'];
+  // Debug logging flag (disable in production for performance)
+  private debugLogs: boolean = false;
   
   // === Constantes de tolerancia adaptativa (configurables) ===
   private readonly TOL_NEAR_MAX_PX = 30;   // tolerancia máxima cerca
@@ -97,8 +99,8 @@ export class TargetDetector implements ITargetDetector {
       return null;
     }
 
-    // Debug FORZADO para verificar funcionamiento  
-    const shouldDebug = true; // SIEMPRE debug hasta que funcione
+  // Debug controlado (deshabilitado por defecto por rendimiento)
+  const shouldDebug = this.debugLogs;
     
     if (shouldDebug) {
       console.log('🔍 TargetDetector.detectTargetAt() INICIO:', {

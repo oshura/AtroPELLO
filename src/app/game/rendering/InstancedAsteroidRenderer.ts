@@ -55,6 +55,12 @@ export class InstancedAsteroidRenderer {
     this.shaderManager = shaderManager;
   }
 
+  // Scratch buffers to avoid per-frame allocations when uploading instance matrices
+  private scratch = {
+    asteroid: { col0: new Float32Array(0), col1: new Float32Array(0), col2: new Float32Array(0), col3: new Float32Array(0), count: 0 },
+    super: { col0: new Float32Array(0), col1: new Float32Array(0), col2: new Float32Array(0), col3: new Float32Array(0), count: 0 },
+  };
+
   /** Ensure a base model exists from the first object of the list */
   private ensureModelFrom(list: GameObject[], kind: 'asteroid' | 'super'): void {
     if (this.model[kind].ready) return;
@@ -115,11 +121,16 @@ export class InstancedAsteroidRenderer {
   private uploadInstanceMatrices(kind: 'asteroid' | 'super', objects: GameObject[]): void {
     // objects[i].modelMatrix is Float32Array length 16, column-major
     const count = objects.length;
-    // Prepare column arrays
-    const col0 = new Float32Array(count * 4);
-    const col1 = new Float32Array(count * 4);
-    const col2 = new Float32Array(count * 4);
-    const col3 = new Float32Array(count * 4);
+    // Prepare or grow scratch column arrays
+    const sc = this.scratch[kind];
+    if (sc.count < count) {
+      sc.col0 = new Float32Array(count * 4);
+      sc.col1 = new Float32Array(count * 4);
+      sc.col2 = new Float32Array(count * 4);
+      sc.col3 = new Float32Array(count * 4);
+      sc.count = count;
+    }
+    const col0 = sc.col0; const col1 = sc.col1; const col2 = sc.col2; const col3 = sc.col3;
     for (let i = 0; i < count; i++) {
       const m = objects[i].modelMatrix;
       // Column-major: indices 0..3, 4..7, 8..11, 12..15
@@ -128,7 +139,7 @@ export class InstancedAsteroidRenderer {
       col2.set(m.subarray(8, 12), i * 4);
       col3.set(m.subarray(12, 16), i * 4);
     }
-    const inst = this.instance[kind];
+  const inst = this.instance[kind];
     // Upload
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.buffer0!);
     this.gl.bufferSubData(this.gl.ARRAY_BUFFER, 0, col0);

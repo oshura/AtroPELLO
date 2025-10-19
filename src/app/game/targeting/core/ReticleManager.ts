@@ -43,6 +43,9 @@ export class ReticleManager {
   
   private isInitialized: boolean = false;
   private lastUpdateTime: number = 0;
+  // Throttle para detección (ms)
+  private detectIntervalMs: number = 50; // ~20Hz detección de mouse-target
+  private lastDetectTime: number = 0;
   
   // Tracking de velocidad del mouse para retícula dinámica
   private lastMousePosition: ScreenPosition = { x: 0, y: 0 };
@@ -274,7 +277,13 @@ export class ReticleManager {
    * Detecta targets bajo la posición actual
    */
   private updateTargetDetection(): void {
-    console.log('🔍 updateTargetDetection() EJECUTADO - mousePos:', this.state.mousePosition);
+    const now = performance.now();
+    // Throttle detección para aliviar carga con muchos targets
+    if (now - this.lastDetectTime < this.detectIntervalMs) {
+      return;
+    }
+    this.lastDetectTime = now;
+    // console.log('🔍 updateTargetDetection() - throttled - mousePos:', this.state.mousePosition);
     // Radio de detección inversamente proporcional al tamaño de la retícula
     // Objetivo UX: cuando la retícula es pequeña (mouse quieto), el radio de acierto es grande.
     // Cuando la retícula es grande (mouse rápido), el radio se reduce.
