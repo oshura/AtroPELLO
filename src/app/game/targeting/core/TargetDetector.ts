@@ -205,32 +205,50 @@ export class TargetDetector implements ITargetDetector {
    */
   private getAdaptiveTolerancePx(target: ITargetable, maxTolParamPx: number): number {
     const dims = this.getCanvasCssDimensions();
-  const radiusWorld = (target as any).radius ?? this.DEFAULT_TARGET_RADIUS;
+    const anyT: any = target as any;
+    // 1) Determinar radio en mundo: preferir boundingSphere si existe, luego propiedad radius, si no default
+    let radiusWorld = Number(anyT.radius);
+    if (!(isFinite(radiusWorld) && radiusWorld > 0)) {
+      if (anyT.boundingSphere && typeof anyT.boundingSphere.radius === 'number') {
+        radiusWorld = Number(anyT.boundingSphere.radius);
+      } else {
+        radiusWorld = this.DEFAULT_TARGET_RADIUS;
+      }
+    }
+
     const distance = this.getWorldDistance(target.position);
-  let pixelRadius = this.estimateOnScreenPixelRadius(target, radiusWorld, dims);
+    let pixelRadius = this.estimateOnScreenPixelRadius(target, radiusWorld, dims);
 
-  // Factor por tamaño relativo (respecto a DEFAULT_TARGET_RADIUS)
-  const sizeRatio = Math.max(0.1, radiusWorld / this.DEFAULT_TARGET_RADIUS);
-  const sizeBoost = 1 + this.TOL_SIZE_GAIN_UNIFIED * Math.max(0, sizeRatio - 1);
-  pixelRadius *= sizeBoost;
+    // 2) Factores por tamaño relativo
+    const sizeRatio = Math.max(0.1, radiusWorld / this.DEFAULT_TARGET_RADIUS);
+    const sizeBoost = 1 + this.TOL_SIZE_GAIN_UNIFIED * Math.max(0, sizeRatio - 1);
+    pixelRadius *= sizeBoost;
 
-    // Baseline por distancia con referencia cercana escalada por tamaño.
-    // Objetivo: ~30px a ~7u para pequeños; ~30px a ~40u para super (ratio~6)
+    // 3) Factores específicos por tipo (super_asteroid):
+    const tType = typeof anyT.getTargetType === 'function' ? String(anyT.getTargetType()) : '';
+  const isSuper = tType === 'super_asteroid';
+  const typeTolBoost = isSuper ? 2.0 : 1.0;         // ampliar aún más el área de acierto (~x2)
+  const farRefFactor = isSuper ? 2.2 : 1.0;         // decaimiento aún más lento con la distancia
+  const maxParamBoost = isSuper ? 2.0 : 1.0;        // permitir mayor tope que el radio base pasado
+  const dynCapBoost = isSuper ? 1.8 : 1.0;          // techo dinámico más alto
+  const additivePxCushion = isSuper ? 12 : 0;       // colchón aditivo en píxeles
+
+    // 4) Baseline por distancia con referencia cercana escalada por tamaño y farRef ampliado para supers
     const nearRef = this.TOL_NEAR_REF_U * sizeRatio;
-    const denom = Math.max(1e-3, this.TOL_FAR_REF_U - nearRef);
+    const farRef = this.TOL_FAR_REF_U * farRefFactor;
+    const denom = Math.max(1e-3, farRef - nearRef);
     const t = Math.max(0, Math.min(1, (distance - nearRef) / denom));
     const baseline = this.TOL_NEAR_MAX_PX - (this.TOL_NEAR_MAX_PX - this.TOL_FAR_MIN_PX) * t;
 
-    // Combinar: usar el más permisivo entre radio proyectado y baseline
-    const desired = Math.max(pixelRadius, baseline);
+    // 5) Combinar: usar el más permisivo y aplicar boost por tipo
+  const desired = (Math.max(pixelRadius, baseline) * typeTolBoost) + additivePxCushion;
 
-  // Techo dinámico decreciente con la distancia (y escalado por tipo). Sin efecto cerca, más estricto lejos.
-  const baseDynamicMax = this.TOL_NEAR_MAX_PX - (this.TOL_NEAR_MAX_PX - this.TOL_FAR_MIN_PX) * t; // mismo 't' usado en baseline
-    // Cap dinámico base por distancia (sin distinciones por tipo)
-    const typeDynamicMax = baseDynamicMax;
+    // 6) Techo dinámico con boost por tipo
+    const baseDynamicMax = this.TOL_NEAR_MAX_PX - (this.TOL_NEAR_MAX_PX - this.TOL_FAR_MIN_PX) * t; // mismo 't'
+    const typeDynamicMax = baseDynamicMax * dynCapBoost;
 
-    // Capear por techo dinámico y por el radio pasado por el caller
-    const capped = Math.min(desired, typeDynamicMax, maxTolParamPx);
+    // 7) Capear por techo dinámico y por el radio pasado por el caller (aumentado para supers)
+    const capped = Math.min(desired, typeDynamicMax, maxTolParamPx * maxParamBoost);
     return Math.max(this.TOL_MIN_ABS_PX, capped);
   }
 
