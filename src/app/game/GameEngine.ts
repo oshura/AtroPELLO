@@ -224,11 +224,11 @@ export class GameEngine {
       indices: this.spaceship.indices.length
     });
     
-    // Crear varios clusters asteroidales en una cuadrícula 5x10 (50 total)
+    // Crear varios clusters asteroidales en una cuadrícula 10x10 (100 total)
     // - 10 por línea alineados a lo largo de baseDir (50u de separación)
-    // - 5 líneas paralelas separadas 50u en una dirección perpendicular a baseDir
-  const CLUSTER_ROWS = 5; // líneas
-  const CLUSTER_COLS = 5; // por línea
+    // - 10 líneas paralelas separadas 50u en una dirección perpendicular a baseDir
+  const CLUSTER_ROWS = 5 ; // líneas
+  const CLUSTER_COLS = 10; // por línea
     const CLUSTER_SPACING_ALONG = 50; // separación a lo largo del vector base
     const CLUSTER_ROW_SPACING = 50; // separación entre líneas (perpendicular)
     const CLUSTER_SPEED = 1.5; // misma velocidad para todos
