@@ -39,7 +39,8 @@ export class AsteroidClusterService {
   constructor(private factory: AsteroidFactoryService) {}
 
   createCluster(cfg: AsteroidClusterConfig): AsteroidClusterInstance {
-    const radius = cfg.radius ?? 10;
+    // Duplicar la dispersión respecto al valor actual
+    const radius = (cfg.radius ?? 10) * 2;
     const centerSpeedFactor = cfg.centerSpeedFactor ?? 0.5; // centro se mueve a mitad de la velocidad
 
   const objs: (Asteroid | SuperAsteroid)[] = [];
@@ -217,7 +218,8 @@ export class AsteroidClusterService {
     // Borrar proxy (modelo de clúster)
   cluster.proxy = undefined;
     // Reposicionar miembros alrededor del centro y reactivar
-    const radius = cluster.config.radius ?? 10;
+    // Mantener la dispersión duplicada al regenerar miembros
+    const radius = (cluster.config.radius ?? 10) * 2;
     for (const obj of cluster.objects) {
       const pos = this.randomAround(cluster.center, radius);
       obj.position = pos;

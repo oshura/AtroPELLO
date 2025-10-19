@@ -13,7 +13,8 @@ export class AsteroidFactoryService {
     speed: number,
     opts?: { size?: number; massTons?: number; rotationScale?: number; composition?: string }
   ): Asteroid {
-    const size = opts?.size ?? (0.5 + Math.random() * 1.5);
+  // Duplicar el tamaño base de los asteroides
+  const size = (opts?.size ?? (0.5 + Math.random() * 1.5)) * 2;
   const a = new Asteroid(id, position, size, { ...direction });
     // Dirección/velocidad del cluster
     a.direction = { ...direction };
@@ -46,7 +47,8 @@ export class AsteroidFactoryService {
     speed: number,
     opts?: { baseSize?: number; sizeMultiplierRange?: [number, number]; massMultiplierRange?: [number, number]; rotationScale?: number; composition?: string }
   ): SuperAsteroid {
-  const baseSize = opts?.baseSize ?? (0.5 + Math.random() * 1.5);
+  // Duplicar el tamaño base del superasteroide antes de aplicar multiplicador
+  const baseSize = (opts?.baseSize ?? (0.5 + Math.random() * 1.5)) * 2;
   const [minMul, maxMul] = opts?.sizeMultiplierRange ?? [4, 6];
     const sizeMul = minMul + Math.random() * (maxMul - minMul);
   const sa = new SuperAsteroid(id, position, baseSize * sizeMul, { ...direction });
