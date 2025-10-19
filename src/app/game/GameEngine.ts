@@ -398,7 +398,7 @@ export class GameEngine {
   // Actualizar clusters: mueven su centro y sincronizan física común
   this.asteroidClusterService.updateClusters(deltaTime);
   // LOD por distancia con histéresis: toProxy=600u, toFull=550u, dwell=0.4s
-  const lodChanged = this.asteroidClusterService.updateLOD(this.spaceship.position, deltaTime, { toProxy: 600, toFull: 550, dwell: 0.4 });
+  const lodChanged = this.asteroidClusterService.updateLOD(this.spaceship.position, deltaTime, { toProxy: 600, toFull: 550, dwell: 0.4, cooldown: 1.2 });
   if (lodChanged && this.gl) {
     // Re-crear buffers para objetos nuevos (y liberar proxies antiguos)
     this.asteroidClusterService.getClusters().forEach(c => {
@@ -435,6 +435,9 @@ export class GameEngine {
           .getClusters()
           .find(c => c.objects.some(o => o.id === current.id));
         if (owner && owner.lodMode === 'proxy' && owner.proxy) {
+          // Persistir el miembro seleccionado para restaurar al expandir
+          owner.lastSelectedMemberId = current.id;
+          owner.freezeBySelection = true; // evitar flip inmediato que vuelva a mover selección
           this.reticleManager.selectTarget(owner.proxy as unknown as ITargetable);
         }
       } else {
@@ -443,8 +446,11 @@ export class GameEngine {
           .getClusters()
           .find(c => c.proxy && c.proxy.id === current.id);
         if (owner && owner.lodMode === 'full') {
-          const first = owner.objects?.[0];
-          if (first) this.reticleManager.selectTarget(first as unknown as ITargetable);
+          // Si hay un miembro previamente seleccionado, restaurarlo; si no, usar el primero
+          const preferredId = owner.lastSelectedMemberId;
+          const next = preferredId ? owner.objects.find(o => o.id === preferredId) : owner.objects?.[0];
+          if (next) this.reticleManager.selectTarget(next as unknown as ITargetable);
+          owner.freezeBySelection = true; // proteger un ciclo de LOD tras restaurar
         }
       }
     }
@@ -454,6 +460,8 @@ export class GameEngine {
     if (c.lodMode === 'proxy') {
       if (c.proxy) c.proxy.update(deltaTime);
     }
+    // Limpiar la bandera de freeze tras aplicar el frame
+    if (c.freezeBySelection) c.freezeBySelection = false;
   });
   // Centro conduce a los miembros en 'full': evita integrar física por objeto
   this.asteroidClusterService.applyCenterDrivenFullUpdate(deltaTime);

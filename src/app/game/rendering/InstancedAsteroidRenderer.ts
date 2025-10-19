@@ -55,6 +55,13 @@ export class InstancedAsteroidRenderer {
     this.shaderManager = shaderManager;
   }
 
+  // Config for near/far split to reduce popping; kept here for future tuning
+  private distanceConfig = {
+    far: 450.0,      // switch to flat beyond this
+    near: 430.0,     // switch back to lit below this
+    dwell: 0.25      // seconds to remain before switching
+  };
+
   // Scratch buffers to avoid per-frame allocations when uploading instance matrices
   private scratch = {
     asteroid: { col0: new Float32Array(0), col1: new Float32Array(0), col2: new Float32Array(0), col3: new Float32Array(0), count: 0 },

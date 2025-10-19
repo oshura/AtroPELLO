@@ -30,6 +30,11 @@ export interface AsteroidClusterInstance {
   lodMode: 'full' | 'proxy';
   proxy?: ClusterObject; // representante lejano (modelo de clúster)
   lodTimer: number; // acumulador para dwell
+  // Persistencia de selección a través de LOD
+  lastSelectedMemberId?: string | null;
+  // Anti-popping: cooldown tras cambiar LOD y opción de congelar por selección
+  lodCooldown?: number; // segundos restantes de enfriamiento
+  freezeBySelection?: boolean; // si true, no cambiar LOD este frame
 }
 
 @Injectable({ providedIn: 'root' })
@@ -80,7 +85,8 @@ export class AsteroidClusterService {
       config: { ...cfg },
       lodMode: 'full',
       proxy: undefined,
-      lodTimer: 0
+      lodTimer: 0,
+      lastSelectedMemberId: null
     };
     // Calcular offsets relativos al centro inicial
     for (const obj of inst.objects) {
@@ -139,12 +145,23 @@ export class AsteroidClusterService {
   getClusters(): AsteroidClusterInstance[] { return Array.from(this.clusters.values()); }
 
   /** Actualiza LOD por distancia con histéresis y dwell; devuelve true si hubo cambios */
-  updateLOD(playerPos: Vector3, deltaTime: number, thresholds?: { toProxy?: number; toFull?: number; dwell?: number }): boolean {
+  updateLOD(
+    playerPos: Vector3,
+    deltaTime: number,
+    thresholds?: { toProxy?: number; toFull?: number; dwell?: number; cooldown?: number }
+  ): boolean {
     const toProxy = thresholds?.toProxy ?? 600;
     const toFull = thresholds?.toFull ?? 550;
     const dwell = thresholds?.dwell ?? 0.4; // segundos mín. en condición antes de conmutar
+    const cooldown = thresholds?.cooldown ?? 1.0; // segundos de protección tras cambiar
     let changed = false;
     for (const cluster of this.clusters.values()) {
+      // Congelado por selección o cooldown activo → saltar
+      cluster.lodCooldown = Math.max(0, (cluster.lodCooldown ?? 0) - deltaTime);
+      if (cluster.freezeBySelection || (cluster.lodCooldown ?? 0) > 0) {
+        cluster.lodTimer = 0;
+        continue;
+      }
       const dx = cluster.center.x - playerPos.x;
       const dy = cluster.center.y - playerPos.y;
       const dz = cluster.center.z - playerPos.z;
@@ -167,6 +184,7 @@ export class AsteroidClusterService {
           if (cluster.lodTimer >= dwell) {
             this.switchToProxy(cluster);
             cluster.lodTimer = 0;
+            cluster.lodCooldown = cooldown;
             changed = true;
           }
         } else {
@@ -178,6 +196,7 @@ export class AsteroidClusterService {
           if (cluster.lodTimer >= dwell) {
             this.switchToFull(cluster);
             cluster.lodTimer = 0;
+            cluster.lodCooldown = cooldown;
             changed = true;
           }
         } else {
@@ -217,21 +236,25 @@ export class AsteroidClusterService {
   private switchToFull(cluster: AsteroidClusterInstance): void {
     // Borrar proxy (modelo de clúster)
   cluster.proxy = undefined;
-    // Reposicionar miembros alrededor del centro y reactivar
-    // Mantener la dispersión duplicada al regenerar miembros
-    const radius = (cluster.config.radius ?? 10) * 2;
+    // Reposicionar miembros a sus offsets persistentes y reactivar (sin re-randomizar)
     for (const obj of cluster.objects) {
-      const pos = this.randomAround(cluster.center, radius);
-      obj.position = pos;
+      const off = cluster.memberOffsets.get(obj.id);
+      if (off) {
+        obj.position = {
+          x: cluster.center.x + off.x,
+          y: cluster.center.y + off.y,
+          z: cluster.center.z + off.z,
+        };
+      } else {
+        // Si no hay offset (caso raro), mantener posición actual y registrar offset
+        cluster.memberOffsets.set(obj.id, {
+          x: obj.position.x - cluster.center.x,
+          y: obj.position.y - cluster.center.y,
+          z: obj.position.z - cluster.center.z,
+        });
+      }
       obj.visible = true;
       obj.active = true;
-      // Recalcular offset relativo
-      cluster.memberOffsets.set(obj.id, {
-        x: obj.position.x - cluster.center.x,
-        y: obj.position.y - cluster.center.y,
-        z: obj.position.z - cluster.center.z,
-      });
-      // La sincronización de dirección/velocidad se hace en updateClusters
     }
     cluster.lodMode = 'full';
   }
