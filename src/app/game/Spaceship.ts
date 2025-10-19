@@ -44,6 +44,9 @@ export class Spaceship extends GameObject {
   public voidEnergyCurrent: number = 100; // inicia llena (100%)
   public voidEnergyConsumptionPerUnit: number = 0.01; // consumo por unidad recorrida
   private lastPositionForEnergy: Vector3 | null = null; // track recorrido
+  // Estado de deriva por falta de energía
+  private outOfVoidEnergy: boolean = false; // sin energía: no acelera; deriva
+  private driftVelocity: Vector3 = { x: 0, y: 0, z: 0 }; // velocidad constante en mundo (10% de la anterior)
   
   // Armamento disponible (por ahora vacío)
   public weapons: any[] = [];
@@ -175,6 +178,12 @@ export class Spaceship extends GameObject {
    * Maneja la entrada del jugador con rotaciones sobre ejes locales reales de la nave
    */
   private handleInput(deltaTime: number): void {
+    // Si no hay energía del vacío, bloquear inputs de velocidad y forzar motor inactivo
+    if (this.outOfVoidEnergy) {
+      this.controls.speedUp = false;
+      this.controls.speedDown = false;
+    }
+
     // Calcular velocidad de rotación basada en la velocidad actual
     const speedFactor = this.currentSpeed / this.maxSpeed;
     const rotationMultiplier = 1.0 - (speedFactor * 0.58); // Reduce a 42% a velocidad máxima
@@ -258,7 +267,12 @@ export class Spaceship extends GameObject {
     this.extractEulerFromOrientationMatrix();
 
     // Control de velocidad con +/-
-    if (this.controls.speedUp) {
+    if (this.outOfVoidEnergy) {
+      // Sin energía: no se puede acelerar ni frenar; la velocidad propia es 0
+      this.targetSpeed = 0;
+      this.thrusterState = ThrusterState.IDLE;
+      this.isThrusting = false;
+    } else if (this.controls.speedUp) {
       this.targetSpeed = Math.min(this.targetSpeed + this.acceleration * deltaTime, this.maxSpeed);
       this.thrusterState = ThrusterState.ACCELERATING;
       this.isThrusting = true;
@@ -282,6 +296,20 @@ export class Spaceship extends GameObject {
    * Actualiza el movimiento de la nave
    */
   private updateMovement(deltaTime: number): void {
+    // Si está sin energía, anular movimiento propio y aplicar deriva constante
+    if (this.outOfVoidEnergy) {
+      this.currentSpeed = 0;
+      this.targetSpeed = 0;
+      this.thrusterIntensity = 0.0;
+      // Mantener dirección de avance actual para sistemas dependientes, pero no afecta a la deriva
+      this.updateForwardDirection();
+      // Usar velocidad de deriva fija (independiente de orientación)
+      this.velocity.x = this.driftVelocity.x;
+      this.velocity.y = this.driftVelocity.y;
+      this.velocity.z = this.driftVelocity.z;
+      return;
+    }
+
     // Suavizar transición de velocidad
     if (this.currentSpeed < this.targetSpeed) {
       this.currentSpeed = Math.min(this.currentSpeed + this.acceleration * deltaTime, this.targetSpeed);
@@ -328,9 +356,32 @@ export class Spaceship extends GameObject {
     const dz = pos.z - this.lastPositionForEnergy.z;
     const distance = Math.sqrt(dx*dx + dy*dy + dz*dz);
     if (distance > 0) {
+      const prevEnergy = this.voidEnergyCurrent;
       const energySpent = distance * this.voidEnergyConsumptionPerUnit;
       this.voidEnergyCurrent = Math.max(0, Math.min(this.voidEnergyMax, this.voidEnergyCurrent - energySpent));
       this.lastPositionForEnergy = { ...pos };
+
+      // Transición a sin energía: capturar deriva (10% de la velocidad actual del mundo)
+      if (prevEnergy > 0 && this.voidEnergyCurrent <= 0 && !this.outOfVoidEnergy) {
+        this.outOfVoidEnergy = true;
+        this.driftVelocity = {
+          x: this.velocity.x * 0.1,
+          y: this.velocity.y * 0.1,
+          z: this.velocity.z * 0.1,
+        };
+        // Forzar motor a 0; el HUD debe mostrar 0 aunque la nave se desplace por deriva
+        this.targetSpeed = 0;
+        this.currentSpeed = 0;
+        this.thrusterState = ThrusterState.IDLE;
+        this.isThrusting = false;
+      }
+    }
+
+    // Si de alguna forma recupera energía (sistemas externos), salir del estado de deriva
+    if (this.voidEnergyCurrent > 0 && this.outOfVoidEnergy) {
+      this.outOfVoidEnergy = false;
+      // Mantener la velocidad actual como base; el jugador deberá acelerar manualmente
+      this.driftVelocity = { x: 0, y: 0, z: 0 };
     }
   }
 
