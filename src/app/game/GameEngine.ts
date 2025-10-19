@@ -454,13 +454,10 @@ export class GameEngine {
   this.asteroidClusterService.getClusters().forEach(c => {
     if (c.lodMode === 'proxy') {
       if (c.proxy) c.proxy.update(deltaTime);
-    } else {
-      c.objects.forEach(obj => {
-        obj.update(deltaTime);
-        // No hacer wrap para miembros del clúster: sin teletransporte en bordes
-      });
     }
   });
+  // Centro conduce a los miembros en 'full': evita integrar física por objeto
+  this.asteroidClusterService.applyCenterDrivenFullUpdate(deltaTime);
   // Persistencia: no re-centrar por defecto; dejamos vivir alrededor del centro
   // (Si se desea contención, llamar a enforceBoundsRelativeToCenter(threshold) aquí)
 

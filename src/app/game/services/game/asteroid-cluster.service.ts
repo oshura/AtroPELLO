@@ -22,6 +22,8 @@ export interface AsteroidClusterInstance {
   direction: Vector3;
   speed: number;
   objects: (Asteroid | SuperAsteroid)[];
+  // Offsets relativos al centro (posición local fija por miembro)
+  memberOffsets: Map<string, Vector3>;
   // Config base para poder regenerar miembros
   config: AsteroidClusterConfig;
   // LOD state
@@ -73,11 +75,20 @@ export class AsteroidClusterService {
       direction: { ...cfg.direction },
       speed: cfg.speed,
       objects: objs,
+      memberOffsets: new Map<string, Vector3>(),
       config: { ...cfg },
       lodMode: 'full',
       proxy: undefined,
       lodTimer: 0
     };
+    // Calcular offsets relativos al centro inicial
+    for (const obj of inst.objects) {
+      inst.memberOffsets.set(obj.id, {
+        x: obj.position.x - inst.center.x,
+        y: obj.position.y - inst.center.y,
+        z: obj.position.z - inst.center.z,
+      });
+    }
     this.clusters.set(cfg.id, inst);
     return inst;
   }
@@ -212,6 +223,12 @@ export class AsteroidClusterService {
       obj.position = pos;
       obj.visible = true;
       obj.active = true;
+      // Recalcular offset relativo
+      cluster.memberOffsets.set(obj.id, {
+        x: obj.position.x - cluster.center.x,
+        y: obj.position.y - cluster.center.y,
+        z: obj.position.z - cluster.center.z,
+      });
       // La sincronización de dirección/velocidad se hace en updateClusters
     }
     cluster.lodMode = 'full';
@@ -228,5 +245,35 @@ export class AsteroidClusterService {
   private normalize(v: Vector3): Vector3 {
     const len = Math.hypot(v.x, v.y, v.z) || 1;
     return { x: v.x / len, y: v.y / len, z: v.z / len };
+  }
+
+  /**
+   * Optimización: cuando el clúster está en modo 'full', actualiza miembros
+   * desde el centro evitando integrar velocidades por miembro.
+   * - Mueve el centro (ya lo hace updateClusters) y reposiciona miembros: pos=center+offset
+   * - Aplica solo rotación individual
+   * - Llama update(0) para recalcular matrices y bounding sin integrar posición
+   */
+  applyCenterDrivenFullUpdate(deltaTime: number): void {
+    for (const cluster of this.clusters.values()) {
+      if (cluster.lodMode !== 'full') continue;
+      for (const obj of cluster.objects) {
+        const off = cluster.memberOffsets.get(obj.id);
+        if (off) {
+          obj.position.x = cluster.center.x + off.x;
+          obj.position.y = cluster.center.y + off.y;
+          obj.position.z = cluster.center.z + off.z;
+        }
+        // Rotación individual: usar rotationRate si existe (Asteroid/SuperAsteroid)
+        const rr = (obj as any).rotationRate as Vector3 | undefined;
+        if (rr) {
+          obj.rotation.x += rr.x * deltaTime;
+          obj.rotation.y += rr.y * deltaTime;
+          obj.rotation.z += rr.z * deltaTime;
+        }
+        // Recalcular matrices y bounding sin aplicar movimiento adicional
+        obj.update(0);
+      }
+    }
   }
 }
