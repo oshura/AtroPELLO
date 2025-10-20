@@ -39,6 +39,7 @@ export class InstancedAsteroidRenderer {
       buffer1: null as WebGLBuffer | null,
       buffer2: null as WebGLBuffer | null,
       buffer3: null as WebGLBuffer | null,
+      bufferOpacity: null as WebGLBuffer | null,
       capacity: 0,
     },
     super: {
@@ -46,6 +47,7 @@ export class InstancedAsteroidRenderer {
       buffer1: null as WebGLBuffer | null,
       buffer2: null as WebGLBuffer | null,
       buffer3: null as WebGLBuffer | null,
+      bufferOpacity: null as WebGLBuffer | null,
       capacity: 0,
     },
   };
@@ -64,8 +66,8 @@ export class InstancedAsteroidRenderer {
 
   // Scratch buffers to avoid per-frame allocations when uploading instance matrices
   private scratch = {
-    asteroid: { col0: new Float32Array(0), col1: new Float32Array(0), col2: new Float32Array(0), col3: new Float32Array(0), count: 0 },
-    super: { col0: new Float32Array(0), col1: new Float32Array(0), col2: new Float32Array(0), col3: new Float32Array(0), count: 0 },
+    asteroid: { col0: new Float32Array(0), col1: new Float32Array(0), col2: new Float32Array(0), col3: new Float32Array(0), opacity: new Float32Array(0), count: 0 },
+    super: { col0: new Float32Array(0), col1: new Float32Array(0), col2: new Float32Array(0), col3: new Float32Array(0), opacity: new Float32Array(0), count: 0 },
   };
 
   /** Ensure a base model exists from the first object of the list */
@@ -101,12 +103,13 @@ export class InstancedAsteroidRenderer {
     const inst = this.instance[kind];
     if (inst.capacity >= count && inst.buffer0 && inst.buffer1 && inst.buffer2 && inst.buffer3) return;
     // Create or reallocate buffers
-    const needNew = !inst.buffer0 || !inst.buffer1 || !inst.buffer2 || !inst.buffer3;
+    const needNew = !inst.buffer0 || !inst.buffer1 || !inst.buffer2 || !inst.buffer3 || !inst.bufferOpacity;
     if (needNew) {
       inst.buffer0 = this.gl.createBuffer();
       inst.buffer1 = this.gl.createBuffer();
       inst.buffer2 = this.gl.createBuffer();
       inst.buffer3 = this.gl.createBuffer();
+      inst.bufferOpacity = this.gl.createBuffer();
     }
     // Set capacity with some slack to reduce reallocs
     inst.capacity = Math.max(count, Math.floor(inst.capacity * 1.5), 16);
@@ -122,6 +125,10 @@ export class InstancedAsteroidRenderer {
     this.gl.bufferData(this.gl.ARRAY_BUFFER, empty, this.gl.DYNAMIC_DRAW);
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.buffer3!);
     this.gl.bufferData(this.gl.ARRAY_BUFFER, empty, this.gl.DYNAMIC_DRAW);
+    // Opacity buffer: 1 float per instance
+    const emptyOpacity = new Float32Array(inst.capacity);
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.bufferOpacity!);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, emptyOpacity, this.gl.DYNAMIC_DRAW);
   }
 
   /** Upload instance model matrices as 4 vec4 streams */
@@ -135,9 +142,10 @@ export class InstancedAsteroidRenderer {
       sc.col1 = new Float32Array(count * 4);
       sc.col2 = new Float32Array(count * 4);
       sc.col3 = new Float32Array(count * 4);
+      sc.opacity = new Float32Array(count);
       sc.count = count;
     }
-    const col0 = sc.col0; const col1 = sc.col1; const col2 = sc.col2; const col3 = sc.col3;
+    const col0 = sc.col0; const col1 = sc.col1; const col2 = sc.col2; const col3 = sc.col3; const opa = sc.opacity;
     for (let i = 0; i < count; i++) {
       const m = objects[i].modelMatrix;
       // Column-major: indices 0..3, 4..7, 8..11, 12..15
@@ -145,6 +153,7 @@ export class InstancedAsteroidRenderer {
       col1.set(m.subarray(4, 8), i * 4);
       col2.set(m.subarray(8, 12), i * 4);
       col3.set(m.subarray(12, 16), i * 4);
+      opa[i] = (objects[i] as any).renderOpacity ?? 1.0;
     }
   const inst = this.instance[kind];
     // Upload
@@ -156,6 +165,8 @@ export class InstancedAsteroidRenderer {
     this.gl.bufferSubData(this.gl.ARRAY_BUFFER, 0, col2);
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.buffer3!);
     this.gl.bufferSubData(this.gl.ARRAY_BUFFER, 0, col3);
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.bufferOpacity!);
+    this.gl.bufferSubData(this.gl.ARRAY_BUFFER, 0, opa);
   }
 
   /** Bind shared model and instance attributes, then draw */
@@ -171,6 +182,7 @@ export class InstancedAsteroidRenderer {
     const m1 = this.shaderManager.instancedLitAttributes['i_model1'];
     const m2 = this.shaderManager.instancedLitAttributes['i_model2'];
     const m3 = this.shaderManager.instancedLitAttributes['i_model3'];
+  const aOpacity = (this.shaderManager as any).instancedLitAttributes?.['i_opacity'] ?? -1;
 
     // Bind per-vertex buffers
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.model[kind].vbo);
@@ -207,6 +219,14 @@ export class InstancedAsteroidRenderer {
     this.gl.enableVertexAttribArray(m3);
     this.gl.vertexAttribPointer(m3, 4, this.gl.FLOAT, false, 0, 0);
     this.gl.vertexAttribDivisor(m3, 1);
+
+    // Bind per-instance opacity if attribute exists
+    if (aOpacity >= 0) {
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.bufferOpacity!);
+      this.gl.enableVertexAttribArray(aOpacity);
+      this.gl.vertexAttribPointer(aOpacity, 1, this.gl.FLOAT, false, 0, 0);
+      this.gl.vertexAttribDivisor(aOpacity, 1);
+    }
 
     // Draw instanced
     this.gl.drawElementsInstanced(
@@ -275,7 +295,8 @@ export class InstancedAsteroidRenderer {
       if (i.buffer1) this.gl.deleteBuffer(i.buffer1);
       if (i.buffer2) this.gl.deleteBuffer(i.buffer2);
       if (i.buffer3) this.gl.deleteBuffer(i.buffer3);
-      this.instance[k] = { buffer0: null, buffer1: null, buffer2: null, buffer3: null, capacity: 0 };
+      if (i.bufferOpacity) this.gl.deleteBuffer(i.bufferOpacity);
+      this.instance[k] = { buffer0: null, buffer1: null, buffer2: null, buffer3: null, bufferOpacity: null, capacity: 0 } as any;
     };
     destroyInst('asteroid');
     destroyInst('super');

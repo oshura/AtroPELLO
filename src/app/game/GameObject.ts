@@ -15,6 +15,8 @@ export abstract class GameObject {
   public active: boolean;
   public visible: boolean;
   public boundingSphere: { center: Vector3; radius: number } | null = null;
+  // Opacidad de renderizado (0..1). Útil para transiciones/fades.
+  public renderOpacity: number = 1.0;
 
   // Sistema de salud básico común a todos los objetos espaciales
   public healthCurrent: number;

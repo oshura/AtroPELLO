@@ -41,6 +41,7 @@ export class InstancedLitShaderService {
     this.attributes['i_model1'] = this.gl.getAttribLocation(prog, 'i_model1');
     this.attributes['i_model2'] = this.gl.getAttribLocation(prog, 'i_model2');
     this.attributes['i_model3'] = this.gl.getAttribLocation(prog, 'i_model3');
+  this.attributes['i_opacity'] = this.gl.getAttribLocation(prog, 'i_opacity');
 
     this.uniforms['viewMatrix'] = this.gl.getUniformLocation(prog, 'u_viewMatrix');
     this.uniforms['projectionMatrix'] = this.gl.getUniformLocation(prog, 'u_projectionMatrix');
@@ -108,12 +109,14 @@ export class InstancedLitShaderService {
     in vec4 i_model1;
     in vec4 i_model2;
     in vec4 i_model3;
+  in float i_opacity;
 
     uniform mat4 u_viewMatrix;
     uniform mat4 u_projectionMatrix;
     uniform vec3 u_lightDirection;
 
-    out vec3 v_color;
+  out vec3 v_color;
+  out float v_opacity;
     out vec3 v_normal;
     out vec3 v_lightDirection;
     out float v_lightIntensity;
@@ -131,6 +134,7 @@ export class InstancedLitShaderService {
       v_normal = worldNormal;
       v_lightDirection = u_lightDirection;
       v_color = vec3(1.0);
+      v_opacity = i_opacity;
     }`;
   }
 
@@ -139,7 +143,8 @@ export class InstancedLitShaderService {
     return `#version 300 es
     precision highp float;
 
-    in vec3 v_color;
+  in vec3 v_color;
+  in float v_opacity;
     in vec3 v_normal;
     in vec3 v_lightDirection;
     in float v_lightIntensity;
@@ -157,7 +162,13 @@ export class InstancedLitShaderService {
       vec3 base = u_baseColor;
       vec3 finalColor = base * (ambient + diffuse);
       finalColor = max(finalColor, base * 0.2);
-      fragColor = vec4(finalColor, 1.0);
+  // Dark-to-normal brightness during fade to avoid washing out background
+  // More aggressive darkening: keep very dark for low opacity
+  float opacity = clamp(v_opacity, 0.0, 1.0);
+  float brightness = max(0.05, pow(opacity, 2.2));
+  finalColor *= brightness;
+  // Color-only fade: keep alpha at 1.0 to avoid brightening the background
+  fragColor = vec4(finalColor, 1.0);
     }`;
   }
 }

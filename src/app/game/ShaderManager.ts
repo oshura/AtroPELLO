@@ -226,6 +226,7 @@ export class ShaderManager {
     uniform vec3 u_ambientColor;
     uniform float u_ambientStrength;
     uniform vec3 u_baseColor;
+  uniform float u_opacity;
 
     // Salida
     out vec4 fragColor;
@@ -246,6 +247,11 @@ export class ShaderManager {
       // Asegurar que el color no sea demasiado oscuro
       finalColor = max(finalColor, baseColor * 0.2);
 
+  // Dark-to-normal during fade: when opacity < 1, reduce brightness strongly to avoid washing background
+  float opacity = clamp(u_opacity, 0.0, 1.0);
+  float brightness = max(0.05, pow(opacity, 2.2));
+      finalColor *= brightness;
+      // Color-only fade: keep alpha at 1.0 to avoid background washout
       fragColor = vec4(finalColor, 1.0);
     }`;
   }
@@ -448,6 +454,7 @@ export class ShaderManager {
     this.litUniforms['ambientColor'] = this.gl.getUniformLocation(this.litProgram, 'u_ambientColor');
     this.litUniforms['ambientStrength'] = this.gl.getUniformLocation(this.litProgram, 'u_ambientStrength');
     this.litUniforms['baseColor'] = this.gl.getUniformLocation(this.litProgram, 'u_baseColor');
+    this.litUniforms['opacity'] = this.gl.getUniformLocation(this.litProgram, 'u_opacity');
   }
 
   /**
@@ -493,6 +500,9 @@ export class ShaderManager {
   public useLitProgram(): void {
     if (!this.gl || !this.litProgram) return;
     this.gl.useProgram(this.litProgram);
+    // Asegurar opacidad por defecto a 1.0
+    const loc = this.litUniforms['opacity'];
+    if (loc) this.gl.uniform1f(loc, 1.0);
   }
 
   /**
@@ -546,6 +556,15 @@ export class ShaderManager {
   public setLitColor(color: Float32Array): void {
     if (!this.gl || !this.litProgram) return;
     this.gl.uniform3fv(this.litUniforms['baseColor'], color);
+  }
+
+  /**
+   * Establece la opacidad para el shader lit (no instanciado)
+   */
+  public setLitOpacity(alpha: number): void {
+    if (!this.gl || !this.litProgram) return;
+    const loc = this.litUniforms['opacity'];
+    if (loc) this.gl.uniform1f(loc, alpha);
   }
 
   /**

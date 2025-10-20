@@ -35,6 +35,15 @@ export interface AsteroidClusterInstance {
   // Anti-popping: cooldown tras cambiar LOD y opción de congelar por selección
   lodCooldown?: number; // segundos restantes de enfriamiento
   freezeBySelection?: boolean; // si true, no cambiar LOD este frame
+  // Estado de fade para transiciones suaves entre proxy/full
+  fade?: {
+    mode: 'in' | 'out'; // in => aumentando opacidad, out => disminuyendo
+    target: 'proxy' | 'members'; // qué conjunto está siendo fadeado
+    duration: number; // segundos totales de fade
+    elapsed: number; // acumulado
+  };
+  // ID del miembro que se usará como representante visual en modo proxy
+  representativeId?: string | null;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -204,19 +213,47 @@ export class AsteroidClusterService {
   }
 
   private switchToProxy(cluster: AsteroidClusterInstance): void {
-    // Deshabilitar miembros (persisten, pero no se renderizan ni cuentan como targets)
+    // Preparar fade-out de miembros si estaban visibles
     for (const obj of cluster.objects) {
-      obj.visible = false;
-      obj.active = false;
+      obj.active = true; // mantener activo para poder actualizar matrices si hace falta
+      obj.visible = true; // visibles mientras fadean
+      obj.renderOpacity = 1.0; // comenzamos desde 1
     }
-    // Crear representación del clúster en el centro
+    // Elegir posición y tamaño del proxy segun contenido del clúster:
+    // 1) Si hay super-asteroide: posición del super; tamaño duplicado (8.0)
+    // 2) Si no hay super, pero hay asteroides: posición del primer asteroide; tamaño mitad (4.0)
+    // 3) Si no hay miembros: posición aleatoria en radio base; tamaño duplicado por defecto
+    let proxyPos = { ...cluster.center };
+    let proxySize = 8.0;
+    const superObj = cluster.objects.find(o => (o as any) instanceof SuperAsteroid) as SuperAsteroid | undefined;
+    if (superObj) {
+      proxyPos = { ...superObj.position };
+      proxySize = 8.0; // duplicado
+      cluster.representativeId = superObj.id;
+    } else {
+      const firstAst = cluster.objects.find(o => (o as any) instanceof Asteroid) as Asteroid | undefined;
+      if (firstAst) {
+        proxyPos = { ...firstAst.position };
+        proxySize = 4.0; // mitad
+        cluster.representativeId = firstAst.id;
+      } else {
+        // Fallback aleatorio como antes
+        const baseR = (cluster.config.radius ?? 10) * 1.0;
+        const dir = this.normalize({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 });
+        proxyPos = { x: cluster.center.x + dir.x * baseR, y: cluster.center.y + dir.y * baseR, z: cluster.center.z + dir.z * baseR };
+        proxySize = 8.0;
+        cluster.representativeId = null;
+      }
+    }
+    // Crear representación del clúster con tamaño según criterio
     const proxy = new ClusterObject(
       `${cluster.id}-cluster`,
-      { ...cluster.center },
-      4.0,
+      proxyPos,
+      proxySize,
       { ...cluster.direction },
       cluster.speed * 0.5 // que avance como el centro
     );
+    proxy.renderOpacity = 0.0; // aparecerá con fade-in
     // Guardar referencia a miembros para agregados de detalles
     (proxy as any)._clusterMembers = cluster.objects.slice();
     // Agregar void mass: suma de hijos
@@ -227,11 +264,15 @@ export class AsteroidClusterService {
     proxy.voidMassUnits = voidSum;
     cluster.proxy = proxy;
     cluster.lodMode = 'proxy';
+    // Programar fade: miembros out (2s) y proxy in (2s)
+    cluster.fade = { mode: 'in', target: 'proxy', duration: 2.5, elapsed: 0 };
   }
 
   private switchToFull(cluster: AsteroidClusterInstance): void {
-    // Borrar proxy (modelo de clúster)
-  cluster.proxy = undefined;
+    // Preparar fade: proxy out (2s) y miembros in (2s)
+    if (cluster.proxy) {
+      cluster.proxy.renderOpacity = 1.0;
+    }
     // Reposicionar miembros a sus offsets persistentes y reactivar (sin re-randomizar)
     for (const obj of cluster.objects) {
       const off = cluster.memberOffsets.get(obj.id);
@@ -251,8 +292,16 @@ export class AsteroidClusterService {
       }
       obj.visible = true;
       obj.active = true;
+      // IMPORTANTE: mantener al representante sin fade (opacidad completa)
+      if (cluster.representativeId && obj.id === cluster.representativeId) {
+        obj.renderOpacity = 1.0;
+      } else {
+        obj.renderOpacity = 0.0; // aparecerán con fade-in
+      }
     }
     cluster.lodMode = 'full';
+  cluster.fade = { mode: 'in', target: 'members', duration: 2.5, elapsed: 0 };
+    // NO limpiar representativeId aún: lo usamos para evitar fade en la transición.
   }
 
   private randomAround(center: Vector3, radius: number): Vector3 {
@@ -292,23 +341,108 @@ export class AsteroidClusterService {
    */
   applyCenterDrivenFullUpdate(deltaTime: number): void {
     for (const cluster of this.clusters.values()) {
-      if (cluster.lodMode !== 'full') continue;
-      for (const obj of cluster.objects) {
-        const off = cluster.memberOffsets.get(obj.id);
-        if (off) {
-          obj.position.x = cluster.center.x + off.x;
-          obj.position.y = cluster.center.y + off.y;
-          obj.position.z = cluster.center.z + off.z;
+      // Gestionar fades si están activos
+      if (cluster.fade) {
+        cluster.fade.elapsed += deltaTime;
+        const t = Math.min(1, cluster.fade.elapsed / Math.max(0.001, cluster.fade.duration));
+        if (cluster.fade.target === 'proxy' && cluster.proxy) {
+          // Proxy está fade-in mientras miembros fade-out
+          const alphaIn = t; // 0->1
+          cluster.proxy.renderOpacity = alphaIn;
+          // Fade-out de miembros en paralelo
+          const alphaOut = 1 - t;
+          for (const obj of cluster.objects) {
+            // Mantener el representante sin fade
+            if (cluster.representativeId && obj.id === cluster.representativeId) {
+              obj.renderOpacity = 1.0;
+              obj.visible = true;
+              obj.active = true;
+            } else {
+              obj.renderOpacity = alphaOut;
+              // Al terminar el fade-out, ocultarlos
+              if (t >= 1) {
+                obj.visible = false;
+                obj.active = false;
+              }
+            }
+          }
+          if (t >= 1) {
+            cluster.fade = undefined;
+          }
+        } else if (cluster.fade.target === 'members') {
+          // Miembros fade-in; proxy fade-out si existe
+          const alphaIn = t;
+          for (const obj of cluster.objects) {
+            // Mantener el representante sin fade (si existía)
+            if (cluster.representativeId && obj.id === cluster.representativeId) {
+              obj.renderOpacity = 1.0;
+            } else {
+              obj.renderOpacity = alphaIn;
+            }
+            obj.visible = true;
+            obj.active = true;
+          }
+          if (cluster.proxy) {
+            const alphaOut = 1 - t;
+            cluster.proxy.renderOpacity = alphaOut;
+            if (t >= 1) {
+              // Al finalizar, eliminar el proxy completamente
+              cluster.proxy = undefined;
+            }
+          }
+          if (t >= 1) {
+            cluster.fade = undefined;
+            // Ahora sí, ya no necesitamos representante especial en modo full
+            cluster.representativeId = null;
+          }
         }
-        // Rotación individual: usar rotationRate si existe (Asteroid/SuperAsteroid)
-        const rr = (obj as any).rotationRate as Vector3 | undefined;
-        if (rr) {
-          obj.rotation.x += rr.x * deltaTime;
-          obj.rotation.y += rr.y * deltaTime;
-          obj.rotation.z += rr.z * deltaTime;
+      }
+      // Actualizar transformaciones según modo LOD
+      if (cluster.lodMode === 'full') {
+        // En modo 'full' todos los miembros siguen al centro + offset y rotan individualmente
+        for (const obj of cluster.objects) {
+          const off = cluster.memberOffsets.get(obj.id);
+          if (off) {
+            obj.position.x = cluster.center.x + off.x;
+            obj.position.y = cluster.center.y + off.y;
+            obj.position.z = cluster.center.z + off.z;
+          }
+          // Rotación individual: usar rotationRate si existe (Asteroid/SuperAsteroid)
+          const rr = (obj as any).rotationRate as Vector3 | undefined;
+          if (rr) {
+            obj.rotation.x += rr.x * deltaTime;
+            obj.rotation.y += rr.y * deltaTime;
+            obj.rotation.z += rr.z * deltaTime;
+          }
+          // Recalcular matrices y bounding sin aplicar movimiento adicional
+          obj.update(0);
         }
-        // Recalcular matrices y bounding sin aplicar movimiento adicional
-        obj.update(0);
+      } else if (cluster.lodMode === 'proxy') {
+        // En modo 'proxy', actualizar al menos el REPRESENTANTE para que siga al centro + su offset y mantenga su rotación
+        if (cluster.representativeId) {
+          const rep = cluster.objects.find(o => o.id === cluster.representativeId);
+          if (rep) {
+            const off = cluster.memberOffsets.get(rep.id);
+            if (off) {
+              rep.position.x = cluster.center.x + off.x;
+              rep.position.y = cluster.center.y + off.y;
+              rep.position.z = cluster.center.z + off.z;
+            }
+            // Rotación individual del representante
+            const rr = (rep as any).rotationRate as Vector3 | undefined;
+            if (rr) {
+              rep.rotation.x += rr.x * deltaTime;
+              rep.rotation.y += rr.y * deltaTime;
+              rep.rotation.z += rr.z * deltaTime;
+            }
+            // Asegurar visibilidad/actividad y opacidad total del representante
+            rep.visible = true;
+            rep.active = true;
+            (rep as any).renderOpacity = 1.0;
+            // Recalcular matrices sin integrar movimiento adicional
+            rep.update(0);
+          }
+        }
       }
     }
   }

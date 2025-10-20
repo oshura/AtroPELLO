@@ -403,7 +403,7 @@ export class GameEngine {
   // Actualizar clusters: mueven su centro y sincronizan física común
   this.asteroidClusterService.updateClusters(deltaTime);
   // LOD por distancia con histéresis: toProxy=750u, toFull=700u, dwell=0.4s
-  const lodChanged = this.asteroidClusterService.updateLOD(this.spaceship.position, deltaTime, { toProxy: 3050, toFull: 3000, dwell: 0.4, cooldown: 1.2 });
+  const lodChanged = this.asteroidClusterService.updateLOD(this.spaceship.position, deltaTime, { toProxy: 1050, toFull: 1000, dwell: 0.4, cooldown: 1.2 });
   if (lodChanged && this.gl) {
     // Re-crear buffers para objetos nuevos (y liberar proxies antiguos)
     this.asteroidClusterService.getClusters().forEach(c => {
@@ -685,19 +685,39 @@ export class GameEngine {
       this.ambientStrength
     );
 
-    // Renderizar asteroides del cluster con shader estándar
+  // Renderizar asteroides del cluster con shader estándar
     this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4])); // Color gris-marrón rocoso
 
     // Renderizar objetos de clusters o proxy según LOD
-    if (this.USE_INSTANCING && this.instancedRenderer) {
+  // Asegurar blending para soportar opacidades en fades
+  this.gl.enable(this.gl.BLEND);
+  this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+
+  if (this.USE_INSTANCING && this.instancedRenderer) {
       // Gather batches
       const smalls: GameObject[] = [];
       const supers: GameObject[] = [];
       this.asteroidClusterService.getClusters().forEach(c => {
-        if (c.lodMode === 'proxy') {
-          if (c.proxy) this.renderObject(c.proxy); // proxy rendered normally
-        } else {
+        // Si estamos en modo proxy y hay representante, renderizarlo sin fade
+        if (c.lodMode === 'proxy' && c.representativeId) {
+          const rep = c.objects.find(o => o.id === c.representativeId);
+          if (rep) {
+            // Asegurar opacidad completa para el representante
+            (rep as any).renderOpacity = 1.0;
+            if ((rep as any) instanceof SuperAsteroid) supers.push(rep);
+            else smalls.push(rep);
+          }
+        } else if (c.proxy && (c.lodMode === 'proxy' || (c.fade && c.fade.target === 'members'))) {
+          // Si no hay representante, usar el proxy visual
+          this.shaderManager.setLitOpacity((c.proxy as any).renderOpacity ?? 1.0);
+          this.renderObject(c.proxy);
+        }
+        // Miembros: instanciar si lod 'full' o si estamos fadeando hacia proxy
+        const shouldRenderMembers = c.lodMode === 'full' || (c.fade && c.fade.target === 'proxy');
+        if (shouldRenderMembers) {
           for (const o of c.objects) {
+            // Evitar duplicar el representante si ya se añadió explícitamente
+            if (c.lodMode === 'proxy' && c.representativeId && o.id === c.representativeId) continue;
             if ((o as any) instanceof SuperAsteroid) supers.push(o);
             else smalls.push(o);
           }
@@ -716,10 +736,28 @@ export class GameEngine {
       );
     } else {
       this.asteroidClusterService.getClusters().forEach(c => {
-        if (c.lodMode === 'proxy') {
-          if (c.proxy) this.renderObject(c.proxy);
-        } else {
-          c.objects.forEach(o => this.renderObject(o));
+        // Proxy si existe y relevante, salvo que tengamos un representante
+        if (!c.representativeId && c.proxy && (c.lodMode === 'proxy' || (c.fade && c.fade.target === 'members'))) {
+          this.shaderManager.setLitOpacity((c.proxy as any).renderOpacity ?? 1.0);
+          this.renderObject(c.proxy);
+        }
+        // Miembros si corresponde
+        const shouldRenderMembers = c.lodMode === 'full' || (c.fade && c.fade.target === 'proxy') || (c.lodMode === 'proxy' && !!c.representativeId);
+        if (shouldRenderMembers) {
+          c.objects.forEach(o => {
+            // Evitar doble render del representante (no instanciado) en proxy
+            if (c.lodMode === 'proxy' && c.representativeId && o.id === c.representativeId) return;
+            this.shaderManager.setLitOpacity((o as any).renderOpacity ?? 1.0);
+            this.renderObject(o);
+          });
+          // Render explícito del representante en no instanciado si aplica
+          if (c.lodMode === 'proxy' && c.representativeId) {
+            const rep = c.objects.find(o => o.id === c.representativeId);
+            if (rep) {
+              this.shaderManager.setLitOpacity(1.0);
+              this.renderObject(rep);
+            }
+          }
         }
       });
     }
