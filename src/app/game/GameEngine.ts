@@ -544,9 +544,9 @@ export class GameEngine {
       const dz = selected.position.z - this.camera.position.z;
       const distance = Math.hypot(dx, dy, dz);
 
-    // Relation heuristic: asteroids, super-asteroids, and clusters are neutral
+    // Relation heuristic: asteroids, super-asteroids, clusters, and planets are neutral
   const selType = selected.getTargetType();
-  const isNeutral = selType === TargetType.ASTEROID || selType === TargetType.SUPER_ASTEROID || selType === TargetType.CLUSTER;
+  const isNeutral = selType === TargetType.ASTEROID || selType === TargetType.SUPER_ASTEROID || selType === TargetType.CLUSTER || selType === TargetType.PLANET;
   const relation: 'ally' | 'neutral' | 'enemy' = isNeutral ? 'neutral' : 'enemy';
 
       // Render preview into offscreen canvas
@@ -837,7 +837,7 @@ export class GameEngine {
     const colors: PlanetColorName[] = ['verde','azul_hielo','marron','gris','azul_marino','rojo_carmesi','violeta_oscuro','azul_hielo','marron'];
     const center = { x: 0, y: 0, z: 0 };
   const minA = 50000; const maxA = 100000;
-  const count = 0;
+  const count = 9;
     for (let i = 0; i < count; i++) {
       const t = i / Math.max(1, count - 1);
       const a = Math.round(minA + t * (maxA - minA)); // semi-eje mayor
