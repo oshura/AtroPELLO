@@ -634,12 +634,12 @@ export class Spaceship extends GameObject {
       -wingLength,  wingWidth,  wingThickness   // 7: lejos-trasero-arriba
     );
     
-    // Índices ala izquierda - CORREGIDO para que coincida con la derecha
+    // Índices ala izquierda - ajustar winding para orientar normales consistente con el cuerpo
     indices.push(
       // Cara frontal (frente de la nave, -Y)
-      0, 3, 2,  0, 1, 3,
+      0, 2, 3,  0, 3, 1,
       // Cara trasera (atrás de la nave, +Y)  
-      4, 6, 7,  4, 7, 5,
+      4, 7, 6,  4, 5, 7,
       // Cara inferior (-Z)
       0, 4, 5,  0, 5, 1,
       // Cara superior (+Z)
@@ -666,12 +666,12 @@ export class Spaceship extends GameObject {
       wingLength,  wingWidth,  wingThickness    // 15: lejos-trasero-arriba
     );
     
-    // Índices ala derecha - mismo patrón pero con índices 8-15
+    // Índices ala derecha - ajustar winding simétrico (8-15)
     indices.push(
       // Cara frontal (frente de la nave, -Y)
-      8, 10, 11,  8, 11, 9,
+      8, 11, 10,  8, 9, 11,
       // Cara trasera (atrás de la nave, +Y)
-      12, 13, 15,  12, 15, 14,
+      12, 15, 13,  12, 14, 15,
       // Cara inferior (-Z)  
       8, 9, 13,  8, 13, 12,
       // Cara superior (+Z)

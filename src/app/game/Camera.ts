@@ -111,7 +111,7 @@ export abstract class BaseCamera {
   }
 
   protected lookAt(matrix: Float32Array, eye: Vector3, target: Vector3, up: Vector3): void {
-    const forward = {
+    let forward = {
       x: target.x - eye.x,
       y: target.y - eye.y,
       z: target.z - eye.z
@@ -125,11 +125,27 @@ export abstract class BaseCamera {
       forward.z /= length;
     }
 
-    // Right = forward × up
+    // Asegurar que forward y up no sean casi colineales para evitar singularidades
+    // Si |dot(forward, up)| ~ 1, escoger un up alternativo seguro
+    const dotFU = forward.x * up.x + forward.y * up.y + forward.z * up.z;
+    let safeUp = { x: up.x, y: up.y, z: up.z };
+    if (Math.abs(dotFU) > 0.999) {
+      // Elegir un up aproximado perpendicular a forward
+      // Tomar un vector auxiliar y hacer cross(forward, aux)
+      const aux = Math.abs(forward.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+      // safeUp = normalize(cross(aux, forward))
+      const cx = aux.y * forward.z - aux.z * forward.y;
+      const cy = aux.z * forward.x - aux.x * forward.z;
+      const cz = aux.x * forward.y - aux.y * forward.x;
+      const clen = Math.hypot(cx, cy, cz) || 1;
+      safeUp = { x: cx / clen, y: cy / clen, z: cz / clen };
+    }
+
+    // Right = forward × safeUp
     const right = {
-      x: forward.y * up.z - forward.z * up.y,
-      y: forward.z * up.x - forward.x * up.z,
-      z: forward.x * up.y - forward.y * up.x
+      x: forward.y * safeUp.z - forward.z * safeUp.y,
+      y: forward.z * safeUp.x - forward.x * safeUp.z,
+      z: forward.x * safeUp.y - forward.y * safeUp.x
     };
 
     // Normalizar right
@@ -140,7 +156,7 @@ export abstract class BaseCamera {
       right.z /= length;
     }
 
-    // Up = right × forward
+    // Up = right × forward (re-orthonormalizado)
     const newUp = {
       x: right.y * forward.z - right.z * forward.y,
       y: right.z * forward.x - right.x * forward.z,

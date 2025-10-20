@@ -175,7 +175,7 @@ export class ShaderManager {
     uniform mat4 u_projectionMatrix;
     uniform mat4 u_normalMatrix;
 
-    // Uniformes de iluminación
+  // Uniformes de iluminación
     uniform vec3 u_lightDirection;
     uniform vec3 u_lightColor;
     uniform vec3 u_ambientColor;
@@ -185,15 +185,21 @@ export class ShaderManager {
     out vec3 v_normal;
     out vec3 v_lightDirection;
     out float v_lightIntensity;
+  out vec3 v_worldPos;
 
     void main() {
-      // Transformar posición
-      vec4 worldPosition = u_modelMatrix * vec4(a_position, 1.0);
+  // Transformar posición
+  vec4 worldPosition = u_modelMatrix * vec4(a_position, 1.0);
       vec4 viewPosition = u_viewMatrix * worldPosition;
       gl_Position = u_projectionMatrix * viewPosition;
 
-      // Transformar normal
-      vec3 worldNormal = normalize((u_normalMatrix * vec4(a_normal, 0.0)).xyz);
+      // Transformar normal con fallback si a_normal es (0,0,0) por atributos no vinculados
+      vec3 inNormal = a_normal;
+      if (length(inNormal) < 0.0001) {
+        // Fallback: normal por defecto en espacio objeto
+        inNormal = vec3(0.0, 0.0, 1.0);
+      }
+      vec3 worldNormal = normalize((u_normalMatrix * vec4(inNormal, 0.0)).xyz);
 
       // Calcular iluminación básica
       float lightDot = max(dot(worldNormal, -u_lightDirection), 0.0);
@@ -203,6 +209,7 @@ export class ShaderManager {
       v_color = a_color;
       v_normal = worldNormal;
       v_lightDirection = u_lightDirection;
+      v_worldPos = worldPosition.xyz;
     }`;
   }
 
@@ -220,6 +227,7 @@ export class ShaderManager {
     in vec3 v_normal;
     in vec3 v_lightDirection;
     in float v_lightIntensity;
+    in vec3 v_worldPos;
 
     // Uniformes
     uniform vec3 u_lightColor;
@@ -227,6 +235,9 @@ export class ShaderManager {
     uniform float u_ambientStrength;
     uniform vec3 u_baseColor;
   uniform float u_opacity;
+    uniform vec3 u_cameraPos;
+    uniform float u_specularStrength;
+    uniform float u_shininess;
 
     // Salida
     out vec4 fragColor;
@@ -235,14 +246,22 @@ export class ShaderManager {
       // Componente ambiental
       vec3 ambient = u_ambientStrength * u_ambientColor;
 
-      // Componente difusa
-      vec3 diffuse = v_lightIntensity * u_lightColor;
+  // Componente difusa
+  vec3 diffuse = v_lightIntensity * u_lightColor;
 
       // Usar u_baseColor como color base
       vec3 baseColor = u_baseColor;
 
-      // Color final
-      vec3 finalColor = baseColor * (ambient + diffuse);
+  // Especular (Blinn-Phong): N.H con H = normalize(L + V)
+  vec3 N = normalize(v_normal);
+  vec3 L = normalize(-v_lightDirection);
+  vec3 V = normalize(u_cameraPos - v_worldPos);
+  vec3 H = normalize(L + V);
+  float spec = pow(max(dot(N, H), 0.0), max(u_shininess, 1.0)) * u_specularStrength;
+  vec3 specular = spec * u_lightColor;
+
+  // Color final
+  vec3 finalColor = baseColor * (ambient + diffuse) + specular;
 
       // Asegurar que el color no sea demasiado oscuro
       finalColor = max(finalColor, baseColor * 0.2);
@@ -455,6 +474,9 @@ export class ShaderManager {
     this.litUniforms['ambientStrength'] = this.gl.getUniformLocation(this.litProgram, 'u_ambientStrength');
     this.litUniforms['baseColor'] = this.gl.getUniformLocation(this.litProgram, 'u_baseColor');
     this.litUniforms['opacity'] = this.gl.getUniformLocation(this.litProgram, 'u_opacity');
+    this.litUniforms['cameraPos'] = this.gl.getUniformLocation(this.litProgram, 'u_cameraPos');
+    this.litUniforms['specularStrength'] = this.gl.getUniformLocation(this.litProgram, 'u_specularStrength');
+    this.litUniforms['shininess'] = this.gl.getUniformLocation(this.litProgram, 'u_shininess');
   }
 
   /**
@@ -548,6 +570,14 @@ export class ShaderManager {
     this.gl.uniform3fv(this.litUniforms['lightColor'], lightColor);
     this.gl.uniform3fv(this.litUniforms['ambientColor'], ambientColor);
     this.gl.uniform1f(this.litUniforms['ambientStrength'], ambientStrength);
+  }
+
+  /** Establece parámetros especulares y cámara para el shader lit */
+  public setSpecular(cameraPos: Float32Array, specularStrength: number, shininess: number): void {
+    if (!this.gl || !this.litProgram) return;
+    this.gl.uniform3fv(this.litUniforms['cameraPos'], cameraPos);
+    this.gl.uniform1f(this.litUniforms['specularStrength'], specularStrength);
+    this.gl.uniform1f(this.litUniforms['shininess'], shininess);
   }
 
   /**

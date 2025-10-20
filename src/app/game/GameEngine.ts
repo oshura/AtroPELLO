@@ -18,6 +18,7 @@ import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test
 import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
+import { Planet, PlanetColorName } from './Planet';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -46,6 +47,7 @@ export class GameEngine {
   private spaceship!: Spaceship;
   private asteroids: Asteroid[] = [];
   private superAsteroids: SuperAsteroid[] = [];
+  private planets: Planet[] = [];
   
   // Configuración del mundo
   private readonly WORLD_SIZE = 50;
@@ -69,6 +71,24 @@ export class GameEngine {
   private instancedRenderer: InstancedAsteroidRenderer | null = null;
   // Tipos de target que NO deben ser descartados por culling distancia/frustum
   private readonly neverCullTypes = new Set([TargetType.PLANET]);
+
+  // VAOs/VBOs cache for spaceship modules (to avoid per-frame buffer churn)
+  private shipVAO: {
+    nose: WebGLVertexArrayObject | null,
+    body: WebGLVertexArrayObject | null,
+    cockpit: WebGLVertexArrayObject | null,
+    nozzle: WebGLVertexArrayObject | null,
+    wings: WebGLVertexArrayObject | null,
+    thruster: WebGLVertexArrayObject | null,
+  } = { nose: null, body: null, cockpit: null, nozzle: null, wings: null, thruster: null };
+  private shipBuffers: {
+    nose?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
+    body?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
+    cockpit?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
+    nozzle?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
+    wings?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
+    thruster?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
+  } = {};
 
   constructor(
     private webglService: WebGLService,
@@ -314,6 +334,10 @@ export class GameEngine {
     });
     this.targetCatalog.register(TargetType.ASTEROID, smalls);
     this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
+    // Crear y registrar planetas
+    this.createPlanets();
+    this.planets.forEach(p => p.initBuffers(this.gl!));
+    this.targetCatalog.register(TargetType.PLANET, this.planets as unknown as ITargetable[]);
   }
 
   /**
@@ -475,6 +499,8 @@ export class GameEngine {
   });
   // Centro conduce a los miembros en 'full': evita integrar física por objeto
   this.asteroidClusterService.applyCenterDrivenFullUpdate(deltaTime);
+  // Actualizar órbitas de planetas
+  this.updatePlanets(deltaTime);
   // Persistencia: no re-centrar por defecto; dejamos vivir alrededor del centro
   // (Si se desea contención, llamar a enforceBoundsRelativeToCenter(threshold) aquí)
 
@@ -672,12 +698,25 @@ export class GameEngine {
       this.ambientColor,
       this.ambientStrength
     );
+    // Parámetros especulares globales por defecto
+    this.shaderManager.setSpecular(new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]), 0.15, 32.0);
+    // Establecer un color base por defecto para lit en el frame (evita depender de draws previos)
+    this.shaderManager.setLitColor(new Float32Array([0.7, 0.75, 0.8]));
 
     // Renderizar nave con shader texturizado
   this.renderSpaceship();
     
-    // Renderizar efectos de partículas
+    // Renderizar efectos de partículas en programa básico (usa additive blending)
+    // Asegurar que el estado de la nave/asteroides no se contamine
     this.particleEffects.render(this.camera);
+    // Reforzar de nuevo programa lit y su iluminación tras partículas
+    this.shaderManager.useLitProgram();
+    this.shaderManager.setLighting(
+      this.lightDirection,
+      this.lightColor,
+      this.ambientColor,
+      this.ambientStrength
+    );
 
     // Cambiar de vuelta al shader estándar para asteroides
     this.shaderManager.useLitProgram();
@@ -687,9 +726,11 @@ export class GameEngine {
       this.ambientColor,
       this.ambientStrength
     );
+    // Color base por defecto de asteroides (si no se establece luego)
+    this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4]));
 
   // Renderizar asteroides del cluster con shader estándar
-    this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4])); // Color gris-marrón rocoso
+  this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4])); // Color gris-marrón rocoso
 
     // Renderizar objetos de clusters o proxy según LOD
   // Asegurar blending para soportar opacidades en fades
@@ -741,6 +782,15 @@ export class GameEngine {
         this.ambientStrength,
         new Float32Array([0.6, 0.5, 0.4])
       );
+      // Tras instancing, reforzar estado lit y limpiar divisores/atributos
+      this.resetGLForLitDraw();
+      this.shaderManager.useLitProgram();
+      this.shaderManager.setLighting(
+        this.lightDirection,
+        this.lightColor,
+        this.ambientColor,
+        this.ambientStrength
+      );
     } else {
       this.asteroidClusterService.getClusters().forEach(c => {
         // Cluster-level frustum/distance culling (skip entire cluster if not visible)
@@ -775,6 +825,116 @@ export class GameEngine {
 
     // Renderizar outlines avanzados (FASE 4)
     this.renderOutlineSystem();
+
+    // Renderizar planetas al final para asegurar consistencia de estado
+    this.renderPlanets();
+  }
+
+  /** Crea 9 planetas en órbitas elípticas concéntricas en el plano XZ */
+  private createPlanets(): void {
+    // Si ya existen, no recrear
+    if (this.planets.length > 0) return;
+    const colors: PlanetColorName[] = ['verde','azul_hielo','marron','gris','azul_marino','rojo_carmesi','violeta_oscuro','azul_hielo','marron'];
+    const center = { x: 0, y: 0, z: 0 };
+  const minA = 50000; const maxA = 100000;
+  const count = 0;
+    for (let i = 0; i < count; i++) {
+      const t = i / Math.max(1, count - 1);
+      const a = Math.round(minA + t * (maxA - minA)); // semi-eje mayor
+      const e = 0.25 + Math.random() * 0.25; // excentricidad moderada 0.25..0.5
+      const b = Math.round(a * Math.sqrt(1 - e * e)); // semi-eje menor
+      const orient = Math.random() * Math.PI * 2;
+      const angle0 = Math.random() * Math.PI * 2;
+      const diameter = 200 + Math.random() * 800; // 200..1000 diag → radio 100..500
+      const radius = diameter * 0.5;
+      const color = colors[i % colors.length];
+      // Posición inicial en la elipse
+      const cx = Math.cos(angle0) * a;
+      const cz = Math.sin(angle0) * b;
+      const pos = { x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)), y: 0, z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)) };
+      const planet = new Planet(`planet-${i}`, color, radius, pos);
+      planet.orbitCenter = { ...center };
+      planet.semiMajor = a;
+      planet.semiMinor = b;
+      planet.orbitOrientation = orient;
+      planet.orbitAngle = angle0;
+      // Velocidad angular inversamente proporcional a a^{3/2} (heurística kepleriana)
+      planet.orbitAngularSpeed = 0.00003 * Math.pow(50000 / a, 1.5);
+      // Lenta rotación propia
+      planet.angularVelocity.y = 0.0001 + Math.random() * 0.0002;
+      this.planets.push(planet);
+    }
+  }
+
+  /** Actualiza la posición/orientación de planetas según su órbita */
+  private updatePlanets(dt: number): void {
+    for (const p of this.planets) {
+      p.orbitAngle += p.orbitAngularSpeed * dt;
+      // Mantener ángulo en rango
+      if (p.orbitAngle > Math.PI * 2) p.orbitAngle -= Math.PI * 2;
+      if (p.orbitAngle < 0) p.orbitAngle += Math.PI * 2;
+      const cx = Math.cos(p.orbitAngle) * p.semiMajor;
+      const cz = Math.sin(p.orbitAngle) * p.semiMinor;
+      // Rotar el punto de la elipse por la orientación
+      const x = cx * Math.cos(p.orbitOrientation) - cz * Math.sin(p.orbitOrientation);
+      const z = cx * Math.sin(p.orbitOrientation) + cz * Math.cos(p.orbitOrientation);
+      p.position.x = p.orbitCenter.x + x;
+      p.position.y = 0;
+      p.position.z = p.orbitCenter.z + z;
+      // Rotación propia ya se aplica en update, pero aquí actualizamos matrices sin integrar física
+      p.update(0);
+    }
+  }
+
+  /** Renderiza planetas: lejos = lit monocromo; cerca (<10k) = shader texturizado tintado */
+  private renderPlanets(): void {
+    if (!this.gl || !this.shaderManager) return;
+    const cam = this.camera;
+    // Guardar estado mínimo para no interferir con otros pases
+    const prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
+    const wasBlend = this.gl.isEnabled(this.gl.BLEND);
+    for (const p of this.planets) {
+      // Distancia desde la nave (criterio de cercanía pedido)
+      const dx = p.position.x - this.spaceship.position.x;
+      const dy = p.position.y - this.spaceship.position.y;
+      const dz = p.position.z - this.spaceship.position.z;
+      const distShip = Math.hypot(dx, dy, dz);
+
+      if (distShip < 10000) {
+        // Texturizado tintado con baseColor
+        this.shaderManager.useTexturedProgram();
+        // Matrices
+        this.calculateNormalMatrix(p.modelMatrix);
+        this.shaderManager.setTexturedMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+        // Iluminación y color base = color del planeta
+        const base = new Float32Array([p.color.r, p.color.g, p.color.b]);
+        this.shaderManager.setTexturedLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength, base);
+        // Texturas disponibles (usamos metálica+gradient para simular patrones y que “parezca” tormentas/tierra/agua)
+        const metallicTexture = this.textureManager.getTexture('metallic');
+        const gradientTexture = this.textureManager.getTexture('gradient');
+        if (metallicTexture && gradientTexture) {
+          this.shaderManager.setTexturedTextures(metallicTexture, gradientTexture);
+        }
+        // Dibujar
+        p.render(this.gl, this.shaderManager.texturedProgram!, cam.viewMatrix, cam.projectionMatrix);
+      } else {
+        // Lit monocromo con su color base
+        this.shaderManager.useLitProgram();
+        this.calculateNormalMatrix(p.modelMatrix);
+        this.shaderManager.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+        this.shaderManager.setLitColor(new Float32Array([p.color.r, p.color.g, p.color.b]));
+        p.render(this.gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+      }
+    }
+    // Desbindeo explícito de texturas usadas por el pase texturizado de planetas
+    this.gl.activeTexture(this.gl.TEXTURE0);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+    this.gl.activeTexture(this.gl.TEXTURE1);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+    this.gl.activeTexture(this.gl.TEXTURE0);
+    // Restaurar estado
+    if (!wasBlend) this.gl.disable(this.gl.BLEND);
+    if (prevProgram) this.gl.useProgram(prevProgram);
   }
 
   /**
@@ -853,8 +1013,8 @@ export class GameEngine {
       return;
     }
 
-    // Usar programa texturizado
-    this.shaderManager.useTexturedProgram();
+    // Aislar: la nave se renderiza SOLO con el shader lit
+    this.resetGLForLitDraw();
 
     // Debug: attribute collision check once
     if (!this.onceLoggedAttribCollision) {
@@ -864,38 +1024,21 @@ export class GameEngine {
       this.onceLoggedAttribCollision = true;
     }
 
-    // Obtener texturas
-    const metallicTexture = this.textureManager.getTexture('metallic');
-    const gradientTexture = this.textureManager.getTexture('gradient');
-    
-    if (!metallicTexture || !gradientTexture) {
-      console.error('❌ Missing textures for spaceship');
-      return;
-    }
-
     // Calcular matriz normal
     this.calculateNormalMatrix(this.spaceship.modelMatrix);
-
-    // Configurar matrices
-    this.shaderManager.setTexturedMatrices(
+    // Configurar matrices para lit y asegurar iluminación
+    this.shaderManager.setLitMatrices(
       this.spaceship.modelMatrix,
       this.camera.viewMatrix,
       this.camera.projectionMatrix,
       this.normalMatrix
     );
-
-    // Configurar iluminación y color base metálico
-    const baseColor = new Float32Array([0.7, 0.75, 0.8]); // Color metálico plateado
-    this.shaderManager.setTexturedLighting(
+    this.shaderManager.setLighting(
       this.lightDirection,
       this.lightColor,
       this.ambientColor,
-      this.ambientStrength,
-      baseColor
+      this.ambientStrength
     );
-
-    // Configurar texturas
-    this.shaderManager.setTexturedTextures(metallicTexture, gradientTexture);
 
   // Debug: before ship modules, check a_normal enabled state
   this.debugNormalAttribEnabled('before-ship-modules');
@@ -905,6 +1048,37 @@ export class GameEngine {
 
   // Debug: after ship modules
   this.debugNormalAttribEnabled('after-ship-modules');
+  }
+
+  // Aísla el draw lit: apaga blending, desbindea texturas y reestablece programa/iluminación para la nave
+  private resetGLForLitDraw(): void {
+    if (!this.gl || !this.shaderManager) return;
+    // Transparencias fuera para la nave
+    this.gl.disable(this.gl.BLEND);
+    // Deshabilitar todos los atributos de vértice y limpiar divisores de instancing
+    const maxAttribs = this.gl.getParameter(this.gl.MAX_VERTEX_ATTRIBS) as number;
+    for (let i = 0; i < maxAttribs; i++) {
+      const enabled = this.gl.getVertexAttrib(i, this.gl.VERTEX_ATTRIB_ARRAY_ENABLED) as boolean;
+      if (enabled) this.gl.disableVertexAttribArray(i);
+      // Asegurar divisor a 0 para evitar residuales de instancing
+      this.gl.vertexAttribDivisor(i, 0);
+    }
+    // Desvincular ARRAY_BUFFER genérico para evitar punteros colgantes
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
+    // Desbindeo de texturas por si un pase texturizado dejó algo activo
+    this.gl.activeTexture(this.gl.TEXTURE0);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+    this.gl.activeTexture(this.gl.TEXTURE1);
+    this.gl.bindTexture(this.gl.TEXTURE_2D, null);
+    this.gl.activeTexture(this.gl.TEXTURE0);
+    // Reforzar shader lit y su iluminación
+    this.shaderManager.useLitProgram();
+    this.shaderManager.setLighting(
+      this.lightDirection,
+      this.lightColor,
+      this.ambientColor,
+      this.ambientStrength
+    );
   }
 
   /**
@@ -978,6 +1152,64 @@ export class GameEngine {
     }
   }
 
+  // Ensure VAO and buffers for a ship module; compute normals once
+  private ensureShipModuleVAO(
+    key: keyof GameEngine['shipVAO'],
+    geometry: { vertices: Float32Array; indices: Uint16Array },
+    normalAttribName: 'normal' = 'normal'
+  ): void {
+    if (!this.gl || !this.shaderManager) return;
+    // Create buffers if missing
+    if (!this.shipBuffers[key]) {
+      const v = this.gl.createBuffer()!;
+      const n = this.gl.createBuffer()!;
+      const i = this.gl.createBuffer()!;
+      // Upload geometry
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, v);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, geometry.vertices, this.gl.STATIC_DRAW);
+      const normals = this.computeNormals(geometry.vertices, geometry.indices);
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, n);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, normals, this.gl.STATIC_DRAW);
+      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, i);
+      this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, geometry.indices, this.gl.STATIC_DRAW);
+      this.shipBuffers[key] = { v, n, i, indexCount: geometry.indices.length } as any;
+    }
+    // Create VAO if missing
+    if (!this.shipVAO[key]) {
+      const vao = this.gl.createVertexArray();
+      if (!vao) return;
+      this.shipVAO[key] = vao;
+      this.gl.bindVertexArray(vao);
+      // Bind attribute layout for lit program
+      const aPos = this.shaderManager.litAttributes['position'];
+      const aNrm = this.shaderManager.litAttributes[normalAttribName];
+      // Position
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers[key]!.v);
+      if (aPos >= 0) {
+        this.gl.enableVertexAttribArray(aPos);
+        this.gl.vertexAttribPointer(aPos, 3, this.gl.FLOAT, false, 0, 0);
+      }
+      // Normal
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers[key]!.n);
+      if (aNrm >= 0) {
+        this.gl.enableVertexAttribArray(aNrm);
+        this.gl.vertexAttribPointer(aNrm, 3, this.gl.FLOAT, false, 0, 0);
+      }
+      // Indices
+      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.shipBuffers[key]!.i);
+      // Unbind VAO
+      this.gl.bindVertexArray(null);
+    }
+  }
+
+  private drawShipModule(key: keyof GameEngine['shipVAO']): void {
+    if (!this.gl) return;
+    if (!this.shipVAO[key] || !this.shipBuffers[key]) return;
+    this.gl.bindVertexArray(this.shipVAO[key]);
+    this.gl.drawElements(this.gl.TRIANGLES, this.shipBuffers[key]!.indexCount, this.gl.UNSIGNED_SHORT, 0);
+    this.gl.bindVertexArray(null);
+  }
+
   /**
    * Renderiza el cono/pirámide de la punta delantera (textura naranja)
    */
@@ -993,27 +1225,9 @@ export class GameEngine {
     const noseGeometry = this.spaceship.createNoseGeometry();
     const program = this.shaderManager.litProgram;
     if (!program) return;
-
     this.gl.useProgram(program);
-
-    // Crear buffers temporales para la geometría del nose
-    const noseVertexBuffer = this.gl.createBuffer();
-    const noseIndexBuffer = this.gl.createBuffer();
-
-    // Configurar geometría del nose
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, noseVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, noseGeometry.vertices, this.gl.STATIC_DRAW);
-
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, noseIndexBuffer);
-    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, noseGeometry.indices, this.gl.STATIC_DRAW);
-
-    // Configurar atributos
-    const positionLocation = this.shaderManager.litAttributes['position'];
-    if (positionLocation >= 0) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, noseVertexBuffer);
-      this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
+    // Ensure VAO + buffers
+    this.ensureShipModuleVAO('nose', noseGeometry);
 
     // Configurar matriz de transformación
     this.spaceship.updateModelMatrix();
@@ -1026,16 +1240,11 @@ export class GameEngine {
       this.normalMatrix
     );
 
-    // Color naranja para el nose
-    this.shaderManager.setLitColor(new Float32Array([1.0, 0.6, 0.2]));
+  // Color naranja para el nose (asegurar baseColor por módulo)
+  this.shaderManager.setLitColor(new Float32Array([1.0, 0.6, 0.2]));
 
-    // Renderizar
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, noseIndexBuffer);
-    this.gl.drawElements(this.gl.TRIANGLES, noseGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
-
-    // Limpiar buffers temporales
-    this.gl.deleteBuffer(noseVertexBuffer);
-    this.gl.deleteBuffer(noseIndexBuffer);
+    // Draw
+    this.drawShipModule('nose');
   }
 
   /**
@@ -1049,25 +1258,8 @@ export class GameEngine {
     if (!program) return;
 
     this.gl.useProgram(program);
-
-    // Crear buffers temporales para la geometría del body
-    const bodyVertexBuffer = this.gl.createBuffer();
-    const bodyIndexBuffer = this.gl.createBuffer();
-
-    // Configurar geometría del body
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, bodyVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, bodyGeometry.vertices, this.gl.STATIC_DRAW);
-
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, bodyIndexBuffer);
-    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, bodyGeometry.indices, this.gl.STATIC_DRAW);
-
-    // Configurar atributos
-    const positionLocation = this.shaderManager.litAttributes['position'];
-    if (positionLocation >= 0) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, bodyVertexBuffer);
-      this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
+    // Ensure VAO + buffers
+    this.ensureShipModuleVAO('body', bodyGeometry);
 
     // Configurar matriz de transformación
     this.spaceship.updateModelMatrix();
@@ -1080,16 +1272,13 @@ export class GameEngine {
       this.normalMatrix
     );
 
-    // Color metálico plateado para el body
-    this.shaderManager.setLitColor(new Float32Array([0.7, 0.7, 0.8]));
+    // Color metálico plateado para el body (asegurar baseColor por módulo)
+  this.shaderManager.setLitColor(new Float32Array([0.7, 0.7, 0.8]));
+    // Especular metálico medio para el cuerpo
+    this.shaderManager.setSpecular(new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]), 0.25, 48.0);
 
-    // Renderizar
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, bodyIndexBuffer);
-    this.gl.drawElements(this.gl.TRIANGLES, bodyGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
-
-    // Limpiar buffers temporales
-    this.gl.deleteBuffer(bodyVertexBuffer);
-    this.gl.deleteBuffer(bodyIndexBuffer);
+    // Draw
+    this.drawShipModule('body');
   }
 
   /**
@@ -1105,31 +1294,14 @@ export class GameEngine {
     }
 
     console.log('🛸 Renderizando cabina del piloto...');
-    const cockpitGeometry = this.spaceship.createCockpitGeometry();
+  const cockpitGeometry = this.spaceship.createCockpitGeometry();
     console.log('🛸 Geometría de cabina creada:', cockpitGeometry.vertices.length, 'vértices');
     const program = this.shaderManager.litProgram;
     if (!program) return;
 
     this.gl.useProgram(program);
-
-    // Crear buffers temporales para la geometría de la cabina
-    const cockpitVertexBuffer = this.gl.createBuffer();
-    const cockpitIndexBuffer = this.gl.createBuffer();
-
-    // Configurar geometría de la cabina
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, cockpitVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, cockpitGeometry.vertices, this.gl.STATIC_DRAW);
-
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, cockpitIndexBuffer);
-    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, cockpitGeometry.indices, this.gl.STATIC_DRAW);
-
-    // Configurar atributos
-    const positionLocation = this.shaderManager.litAttributes['position'];
-    if (positionLocation >= 0) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, cockpitVertexBuffer);
-      this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
+    // Ensure VAO + buffers
+    this.ensureShipModuleVAO('cockpit', cockpitGeometry);
 
     // Configurar matriz de transformación
     this.spaceship.updateModelMatrix();
@@ -1142,16 +1314,11 @@ export class GameEngine {
       this.normalMatrix
     );
 
-    // Color azul eléctrico súper brillante para la cabina del piloto
-    this.shaderManager.setLitColor(new Float32Array([0.0, 0.5, 1.0])); 
+  // Color azul eléctrico para la cabina del piloto (asegurar baseColor)
+  this.shaderManager.setLitColor(new Float32Array([0.0, 0.5, 1.0])); 
 
-    // Renderizar
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, cockpitIndexBuffer);
-    this.gl.drawElements(this.gl.TRIANGLES, cockpitGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
-
-    // Limpiar buffers temporales
-    this.gl.deleteBuffer(cockpitVertexBuffer);
-    this.gl.deleteBuffer(cockpitIndexBuffer);
+    // Draw
+    this.drawShipModule('cockpit');
   }
 
   /**
@@ -1161,30 +1328,13 @@ export class GameEngine {
     if (!this.gl || !this.shaderManager || !this.spaceship) return;
 
     console.log('🔧 Renderizando tubo del motor...');
-    const nozzleGeometry = this.spaceship.createEngineNozzleGeometry();
+  const nozzleGeometry = this.spaceship.createEngineNozzleGeometry();
     const program = this.shaderManager.litProgram;
     if (!program) return;
 
     this.gl.useProgram(program);
-
-    // Crear buffers temporales para la geometría del tubo
-    const nozzleVertexBuffer = this.gl.createBuffer();
-    const nozzleIndexBuffer = this.gl.createBuffer();
-
-    // Configurar geometría del tubo
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, nozzleVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, nozzleGeometry.vertices, this.gl.STATIC_DRAW);
-
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, nozzleIndexBuffer);
-    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, nozzleGeometry.indices, this.gl.STATIC_DRAW);
-
-    // Configurar atributos
-    const positionLocation = this.shaderManager.litAttributes['position'];
-    if (positionLocation >= 0) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, nozzleVertexBuffer);
-      this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
+    // Ensure VAO + buffers
+    this.ensureShipModuleVAO('nozzle', nozzleGeometry);
 
     // Configurar matriz de transformación
     this.spaceship.updateModelMatrix();
@@ -1197,16 +1347,11 @@ export class GameEngine {
       this.normalMatrix
     );
 
-    // Color metálico oscuro para el tubo del motor
-    this.shaderManager.setLitColor(new Float32Array([0.4, 0.4, 0.45])); // Gris metálico
+  // Color metálico oscuro para el tubo del motor (asegurar baseColor)
+  this.shaderManager.setLitColor(new Float32Array([0.4, 0.4, 0.45])); // Gris metálico
 
-    // Renderizar
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, nozzleIndexBuffer);
-    this.gl.drawElements(this.gl.TRIANGLES, nozzleGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
-
-    // Limpiar buffers temporales
-    this.gl.deleteBuffer(nozzleVertexBuffer);
-    this.gl.deleteBuffer(nozzleIndexBuffer);
+    // Draw
+    this.drawShipModule('nozzle');
   }
 
   /**
@@ -1215,30 +1360,13 @@ export class GameEngine {
   private renderSpaceshipWings(): void {
     if (!this.gl || !this.shaderManager || !this.spaceship) return;
 
-    const wingsGeometry = this.spaceship.createWingsGeometry();
+  const wingsGeometry = this.spaceship.createWingsGeometry();
     const program = this.shaderManager.litProgram;
     if (!program) return;
 
     this.gl.useProgram(program);
-
-    // Crear buffers temporales para la geometría de las wings
-    const wingsVertexBuffer = this.gl.createBuffer();
-    const wingsIndexBuffer = this.gl.createBuffer();
-
-    // Configurar geometría de las wings
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, wingsVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, wingsGeometry.vertices, this.gl.STATIC_DRAW);
-
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, wingsIndexBuffer);
-    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, wingsGeometry.indices, this.gl.STATIC_DRAW);
-
-    // Configurar atributos
-    const positionLocation = this.shaderManager.litAttributes['position'];
-    if (positionLocation >= 0) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, wingsVertexBuffer);
-      this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
+    // Ensure VAO + buffers
+    this.ensureShipModuleVAO('wings', wingsGeometry);
 
     // Configurar matriz de transformación
     this.spaceship.updateModelMatrix();
@@ -1251,16 +1379,11 @@ export class GameEngine {
       this.normalMatrix
     );
 
-    // Color azul metálico para las wings
-    this.shaderManager.setLitColor(new Float32Array([0.2, 0.4, 0.8]));
+  // Color azul metálico para las wings (asegurar baseColor)
+  this.shaderManager.setLitColor(new Float32Array([0.2, 0.4, 0.8]));
 
-    // Renderizar
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, wingsIndexBuffer);
-    this.gl.drawElements(this.gl.TRIANGLES, wingsGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
-
-    // Limpiar buffers temporales
-    this.gl.deleteBuffer(wingsVertexBuffer);
-    this.gl.deleteBuffer(wingsIndexBuffer);
+    // Draw
+    this.drawShipModule('wings');
   }
 
   /**
@@ -1269,30 +1392,13 @@ export class GameEngine {
   private renderSpaceshipThruster(): void {
     if (!this.gl || !this.shaderManager || !this.spaceship) return;
 
-    const thrusterGeometry = this.spaceship.createThrusterGeometry();
+  const thrusterGeometry = this.spaceship.createThrusterGeometry();
     const program = this.shaderManager.litProgram;
     if (!program) return;
 
     this.gl.useProgram(program);
-
-    // Crear buffers temporales para la geometría del thruster
-    const thrusterVertexBuffer = this.gl.createBuffer();
-    const thrusterIndexBuffer = this.gl.createBuffer();
-
-    // Configurar geometría del thruster (el escalado ya está aplicado en createThrusterGeometry)
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, thrusterVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, thrusterGeometry.vertices, this.gl.STATIC_DRAW);
-
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, thrusterIndexBuffer);
-    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, thrusterGeometry.indices, this.gl.STATIC_DRAW);
-
-    // Configurar atributos
-    const positionLocation = this.shaderManager.litAttributes['position'];
-    if (positionLocation >= 0) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, thrusterVertexBuffer);
-      this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
+    // Ensure VAO + buffers
+    this.ensureShipModuleVAO('thruster', thrusterGeometry);
 
     // Configurar matriz de transformación
     this.spaceship.updateModelMatrix();
@@ -1337,17 +1443,16 @@ export class GameEngine {
         break;
     }
     
-    this.shaderManager.setLitColor(new Float32Array([red, green, blue]));
+  this.shaderManager.setLitColor(new Float32Array([red, green, blue]));
+  // Especular alto para tobera brillante
+  this.shaderManager.setSpecular(new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]), 0.4, 64.0);
 
-    // Renderizar
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, thrusterIndexBuffer);
-    this.gl.drawElements(this.gl.TRIANGLES, thrusterGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
+  // Draw
+  this.drawShipModule('thruster');
 
     // NO RESETEAR COLOR - dejar que cada objeto maneje el suyo
 
-    // Limpiar buffers temporales
-    this.gl.deleteBuffer(thrusterVertexBuffer);
-    this.gl.deleteBuffer(thrusterIndexBuffer);
+    // No buffer deletion; cached
   }
 
   /**
@@ -1475,6 +1580,37 @@ export class GameEngine {
     this.normalMatrix[4] = modelMatrix[4];  this.normalMatrix[5] = modelMatrix[5];  this.normalMatrix[6] = modelMatrix[6];   this.normalMatrix[7] = 0;
     this.normalMatrix[8] = modelMatrix[8];  this.normalMatrix[9] = modelMatrix[9];  this.normalMatrix[10] = modelMatrix[10]; this.normalMatrix[11] = 0;
     this.normalMatrix[12] = 0;              this.normalMatrix[13] = 0;              this.normalMatrix[14] = 0;               this.normalMatrix[15] = 1;
+  }
+
+  // Calcula normales por vértice acumulando normales de cara y normalizando
+  private computeNormals(vertices: Float32Array, indices: Uint16Array): Float32Array {
+    const vCount = vertices.length / 3;
+    const normals = new Float32Array(vertices.length);
+    for (let i = 0; i < indices.length; i += 3) {
+      const i0 = indices[i] * 3;
+      const i1 = indices[i + 1] * 3;
+      const i2 = indices[i + 2] * 3;
+      const v0x = vertices[i0], v0y = vertices[i0 + 1], v0z = vertices[i0 + 2];
+      const v1x = vertices[i1], v1y = vertices[i1 + 1], v1z = vertices[i1 + 2];
+      const v2x = vertices[i2], v2y = vertices[i2 + 1], v2z = vertices[i2 + 2];
+      const e1x = v1x - v0x, e1y = v1y - v0y, e1z = v1z - v0z;
+      const e2x = v2x - v0x, e2y = v2y - v0y, e2z = v2z - v0z;
+      // Cross e1 x e2
+      const nx = e1y * e2z - e1z * e2y;
+      const ny = e1z * e2x - e1x * e2z;
+      const nz = e1x * e2y - e1y * e2x;
+      normals[i0] += nx; normals[i0 + 1] += ny; normals[i0 + 2] += nz;
+      normals[i1] += nx; normals[i1 + 1] += ny; normals[i1 + 2] += nz;
+      normals[i2] += nx; normals[i2 + 1] += ny; normals[i2 + 2] += nz;
+    }
+    // Normalize
+    for (let i = 0; i < vCount; i++) {
+      const ix = i * 3;
+      const nx = normals[ix], ny = normals[ix + 1], nz = normals[ix + 2];
+      const len = Math.hypot(nx, ny, nz) || 1;
+      normals[ix] = nx / len; normals[ix + 1] = ny / len; normals[ix + 2] = nz / len;
+    }
+    return normals;
   }
 
   /**
@@ -1622,6 +1758,17 @@ export class GameEngine {
 
     if (this.particleEffects) {
       this.particleEffects.cleanup();
+    }
+    // Cleanup VAOs and buffers for ship modules
+    if (this.gl) {
+      const delVAO = (v: WebGLVertexArrayObject | null) => { if (v) this.gl!.deleteVertexArray(v); };
+      delVAO(this.shipVAO.nose); delVAO(this.shipVAO.body); delVAO(this.shipVAO.cockpit);
+      delVAO(this.shipVAO.nozzle); delVAO(this.shipVAO.wings); delVAO(this.shipVAO.thruster);
+      const delBuf = (b?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer }) => {
+        if (!b) return; this.gl!.deleteBuffer(b.v); this.gl!.deleteBuffer(b.n); this.gl!.deleteBuffer(b.i);
+      };
+      delBuf(this.shipBuffers.nose); delBuf(this.shipBuffers.body); delBuf(this.shipBuffers.cockpit);
+      delBuf(this.shipBuffers.nozzle); delBuf(this.shipBuffers.wings); delBuf(this.shipBuffers.thruster);
     }
     
     console.log('GameEngine limpiado');

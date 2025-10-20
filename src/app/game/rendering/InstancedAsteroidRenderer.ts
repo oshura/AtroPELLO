@@ -32,6 +32,12 @@ export class InstancedAsteroidRenderer {
     },
   };
 
+  // Vertex Array Objects to encapsulate attribute state per type
+  private vaos: {
+    asteroid: WebGLVertexArrayObject | null,
+    super: WebGLVertexArrayObject | null,
+  } = { asteroid: null, super: null };
+
   // Instance buffers per type (mat4 packed as 4x vec4)
   private instance = {
     asteroid: {
@@ -87,6 +93,11 @@ export class InstancedAsteroidRenderer {
     this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, ibo);
     this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, first.indices, this.gl.STATIC_DRAW);
     this.model[kind] = { vbo, nbo, ibo, indexCount: first.indices.length, ready: true };
+    // Invalidate VAO so it can be recreated with the new model buffers
+    if (this.vaos[kind]) {
+      this.gl.deleteVertexArray(this.vaos[kind]);
+      this.vaos[kind] = null;
+    }
   }
 
   /** Destroy model buffers if present */
@@ -96,6 +107,7 @@ export class InstancedAsteroidRenderer {
     if (m.nbo) this.gl.deleteBuffer(m.nbo);
     if (m.ibo) this.gl.deleteBuffer(m.ibo);
     this.model[kind] = { vbo: null, nbo: null, ibo: null, indexCount: 0, ready: false };
+    if (this.vaos[kind]) { this.gl.deleteVertexArray(this.vaos[kind]); this.vaos[kind] = null; }
   }
 
   /** Ensure instance buffers with capacity for count instances */
@@ -169,63 +181,88 @@ export class InstancedAsteroidRenderer {
     this.gl.bufferSubData(this.gl.ARRAY_BUFFER, 0, opa);
   }
 
-  /** Bind shared model and instance attributes, then draw */
+  /** Create or bind VAO, then draw */
   private drawBatch(kind: 'asteroid' | 'super', objects: GameObject[]): void {
     if (!this.model[kind].ready || objects.length === 0) return;
     const prog = this.shaderManager.instancedLitProgram;
     if (!prog) return;
 
-    // Attribute locations
-    const aPos = this.shaderManager.instancedLitAttributes['position'];
-    const aNrm = this.shaderManager.instancedLitAttributes['normal'];
+    // Create VAO if missing
+    if (!this.vaos[kind]) {
+      const vao = this.gl.createVertexArray();
+      if (!vao) return;
+      this.vaos[kind] = vao;
+      this.gl.bindVertexArray(vao);
+      // Attribute locations
+      const aPos = this.shaderManager.instancedLitAttributes['position'];
+      const aNrm = this.shaderManager.instancedLitAttributes['normal'];
+      const m0 = this.shaderManager.instancedLitAttributes['i_model0'];
+      const m1 = this.shaderManager.instancedLitAttributes['i_model1'];
+      const m2 = this.shaderManager.instancedLitAttributes['i_model2'];
+      const m3 = this.shaderManager.instancedLitAttributes['i_model3'];
+      const aOpacity = (this.shaderManager as any).instancedLitAttributes?.['i_opacity'] ?? -1;
+
+      // Bind per-vertex buffers and define attribute pointers (static per model)
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.model[kind].vbo);
+      this.gl.enableVertexAttribArray(aPos);
+      this.gl.vertexAttribPointer(aPos, 3, this.gl.FLOAT, false, 0, 0);
+
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.model[kind].nbo);
+      if (aNrm >= 0) {
+        this.gl.enableVertexAttribArray(aNrm);
+        this.gl.vertexAttribPointer(aNrm, 3, this.gl.FLOAT, false, 0, 0);
+      }
+
+      // Bind index buffer
+      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.model[kind].ibo);
+
+      // Instance attributes layout (only pointers and divisors; buffers will be rebound before draw)
+      this.gl.enableVertexAttribArray(m0);
+      this.gl.vertexAttribPointer(m0, 4, this.gl.FLOAT, false, 0, 0);
+      this.gl.vertexAttribDivisor(m0, 1);
+
+      this.gl.enableVertexAttribArray(m1);
+      this.gl.vertexAttribPointer(m1, 4, this.gl.FLOAT, false, 0, 0);
+      this.gl.vertexAttribDivisor(m1, 1);
+
+      this.gl.enableVertexAttribArray(m2);
+      this.gl.vertexAttribPointer(m2, 4, this.gl.FLOAT, false, 0, 0);
+      this.gl.vertexAttribDivisor(m2, 1);
+
+      this.gl.enableVertexAttribArray(m3);
+      this.gl.vertexAttribPointer(m3, 4, this.gl.FLOAT, false, 0, 0);
+      this.gl.vertexAttribDivisor(m3, 1);
+
+      if (aOpacity >= 0) {
+        this.gl.enableVertexAttribArray(aOpacity);
+        this.gl.vertexAttribPointer(aOpacity, 1, this.gl.FLOAT, false, 0, 0);
+        this.gl.vertexAttribDivisor(aOpacity, 1);
+      }
+    } else {
+      this.gl.bindVertexArray(this.vaos[kind]);
+    }
+
+    // Rebind instance buffers to the VAO's attribute bindings. In WebGL2, the currently
+    // bound ARRAY_BUFFER at gl.vertexAttribPointer time becomes part of the VAO state,
+    // so we must call vertexAttribPointer again if the buffer objects change. To keep it
+    // simple, we just reset the vertexAttribPointer for instance attributes with buffers.
     const m0 = this.shaderManager.instancedLitAttributes['i_model0'];
     const m1 = this.shaderManager.instancedLitAttributes['i_model1'];
     const m2 = this.shaderManager.instancedLitAttributes['i_model2'];
     const m3 = this.shaderManager.instancedLitAttributes['i_model3'];
-  const aOpacity = (this.shaderManager as any).instancedLitAttributes?.['i_opacity'] ?? -1;
-
-    // Bind per-vertex buffers
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.model[kind].vbo);
-    this.gl.enableVertexAttribArray(aPos);
-    this.gl.vertexAttribPointer(aPos, 3, this.gl.FLOAT, false, 0, 0);
-
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.model[kind].nbo);
-    if (aNrm >= 0) {
-      this.gl.enableVertexAttribArray(aNrm);
-      this.gl.vertexAttribPointer(aNrm, 3, this.gl.FLOAT, false, 0, 0);
-    }
-
-    // Bind index buffer
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.model[kind].ibo);
-
-    // Bind instance attributes (divisor = 1)
+    const aOpacity = (this.shaderManager as any).instancedLitAttributes?.['i_opacity'] ?? -1;
     const inst = this.instance[kind];
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.buffer0!);
-    this.gl.enableVertexAttribArray(m0);
     this.gl.vertexAttribPointer(m0, 4, this.gl.FLOAT, false, 0, 0);
-    this.gl.vertexAttribDivisor(m0, 1);
-
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.buffer1!);
-    this.gl.enableVertexAttribArray(m1);
     this.gl.vertexAttribPointer(m1, 4, this.gl.FLOAT, false, 0, 0);
-    this.gl.vertexAttribDivisor(m1, 1);
-
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.buffer2!);
-    this.gl.enableVertexAttribArray(m2);
     this.gl.vertexAttribPointer(m2, 4, this.gl.FLOAT, false, 0, 0);
-    this.gl.vertexAttribDivisor(m2, 1);
-
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.buffer3!);
-    this.gl.enableVertexAttribArray(m3);
     this.gl.vertexAttribPointer(m3, 4, this.gl.FLOAT, false, 0, 0);
-    this.gl.vertexAttribDivisor(m3, 1);
-
-    // Bind per-instance opacity if attribute exists
     if (aOpacity >= 0) {
       this.gl.bindBuffer(this.gl.ARRAY_BUFFER, inst.bufferOpacity!);
-      this.gl.enableVertexAttribArray(aOpacity);
       this.gl.vertexAttribPointer(aOpacity, 1, this.gl.FLOAT, false, 0, 0);
-      this.gl.vertexAttribDivisor(aOpacity, 1);
     }
 
     // Draw instanced
@@ -236,8 +273,8 @@ export class InstancedAsteroidRenderer {
       0,
       objects.length
     );
-
-    // Note: we leave attributes enabled; the engine sets state for other passes as needed.
+    // Unbind VAO to avoid accidental state bleed
+    this.gl.bindVertexArray(null);
   }
 
   /** Public render entry: render asteroids and supers in two instanced draws */
