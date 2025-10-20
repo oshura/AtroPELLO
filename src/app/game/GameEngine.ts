@@ -144,6 +144,11 @@ export class GameEngine {
       // Crear objetos del juego
       this.createGameObjects();
 
+      // Configure targeting distance origin to use the spaceship center (so distances are reported from the ship)
+      if (this.reticleManager && this.spaceship) {
+        this.reticleManager.setDistanceOriginProvider(() => ({ ...this.spaceship.position }));
+      }
+
   // Registro de targets se realiza al crear los clusters (initializeAllBuffers)
 
       // Ejecutar tests de integración cámara-nave

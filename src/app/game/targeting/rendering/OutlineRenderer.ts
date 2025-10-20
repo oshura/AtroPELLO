@@ -103,8 +103,19 @@ export class OutlineRenderer {
   private canvasWidth: number = 0;
   private canvasHeight: number = 0;
 
+  // Optional distance origin provider (e.g., ship center). When not set, falls back to camera position.
+  private distanceOriginProvider: (() => { x: number; y: number; z: number }) | null = null;
+
   constructor(private webglService: WebGLService) {
     this.setupPresetConfigs();
+  }
+
+  /**
+   * Allow external code to provide the origin point used for distance labels.
+   * If null, the camera position will be used.
+   */
+  public setDistanceOriginProvider(fn: (() => { x: number; y: number; z: number }) | null): void {
+    this.distanceOriginProvider = fn;
   }
 
   /**
@@ -551,6 +562,7 @@ export class OutlineRenderer {
   const invView = mat4.create();
   mat4.invert(invView, view);
   const camPos = { x: invView[12], y: invView[13], z: invView[14] };
+  const originPos = this.getDistanceOriginPosition(view);
 
   // Parámetros para tamaño fijo en pantalla:
   // Queremos que el billboard mantenga el mismo tamaño aparente que tendría a una distancia de referencia (30u)
@@ -566,20 +578,26 @@ export class OutlineRenderer {
       .filter(([_, ot]) => ot.isVisible)
       .map(([id, ot]) => {
         const t = ot.target;
+        // Camera-space distance for sorting/blending and screen-size scaling
         const dx = t.position.x - camPos.x;
         const dy = t.position.y - camPos.y;
         const dz = t.position.z - camPos.z;
-        const dist = Math.hypot(dx, dy, dz);
-        return { id, ot, dx, dy, dz, dist };
+        const distCam = Math.hypot(dx, dy, dz);
+        return { id, ot, dx, dy, dz, distCam };
       })
-      .sort((a, b) => b.dist - a.dist); // más lejos primero (desc) para que cercanos dibujen al final
+      .sort((a, b) => b.distCam - a.distCam); // más lejos primero (desc) para que cercanos dibujen al final
 
     for (const entry of sorted) {
-      const { id, ot: outlineTarget, dx, dy, dz, dist } = entry;
+      const { id, ot: outlineTarget, dx, dy, dz, distCam } = entry;
       const target = outlineTarget.target;
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
   const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : this.typeToLabel(target.getTargetType?.());
-      const distLabel = `${Math.round(dist)}u`;
+      // Distance label should be relative to the provided origin (e.g., ship center)
+      const dOx = target.position.x - originPos.x;
+      const dOy = target.position.y - originPos.y;
+      const dOz = target.position.z - originPos.z;
+      const distOrigin = Math.hypot(dOx, dOy, dOz);
+      const distLabel = `${Math.round(distOrigin)}u`;
       // Sin modulación de alpha por distancia: color constante
       const baseCol = outlineTarget.config.color;
       const textColor = `rgba(${Math.round(baseCol[0]*255)}, ${Math.round(baseCol[1]*255)}, ${Math.round(baseCol[2]*255)}, ${ (baseCol[3] ?? 1.0).toFixed(3) })`;
@@ -608,7 +626,8 @@ export class OutlineRenderer {
       model[4] = invView[4]; model[5] = invView[5]; model[6] = invView[6];
       model[8] = invView[8]; model[9] = invView[9]; model[10] = invView[10];
 
-  const distance = Math.max(0.001, dist);
+  // Screen-size scaling uses camera distance to maintain constant apparent size
+  const distance = Math.max(0.001, distCam);
   const distantThreshold = 300;
   if (distance > distantThreshold) {
         // Renderizar marcador compacto: cuadrado pequeño fijo (ej: 18px) manteniendo orientación a cámara.
@@ -644,7 +663,7 @@ export class OutlineRenderer {
       } else {
         // Billboard normal con textura
         const constantPxWidth = 162; // ancho base cercano
-        let widthWorld = (constantPxWidth / viewportW) * 2.0 * distance * tanHalfFovx;
+  let widthWorld = (constantPxWidth / viewportW) * 2.0 * distance * tanHalfFovx;
         const minWidthWorld = 0.01;
         if (widthWorld < minWidthWorld) widthWorld = minWidthWorld;
         const heightWorld = widthWorld * (texEntry!.h / texEntry!.w);
@@ -673,10 +692,11 @@ export class OutlineRenderer {
     gl.bindVertexArray(this.labelVAO);
     gl.uniform2f(this.labelUniforms.screenSize, this.canvasWidth, this.canvasHeight);
 
-    // Obtener posición de cámara a partir de invView
-    const invView = mat4.create();
-    mat4.invert(invView, this.lastViewMatrix);
-    const camPos = { x: invView[12], y: invView[13], z: invView[14] };
+  // Obtener posiciones: cámara (para proyección) y origen de distancia (para etiqueta)
+  const invView = mat4.create();
+  mat4.invert(invView, this.lastViewMatrix);
+  const camPos = { x: invView[12], y: invView[13], z: invView[14] };
+  const originPos = this.getDistanceOriginPosition(this.lastViewMatrix);
 
     for (const [id, outlineTarget] of this.activeOutlines) {
       if (!outlineTarget.isVisible) continue;
@@ -687,7 +707,12 @@ export class OutlineRenderer {
       // Crear/actualizar textura de label
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
   const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : this.typeToLabel(target.getTargetType?.());
-      const dist = Math.hypot(target.position.x - camPos.x, target.position.y - camPos.y, target.position.z - camPos.z);
+      // Distancia para etiqueta: respecto al origen compartido (p.ej. centro de la nave)
+      const dist = Math.hypot(
+        target.position.x - originPos.x,
+        target.position.y - originPos.y,
+        target.position.z - originPos.z
+      );
       const distLabel = `${Math.round(dist)}u`;
   // Color heredado del outline (animosidad)
   const col = outlineTarget.config.color || [0,1,1,0.95];
@@ -1204,8 +1229,35 @@ export class OutlineRenderer {
    * Calcula la distancia a un target (placeholder)
    */
   private calculateTargetDistance(target: ITargetable): number {
-    // TODO: Implementar cálculo real de distancia desde la cámara
-    return 100.0; // Placeholder
+    // Prefer the shared origin provider when available, otherwise camera (from lastViewMatrix)
+    const origin = this.getDistanceOriginPosition(this.lastViewMatrix || undefined);
+    const dx = target.position.x - origin.x;
+    const dy = target.position.y - origin.y;
+    const dz = target.position.z - origin.z;
+    return Math.hypot(dx, dy, dz);
+  }
+
+  /**
+   * Returns the world-space position used as origin for distance labels.
+   * - If a custom provider is set, use it.
+   * - Otherwise, fall back to camera position extracted from the given view matrix.
+   */
+  private getDistanceOriginPosition(viewMatrix?: mat4): { x: number; y: number; z: number } {
+    if (this.distanceOriginProvider) {
+      try {
+        const v = this.distanceOriginProvider();
+        if (v && Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)) return v;
+      } catch {}
+    }
+    // Fallback: camera from view matrix
+    const vm = viewMatrix ?? this.lastViewMatrix;
+    if (vm) {
+      const inv = mat4.create();
+      mat4.invert(inv, vm);
+      return { x: inv[12], y: inv[13], z: inv[14] };
+    }
+    // Ultimate fallback
+    return { x: 0, y: 0, z: 0 };
   }
 
   /**

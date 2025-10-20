@@ -22,6 +22,8 @@ export class TargetDetector implements ITargetDetector {
   private camera: Camera | null = null;
   private canvas: HTMLCanvasElement | null = null;
   private availableTargets: ITargetable[] = [];
+  // Optional provider that returns the point to measure distances from (defaults to camera.position)
+  private distanceOriginProvider: (() => { x: number; y: number; z: number }) | null = null;
   private config: TargetingSystemConfig['detection'];
   // Debug logging flag (disable in production for performance)
   private debugLogs: boolean = false;
@@ -69,6 +71,14 @@ export class TargetDetector implements ITargetDetector {
       camera: !!this.camera,
       canvas: !!this.canvas
     });
+  }
+
+  /**
+   * Set a provider function which returns the world-space origin used to compute distances.
+   * If not provided, distances use the camera position (existing behavior).
+   */
+  public setDistanceOriginProvider(fn: (() => { x: number; y: number; z: number }) | null): void {
+    this.distanceOriginProvider = fn;
   }
 
   /**
@@ -523,13 +533,13 @@ export class TargetDetector implements ITargetDetector {
    * Calcula distancia euclidiana desde la cámara al target
    */
   private getWorldDistance(worldPos: { x: number; y: number; z: number }): number {
-    if (!this.camera) return Infinity;
-    
-    const camPos = this.camera.position;
-    const dx = worldPos.x - camPos.x;
-    const dy = worldPos.y - camPos.y; 
-    const dz = worldPos.z - camPos.z;
-    
+    // Prefer explicit distance origin if provided
+    const origin = this.distanceOriginProvider ? this.distanceOriginProvider() : (this.camera ? this.camera.position : null);
+    if (!origin) return Infinity;
+
+    const dx = worldPos.x - origin.x;
+    const dy = worldPos.y - origin.y;
+    const dz = worldPos.z - origin.z;
     return Math.sqrt(dx * dx + dy * dy + dz * dz);
   }
 }

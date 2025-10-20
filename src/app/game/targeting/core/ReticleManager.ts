@@ -115,6 +115,16 @@ export class ReticleManager {
   }
 
   /**
+   * Allow external code to provide the origin point used by distance calculations
+   * in the TargetDetector (for example, the player's ship position).
+   */
+  public setDistanceOriginProvider(fn: (() => { x: number; y: number; z: number }) | null): void {
+    this.targetDetector.setDistanceOriginProvider(fn);
+    // Keep OutlineRenderer labels consistent with detector distances
+    this.outlineRenderer.setDistanceOriginProvider(fn);
+  }
+
+  /**
    * Inicializa el sistema de retícula
    */
   public initialize(camera: Camera, shaderManager: ShaderManager): Promise<boolean> {
@@ -150,9 +160,9 @@ export class ReticleManager {
           return;
         }
 
-  this.isInitialized = true;
-  // Initialize worker
-  this.workerService.init();
+    this.isInitialized = true;
+    // Initialize worker
+    this.workerService.init();
         this.lastUpdateTime = performance.now();
 
         console.log('🎯 ReticleManager inicializado correctamente con renderizador');
