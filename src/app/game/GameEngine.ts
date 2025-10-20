@@ -533,12 +533,30 @@ export class GameEngine {
     
     this.reticleManager.update(deltaTime, availableTargets);
 
-    // Update target preview animation regardless of selection
-    this.targetPreview.update(deltaTime);
+  // Update target preview animation regardless of selection
+  this.targetPreview.update(deltaTime);
 
   // Drive HUD Target Panel from hovered/selected targets
     const hovered = this.reticleManager.getHoveredTarget();
     const selected = this.reticleManager.getCurrentTarget() || hovered;
+    // Backfill planet-specific runtime props if selected
+    if (selected && selected.getTargetType && selected.getTargetType() === TargetType.PLANET) {
+      const p: any = selected as any;
+      if (!(typeof p.voidMassUnits === 'number' && isFinite(p.voidMassUnits) && p.voidMassUnits > 0)) {
+        p.voidMassUnits = 2000 + Math.floor(Math.random() * 3001);
+      }
+      if (!p.customName) {
+        p.customName = this.generatePlanetName();
+      }
+      // Optionally compute and cache approximate volume in Gu for quick lookup
+      if (p && p.scale && typeof p.scale.x === 'number' && p.scale.x > 0) {
+        const r = Number(p.scale.x);
+  const vol = (4.0 / 3.0) * Math.PI * Math.pow(r, 3);
+  p.volumeMu = Number((vol / 1e6).toFixed(2));
+      }
+    }
+  // Inform preview renderer of which target we’re showing to adapt rotation speed
+  this.targetPreview.setPreviewTarget(selected || null);
     if (selected) {
       // Distance
       const dx = selected.position.x - this.camera.position.x;
@@ -567,7 +585,20 @@ export class GameEngine {
   // Mostrar etiqueta explícita para SuperAsteroid en el HUD
   const isSuper = (selected instanceof SuperAsteroid);
   const typeLabel = isSuper ? 'SuperAsteroid' : this.typeToLabel(selType);
-  const details = { ...baseDetails, type: typeLabel, previewStatus: (this.targetPreview as any).getStatus?.(), voidMassUnits: voidMass } as any;
+      // Include planet-specific hints when selected is a planet
+      const planetHints = (selType === TargetType.PLANET)
+        ? {
+            planetType: (selected as any).planetType || (baseDetails as any)?.planetType || (selected as any).baseColorName,
+            probabilityOfLifePct: (selected as any).probabilityOfLifePct ?? (baseDetails as any)?.probabilityOfLifePct ?? 0,
+            volumeMu:
+              (selected as any).volumeMu
+              ?? (baseDetails as any)?.volumeMu
+              ?? (typeof (baseDetails as any)?.volumeGu === 'number'
+                    ? Number(((baseDetails as any).volumeGu * 1000).toFixed(2))
+                    : undefined),
+          }
+        : {};
+      const details = { ...baseDetails, ...planetHints, type: typeLabel, previewStatus: (this.targetPreview as any).getStatus?.(), voidMassUnits: voidMass } as any;
 
       this.hudManager.updateTargetPanel({
         name: selected.getDisplayName(),
@@ -589,7 +620,7 @@ export class GameEngine {
     const cache = ((this as any)._targetDetailsCache ||= {});
     if (cache[target.id]) return; // Already have details
     try {
-      const res = await this.targetDetails.getDetails(target);
+  const res = await this.targetDetails.getDetails(target);
       // Decorate asteroid details with fantastical metals when applicable
       if (res.type === TargetType.ASTEROID) {
         // No sobreescribir composición/albedo/mass si ya vienen fijados por la factoría
@@ -599,6 +630,42 @@ export class GameEngine {
         data.massTons = data.massTons ?? (target as any).massTons ?? (50 + Math.floor(Math.random() * 101));
         // Incluir masa del vacío si el target la expone
         data.voidMassUnits = (target as any).voidMassUnits ?? 0;
+      }
+      // Enrich planets with requested details if missing
+      if (res.type === TargetType.PLANET) {
+        const data: any = res.data as any;
+        // Planet type: prefer Planet.planetType enum, fallback to baseColorName
+        if (!('planetType' in data)) {
+          const p: any = target as any;
+          data.planetType = p?.planetType ?? (p?.baseColorName ? String(p.baseColorName) : 'unknown');
+        }
+        // Probability of Life: default to 0 if missing
+        if (typeof (data as any).probabilityOfLifePct !== 'number' || !isFinite((data as any).probabilityOfLifePct)) {
+          (data as any).probabilityOfLifePct = 0;
+        }
+        // Void mass between 2000 and 5000 units if not provided
+        if (typeof data.voidMassUnits !== 'number' || !isFinite(data.voidMassUnits)) {
+          data.voidMassUnits = 2000 + Math.floor(Math.random() * 3001);
+        }
+        // If an older service returns volumeGu, convert to Mu
+        if (typeof (data as any).volumeMu !== 'number' && typeof (data as any).volumeGu === 'number') {
+          (data as any).volumeMu = Number(((data as any).volumeGu * 1000).toFixed(2));
+        }
+        // Volume in Mu (Mega units) ≈ (4/3 π r^3) / 1e6 (compute if still missing)
+        if (typeof (data as any).volumeMu !== 'number' || !isFinite((data as any).volumeMu)) {
+          const p: any = target as any;
+          const r = Number(p?.scale?.x ?? p?.radius ?? 0);
+          const vol = (4.0 / 3.0) * Math.PI * Math.pow(Math.max(0, r), 3);
+          (data as any).volumeMu = Number.isFinite(vol) ? Number((vol / 1e6).toFixed(2)) : 0;
+        }
+        // Random planet-like name if none provided
+        const pl = target as any;
+        if (!pl.customName) {
+          pl.customName = this.generatePlanetName();
+        }
+        if (!('name' in data) || !data.name) {
+          data.name = pl.customName;
+        }
       }
       cache[target.id] = res.data;
     } catch (e) {
@@ -610,7 +677,40 @@ export class GameEngine {
     if (target.getTargetType() === TargetType.ASTEROID) {
       return { composition: 'basalt', albedo: 0.3, massTons: 1200 };
     }
+    if (target.getTargetType() === TargetType.PLANET) {
+      const p: any = target as any;
+      let name = p?.customName as string | undefined;
+      if (!name) {
+        name = this.generatePlanetName();
+        try { (p as any).customName = name; } catch {}
+      }
+  const r = Number(p?.scale?.x ?? p?.radius ?? 0);
+  const volumeMu = Number((((4.0 / 3.0) * Math.PI * Math.pow(Math.max(0, r), 3)) / 1e6).toFixed(2));
+  const voidMassUnits = 2000 + Math.floor(Math.random() * 3001);
+  const planetType = p?.planetType ?? (p?.baseColorName ? String(p.baseColorName) : 'unknown');
+  const probabilityOfLifePct = 0;
+  return { name, planetType, volumeMu, voidMassUnits, probabilityOfLifePct };
+    }
     return {};
+  }
+
+  // Generate a random planet name inspired by discovered exoplanets and classical naming
+  private generatePlanetName(): string {
+    const catalogPrefixes = ['Kepler', 'TRAPPIST', 'Gliese', 'Proxima', 'HD', 'K2', 'Tau', 'LHS', 'WASP', 'HIP'];
+    const separators = ['-', ' ', ' '];
+    const suffixAlpha = ['b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    const num = () => Math.floor(10 + Math.random() * 8900); // 10..8909 approx
+    const pick = (arr: any[]) => arr[Math.floor(Math.random() * arr.length)];
+    const style = Math.random();
+    if (style < 0.5) {
+      // Catalog style: Kepler-452 b, TRAPPIST-1 e
+      return `${pick(catalogPrefixes)}${pick(separators)}${num()}${Math.random() < 0.5 ? '' : ' '}${pick(suffixAlpha)}`.trim();
+    } else {
+      // Mythical/Latin + Roman numerals
+      const myth = ['Aether', 'Chronos', 'Erebus', 'Gaia', 'Nyx', 'Hera', 'Hyperion', 'Icarus', 'Janus', 'Tethys', 'Rhea', 'Atlas'];
+      const romans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
+      return `${pick(myth)} ${pick(romans)}`;
+    }
   }
 
   private typeToLabel(t: TargetType): string {

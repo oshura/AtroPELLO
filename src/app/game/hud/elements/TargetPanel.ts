@@ -163,8 +163,9 @@ export class TargetPanel {
   const detailsScaleY = 1.2; // factor de altura
   const lineHeight = Math.ceil(34 * detailsScaleY); // acorde con 28px y escala
     const lines: string[] = [];
+    let voidMassLine: string | null = null;
     for (const [key, value] of Object.entries(details)) {
-      if (key === 'previewStatus' || key === 'type') continue; // ocultar internos y evitar duplicar
+      if (key === 'previewStatus' || key === 'type' || key === 'name') continue; // ocultar internos y evitar duplicar nombre
       // Renombrar 'albedo' a 'Albedo(Refl.)' y mostrar en %
       if (key.toLowerCase() === 'albedo') {
         const pct = Math.max(0, Math.min(100, Math.round(Number(value) * 100)));
@@ -177,14 +178,37 @@ export class TargetPanel {
         lines.push(`Salud: ${pct}%`);
         continue;
       }
-      // Mostrar masa del vacío si está presente
+        // Volume en Mu con etiqueta fija
+        if (key === 'volumeMu') {
+          const v = Number(value);
+          const vStr = Number.isFinite(v) ? v.toFixed(2) : String(value);
+          lines.push(`Volume: ${vStr} Mu³`);
+          continue;
+      }
+        // Back-compat: if old 'volumeGu' shows up, convert to Mu for display
+        if (key === 'volumeGu') {
+          const vGu = Number(value);
+          const vMu = Number.isFinite(vGu) ? vGu * 1000 : NaN;
+          const vStr = Number.isFinite(vMu) ? vMu.toFixed(2) : String(value);
+          lines.push(`Volume: ${vStr} Mu³`);
+          continue;
+        }
+      // Void mass: reservar para el final
       if (key === 'voidMassUnits') {
         const v = Math.max(0, Math.round(Number(value)));
-        lines.push(`Void mass: ${v}u`);
+        voidMassLine = `Void mass: ${v}u`;
+        continue;
+      }
+      // Probability of Life: X%
+      if (key === 'probabilityOfLifePct') {
+        const pct = Math.max(0, Math.min(100, Math.round(Number(value))));
+        lines.push(`Probability of Life: ${pct}%`);
         continue;
       }
       lines.push(`${this.prettyKey(key)}: ${this.prettyVal(value)}`);
     }
+    // Asegurar que Void mass va al final si existe
+    if (voidMassLine) lines.push(voidMassLine);
     // Alinear por abajo con el límite del wireframe
     const totalHeight = lines.length * lineHeight;
     const bottomMargin = 6; // margen inferior para evitar recorte

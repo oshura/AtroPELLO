@@ -16,6 +16,12 @@ const PLANET_COLORS: Record<PlanetColorName, [number, number, number]> = {
 
 export class Planet extends GameObject implements ITargetable {
   public baseColorName: PlanetColorName;
+  // Optional custom planetary name (for HUD/targeting display)
+  public customName?: string;
+  // High-level classification for the planet (enum)
+  public planetType: PlanetType = PlanetType.Planetoid;
+  // Probability of Life in percent [0..100]
+  public probabilityOfLifePct: number = 0;
   public orbitCenter: Vector3 = { x: 0, y: 0, z: 0 };
   public semiMajor: number = 60000; // a
   public semiMinor: number = 48000; // b
@@ -33,7 +39,7 @@ export class Planet extends GameObject implements ITargetable {
     this.healthCurrent = 1;
   }
 
-  public getDisplayName(): string { return `Planet ${this.baseColorName}`; }
+  public getDisplayName(): string { return this.customName ?? `Planet ${this.baseColorName}`; }
   public getTargetType(): TargetType { return TargetType.PLANET; }
   public isActive(): boolean { return this.active; }
 
@@ -74,4 +80,14 @@ export class Planet extends GameObject implements ITargetable {
     this.uvs = new Float32Array(uvs);
     this.indices = new Uint16Array(indices);
   }
+}
+
+// Planet type enumeration for classification
+export enum PlanetType {
+  Giant = 'Giant',
+  Dwarf = 'Dwarf',
+  Protoplanet = 'Protoplanet',
+  Gaseous = 'Gaseous',
+  Tierra = 'Tierra',
+  Planetoid = 'Planetoid',
 }

@@ -12,6 +12,9 @@ export class TargetPreviewRenderer {
   private status: string = 'init';
   private angle = 0;
   private ctx2d: CanvasRenderingContext2D | null = null; // Fallback 2D
+  // Rotation control: adjust speed based on current preview target type
+  private currentAngularSpeed = 0.4; // default for most targets
+  private currentTargetType: TargetType | null = null;
 
   // Simple program for flat shaded preview
   private program: WebGLProgram | null = null;
@@ -48,7 +51,20 @@ export class TargetPreviewRenderer {
 
   getCanvas(): HTMLCanvasElement { return this.canvas; }
 
-  update(dt: number) { this.angle += dt * 0.4; /* rotación lenta */ }
+  update(dt: number) { this.angle += dt * this.currentAngularSpeed; }
+
+  // Inform which target is currently previewed to adapt rotation speed (e.g., slower for planets)
+  public setPreviewTarget(target: ITargetable | null): void {
+    try {
+      const t = target?.getTargetType?.() as TargetType | undefined;
+      this.currentTargetType = (t !== undefined ? t : null);
+      // Much slower wireframe rotation for planets in the HUD preview
+      this.currentAngularSpeed = (this.currentTargetType === TargetType.PLANET) ? 0.06 : 0.4;
+    } catch {
+      this.currentTargetType = null;
+      this.currentAngularSpeed = 0.4;
+    }
+  }
 
   renderPreview(target: ITargetable): void {
     console.log('🖼️ TargetPreview.renderPreview()', { status: this.status, w: this.canvas.width, h: this.canvas.height });
