@@ -146,7 +146,7 @@ export class GameUIManager {
         message = '';
         break;
       case GameState.PAUSED:
-        message = 'Game Paused - Press ESC to resume';
+        message = 'Game Paused - Press P to resume';
         break;
       case GameState.STOPPED:
         message = 'Game Stopped - Press SPACE to restart';

@@ -133,6 +133,17 @@ export class Game implements AfterViewInit, OnDestroy {
   handleKeyDown(event: KeyboardEvent): void {
     // Manejar teclas especiales del componente
     if (event.key === 'Escape') {
+      // En lugar de pausar, deseleccionar el target actual
+      const gameEngine = this.gameInitializer.getGameEngine();
+      if (gameEngine && (gameEngine as any).clearTargetSelection) {
+        (gameEngine as any).clearTargetSelection();
+      }
+      event.preventDefault();
+      return;
+    }
+
+    // Tecla 'p' para pausar/reanudar
+    if (event.key.toLowerCase() === 'p') {
       this.togglePause();
       event.preventDefault();
       return;

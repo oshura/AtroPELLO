@@ -402,8 +402,8 @@ export class GameEngine {
     // Asteroides sueltos eliminados: gestionamos solo clusters
   // Actualizar clusters: mueven su centro y sincronizan física común
   this.asteroidClusterService.updateClusters(deltaTime);
-  // LOD por distancia con histéresis: toProxy=600u, toFull=550u, dwell=0.4s
-  const lodChanged = this.asteroidClusterService.updateLOD(this.spaceship.position, deltaTime, { toProxy: 600, toFull: 550, dwell: 0.4, cooldown: 1.2 });
+  // LOD por distancia con histéresis: toProxy=750u, toFull=700u, dwell=0.4s
+  const lodChanged = this.asteroidClusterService.updateLOD(this.spaceship.position, deltaTime, { toProxy: 3050, toFull: 3000, dwell: 0.4, cooldown: 1.2 });
   if (lodChanged && this.gl) {
     // Re-crear buffers para objetos nuevos (y liberar proxies antiguos)
     this.asteroidClusterService.getClusters().forEach(c => {
@@ -447,9 +447,11 @@ export class GameEngine {
         }
       } else {
         // Caso B: seleccionado es un proxy de clúster y su clúster expande a full
-        const owner = this.asteroidClusterService
-          .getClusters()
-          .find(c => c.proxy && c.proxy.id === current.id);
+        // Nota: switchToFull() elimina el proxy; por tanto, no confíes solo en c.proxy para encontrar al dueño.
+        const clusters = this.asteroidClusterService.getClusters();
+        const suffix = '-cluster';
+        const clusterId = current.id.endsWith(suffix) ? current.id.slice(0, -suffix.length) : current.id;
+        const owner = clusters.find(c => (c.proxy && c.proxy.id === current.id) || c.id === clusterId);
         if (owner && owner.lodMode === 'full') {
           // Si hay un miembro previamente seleccionado, restaurarlo; si no, usar el primero
           const preferredId = owner.lastSelectedMemberId;
@@ -1405,6 +1407,17 @@ export class GameEngine {
     if (this.camera) {
       this.camera.handleZoom(delta);
     }
+  }
+
+  /**
+   * Deselecciona el target actual (usado por Escape desde el componente Game)
+   */
+  public clearTargetSelection(): void {
+    try {
+      if (this.reticleManager && this.reticleManager.selectTarget) {
+        this.reticleManager.selectTarget(null);
+      }
+    } catch {}
   }
 
   /**

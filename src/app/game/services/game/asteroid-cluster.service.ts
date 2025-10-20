@@ -166,20 +166,16 @@ export class AsteroidClusterService {
       const dy = cluster.center.y - playerPos.y;
       const dz = cluster.center.z - playerPos.z;
       const dist = Math.hypot(dx, dy, dz);
-      // Extensión actual del clúster (radio aproximado): usar el mayor entre config.radius y distancia real máxima de sus miembros al centro
-      const baseRadius = cluster.config.radius ?? 10;
-      let maxMemberDist = baseRadius;
-      for (const obj of cluster.objects) {
-        const mdx = obj.position.x - cluster.center.x;
-        const mdy = obj.position.y - cluster.center.y;
-        const mdz = obj.position.z - cluster.center.z;
-        const md = Math.hypot(mdx, mdy, mdz);
-        if (md > maxMemberDist) maxMemberDist = md;
-      }
-      // Distancia mínima al clúster (borde más cercano)
-      const minDistToCluster = Math.max(0, dist - maxMemberDist);
+      // Extensión del clúster (radio aproximado): calcular a partir de offsets persistentes
+      // en lugar de posiciones actuales (que en modo proxy quedan "congeladas" y el centro se mueve).
+      // Esto evita que el radio aparente crezca artificialmente y genere flips espurios.
+      const maxMemberDist = this.getClusterExtentRadius(cluster);
+  // Distancia mínima al clúster (borde más cercano)
+  const minDistToCluster = Math.max(0, dist - maxMemberDist);
+  // Pequeño epsilon para evitar parpadeos por jitter numérico sobre el umbral
+  const eps = 1e-3;
       if (cluster.lodMode === 'full') {
-        if (minDistToCluster >= toProxy) {
+        if (minDistToCluster >= (toProxy + eps)) {
           cluster.lodTimer += deltaTime;
           if (cluster.lodTimer >= dwell) {
             this.switchToProxy(cluster);
@@ -191,7 +187,7 @@ export class AsteroidClusterService {
           cluster.lodTimer = 0;
         }
       } else { // proxy
-        if (minDistToCluster <= toFull) {
+        if (minDistToCluster <= (toFull - eps)) {
           cluster.lodTimer += deltaTime;
           if (cluster.lodTimer >= dwell) {
             this.switchToFull(cluster);
@@ -270,6 +266,21 @@ export class AsteroidClusterService {
   private normalize(v: Vector3): Vector3 {
     const len = Math.hypot(v.x, v.y, v.z) || 1;
     return { x: v.x / len, y: v.y / len, z: v.z / len };
+  }
+
+  /**
+   * Calcula un radio de extensión estable del clúster a partir de los offsets
+   * persistentes de sus miembros. Usa el mayor entre config.radius y el máximo
+   * módulo de offset registrado. Esto es estable incluso en modo proxy.
+   */
+  private getClusterExtentRadius(cluster: AsteroidClusterInstance): number {
+    let base = cluster.config.radius ?? 10;
+    let max = base;
+    for (const off of cluster.memberOffsets.values()) {
+      const d = Math.hypot(off.x, off.y, off.z);
+      if (d > max) max = d;
+    }
+    return max;
   }
 
   /**
