@@ -234,8 +234,9 @@ export class GameEngine {
     // - 10 líneas paralelas separadas 50u en una dirección perpendicular a baseDir
   const CLUSTER_ROWS = 100 ; // líneas
   const CLUSTER_COLS = 10; // por línea
-    const CLUSTER_SPACING_ALONG = 50; // separación a lo largo del vector base
-    const CLUSTER_ROW_SPACING = 50; // separación entre líneas (perpendicular)
+  // Aumentar el espaciado inicial de clusters en +100u
+  const CLUSTER_SPACING_ALONG = 75; // separación a lo largo del vector base (antes 50)
+  const CLUSTER_ROW_SPACING = 75; // separación entre líneas (perpendicular) (antes 50)
     const CLUSTER_SPEED = 1.5; // misma velocidad para todos
     const CLUSTER_COUNT_PER = 8; // número de asteroides pequeños por clúster
     const CLUSTER_INCLUDE_SUPER = true;

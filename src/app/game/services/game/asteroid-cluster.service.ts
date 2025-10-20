@@ -54,7 +54,8 @@ export class AsteroidClusterService {
 
   createCluster(cfg: AsteroidClusterConfig): AsteroidClusterInstance {
     // Duplicar la dispersión respecto al valor actual
-    const radius = (cfg.radius ?? 10) * 2;
+    // Aumentar la dispersión en +50% adicional (de 2x a 3x)
+    const radius = (cfg.radius ?? 10) * 3;
     const centerSpeedFactor = cfg.centerSpeedFactor ?? 0.5; // centro se mueve a mitad de la velocidad
 
   const objs: (Asteroid | SuperAsteroid)[] = [];
@@ -73,7 +74,8 @@ export class AsteroidClusterService {
       objs.push(a);
     }
     if (cfg.includeSuper) {
-      const pos = this.randomAround(cfg.center, radius * 0.6);
+      // Usar la MISMA dispersión que los asteroides
+      const pos = this.randomAround(cfg.center, radius);
       const sa = this.factory.createSuperAsteroid(
         `${cfg.id}-super0`,
         pos,
