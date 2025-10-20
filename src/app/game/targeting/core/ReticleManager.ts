@@ -26,6 +26,7 @@ import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
 import { mat4 } from 'gl-matrix';
 import { SpaceshipDebugCollector } from '../../../services/debug/spaceship-debug-collector.service';
+import { RelationService } from '../../../services/relation.service';
 import { TargetingWorkerService, WorkerResult } from '../worker/TargetingWorker.service';
 
 @Injectable({
@@ -77,7 +78,8 @@ export class ReticleManager {
     outlineRenderer: OutlineRenderer,
     private webglService: WebGLService,
     private debugCollector: SpaceshipDebugCollector,
-    workerService: TargetingWorkerService
+    workerService: TargetingWorkerService,
+    private relationService: RelationService
   ) {
     this.targetDetector = targetDetector;
     this.inputHandler = inputHandler;
@@ -576,35 +578,43 @@ export class ReticleManager {
   }
 
   /**
-   * Cicla el target seleccionado entre los visibles en un orden fijo (izq→der, luego arriba→abajo)
+   * Cicla el target seleccionado entre todos los disponibles, ordenados por ángulo azimutal alrededor del forward de la cámara.
+   * - Limita el ciclo a los targets VISIBLES en pantalla (incluye planetas cuando están en el frustum).
    */
   private cycleTarget(direction: 1 | -1): void {
-    // Obtener targets visibles y ordenarlos por posición en pantalla
-    const visible = this.getVisibleTargets();
-    if (!visible.length) return;
+    const basis = this.targetDetector.getCameraBasis();
+    // Recuperar comportamiento previo: solo targets en pantalla
+    const visible = this.targetDetector.getVisibleTargets();
+    if (!basis || !visible.length) return;
 
-    const withPos: Array<{ t: ITargetable; p: ScreenPosition }> = [];
+    // Proyectar vector desde cámara a cada target y calcular ángulo en plano XZ de la base cámara
+    const { position: cam, forward, right } = basis;
+    const entries: Array<{ t: ITargetable; angle: number; dist: number }> = [];
     for (const t of visible) {
-      const p = this.targetDetector.projectWorldToScreen(t.position);
-      if (p) withPos.push({ t, p });
+      const dx = t.position.x - cam.x;
+      const dy = t.position.y - cam.y;
+      const dz = t.position.z - cam.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (!isFinite(dist) || dist <= 0) continue;
+      // Componentes en base (forward/right) proyectadas al plano horizontal respecto al forward
+      const fDot = dx * forward.x + dy * forward.y + dz * forward.z;
+      const rDot = dx * right.x + dy * right.y + dz * right.z;
+      // ángulo azimutal [-pi, pi] relativo a forward (usar atan2(right, forward))
+      const angle = Math.atan2(rDot, fDot);
+      entries.push({ t, angle, dist });
     }
-    if (!withPos.length) return;
+    if (!entries.length) return;
 
-    withPos.sort((a, b) => (a.p.x - b.p.x) || (a.p.y - b.p.y));
+    // Orden estable: por ángulo ascendente; desempate por distancia (cercano primero)
+    entries.sort((a, b) => (a.angle - b.angle) || (a.dist - b.dist));
 
-    // Buscar índice actual
     const current = this.state.currentTarget;
     let idx = -1;
-    if (current) {
-      idx = withPos.findIndex(w => w.t.id === current.id);
-    }
+    if (current) idx = entries.findIndex(e => e.t.id === current.id);
 
-    // Avanzar/retroceder con wrap-around
-    const n = withPos.length;
+    const n = entries.length;
     const nextIdx = ((idx >= 0 ? idx : -1) + direction + n) % n;
-    const nextTarget = withPos[nextIdx].t;
-
-    // Seleccionar el nuevo target
+    const nextTarget = entries[nextIdx].t;
     this.events.onTargetSelected(nextTarget);
   }
 
@@ -632,7 +642,7 @@ export class ReticleManager {
       
       // Aplicar outline de hover (GLOW suave)
   // Quiet outline add logs
-      const relation = this.getRelationFor(target);
+  const relation = this.relationService.getRelation(target);
       const hoverColor = this.getRelationColor(relation, false);
       this.outlineRenderer.addOutline(target, OutlineType.GLOW, {
         thickness: 2.0,
@@ -678,7 +688,7 @@ export class ReticleManager {
       });
 
       // Aplicar outline de selección (PULSE intenso) con color por relación
-      const relation = this.getRelationFor(target);
+  const relation = this.relationService.getRelation(target);
       const selectedColor = this.getRelationColor(relation, true);
       this.outlineRenderer.addOutline(target, OutlineType.PULSE, {
         thickness: 4.0,
@@ -701,18 +711,7 @@ export class ReticleManager {
     }
   }
 
-  private getRelationFor(target: ITargetable): 'ally' | 'neutral' | 'enemy' {
-    const t = target.getTargetType?.();
-    switch (t) {
-      case TargetType.ASTEROID:
-      case TargetType.SUPER_ASTEROID:
-      case TargetType.CLUSTER:
-        return 'neutral';
-      // TODO: integrar facciones reales cuando estén disponibles
-      default:
-        return 'enemy';
-    }
-  }
+  // Relation logic centralized in RelationService
 
   private getRelationColor(relation: 'ally' | 'neutral' | 'enemy', selected: boolean): [number, number, number, number] {
     // Hover: tonos claros; Selected: versión viva pero más oscura

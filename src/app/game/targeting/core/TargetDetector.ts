@@ -95,6 +95,11 @@ export class TargetDetector implements ITargetDetector {
     this.availableTargets = filteredTargets;
   }
 
+  /** Returns all currently known targets after type filtering (may include off-screen) */
+  public getAllTargets(): ITargetable[] {
+    return [...this.availableTargets];
+  }
+
   /**
    * Detecta targets en una posición de pantalla usando raycast
    */
@@ -305,6 +310,23 @@ export class TargetDetector implements ITargetDetector {
    */
   public getVisibleTargets(): ITargetable[] {
     return this.availableTargets.filter(target => this.isInViewFrustum(target));
+  }
+
+  /** Returns camera basis vectors for bearing calculations */
+  public getCameraBasis(): { position: { x: number; y: number; z: number }; forward: { x: number; y: number; z: number }; right: { x: number; y: number; z: number }; up: { x: number; y: number; z: number } } | null {
+    if (!this.camera) return null;
+    const position = this.camera.position;
+    const forward = this.getCameraForward();
+    const up = this.camera.up;
+    // right = forward x up
+    const right = {
+      x: forward.y * up.z - forward.z * up.y,
+      y: forward.z * up.x - forward.x * up.z,
+      z: forward.x * up.y - forward.y * up.x,
+    };
+    const rl = Math.hypot(right.x, right.y, right.z) || 1;
+    right.x /= rl; right.y /= rl; right.z /= rl;
+    return { position, forward, right, up };
   }
 
   /**

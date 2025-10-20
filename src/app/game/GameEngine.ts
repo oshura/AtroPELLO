@@ -14,6 +14,7 @@ import { ReticleManager } from './targeting';
 import { AsteroidClusterService } from './services/game/asteroid-cluster.service';
 import { TargetCatalogService } from './services/target-catalog.service';
 import { TargetType, ITargetable } from './types/targeting.types';
+import { RelationService } from '../services/relation.service';
 import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
 import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
@@ -96,7 +97,8 @@ export class GameEngine {
     private reticleManagerService: ReticleManager,
     private targetCatalogService: TargetCatalogService,
     private targetDetailService: TargetDetailService,
-    asteroidClusterService: AsteroidClusterService
+    asteroidClusterService: AsteroidClusterService,
+    private relationService: RelationService
   ) {
     this.reticleManager = this.reticleManagerService;
     this.targetCatalog = this.targetCatalogService;
@@ -534,7 +536,7 @@ export class GameEngine {
     // Update target preview animation regardless of selection
     this.targetPreview.update(deltaTime);
 
-    // Drive HUD Target Panel from hovered/selected targets
+  // Drive HUD Target Panel from hovered/selected targets
     const hovered = this.reticleManager.getHoveredTarget();
     const selected = this.reticleManager.getCurrentTarget() || hovered;
     if (selected) {
@@ -544,10 +546,9 @@ export class GameEngine {
       const dz = selected.position.z - this.camera.position.z;
       const distance = Math.hypot(dx, dy, dz);
 
-    // Relation heuristic: asteroids, super-asteroids, clusters, and planets are neutral
+    // Relation via shared service to stay in sync with Outliner/Reticle
+  const relation = this.relationService.getRelation(selected);
   const selType = selected.getTargetType();
-  const isNeutral = selType === TargetType.ASTEROID || selType === TargetType.SUPER_ASTEROID || selType === TargetType.CLUSTER || selType === TargetType.PLANET;
-  const relation: 'ally' | 'neutral' | 'enemy' = isNeutral ? 'neutral' : 'enemy';
 
       // Render preview into offscreen canvas
       this.targetPreview.renderPreview(selected);
@@ -858,10 +859,10 @@ export class GameEngine {
       planet.semiMinor = b;
       planet.orbitOrientation = orient;
       planet.orbitAngle = angle0;
-      // Velocidad angular inversamente proporcional a a^{3/2} (heurística kepleriana)
-      planet.orbitAngularSpeed = 0.00003 * Math.pow(50000 / a, 1.5);
-      // Lenta rotación propia
-      planet.angularVelocity.y = 0.0001 + Math.random() * 0.0002;
+  // Velocidad angular orbital inversamente proporcional a a^{3/2} (heurística kepleriana)
+  planet.orbitAngularSpeed = 0.00003 * Math.pow(50000 / a, 1.5);
+  // Rotación propia: 1 vuelta cada 5 minutos (300s)
+  planet.angularVelocity.y = (Math.PI * 2) / 300;
       this.planets.push(planet);
     }
   }
@@ -881,8 +882,8 @@ export class GameEngine {
       p.position.x = p.orbitCenter.x + x;
       p.position.y = 0;
       p.position.z = p.orbitCenter.z + z;
-      // Rotación propia ya se aplica en update, pero aquí actualizamos matrices sin integrar física
-      p.update(0);
+  // Integrar rotación propia con dt y actualizar matrices
+  p.update(dt);
     }
   }
 
