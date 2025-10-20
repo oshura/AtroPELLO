@@ -67,6 +67,8 @@ export class GameEngine {
   // Feature flag: toggle instanced rendering for asteroids
   private readonly USE_INSTANCING = true;
   private instancedRenderer: InstancedAsteroidRenderer | null = null;
+  // Tipos de target que NO deben ser descartados por culling distancia/frustum
+  private readonly neverCullTypes = new Set([TargetType.PLANET]);
 
   constructor(
     private webglService: WebGLService,
@@ -699,6 +701,10 @@ export class GameEngine {
       const smalls: GameObject[] = [];
       const supers: GameObject[] = [];
       this.asteroidClusterService.getClusters().forEach(c => {
+        // Cluster-level frustum/distance culling (skip entire cluster if not visible)
+        if (!this.isClusterVisible(c, 5000, TargetType.CLUSTER)) {
+          return;
+        }
         // Si estamos en modo proxy y hay representante, renderizarlo sin fade
         if (c.lodMode === 'proxy' && c.representativeId) {
           const rep = c.objects.find(o => o.id === c.representativeId);
@@ -737,6 +743,10 @@ export class GameEngine {
       );
     } else {
       this.asteroidClusterService.getClusters().forEach(c => {
+        // Cluster-level frustum/distance culling (skip entire cluster if not visible)
+        if (!this.isClusterVisible(c, 4000, TargetType.CLUSTER)) {
+          return;
+        }
         // Proxy si existe y relevante, salvo que tengamos un representante
         if (!c.representativeId && c.proxy && (c.lodMode === 'proxy' || (c.fade && c.fade.target === 'members'))) {
           this.shaderManager.setLitOpacity((c.proxy as any).renderOpacity ?? 1.0);
@@ -765,6 +775,68 @@ export class GameEngine {
 
     // Renderizar outlines avanzados (FASE 4)
     this.renderOutlineSystem();
+  }
+
+  /**
+   * Cluster-level frustum/distance culling.
+   * Returns true if the cluster's bounding sphere intersects the camera frustum cone approximation.
+   * Also applies a hard distance cutoff (farDistance).
+   */
+  private isClusterVisible(cluster: any, farDistance: number = 4000, type?: TargetType): boolean {
+    // Excepción por tipo: ciertos tipos nunca se cullan (p.ej., PLANET)
+    if (type !== undefined && this.neverCullTypes.has(type)) return true;
+    // Compute bounding radius from persistent offsets (stable across LOD)
+    let radius = (cluster.config?.radius ?? 10);
+    if (cluster.memberOffsets) {
+      for (const off of cluster.memberOffsets.values()) {
+        const d = Math.hypot(off.x, off.y, off.z);
+        if (d > radius) radius = d;
+      }
+    }
+    const center = cluster.center;
+    const camPos = this.camera.position;
+    const toC = { x: center.x - camPos.x, y: center.y - camPos.y, z: center.z - camPos.z };
+    const dist = Math.hypot(toC.x, toC.y, toC.z);
+    // Hard cutoff: if sphere entirely beyond farDistance, cull
+    if (dist - radius > farDistance) return false;
+
+    // Build camera basis
+    const fwd = this.normalize({ x: this.camera.target.x - camPos.x, y: this.camera.target.y - camPos.y, z: this.camera.target.z - camPos.z });
+    // Ensure up basis is orthonormal
+    const worldUp = this.camera.up;
+    const right = this.normalize({
+      x: fwd.y * worldUp.z - fwd.z * worldUp.y,
+      y: fwd.z * worldUp.x - fwd.x * worldUp.z,
+      z: fwd.x * worldUp.y - fwd.y * worldUp.x,
+    });
+    const upB = {
+      x: right.y * fwd.z - right.z * fwd.y,
+      y: right.z * fwd.x - right.x * fwd.z,
+      z: right.x * fwd.y - right.y * fwd.x,
+    };
+
+    // Coordinates in camera basis
+    const depth = toC.x * fwd.x + toC.y * fwd.y + toC.z * fwd.z;
+    const sideX = toC.x * right.x + toC.y * right.y + toC.z * right.z;
+    const sideY = toC.x * upB.x + toC.y * upB.y + toC.z * upB.z;
+
+    // Behind camera completely (allow small radius tolerance)
+    if (depth + radius <= 0) return false;
+
+    // Get tan(fov/2) from projection matrix, and aspect from proj[5]/proj[0]
+    const proj = this.camera.projectionMatrix as unknown as Float32Array;
+    const f = proj[5] || 1; // f = 1/tan(fov/2)
+    const tanHalfFovy = 1 / f;
+    const aspect = (proj[0] !== 0) ? (f / (proj[0])) : 1.7777778;
+    const tanHalfFovx = tanHalfFovy * aspect;
+
+    // Frustum side checks with radius inflation
+    const halfW = depth * tanHalfFovx + radius;
+    const halfH = depth * tanHalfFovy + radius;
+    if (Math.abs(sideX) > halfW) return false;
+    if (Math.abs(sideY) > halfH) return false;
+
+    return true;
   }
 
   /**
