@@ -20,6 +20,9 @@ import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { Planet, PlanetColorName } from './Planet';
+import { GaseousPlanet } from './GaseousPlanet';
+import { GiantPlanet } from './GiantPlanet';
+import { EarthSplitPlanet } from './EarthSplitPlanet';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -931,39 +934,123 @@ export class GameEngine {
     this.renderPlanets();
   }
 
-  /** Crea 9 planetas en órbitas elípticas concéntricas en el plano XZ */
+  /** Crea 9 planetas en órbitas elípticas concéntricas en el plano XZ
+   * Requisitos:
+   * - 9 planetas totales
+   * - 1 gaseous, 1 giant
+   * - Tierra en la 3ª órbita más cercana al centro
+   * - El giant debe tener su órbita (a,b) un 15% mayor que un planetoide equivalente
+   */
   private createPlanets(): void {
     // Si ya existen, no recrear
     if (this.planets.length > 0) return;
-    const colors: PlanetColorName[] = ['verde','azul_hielo','marron','gris','azul_marino','rojo_carmesi','violeta_oscuro','azul_hielo','marron'];
+
     const center = { x: 0, y: 0, z: 0 };
-  const minA = 50000; const maxA = 100000;
-  const count = 9;
+    const count = 9;
+    const minA = 50000; // semi-eje mayor mínimo
+    const maxA = 100000; // semi-eje mayor máximo
+
+    // Precalcular órbitas base para 9 anillos (lineal en a)
+    type Orbit = { a: number; b: number; orient: number; angle0: number };
+    const baseOrbits: Orbit[] = [];
     for (let i = 0; i < count; i++) {
       const t = i / Math.max(1, count - 1);
-      const a = Math.round(minA + t * (maxA - minA)); // semi-eje mayor
-      const e = 0.25 + Math.random() * 0.25; // excentricidad moderada 0.25..0.5
-      const b = Math.round(a * Math.sqrt(1 - e * e)); // semi-eje menor
-      const orient = Math.random() * Math.PI * 2;
-      const angle0 = Math.random() * Math.PI * 2;
-      const diameter = 200 + Math.random() * 800; // 200..1000 diag → radio 100..500
-      const radius = diameter * 0.5;
+      const a = Math.round(minA + t * (maxA - minA));
+      const e = 0.25 + Math.random() * 0.25; // 0.25..0.5
+      const b = Math.round(a * Math.sqrt(1 - e * e));
+      baseOrbits.push({
+        a,
+        b,
+        orient: Math.random() * Math.PI * 2,
+        angle0: Math.random() * Math.PI * 2,
+      });
+    }
+
+    // Índices especiales
+    const earthIdx = 2; // tercera órbita (0-based)
+    const giantIdx = 6; // lejos
+    const gaseousIdx = 8; // muy exterior
+
+    // Paleta rotativa
+    const colors: PlanetColorName[] = ['verde','azul_hielo','marron','gris','azul_marino','rojo_carmesi','violeta_oscuro','azul_hielo','marron'];
+
+    for (let i = 0; i < count; i++) {
+      const { a: aBase, b: bBase, orient, angle0 } = baseOrbits[i];
+      let a = aBase;
+      let b = bBase;
+
+      // Tipo y radio
       const color = colors[i % colors.length];
-      // Posición inicial en la elipse
-      const cx = Math.cos(angle0) * a;
-      const cz = Math.sin(angle0) * b;
-      const pos = { x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)), y: 0, z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)) };
-      const planet = new Planet(`planet-${i}`, color, radius, pos);
-      planet.orbitCenter = { ...center };
-      planet.semiMajor = a;
-      planet.semiMinor = b;
-      planet.orbitOrientation = orient;
-      planet.orbitAngle = angle0;
-  // Velocidad angular orbital inversamente proporcional a a^{3/2} (heurística kepleriana)
-  planet.orbitAngularSpeed = 0.00003 * Math.pow(50000 / a, 1.5);
-  // Rotación propia: 1 vuelta cada 5 minutos (300s)
-  planet.angularVelocity.y = (Math.PI * 2) / 300;
-      this.planets.push(planet);
+      let radius: number;
+      let planetObj: Planet;
+
+      if (i === earthIdx) {
+        // Tierra en 3ª órbita
+        radius = 400; // tamaño medio estable (radio)
+        // Calcular posición inicial sobre su elipse
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        planetObj = new EarthSplitPlanet(`planet-earth`, 'azul_marino', radius, pos, 500);
+        planetObj.customName = 'Tierra';
+        planetObj.probabilityOfLifePct = 100;
+      } else if (i === giantIdx) {
+        // Gigante con órbita 15% mayor (min y max efectivos)
+        a = Math.round(aBase * 1.15);
+        b = Math.round(bBase * 1.15);
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        // Radio base más grande, GiantPlanet multiplica x10 internamente
+        radius = 300 + Math.random() * 200; // 300..500 (antes de x10)
+        planetObj = new GiantPlanet(`planet-giant`, 'marron', radius, pos);
+        planetObj.customName = 'Gigante';
+      } else if (i === gaseousIdx) {
+        // Gaseoso
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        radius = 350 + Math.random() * 250; // 350..600
+        planetObj = new GaseousPlanet(`planet-gaseous`, 'violeta_oscuro', radius, pos);
+        planetObj.customName = 'Gaseoso';
+      } else {
+        // Planetoide genérico
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        const diameter = 200 + Math.random() * 800; // 200..1000 → radio 100..500
+        radius = diameter * 0.5;
+        planetObj = new Planet(`planet-${i}`, color, radius, pos);
+      }
+
+      // Configuración de órbita común
+      planetObj.orbitCenter = { ...center };
+      planetObj.semiMajor = a;
+      planetObj.semiMinor = b;
+      planetObj.orbitOrientation = orient;
+      planetObj.orbitAngle = angle0;
+      // Velocidad angular orbital ~ a^{-3/2} (heurística kepler)
+      planetObj.orbitAngularSpeed = 0.00003 * Math.pow(50000 / a, 1.5);
+      // Rotación propia: 1 vuelta/300s
+      planetObj.angularVelocity.y = (Math.PI * 2) / 300;
+
+      this.planets.push(planetObj);
     }
   }
 
@@ -987,7 +1074,11 @@ export class GameEngine {
     }
   }
 
-  /** Renderiza planetas: lejos = lit monocromo; cerca (<10k) = shader texturizado tintado */
+  /** Renderiza planetas con LOD de shading para evitar artefactos por distancia:
+   * - < 5,000u: shader texturizado tintado (detallado)
+   * - 5,000u..20,000u: lit monocromo sin especular (Lambert simple)
+   * - >= 20,000u: básico sin iluminación (flat color) para máxima estabilidad
+   */
   private renderPlanets(): void {
     if (!this.gl || !this.shaderManager) return;
     const cam = this.camera;
@@ -1001,30 +1092,38 @@ export class GameEngine {
       const dz = p.position.z - this.spaceship.position.z;
       const distShip = Math.hypot(dx, dy, dz);
 
-      if (distShip < 10000) {
-        // Texturizado tintado con baseColor
+      if (distShip < 5000) {
+        // Cercano: texturizado tintado con baseColor (detalle alto)
         this.shaderManager.useTexturedProgram();
-        // Matrices
         this.calculateNormalMatrix(p.modelMatrix);
         this.shaderManager.setTexturedMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-        // Iluminación y color base = color del planeta
         const base = new Float32Array([p.color.r, p.color.g, p.color.b]);
         this.shaderManager.setTexturedLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength, base);
-        // Texturas disponibles (usamos metálica+gradient para simular patrones y que “parezca” tormentas/tierra/agua)
         const metallicTexture = this.textureManager.getTexture('metallic');
         const gradientTexture = this.textureManager.getTexture('gradient');
         if (metallicTexture && gradientTexture) {
           this.shaderManager.setTexturedTextures(metallicTexture, gradientTexture);
         }
-        // Dibujar
         p.render(this.gl, this.shaderManager.texturedProgram!, cam.viewMatrix, cam.projectionMatrix);
-      } else {
-        // Lit monocromo con su color base
+      } else if (distShip < 20000) {
+        // Medio: iluminación simple sin especular para evitar el parpadeo a distancia
         this.shaderManager.useLitProgram();
         this.calculateNormalMatrix(p.modelMatrix);
         this.shaderManager.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+        this.shaderManager.setLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength);
+        // Anular especular en mid-range (reduce ruido por precisión)
+        const camPos = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
+        this.shaderManager.setSpecular(camPos, 0.0, 1.0);
         this.shaderManager.setLitColor(new Float32Array([p.color.r, p.color.g, p.color.b]));
         p.render(this.gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+      } else {
+        // Lejano: sin iluminación (flat color) para máxima estabilidad visual
+        this.shaderManager.useBasicProgram();
+        // Reutilizar la misma normalMatrix para consistencia en model transform, aunque basic no usa normal
+        this.calculateNormalMatrix(p.modelMatrix);
+        this.shaderManager.setBasicMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
+        // El color por vértice ya es el base del planeta (generateVertexColors), así evitamos uniforms extra
+        p.render(this.gl, this.shaderManager.basicProgram!, cam.viewMatrix, cam.projectionMatrix);
       }
     }
     // Desbindeo explícito de texturas usadas por el pase texturizado de planetas

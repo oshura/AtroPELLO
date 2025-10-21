@@ -234,30 +234,63 @@ export class TargetDetector implements ITargetDetector {
     const sizeBoost = 1 + this.TOL_SIZE_GAIN_UNIFIED * Math.max(0, sizeRatio - 1);
     pixelRadius *= sizeBoost;
 
-    // 3) Factores específicos por tipo (super_asteroid):
+    // 3) Factores específicos por tipo (super_asteroid, planet, giant planet):
     const tType = typeof anyT.getTargetType === 'function' ? String(anyT.getTargetType()) : '';
-  const isSuper = tType === 'super_asteroid';
-  const typeTolBoost = isSuper ? 2.0 : 1.0;         // ampliar aún más el área de acierto (~x2)
-  const farRefFactor = isSuper ? 2.2 : 1.0;         // decaimiento aún más lento con la distancia
-  const maxParamBoost = isSuper ? 2.0 : 1.0;        // permitir mayor tope que el radio base pasado
-  const dynCapBoost = isSuper ? 1.8 : 1.0;          // techo dinámico más alto
-  const additivePxCushion = isSuper ? 12 : 0;       // colchón aditivo en píxeles
+    const isSuper = tType === 'super_asteroid';
+    const isPlanet = tType === 'planet';
+    const isGiantPlanet = isPlanet && anyT.planetType === 'Giant';
 
-    // 4) Baseline por distancia con referencia cercana escalada por tamaño y farRef ampliado para supers
-    const nearRef = this.TOL_NEAR_REF_U * sizeRatio;
-    const farRef = this.TOL_FAR_REF_U * farRefFactor;
-    const denom = Math.max(1e-3, farRef - nearRef);
-    const t = Math.max(0, Math.min(1, (distance - nearRef) / denom));
-    const baseline = this.TOL_NEAR_MAX_PX - (this.TOL_NEAR_MAX_PX - this.TOL_FAR_MIN_PX) * t;
+    // Per-type parameters
+    let nearMaxPx = this.TOL_NEAR_MAX_PX; // default 30px
+    let farMinPx = this.TOL_FAR_MIN_PX;   // default 3px
+    let nearRefU = this.TOL_NEAR_REF_U * sizeRatio; // default scaled by size
+    let farRefU = this.TOL_FAR_REF_U;     // default 150u
+    let typeTolBoost = 1.0;               // multiplicative boost
+    let dynCapBoost = 1.0;                // dynamic cap boost
+    let maxParamBoost = 1.0;              // cap relative to caller param
+    let additivePxCushion = 0;            // additive pixels
 
-    // 5) Combinar: usar el más permisivo y aplicar boost por tipo
-  const desired = (Math.max(pixelRadius, baseline) * typeTolBoost) + additivePxCushion;
+    if (isSuper) {
+      typeTolBoost = 2.0;
+      dynCapBoost = 1.8;
+      maxParamBoost = 2.0;
+      additivePxCushion = 12;
+      farRefU = this.TOL_FAR_REF_U * 2.2; // slower decay
+    } else if (isGiantPlanet) {
+      // Giant planets: very slow decay. Keep 30px near; at 74.4ku still ~10px.
+      nearMaxPx = 30;
+      farMinPx = 10;
+      nearRefU = 1000;     // start decaying after 1,000u
+      farRefU = 74400;     // reach farMin at 74.4ku
+      typeTolBoost = 1.2;  // mild boost
+      dynCapBoost = 1.6;   // allow a higher dynamic ceiling than default
+      maxParamBoost = 2.0; // allow larger than caller-specified radius if needed
+      additivePxCushion = 2;
+    } else if (isPlanet) {
+      // Normal planets: gentle decay. At 70ku still ~4px.
+      nearMaxPx = 30;
+      farMinPx = 4;
+      nearRefU = 800;      // start decaying after ~800u
+      farRefU = 70000;     // reach farMin at 70ku
+      typeTolBoost = 1.1;  // very small boost
+      dynCapBoost = 1.3;
+      maxParamBoost = 1.6;
+      additivePxCushion = 1;
+    }
 
-    // 6) Techo dinámico con boost por tipo
-    const baseDynamicMax = this.TOL_NEAR_MAX_PX - (this.TOL_NEAR_MAX_PX - this.TOL_FAR_MIN_PX) * t; // mismo 't'
+    // 4) Baseline por distancia con referencias ajustadas por tipo
+    const denom = Math.max(1e-3, farRefU - nearRefU);
+    const t = Math.max(0, Math.min(1, (distance - nearRefU) / denom));
+    const baseline = nearMaxPx - (nearMaxPx - farMinPx) * t;
+
+    // 5) Combinar: usar el más permisivo (radio proyectado vs baseline) y aplicar boosts
+    const desired = (Math.max(pixelRadius, baseline) * typeTolBoost) + additivePxCushion;
+
+    // 6) Techo dinámico y cap final
+    const baseDynamicMax = nearMaxPx - (nearMaxPx - farMinPx) * t;
     const typeDynamicMax = baseDynamicMax * dynCapBoost;
 
-    // 7) Capear por techo dinámico y por el radio pasado por el caller (aumentado para supers)
+    // 7) Capear por techo dinámico y por el radio pasado por el caller (aumentado por tipo)
     const capped = Math.min(desired, typeDynamicMax, maxTolParamPx * maxParamBoost);
     return Math.max(this.TOL_MIN_ABS_PX, capped);
   }

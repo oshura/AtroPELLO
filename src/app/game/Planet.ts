@@ -37,6 +37,9 @@ export class Planet extends GameObject implements ITargetable {
     this.objectType = TargetType.PLANET;
     this.healthMax = 1;
     this.healthCurrent = 1;
+    // Importante: regenerar colores por vértice después de asignar this.color
+    // (GameObject llama a generateVertexColors() antes de que Planet asigne su color base)
+    this.generateVertexColors();
   }
 
   public getDisplayName(): string { return this.customName ?? `Planet ${this.baseColorName}`; }

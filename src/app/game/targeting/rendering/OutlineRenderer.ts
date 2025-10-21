@@ -345,8 +345,21 @@ export class OutlineRenderer {
     modelMatrix[4] = invView[4]; modelMatrix[5] = invView[5]; modelMatrix[6] = invView[6];
     modelMatrix[8] = invView[8]; modelMatrix[9] = invView[9]; modelMatrix[10] = invView[10];
     // Escalado: el quad será del tamaño del diámetro del objeto (en X/Y), sin profundidad
-    const radius = (target as any).radius ? Number((target as any).radius) : 10;
-    const scale = Math.max(1, radius * 2);
+    const anyT: any = target as any;
+    let radius = Number(anyT.radius);
+    if (!(isFinite(radius) && radius > 0)) {
+      if (anyT.boundingSphere && typeof anyT.boundingSphere.radius === 'number') {
+        radius = Number(anyT.boundingSphere.radius);
+      } else if (anyT.scale && typeof anyT.scale.x === 'number') {
+        radius = Number(anyT.scale.x);
+      } else {
+        radius = 10;
+      }
+    }
+    // Giant planet outlines 4x larger
+    const isGiantPlanet = (typeof anyT.getTargetType === 'function' && String(anyT.getTargetType()) === 'planet') && anyT.planetType === 'Giant';
+    let scale = Math.max(1, radius * 2);
+    if (isGiantPlanet) scale *= 4.0;
     mat4.scale(modelMatrix, modelMatrix, [scale, scale, 1]);
 
     // Establecer matrices en el shader de primera pasada
@@ -590,6 +603,9 @@ export class OutlineRenderer {
     for (const entry of sorted) {
       const { id, ot: outlineTarget, dx, dy, dz, distCam } = entry;
       const target = outlineTarget.target;
+      const anyT: any = target as any;
+      const isPlanet = (typeof anyT.getTargetType === 'function' && String(anyT.getTargetType()) === 'planet');
+      const isGiantPlanet = isPlanet && anyT.planetType === 'Giant';
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
   const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : this.typeToLabel(target.getTargetType?.());
       // Distance label should be relative to the provided origin (e.g., ship center)
@@ -629,9 +645,10 @@ export class OutlineRenderer {
   // Screen-size scaling uses camera distance to maintain constant apparent size
   const distance = Math.max(0.001, distCam);
   const distantThreshold = 300;
-  if (distance > distantThreshold) {
+      if (distance > distantThreshold) {
         // Renderizar marcador compacto: cuadrado pequeño fijo (ej: 18px) manteniendo orientación a cámara.
-        const markerPx = 18;
+        let markerPx = 18;
+        if (isGiantPlanet) markerPx *= 4; // gigantes: marcador 4x grande
         const markerWorld = (markerPx / viewportW) * 2.0 * distance * tanHalfFovx;
         mat4.scale(model, model, [markerWorld, markerWorld, 1]);
         this.gl.uniformMatrix4fv(this.worldBillboardUniforms.model, false, model as unknown as Float32Array);
@@ -662,7 +679,8 @@ export class OutlineRenderer {
         this.gl.drawElements(this.gl.TRIANGLES, 6, this.gl.UNSIGNED_SHORT, 0);
       } else {
         // Billboard normal con textura
-        const constantPxWidth = 162; // ancho base cercano
+        let constantPxWidth = 162; // ancho base cercano
+        if (isGiantPlanet) constantPxWidth *= 4; // gigantes: ancho 4x para destacar outline/label
   let widthWorld = (constantPxWidth / viewportW) * 2.0 * distance * tanHalfFovx;
         const minWidthWorld = 0.01;
         if (widthWorld < minWidthWorld) widthWorld = minWidthWorld;
