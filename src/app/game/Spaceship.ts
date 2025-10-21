@@ -897,4 +897,49 @@ export class Spaceship extends GameObject {
       this.rotation.z = 0;
     }
   }
+
+  /**
+   * Ajusta la orientación de la nave para mirar hacia un punto objetivo.
+   * Construye una base ortonormal (right, up, forward) y actualiza quaternion/matriz.
+   */
+  public lookAt(target: Vector3, upHint: Vector3 = { x: 0, y: 1, z: 0 }): void {
+    // Dirección deseada (forward Z local)
+    const fx = target.x - this.position.x;
+    const fy = target.y - this.position.y;
+    const fz = target.z - this.position.z;
+    let fl = Math.hypot(fx, fy, fz) || 1;
+    const fwd = [fx / fl, fy / fl, fz / fl] as [number, number, number];
+
+    // Construir ejes right y up ortogonales usando upHint
+    // right = normalize(cross(upHint, fwd))
+    let rx = upHint.y * fwd[2] - upHint.z * fwd[1];
+    let ry = upHint.z * fwd[0] - upHint.x * fwd[2];
+    let rz = upHint.x * fwd[1] - upHint.y * fwd[0];
+    let rl = Math.hypot(rx, ry, rz);
+    if (rl < 1e-6) {
+      // upHint colineal con fwd: usar eje X mundial como fallback
+      const alt = { x: 1, y: 0, z: 0 };
+      rx = alt.y * fwd[2] - alt.z * fwd[1];
+      ry = alt.z * fwd[0] - alt.x * fwd[2];
+      rz = alt.x * fwd[1] - alt.y * fwd[0];
+      rl = Math.hypot(rx, ry, rz) || 1;
+    }
+    rx /= rl; ry /= rl; rz /= rl;
+
+    // up = cross(fwd, right)
+    const ux = fwd[1] * rz - fwd[2] * ry;
+    const uy = fwd[2] * rx - fwd[0] * rz;
+    const uz = fwd[0] * ry - fwd[1] * rx;
+
+    // Construir matriz de rotación con columnas (right, up, forward)
+    // Coincide con updateModelMatrix() que multiplica orientación antes de escala
+    this.orientationMatrix[0] = rx; this.orientationMatrix[1] = ry; this.orientationMatrix[2] = rz; this.orientationMatrix[3] = 0;
+    this.orientationMatrix[4] = ux; this.orientationMatrix[5] = uy; this.orientationMatrix[6] = uz; this.orientationMatrix[7] = 0;
+    this.orientationMatrix[8] = fwd[0]; this.orientationMatrix[9] = fwd[1]; this.orientationMatrix[10] = fwd[2]; this.orientationMatrix[11] = 0;
+    this.orientationMatrix[12] = 0; this.orientationMatrix[13] = 0; this.orientationMatrix[14] = 0; this.orientationMatrix[15] = 1;
+
+    // Extraer quaternion desde la matriz y sincronizar Euler para compatibilidad
+    mat4.getRotation(this.orientationQuaternion, this.orientationMatrix);
+    this.extractEulerFromOrientationMatrix();
+  }
 }

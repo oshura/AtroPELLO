@@ -13,6 +13,7 @@ import { ClusterObject } from './Cluster';
 import { ReticleManager } from './targeting';
 import { AsteroidClusterService } from './services/game/asteroid-cluster.service';
 import { TargetCatalogService } from './services/target-catalog.service';
+import { AnimationManagerService } from './services/animations/animation-manager.service';
 import { TargetType, ITargetable } from './types/targeting.types';
 import { RelationService } from '../services/relation.service';
 import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
@@ -23,6 +24,7 @@ import { Planet, PlanetColorName } from './Planet';
 import { GaseousPlanet } from './GaseousPlanet';
 import { GiantPlanet } from './GiantPlanet';
 import { EarthSplitPlanet } from './EarthSplitPlanet';
+import { MegaAsteroid } from './MegaAsteroid';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -52,6 +54,8 @@ export class GameEngine {
   private asteroids: Asteroid[] = [];
   private superAsteroids: SuperAsteroid[] = [];
   private planets: Planet[] = [];
+  // Debris asociados a un planeta (e.g., anillo de mega-asteroides de la Tierra dividida)
+  private planetDebris: Map<string, Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }>> = new Map();
   
   // Configuración del mundo
   private readonly WORLD_SIZE = 50;
@@ -101,7 +105,8 @@ export class GameEngine {
     private targetCatalogService: TargetCatalogService,
     private targetDetailService: TargetDetailService,
     asteroidClusterService: AsteroidClusterService,
-    private relationService: RelationService
+    private relationService: RelationService,
+    private animationManager: AnimationManagerService
   ) {
     this.reticleManager = this.reticleManagerService;
     this.targetCatalog = this.targetCatalogService;
@@ -343,6 +348,13 @@ export class GameEngine {
     this.createPlanets();
     this.planets.forEach(p => p.initBuffers(this.gl!));
     this.targetCatalog.register(TargetType.PLANET, this.planets as unknown as ITargetable[]);
+    // Inicializar buffers y registrar debris asociados a planetas como SUPER_ASTEROID
+    for (const arr of this.planetDebris.values()) {
+      for (const d of arr) {
+        if (!d.obj.vertexBuffer) d.obj.initBuffers(this.gl!);
+        this.targetCatalog.add(TargetType.SUPER_ASTEROID, d.obj as unknown as ITargetable);
+      }
+    }
   }
 
   /**
@@ -408,6 +420,8 @@ export class GameEngine {
    * Actualiza la lógica del juego
    */
   private update(deltaTime: number): void {
+    // Actualizar animaciones (bloquean inputs si están activas)
+    this.animationManager.update(this, deltaTime);
     // DEBUG CRÍTICO - Verificar que update se ejecuta
     if (performance.now() % 1500 < 50) { // Cada 1.5 segundos
       console.log('🎮 GameEngine.update() EJECUTADO:', {
@@ -932,6 +946,9 @@ export class GameEngine {
 
     // Renderizar planetas al final para asegurar consistencia de estado
     this.renderPlanets();
+
+    // Render overlays de animaciones (fade)
+    this.animationManager.render(this);
   }
 
   /** Crea 9 planetas en órbitas elípticas concéntricas en el plano XZ
@@ -985,7 +1002,7 @@ export class GameEngine {
       let planetObj: Planet;
 
       if (i === earthIdx) {
-        // Tierra en 3ª órbita
+        // Tierra en 3ª órbita con planeta dividido y anillo de mega-asteroides
         radius = 400; // tamaño medio estable (radio)
         // Calcular posición inicial sobre su elipse
         const cx = Math.cos(angle0) * a;
@@ -995,9 +1012,17 @@ export class GameEngine {
           y: 0,
           z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
         };
-        planetObj = new EarthSplitPlanet(`planet-earth`, 'azul_marino', radius, pos, 500);
+        const created = EarthSplitPlanet.createWithDebris(`planet-earth`, 'azul_marino', radius, pos, 500, 16);
+        planetObj = created.planet;
         planetObj.customName = 'Tierra';
         planetObj.probabilityOfLifePct = 100;
+        // Registrar offsets locales para que los debris sigan a la Tierra
+        const arr: Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }> = [];
+        for (const m of created.debris) {
+          const local = { x: m.position.x - pos.x, y: m.position.y - pos.y, z: m.position.z - pos.z };
+          arr.push({ obj: m, local });
+        }
+        this.planetDebris.set('planet-earth', arr);
       } else if (i === giantIdx) {
         // Gigante con órbita 15% mayor (min y max efectivos)
         a = Math.round(aBase * 1.15);
@@ -1071,6 +1096,17 @@ export class GameEngine {
       p.position.z = p.orbitCenter.z + z;
   // Integrar rotación propia con dt y actualizar matrices
   p.update(dt);
+      // Mover debris asociados (si existen), manteniendo su offset local
+      const debris = this.planetDebris.get(p.id);
+      if (debris && debris.length) {
+        for (const d of debris) {
+          d.obj.position.x = p.position.x + d.local.x;
+          d.obj.position.y = p.position.y + d.local.y;
+          d.obj.position.z = p.position.z + d.local.z;
+          d.obj.updateModelMatrix();
+          if (d.obj.boundingSphere) d.obj.boundingSphere.center = { ...d.obj.position } as any;
+        }
+      }
     }
   }
 
@@ -1126,6 +1162,8 @@ export class GameEngine {
         p.render(this.gl, this.shaderManager.basicProgram!, cam.viewMatrix, cam.projectionMatrix);
       }
     }
+    // Renderizar debris asociados a planetas con LOD sencillo
+    this.renderPlanetDebris();
     // Desbindeo explícito de texturas usadas por el pase texturizado de planetas
     this.gl.activeTexture(this.gl.TEXTURE0);
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
@@ -1135,6 +1173,47 @@ export class GameEngine {
     // Restaurar estado
     if (!wasBlend) this.gl.disable(this.gl.BLEND);
     if (prevProgram) this.gl.useProgram(prevProgram);
+  }
+
+  /** Renderiza los mega-asteroides de debris vinculados a planetas con un LOD simple */
+  private renderPlanetDebris(): void {
+    if (!this.gl || !this.shaderManager) return;
+    const cam = this.camera;
+    const camPosArr = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
+    for (const arr of this.planetDebris.values()) {
+      for (const d of arr) {
+        const a = d.obj;
+        const dx = a.position.x - this.spaceship.position.x;
+        const dy = a.position.y - this.spaceship.position.y;
+        const dz = a.position.z - this.spaceship.position.z;
+        const distShip = Math.hypot(dx, dy, dz);
+
+        if (distShip < 5000) {
+          // Cercano: lit con especular suave
+          this.shaderManager.useLitProgram();
+          this.calculateNormalMatrix(a.modelMatrix);
+          this.shaderManager.setLitMatrices(a.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+          this.shaderManager.setLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength);
+          this.shaderManager.setSpecular(camPosArr, 0.2, 16.0);
+          this.shaderManager.setLitColor(new Float32Array([(a as any).color?.r ?? 0.6, (a as any).color?.g ?? 0.5, (a as any).color?.b ?? 0.4]));
+          a.render(this.gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+        } else if (distShip < 20000) {
+          // Medio: sin especular para evitar parpadeos
+          this.shaderManager.useLitProgram();
+          this.calculateNormalMatrix(a.modelMatrix);
+          this.shaderManager.setLitMatrices(a.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+          this.shaderManager.setLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength);
+          this.shaderManager.setSpecular(camPosArr, 0.0, 1.0);
+          this.shaderManager.setLitColor(new Float32Array([(a as any).color?.r ?? 0.6, (a as any).color?.g ?? 0.5, (a as any).color?.b ?? 0.4]));
+          a.render(this.gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+        } else {
+          // Lejano: flat color
+          this.shaderManager.useBasicProgram();
+          this.shaderManager.setBasicMatrices(a.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
+          a.render(this.gl, this.shaderManager.basicProgram!, cam.viewMatrix, cam.projectionMatrix);
+        }
+      }
+    }
   }
 
   /**
@@ -1833,8 +1912,16 @@ export class GameEngine {
     }
 
     // Manejo de controles de nave
-    if (this.spaceship) {
+    if (this.spaceship && !this.animationManager.isBlockingInputs()) {
       this.updateShipControls(key, true);
+    }
+    // Lanzar VoidJump con tecla 'y' si hay target (seleccionado u hovered)
+    if (key.toLowerCase() === 'y') {
+      const target = this.reticleManager?.getCurrentTarget?.() || this.reticleManager?.getHoveredTarget?.();
+      if (target) {
+        this.animationManager.startVoidJump(this, target);
+      }
+      return;
     }
   }
 
@@ -1842,7 +1929,7 @@ export class GameEngine {
    * Maneja eventos de tecla liberada
    */
   public handleKeyUp(key: string): void {
-    if (this.spaceship) {
+    if (this.spaceship && !this.animationManager.isBlockingInputs()) {
       this.updateShipControls(key, false);
     }
   }

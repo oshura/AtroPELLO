@@ -8,6 +8,7 @@ import { TargetCatalogService } from '../../game/services/target-catalog.service
 import { TargetDetailService } from '../../game/services/target-detail.service';
 import { AsteroidClusterService } from '../../game/services/game/asteroid-cluster.service';
 import { RelationService } from '../relation.service';
+import { AnimationManagerService } from '../../game/services/animations/animation-manager.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -88,7 +89,8 @@ export class GameInitializer {
     const targetCatalog = this.injector.get(TargetCatalogService);
     const targetDetails = this.injector.get(TargetDetailService);
     const asteroidClusterService = this.injector.get(AsteroidClusterService);
-    const relationService = this.injector.get(RelationService);
+  const relationService = this.injector.get(RelationService);
+  const animationManager = this.injector.get(AnimationManagerService);
     this.gameEngine = new GameEngine(
       this.webglService,
       this.particleEffectsService,
@@ -96,7 +98,8 @@ export class GameInitializer {
       targetCatalog,
       targetDetails,
       asteroidClusterService,
-      relationService
+      relationService,
+      animationManager
     );
 
       // Inicializar motor del juego
