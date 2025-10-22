@@ -941,14 +941,17 @@ export class GameEngine {
       });
     }
 
-    // Renderizar outlines avanzados (FASE 4)
-    this.renderOutlineSystem();
+  // Renderizar planetas después de asteroides
+  this.renderPlanets();
 
-    // Renderizar planetas al final para asegurar consistencia de estado
-    this.renderPlanets();
+  // Renderizar outlines avanzados (FASE 4) sobre la escena
+  this.renderOutlineSystem();
 
-    // Render overlays de animaciones (fade)
-    this.animationManager.render(this);
+  // Render overlays de animaciones (fade) sobre outlines
+  this.animationManager.render(this);
+
+  // Renderizar HUD al final para que quede por encima de objetos y outlines
+  this.renderHUDPlane();
   }
 
   /** Crea 9 planetas en órbitas elípticas concéntricas en el plano XZ
@@ -1418,8 +1421,7 @@ export class GameEngine {
     this.renderSpaceshipThruster();
     // this.renderOrientationIndicator(); // Temporalmente deshabilitada
     
-    // Renderizar HUD (solo en modo COCKPIT)
-    this.renderHUDPlane();
+  // HUD se renderiza al final del frame para asegurar que quede por encima de todo
     
     // Renderizar sistema de retícula (FASE 2)
     this.renderReticleSystem();
