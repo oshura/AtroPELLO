@@ -43,6 +43,8 @@ export class Spaceship extends GameObject {
   public voidEnergyMax: number = 100; // capacidad máxima
   public voidEnergyCurrent: number = 100; // inicia llena (100%)
   public voidEnergyConsumptionPerUnit: number = 0.01; // consumo por unidad recorrida
+  // Pausa de consumo de energía del vacío (e.g., durante animaciones)
+  public voidEnergyPaused: boolean = false;
   private lastPositionForEnergy: Vector3 | null = null; // track recorrido
   // Estado de deriva por falta de energía
   private outOfVoidEnergy: boolean = false; // sin energía: no acelera; deriva
@@ -346,6 +348,11 @@ export class Spaceship extends GameObject {
    * Actualiza la energía del vacío consumida por distancia recorrida
    */
   private updateVoidEnergy(deltaTime: number): void {
+    // Si está pausado el consumo, actualizar el marcador de posición y salir
+    if (this.voidEnergyPaused) {
+      this.lastPositionForEnergy = { ...this.position };
+      return;
+    }
     const pos = this.position;
     if (!this.lastPositionForEnergy) {
       this.lastPositionForEnergy = { ...pos };

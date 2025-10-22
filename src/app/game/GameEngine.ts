@@ -1124,12 +1124,17 @@ export class GameEngine {
     // Guardar estado mínimo para no interferir con otros pases
     const prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
     const wasBlend = this.gl.isEnabled(this.gl.BLEND);
+    // Asegurar estado de profundidad correcto para planetas
+    this.gl.enable(this.gl.DEPTH_TEST);
+    this.gl.depthMask(true);
     for (const p of this.planets) {
       // Distancia desde la nave (criterio de cercanía pedido)
       const dx = p.position.x - this.spaceship.position.x;
       const dy = p.position.y - this.spaceship.position.y;
       const dz = p.position.z - this.spaceship.position.z;
       const distShip = Math.hypot(dx, dy, dz);
+
+      // Render normal; caps emisivas se pintan en un segundo pase después
 
       if (distShip < 5000) {
         // Cercano: texturizado tintado con baseColor (detalle alto)
@@ -1163,6 +1168,15 @@ export class GameEngine {
         this.shaderManager.setBasicMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
         // El color por vértice ya es el base del planeta (generateVertexColors), así evitamos uniforms extra
         p.render(this.gl, this.shaderManager.basicProgram!, cam.viewMatrix, cam.projectionMatrix);
+      }
+
+      // Segundo pase: tapas emisivas del planeta partido (si aplica)
+      if ((p as any).renderCapsEmissive) {
+        try {
+          (p as any).renderCapsEmissive(this.gl, this.shaderManager, cam.viewMatrix, cam.projectionMatrix);
+        } catch (e) {
+          console.warn('renderCapsEmissive failed', e);
+        }
       }
     }
     // Renderizar debris asociados a planetas con LOD sencillo
@@ -1921,7 +1935,23 @@ export class GameEngine {
     if (key.toLowerCase() === 'y') {
       const target = this.reticleManager?.getCurrentTarget?.() || this.reticleManager?.getHoveredTarget?.();
       if (target) {
-        this.animationManager.startVoidJump(this, target);
+        // Limitar el salto sólo si el target está a más de 4000u de la nave
+        const c = (() => {
+          const anyT: any = target as any;
+          if (anyT.boundingSphere?.center) return { ...anyT.boundingSphere.center };
+          if (anyT.position) return { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z };
+          return { x: 0, y: 0, z: 0 };
+        })();
+        const dx = c.x - this.spaceship.position.x;
+        const dy = c.y - this.spaceship.position.y;
+        const dz = c.z - this.spaceship.position.z;
+        const dist = Math.hypot(dx, dy, dz);
+        if (dist > 4000) {
+          this.animationManager.startVoidJump(this, target);
+        } else {
+          // Aviso simple para depurar por qué no entra
+          console.info('[VoidJump] Target demasiado cerca (<4000u). Dist:', Math.round(dist));
+        }
       }
       return;
     }

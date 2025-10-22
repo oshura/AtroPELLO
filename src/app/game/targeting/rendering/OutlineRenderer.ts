@@ -81,6 +81,8 @@ export class OutlineRenderer {
     proj: WebGLUniformLocation | null;
     sampler: WebGLUniformLocation | null;
   } = { model: null, view: null, proj: null, sampler: null };
+  // Cache de texturas de nombre (simple texto)
+  private nameTextureCache: Map<string, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D; tex: WebGLTexture; w: number; h: number; lastText: string; lastColorKey: string }>|null = null;
   // Texturas sólidas para marcadores lejanos (color puro 1x1)
   private solidColorTextures: Map<string, WebGLTexture> | null = null;
   // Texturas de marco (cuadrado) para outlines de planetas
@@ -676,6 +678,37 @@ export class OutlineRenderer {
         this.gl.bindTexture(this.gl.TEXTURE_2D, frameTex);
         this.gl.uniform1i(this.worldBillboardUniforms.sampler, 0);
         this.gl.drawElements(this.gl.TRIANGLES, 6, this.gl.UNSIGNED_SHORT, 0);
+
+        // Añadir nombre del planeta como billboard adicional por encima del marco
+        // 1) Obtener nombre (preferir getDisplayName/customName)
+        const nameStr: string = (typeof (target as any).getDisplayName === 'function'
+          ? String((target as any).getDisplayName())
+          : (String((target as any).customName || 'Planet')));
+        // 2) Textura del nombre
+        const nameColorCss = `rgba(${Math.round(baseCol[0]*255)}, ${Math.round(baseCol[1]*255)}, ${Math.round(baseCol[2]*255)}, ${ (baseCol[3] ?? 1.0).toFixed(3) })`;
+        const nameEntry = this.getOrCreateNameTexture(`${id}|name`, nameStr, nameColorCss);
+        // 3) Calcular tamaño en mundo para un ancho constante en píxeles
+        const namePxWidth = 140; // ancho en píxeles deseado
+        const nameWorldW = (namePxWidth / viewportW) * 2.0 * distance * tanHalfFovx;
+        const nameWorldH = nameWorldW * (nameEntry.h / nameEntry.w);
+        // 4) Margen en píxeles convertido a mundo para separar del marco
+        const marginPx = 14;
+        const marginWorldY = (marginPx / viewportH) * 2.0 * distance * tanHalfFovy;
+        // 5) Modelo para el nombre: misma orientación, trasladado arriba del cuadro
+        const modelName = mat4.create();
+        mat4.translate(modelName, modelName, [target.position.x, target.position.y, target.position.z]);
+        // Copiar rotación de la cámara para billboard
+        modelName[0] = invView[0]; modelName[1] = invView[1]; modelName[2] = invView[2];
+        modelName[4] = invView[4]; modelName[5] = invView[5]; modelName[6] = invView[6];
+        modelName[8] = invView[8]; modelName[9] = invView[9]; modelName[10] = invView[10];
+        // Trasladar en el eje Y local (pantalla) hasta el borde superior del marco más margen
+        mat4.translate(modelName, modelName, [0, (diameterWorld * 0.5) + marginWorldY, 0]);
+        mat4.scale(modelName, modelName, [nameWorldW, nameWorldH, 1]);
+        this.gl.uniformMatrix4fv(this.worldBillboardUniforms.model, false, modelName as unknown as Float32Array);
+        this.gl.activeTexture(this.gl.TEXTURE0);
+        this.gl.bindTexture(this.gl.TEXTURE_2D, nameEntry.tex);
+        this.gl.uniform1i(this.worldBillboardUniforms.sampler, 0);
+        this.gl.drawElements(this.gl.TRIANGLES, 6, this.gl.UNSIGNED_SHORT, 0);
       } else {
         // NO PLANETA: comportamiento previo (marcador lejano y label cercano)
         const distantThreshold = 300;
@@ -731,6 +764,61 @@ export class OutlineRenderer {
     if (!prevBlend) this.gl.disable(this.gl.BLEND);
     if (prevCull) this.gl.enable(this.gl.CULL_FACE); else this.gl.disable(this.gl.CULL_FACE);
     if (prevDepth) this.gl.enable(this.gl.DEPTH_TEST); else this.gl.disable(this.gl.DEPTH_TEST);
+  }
+
+  // Crea y cachea una textura con solo el texto del nombre (transparente de fondo)
+  private getOrCreateNameTexture(keyId: string, text: string, colorCss: string): { tex: WebGLTexture; w: number; h: number } {
+    if (!this.gl) throw new Error('GL missing');
+    if (!this.nameTextureCache) this.nameTextureCache = new Map();
+    const key = keyId;
+    let entry = this.nameTextureCache.get(key);
+    const dirty = !entry || entry.lastText !== text || entry.lastColorKey !== colorCss;
+    if (!entry) {
+      const canvas = document.createElement('canvas');
+      // Dimensiones base: ancho auto por texto, altura fija
+      canvas.width = 256; canvas.height = 48;
+      const ctx = canvas.getContext('2d')!;
+      const tex = this.gl.createTexture()!;
+      entry = { canvas, ctx, tex, w: canvas.width, h: canvas.height, lastText: '', lastColorKey: '' };
+      this.nameTextureCache.set(key, entry);
+      // Parámetros de la textura
+      this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MIN_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_MAG_FILTER, this.gl.LINEAR);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_S, this.gl.CLAMP_TO_EDGE);
+      this.gl.texParameteri(this.gl.TEXTURE_2D, this.gl.TEXTURE_WRAP_T, this.gl.CLAMP_TO_EDGE);
+    }
+    if (dirty && entry) {
+      const ctx = entry.ctx;
+      const W = entry.canvas.width, H = entry.canvas.height;
+      ctx.clearRect(0,0,W,H);
+      ctx.font = '600 28px Segoe UI, Roboto, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      // Sombra ligera para legibilidad
+      ctx.shadowColor = 'rgba(0,0,0,0.35)';
+      ctx.shadowBlur = 2;
+      ctx.shadowOffsetX = 0;
+      ctx.shadowOffsetY = 1;
+      ctx.fillStyle = colorCss;
+      // Si el texto no cabe, reducir font size gradualmente
+      let fontSize = 28;
+      ctx.font = `600 ${fontSize}px Segoe UI, Roboto, sans-serif`;
+      while (ctx.measureText(text).width > W - 16 && fontSize > 14) {
+        fontSize -= 1;
+        ctx.font = `600 ${fontSize}px Segoe UI, Roboto, sans-serif`;
+      }
+      ctx.fillText(text, W/2, H/2);
+      ctx.shadowColor = 'transparent';
+      ctx.shadowBlur = 0;
+      // Subir a textura (sin flip Y; UV ya lo corrige el VS)
+      this.gl.bindTexture(this.gl.TEXTURE_2D, entry.tex);
+      this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
+      this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, entry.canvas);
+      entry.lastText = text;
+      entry.lastColorKey = colorCss;
+    }
+    return { tex: entry!.tex, w: entry!.w, h: entry!.h };
   }
 
   private renderLabelsOverlay(): void {

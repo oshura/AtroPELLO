@@ -6,15 +6,28 @@ import { GameAnimation } from './types';
 @Injectable({ providedIn: 'root' })
 export class AnimationManagerService {
   private current: GameAnimation | null = null;
+  private cachedVoidJumpCtor: ({ new(): GameAnimation }) | null = null;
+
+  constructor() {
+    // Preload the void-jump module to avoid first-use delay on 'y'
+    this.preloadVoidJump();
+  }
 
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
     if (this.current) return false; // busy
-    // Set a temporary blocking stub while we lazy-load the real animation
+    // If cached ctor available, start immediately; else lazy-load with stub
+    if (this.cachedVoidJumpCtor) {
+      const anim = new this.cachedVoidJumpCtor();
+      anim.start(engine, target);
+      this.current = anim;
+      return true;
+    }
     this.current = this.createLoadingStub();
     (async () => {
       try {
         const mod2 = await import('./void-jump.animation');
         const AnimClass = (mod2 as any).VoidJumpAnimation as { new(): GameAnimation };
+        this.cachedVoidJumpCtor = AnimClass;
         const anim = new AnimClass();
         anim.start(engine, target);
         this.current = anim;
@@ -52,5 +65,17 @@ export class AnimationManagerService {
       render: () => {},
       isBlockingInputs: () => true,
     };
+  }
+
+  private preloadVoidJump(): void {
+    (async () => {
+      try {
+        const mod2 = await import('./void-jump.animation');
+        const AnimClass = (mod2 as any).VoidJumpAnimation as { new(): GameAnimation };
+        this.cachedVoidJumpCtor = AnimClass;
+      } catch {
+        // Best-effort; ignore
+      }
+    })();
   }
 }
