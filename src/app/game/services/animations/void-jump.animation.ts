@@ -18,7 +18,7 @@ export class VoidJumpAnimation implements GameAnimation {
   private speedHoldTime = 3.5; // keep 200 for a bit
   private fadeInTime = 0.6;
   private fadeHoldTime = 0.25;
-  private fadeOutTime = 0.8;
+  private fadeOutTime = 1.8;
 
   private totalTime = 0;
   private teleportMoment = 0; // time at which teleport happens
@@ -26,6 +26,8 @@ export class VoidJumpAnimation implements GameAnimation {
   private target!: ITargetable;
   private prevCameraMode!: CameraMode;
   private originalMaxSpeed = 0;
+  private originalAcceleration = 0;
+  private originalDeceleration = 0;
 
   private overlayAlpha = 0;
   // Particle streaks during jump (static seeds in camera-local space)
@@ -43,10 +45,14 @@ export class VoidJumpAnimation implements GameAnimation {
     this.prevCameraMode = engine['camera']?.getCurrentMode?.() ?? CameraMode.INMOVILE_EXTERNAL;
     engine['camera']?.setCameraMode?.(CameraMode.INMOVILE_EXTERNAL);
 
-    // Ship: store and temporarily extend max speed for visual ramp; pause void energy consumption
+    // Ship: store and temporarily extend dynamics for visual ramp; pause void energy consumption
     this.originalMaxSpeed = engine['spaceship']?.maxSpeed ?? 5;
+    this.originalAcceleration = engine['spaceship']?.acceleration ?? 2;
+    this.originalDeceleration = engine['spaceship']?.deceleration ?? 2.5;
     if (engine['spaceship']) {
-      engine['spaceship'].maxSpeed = 200; // target anim speed
+      engine['spaceship'].maxSpeed = 200; // higher top speed during jump
+      engine['spaceship'].acceleration = 150; // reach 200 quickly
+      engine['spaceship'].deceleration = 200; // snap to 0 after teleport
       engine['spaceship'].voidEnergyPaused = true;
       this.savedVoidEnergy = engine['spaceship'].voidEnergyCurrent ?? 0;
     }
@@ -156,6 +162,8 @@ export class VoidJumpAnimation implements GameAnimation {
       // Reset ship speed limits and camera; restore void energy and resume drain
       if (engine['spaceship']) {
         engine['spaceship'].maxSpeed = this.originalMaxSpeed;
+        engine['spaceship'].acceleration = this.originalAcceleration;
+        engine['spaceship'].deceleration = this.originalDeceleration;
         engine['spaceship'].targetSpeed = 0;
         engine['spaceship'].currentSpeed = 0;
         engine['spaceship'].voidEnergyCurrent = this.savedVoidEnergy;
@@ -174,12 +182,12 @@ export class VoidJumpAnimation implements GameAnimation {
     const cam = (engine as any).camera;
     if (!gl || !shaderManager || !cam) return;
 
-    // First: draw speed streaks (lines) if within the jump window
+  // First: draw speed streaks (lines) only after the look-at phase has completed
     // Streak length grows with current visual speed factor (0..1)
     const ship = (engine as any).spaceship as any;
     const speedFactor = Math.min(1, (ship?.currentSpeed ?? 0) / Math.max(1, ship?.maxSpeed ?? 1));
     const streakAlpha = Math.min(1, 0.12 + speedFactor * 0.7);
-    if (this.streakSeeds.length && streakAlpha > 0.01) {
+  if (this.t > this.orientTime && this.streakSeeds.length && streakAlpha > 0.01) {
       // Camera basis
       const camPos = cam.position;
       const fwd = this.normalize({ x: cam.target.x - camPos.x, y: cam.target.y - camPos.y, z: cam.target.z - camPos.z });

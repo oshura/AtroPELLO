@@ -38,6 +38,16 @@ export class ParticleEffectsService {
   private thrusterAccum: number = 0;
   private readonly thrusterStep: number = 1 / 30;
 
+  // Ambient space dust around the ship for speed sensation
+  private ambientDust: Array<{ position: {x:number;y:number;z:number}; size: number; brightness: number } > = [];
+  private ambientInitialized = false;
+  private ambientCount = 380; // densidad
+  private ambientNear = 6;    // un pelín más lejos al aumentar tamaño
+  private ambientFar = 160;   // distancia máxima delante
+  private ambientSideX = 90;  // dispersión lateral
+  private ambientSideY = 60;  // dispersión vertical
+  private ambientBaseDrift = 0; // sin deriva base: quieto en reposo
+
   constructor(private webglService: WebGLService) {}
 
   /**
@@ -53,6 +63,8 @@ export class ParticleEffectsService {
     }
 
     this.createParticleBuffers();
+    // Ambient dust will be seeded on first update when we have ship pose
+    this.ambientInitialized = false;
     console.log('✅ ParticleEffectsService initialized');
     return true;
   }
@@ -120,6 +132,33 @@ export class ParticleEffectsService {
         particle.color.g *= fadeMultiplier;
         particle.color.b *= fadeMultiplier;
       });
+    }
+  }
+
+  /**
+   * Mantiene partículas ambientales alrededor de la nave para dar sensación de velocidad.
+   */
+  public updateAmbientDust(spaceship: Spaceship, deltaTime: number): void {
+    if (!this.ambientInitialized) {
+      this.seedAmbientDustAroundShip(spaceship);
+      this.ambientInitialized = true;
+    }
+    // Eje forward y posición de la nave
+    const fwd = spaceship.forwardDirection;
+    const pos = spaceship.position;
+    // Nota: las partículas ambientales son estáticas en el espacio. No aplicamos jitter ni drift.
+    // Sólo reciclamos las que quedan demasiado atrás o demasiado lejos.
+    for (let i = 0; i < this.ambientDust.length; i++) {
+      const d = this.ambientDust[i];
+      const dx = d.position.x - pos.x;
+      const dy = d.position.y - pos.y;
+      const dz = d.position.z - pos.z;
+      const dist = Math.hypot(dx, dy, dz);
+      const forwardDot = this.dot({ x: dx, y: dy, z: dz }, fwd);
+      // Si está muy lejos en general, o claramente detrás más allá de umbral, reubicar delante
+      if (dist > this.ambientFar * 1.6 || forwardDot < -this.ambientFar * 0.5) {
+        this.respawnAmbientParticleAhead(d, spaceship);
+      }
     }
   }
 
@@ -224,7 +263,7 @@ export class ParticleEffectsService {
    * Renderiza todos los efectos de partículas
    */
   public render(camera: Camera): void {
-    if (!this.gl || !this.shaderManager || this.thrusterParticles.length === 0) {
+    if (!this.gl || !this.shaderManager) {
       return;
     }
 
@@ -239,10 +278,19 @@ export class ParticleEffectsService {
     this.gl.enable(this.gl.DEPTH_TEST);
     this.gl.depthMask(false); // No escribir en depth buffer para permitir transparencias
 
-    // Renderizar cada partícula
-    this.thrusterParticles.forEach(particle => {
-      this.renderParticle(particle, camera);
-    });
+    // Renderizar polvo ambiental (si existe)
+    if (this.ambientDust.length) {
+      for (const d of this.ambientDust) {
+        this.renderAmbientDustParticle(d, camera);
+      }
+    }
+
+    // Renderizar partículas del thruster
+    if (this.thrusterParticles.length) {
+      this.thrusterParticles.forEach(particle => {
+        this.renderParticle(particle, camera);
+      });
+    }
 
     // Restaurar estados de OpenGL
     this.gl.enable(this.gl.DEPTH_TEST);
@@ -322,6 +370,88 @@ export class ParticleEffectsService {
     gl.disableVertexAttribArray(positionLocation);
     gl.disableVertexAttribArray(colorLocation);
   }
+
+  /** Crea el polvo ambiental alrededor de la nave en la primera actualización */
+  private seedAmbientDustAroundShip(spaceship: Spaceship): void {
+    this.ambientDust = [];
+    for (let i = 0; i < this.ambientCount; i++) {
+      const d = { position: { x: 0, y: 0, z: 0 }, size: 0.28 + Math.random()*0.22, brightness: 0.05 + Math.random()*0.12 };
+      this.respawnAmbientParticleAhead(d, spaceship);
+      this.ambientDust.push(d);
+    }
+  }
+
+  private renderAmbientDustParticle(d: { position: {x:number;y:number;z:number}; size:number; brightness:number }, camera: Camera): void {
+    if (!this.gl || !this.shaderManager || !this.particleVertexBuffer) return;
+    const gl = this.gl;
+    // Colores blancos fríos suaves (ligeramente más brillantes)
+    const b = d.brightness;
+    const c = new Float32Array([
+      b, b, b,
+      b, b, b,
+      b*1.4, b*1.4, b*1.4,
+      b, b, b,
+      b*1.4, b*1.4, b*1.4,
+      b*1.4, b*1.4, b*1.4,
+    ]);
+    if (!this.particleColorBuffer) {
+      this.particleColorBuffer = gl.createBuffer();
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, c, gl.DYNAMIC_DRAW);
+
+    const program = this.shaderManager.basicProgram!;
+    const positionLocation = this.shaderManager.basicAttributes['position'];
+    const colorLocation = this.shaderManager.basicAttributes['color'];
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVertexBuffer);
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
+    gl.enableVertexAttribArray(colorLocation);
+    gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+
+    // Construir un billboard que mire a cámara: columnas = right, up, forward
+    const modelMatrix = new Float32Array(16);
+    this.createIdentityMatrix(modelMatrix);
+    // Calcular basis desde cámara
+    const camPos = camera.position;
+    const fwd = this.normalize({ x: camera.target.x - camPos.x, y: camera.target.y - camPos.y, z: camera.target.z - camPos.z });
+    const worldUp = camera.up;
+    const right = this.normalize({ x: fwd.y * worldUp.z - fwd.z * worldUp.y, y: fwd.z * worldUp.x - fwd.x * worldUp.z, z: fwd.x * worldUp.y - fwd.y * worldUp.x });
+    const up = this.normalize({ x: right.y * fwd.z - right.z * fwd.y, y: right.z * fwd.x - right.x * fwd.z, z: right.x * fwd.y - right.y * fwd.x });
+    const s = d.size;
+    // Asignar base escalada a la matriz (3x3 rotación-escalado)
+    modelMatrix[0] = right.x * s; modelMatrix[1] = right.y * s; modelMatrix[2] = right.z * s;
+    modelMatrix[4] = up.x * s;    modelMatrix[5] = up.y * s;    modelMatrix[6] = up.z * s;
+    modelMatrix[8] = -fwd.x * s;  modelMatrix[9] = -fwd.y * s;  modelMatrix[10] = -fwd.z * s;
+    // Traslación
+    modelMatrix[12] = d.position.x; modelMatrix[13] = d.position.y; modelMatrix[14] = d.position.z;
+    this.shaderManager.setBasicMatrices(modelMatrix, camera.viewMatrix, camera.projectionMatrix);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.disableVertexAttribArray(positionLocation);
+    gl.disableVertexAttribArray(colorLocation);
+  }
+
+  private respawnAmbientParticleAhead(d: { position: {x:number;y:number;z:number}; size:number; brightness:number }, spaceship: Spaceship): void {
+    const fwd = spaceship.forwardDirection;
+    const pos = spaceship.position;
+    const dist = this.ambientNear + Math.random() * (this.ambientFar - this.ambientNear);
+    const sideX = (Math.random() * 2 - 1) * this.ambientSideX;
+    const sideY = (Math.random() * 2 - 1) * this.ambientSideY;
+    // Construir base delante del ship: pos + fwd*dist + pequeños desplazamientos laterales en un marco aproximado
+    // Aproximamos el lateral como algún vector perpendicular fijo (no perfecto), suficiente visualmente
+    const up = { x: 0, y: 1, z: 0 };
+    const right = this.cross(fwd, up);
+    d.position.x = pos.x + fwd.x * dist + right.x * sideX + up.x * sideY;
+    d.position.y = pos.y + fwd.y * dist + right.y * sideX + up.y * sideY;
+    d.position.z = pos.z + fwd.z * dist + right.z * sideX + up.z * sideY;
+    d.size = 0.28 + Math.random()*0.22; // más grande para que se note
+    d.brightness = 0.12 + Math.random()*0.18;
+  }
+
+  private dot(a: {x:number;y:number;z:number}, b: {x:number;y:number;z:number}): number { return a.x*b.x + a.y*b.y + a.z*b.z; }
+  private cross(a: {x:number;y:number;z:number}, b: {x:number;y:number;z:number}): {x:number;y:number;z:number} { return { x: a.y*b.z - a.z*b.y, y: a.z*b.x - a.x*b.z, z: a.x*b.y - a.y*b.x }; }
+  private normalize(v: {x:number;y:number;z:number}): {x:number;y:number;z:number} { const l = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x/l, y: v.y/l, z: v.z/l }; }
 
   /**
    * Crea matriz identidad

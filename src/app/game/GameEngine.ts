@@ -439,7 +439,8 @@ export class GameEngine {
     
     this.spaceship.update(deltaTime);
     
-    // Actualizar efectos de partículas
+  // Actualizar efectos de partículas
+  this.particleEffects.updateAmbientDust(this.spaceship, deltaTime);
     this.particleEffects.updateThrusterEffect(this.spaceship, deltaTime);
 
     // Actualizar cámara con nueva posición
