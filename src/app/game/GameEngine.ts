@@ -655,6 +655,14 @@ export class GameEngine {
       }
     }
   } catch {}
+
+  // Asegurar que el target actualmente seleccionado no se pierda por filtros de distancia
+  try {
+    const currentSel = this.reticleManager.getCurrentTarget?.();
+    if (currentSel && !availableTargets.some(t => t.id === currentSel.id)) {
+      availableTargets = [currentSel, ...availableTargets];
+    }
+  } catch {}
     
     // Debug ocasional para verificar targets
     if (Math.random() < 0.001) { // 0.1% chance
@@ -1097,6 +1105,10 @@ export class GameEngine {
       const center = this.primarySun ? { ...this.primarySun.position } : { x: 0, y: 0, z: 0 } as any;
       // Rebuild id->target mapping each frame for map selection
       this.mapIdToTarget.clear();
+      // Map the 'center' synthetic id to the actual primary sun target so clicks select it reliably
+      if (this.primarySun) {
+        this.mapIdToTarget.set('center', this.primarySun as unknown as ITargetable);
+      }
       const planets = this.planets.map(p => {
         const label = (p as any).customName || p.getDisplayName?.() || p.id;
         this.mapIdToTarget.set(p.id, p as unknown as ITargetable);
@@ -1122,6 +1134,10 @@ export class GameEngine {
         }
       }
       const ship = this.spaceship ? { pos: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }, label: 'Ship' } : undefined;
+      if (this.spaceship) {
+        // Allow selecting the player's ship as an ally from the map
+        this.mapIdToTarget.set('ship', this.spaceship as unknown as ITargetable);
+      }
       this.systemPanel.updateMap({ center, planets, clusters, debris, ship, marginPx: 48 });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
@@ -2718,6 +2734,7 @@ export class GameEngine {
     const el = this.domCanvas;
     const handler = (this as any)._mapClickHandler as ((e: MouseEvent) => void) | undefined;
     const moveHandler = (this as any)._mapMoveHandler as ((e: MouseEvent) => void) | undefined;
+    const wheelHandler = (this as any)._mapWheelHandler as ((e: WheelEvent) => void) | undefined;
     const enabled = this.systemPanel.isEnabled();
     if (enabled) {
       if (!handler) {
@@ -2766,6 +2783,27 @@ export class GameEngine {
         (this as any)._mapMoveHandler = mh;
         el.addEventListener('mousemove', mh);
       }
+      if (!wheelHandler) {
+        const wh = (e: WheelEvent) => {
+          if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl) return;
+          const rect = el.getBoundingClientRect();
+          try {
+            this.systemPanel.handleWheelFromViewport(
+              e.deltaY,
+              e.clientX,
+              e.clientY,
+              rect,
+              (this.gl!.canvas as HTMLCanvasElement).width,
+              (this.gl!.canvas as HTMLCanvasElement).height
+            );
+          } catch {}
+          // Prevent page scroll when zooming the map
+          try { e.preventDefault(); } catch {}
+        };
+        (this as any)._mapWheelHandler = wh;
+        // Use non-passive to allow preventDefault
+        el.addEventListener('wheel', wh, { passive: false } as any);
+      }
     } else {
       if (handler) {
         el.removeEventListener('click', handler);
@@ -2774,6 +2812,10 @@ export class GameEngine {
       if (moveHandler) {
         el.removeEventListener('mousemove', moveHandler);
         (this as any)._mapMoveHandler = undefined;
+      }
+      if (wheelHandler) {
+        el.removeEventListener('wheel', wheelHandler as any);
+        (this as any)._mapWheelHandler = undefined;
       }
       try { this.systemPanel.setSelectedId(null); } catch {}
       try { this.systemPanel.setHoveredId(null); } catch {}

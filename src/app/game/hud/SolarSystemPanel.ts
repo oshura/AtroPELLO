@@ -18,6 +18,12 @@ export class SolarSystemPanel {
   private enabled: boolean = false;
   private lastViewportW = 0;
   private lastViewportH = 0;
+  // Zoom/pan state (applied on top of fit-to-bounds scale)
+  private fitScale: number = 1; // computed each updateMap
+  private zoomScale: number = 1; // user-controlled zoom factor (>= 1)
+  private readonly zoomMax: number = 20; // max zoom-in factor
+  private tx: number = 0; // screen-space translation in canvas pixels
+  private ty: number = 0;
   private items: Array<{
     id: string;
     label: string;
@@ -53,6 +59,50 @@ export class SolarSystemPanel {
     const y = ((clientY - rect.top) / Math.max(1, rect.height)) * viewportH;
     this.cursorPx = (x / viewportW) * this.canvas.width;
     this.cursorPy = (y / viewportH) * this.canvas.height;
+  }
+
+  /** Reset view to initial fit (no pan, no zoom) */
+  public resetView(): void {
+    this.zoomScale = 1;
+    this.tx = 0; this.ty = 0;
+  }
+
+  /** Handle wheel from viewport coords: zoom towards cursor position */
+  public handleWheelFromViewport(deltaY: number, clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
+    // Convert to canvas pixel coords (texture covers full viewport)
+    const x = ((clientX - rect.left) / Math.max(1, rect.width)) * viewportW;
+    const y = ((clientY - rect.top) / Math.max(1, rect.height)) * viewportH;
+    const mapX = (x / viewportW) * this.canvas.width;
+    const mapY = (y / viewportH) * this.canvas.height;
+    this.zoomAtCanvasPoint(mapX, mapY, deltaY);
+  }
+
+  /** Zoom at a canvas pixel coordinate, adjusting translation to keep the focus point stable */
+  private zoomAtCanvasPoint(mapX: number, mapY: number, deltaY: number): void {
+    // Wheel delta: positive means zoom out, negative zoom in
+    const prevZoom = this.zoomScale;
+    // Smooth exponential zoom factor
+    const factor = Math.pow(1.0015, -deltaY);
+    let nextZoom = prevZoom * factor;
+    // Clamp and auto-reset if trying to zoom out past the initial fit
+    if (nextZoom <= 1.0001) {
+      this.resetView();
+      return;
+    }
+    if (nextZoom > this.zoomMax) nextZoom = this.zoomMax;
+
+    const cx = this.canvas.width / 2;
+    const cy = this.canvas.height / 2;
+    const prevSEff = this.fitScale * prevZoom;
+    const nextSEff = this.fitScale * nextZoom;
+    const r = nextSEff / Math.max(1e-6, prevSEff);
+
+    // Keep the point under cursor fixed on screen
+    // tx' = X - cx - (X - cx - tx) * r
+    // ty' = Y - cy - (Y - cy - ty) * r
+    this.tx = mapX - cx - (mapX - cx - this.tx) * r;
+    this.ty = mapY - cy - (mapY - cy - this.ty) * r;
+    this.zoomScale = nextZoom;
   }
 
   private initGLResources(): void {
@@ -131,8 +181,10 @@ export class SolarSystemPanel {
     for (const cl of data.clusters) maxR = Math.max(maxR, radXZ(cl.center));
     if (data.ship) maxR = Math.max(maxR, radXZ(data.ship.pos));
 
-    const Rpanel = Math.min(cx, cy) - margin;
-    const s = (maxR > 0) ? (Rpanel / maxR) : 1;
+  const Rpanel = Math.min(cx, cy) - margin;
+  const sFit = (maxR > 0) ? (Rpanel / maxR) : 1;
+  this.fitScale = sFit;
+  const s = sFit * this.zoomScale;
 
   // Clear items for re-projection this frame
   this.items = [];
@@ -159,8 +211,8 @@ export class SolarSystemPanel {
         // Rotate by orient and translate
         const rx = ex * cosA - ez * sinA; const rz = ex * sinA + ez * cosA;
         const worldX = oc.x + rx; const worldZ = oc.z + rz;
-        const px = cx + (worldX - data.center.x) * s;
-        const py = cy - (worldZ - data.center.z) * s;
+        const px = cx + (worldX - data.center.x) * s + this.tx;
+        const py = cy - (worldZ - data.center.z) * s + this.ty;
         if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
       }
       c.stroke();
@@ -168,8 +220,8 @@ export class SolarSystemPanel {
 
     // 4) Draw objects and accumulate interactive items with screen positions
     const project = (pos: Vector3) => ({
-      px: cx + (pos.x - data.center.x) * s,
-      py: cy - (pos.z - data.center.z) * s,
+      px: cx + (pos.x - data.center.x) * s + this.tx,
+      py: cy - (pos.z - data.center.z) * s + this.ty,
     });
     const pushItem = (
       id: string,
@@ -185,7 +237,7 @@ export class SolarSystemPanel {
     };
 
     // Sun/center
-    pushItem('center', 'Sol', 'center', data.center, 5, '#ffe08a');
+  pushItem('center', 'Sol', 'center', data.center, 5, '#ffe08a');
     // Planets
     for (const p of data.planets) {
       pushItem(p.id, p.label ?? p.id, 'planet', p.pos, 3, '#68a0ff');
@@ -194,8 +246,8 @@ export class SolarSystemPanel {
     for (const d of data.debris) pushItem(d.id, d.label ?? d.id, 'debris', d.pos, 1.5, '#e88d3a');
     // Clusters (always included)
     for (const cl of data.clusters) pushItem(cl.id, cl.label ?? cl.id, 'cluster', cl.center, 2.5, '#9ae6b4');
-    // Ship
-    if (data.ship) pushItem('ship', data.ship.label ?? 'Ship', 'ship', data.ship.pos, 3.5, '#ff5d5d');
+  // Ship (friendly green)
+  if (data.ship) pushItem('ship', data.ship.label ?? 'Ship', 'ship', data.ship.pos, 3.5, '#32d296');
 
     // 4.b) Simple outliner: draw circle stroke + label based on rules
     c.font = '12px Segoe UI, Roboto, sans-serif';
@@ -212,7 +264,9 @@ export class SolarSystemPanel {
       }
       // Show circle+label only if hovered or selected (for all categories)
       if (isHover || isSel) {
-        c.strokeStyle = isSel ? '#ffeb7a' : 'rgba(255,255,255,0.6)';
+        // Ally-friendly outline for the ship; gold for selected others, white on hover
+        const isShip = it.category === 'ship';
+        c.strokeStyle = isShip ? (isSel ? '#70f0a8' : '#46d88f') : (isSel ? '#ffeb7a' : 'rgba(255,255,255,0.6)');
         c.lineWidth = isSel ? 2 : 1;
         c.beginPath(); c.arc(it.px, it.py, it.rPx + (isSel ? 6 : 2), 0, Math.PI * 2); c.stroke();
         c.fillStyle = 'rgba(255,255,255,0.95)';
@@ -224,7 +278,8 @@ export class SolarSystemPanel {
     if (this.selectedId) {
       const sel = this.items.find(i => i.id === this.selectedId);
       if (sel) {
-        c.strokeStyle = '#ffeb7a';
+        // Ally selection ring for ship; gold otherwise
+        c.strokeStyle = sel.category === 'ship' ? '#70f0a8' : '#ffeb7a';
         c.lineWidth = 2;
         c.beginPath(); c.arc(sel.px, sel.py, sel.rPx + 6, 0, Math.PI * 2); c.stroke();
       }
@@ -250,11 +305,13 @@ export class SolarSystemPanel {
 
     // Upload to texture
     const gl = this.gl;
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    // Flip Y so 2D canvas top-left maps to screen top-left
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
-    gl.bindTexture(gl.TEXTURE_2D, null);
+  gl.bindTexture(gl.TEXTURE_2D, this.texture);
+  // Flip Y so 2D canvas top-left maps to screen top-left, but restore previous state after
+  const prevFlip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL) as boolean;
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, prevFlip ? 1 : 0);
+  gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
   /** Draws the fullscreen panel in front of the scene (opaque) */

@@ -78,6 +78,9 @@ export class HUDTexture {
     });
     
     // Actualizar textura con datos del canvas
+    // Asegurar orientación correcta del HUD (top-left canvas → top-left en pantalla)
+    const prevFlip = this.gl.getParameter(this.gl.UNPACK_FLIP_Y_WEBGL) as boolean;
+    this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
     this.gl.texImage2D(
       this.gl.TEXTURE_2D, 
       0, 
@@ -86,6 +89,8 @@ export class HUDTexture {
       this.gl.UNSIGNED_BYTE, 
       this.canvas
     );
+    // Restaurar estado previo de pixelStore
+    this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, prevFlip ? 1 : 0);
     
     // Verificar errores
     const error = this.gl.getError();
