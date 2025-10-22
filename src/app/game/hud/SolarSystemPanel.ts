@@ -18,6 +18,20 @@ export class SolarSystemPanel {
   private enabled: boolean = false;
   private lastViewportW = 0;
   private lastViewportH = 0;
+  private items: Array<{
+    id: string;
+    label: string;
+    category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center';
+    pos: Vector3;
+    px: number;
+    py: number;
+    rPx: number;
+    color: string;
+  }> = [];
+  private selectedId: string | null = null;
+  private hoveredId: string | null = null;
+  private cursorPx: number | null = null;
+  private cursorPy: number | null = null;
 
   constructor(gl: WebGL2RenderingContext, width: number = 1024, height: number = 1024) {
     this.gl = gl;
@@ -31,6 +45,15 @@ export class SolarSystemPanel {
 
   public setEnabled(v: boolean) { this.enabled = v; }
   public isEnabled(): boolean { return this.enabled; }
+  public setSelectedId(id: string | null) { this.selectedId = id; }
+  public setHoveredId(id: string | null) { this.hoveredId = id; }
+  public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
+    // Convert to canvas pixel coords (texture covers full viewport)
+    const x = ((clientX - rect.left) / Math.max(1, rect.width)) * viewportW;
+    const y = ((clientY - rect.top) / Math.max(1, rect.height)) * viewportH;
+    this.cursorPx = (x / viewportW) * this.canvas.width;
+    this.cursorPy = (y / viewportH) * this.canvas.height;
+  }
 
   private initGLResources(): void {
     const gl = this.gl;
@@ -89,10 +112,10 @@ export class SolarSystemPanel {
    */
   public updateMap(data: {
     center: Vector3;
-    planets: Array<{ id: string; pos: Vector3; orbit?: { center: Vector3; a: number; b: number; orient: number } }>;
-    clusters: Array<{ id: string; center: Vector3 }>; // always included regardless of gameplay culling
-    debris: Array<{ id: string; pos: Vector3 }>; // e.g., Earth mega-asteroids
-    ship?: { pos: Vector3 };
+    planets: Array<{ id: string; pos: Vector3; label?: string; orbit?: { center: Vector3; a: number; b: number; orient: number } }>;
+    clusters: Array<{ id: string; center: Vector3; label?: string }>; // always included regardless of gameplay culling
+    debris: Array<{ id: string; pos: Vector3; label?: string }>; // e.g., Earth mega-asteroids
+    ship?: { pos: Vector3; label?: string };
     marginPx?: number;
   }): void {
     const c = this.ctx;
@@ -111,7 +134,10 @@ export class SolarSystemPanel {
     const Rpanel = Math.min(cx, cy) - margin;
     const s = (maxR > 0) ? (Rpanel / maxR) : 1;
 
-    // 2) Clear opaque background
+  // Clear items for re-projection this frame
+  this.items = [];
+
+  // 2) Clear opaque background
     c.save();
     c.fillStyle = '#05060a'; // deep dark
     c.fillRect(0, 0, W, H);
@@ -140,34 +166,93 @@ export class SolarSystemPanel {
       c.stroke();
     }
 
-    // 4) Draw objects
-    const drawDot = (pos: Vector3, r: number, color: string) => {
-      const px = cx + (pos.x - data.center.x) * s;
-      const py = cy - (pos.z - data.center.z) * s;
-      c.beginPath(); c.fillStyle = color; c.arc(px, py, Math.max(1, r), 0, Math.PI * 2); c.fill();
+    // 4) Draw objects and accumulate interactive items with screen positions
+    const project = (pos: Vector3) => ({
+      px: cx + (pos.x - data.center.x) * s,
+      py: cy - (pos.z - data.center.z) * s,
+    });
+    const pushItem = (
+      id: string,
+      label: string,
+      category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center',
+      pos: Vector3,
+      rPx: number,
+      color: string
+    ) => {
+      const { px, py } = project(pos);
+      this.items.push({ id, label, category, pos, px, py, rPx: Math.max(1, rPx), color });
+      c.beginPath(); c.fillStyle = color; c.arc(px, py, Math.max(1, rPx), 0, Math.PI * 2); c.fill();
     };
 
     // Sun/center
-    drawDot(data.center, 5, '#ffe08a');
+    pushItem('center', 'Sol', 'center', data.center, 5, '#ffe08a');
     // Planets
-    for (const p of data.planets) drawDot(p.pos, 3, '#68a0ff');
+    for (const p of data.planets) {
+      pushItem(p.id, p.label ?? p.id, 'planet', p.pos, 3, '#68a0ff');
+    }
     // Debris
-    c.fillStyle = '#e88d3a';
-    for (const d of data.debris) drawDot(d.pos, 1.5, '#e88d3a');
+    for (const d of data.debris) pushItem(d.id, d.label ?? d.id, 'debris', d.pos, 1.5, '#e88d3a');
     // Clusters (always included)
-    for (const cl of data.clusters) drawDot(cl.center, 2.5, '#9ae6b4');
+    for (const cl of data.clusters) pushItem(cl.id, cl.label ?? cl.id, 'cluster', cl.center, 2.5, '#9ae6b4');
     // Ship
-    if (data.ship) drawDot(data.ship.pos, 3.5, '#ff5d5d');
+    if (data.ship) pushItem('ship', data.ship.label ?? 'Ship', 'ship', data.ship.pos, 3.5, '#ff5d5d');
+
+    // 4.b) Simple outliner: draw circle stroke + label based on rules
+    c.font = '12px Segoe UI, Roboto, sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'bottom';
+    for (const it of this.items) {
+      const isPlanet = it.category === 'planet';
+      const isSel = this.selectedId === it.id;
+      const isHover = this.hoveredId === it.id;
+      // Always show planet labels (no circle unless hover/selected)
+      if (isPlanet) {
+        c.fillStyle = 'rgba(255,255,255,0.9)';
+        c.fillText(it.label, it.px, it.py - (it.rPx + 4));
+      }
+      // Show circle+label only if hovered or selected (for all categories)
+      if (isHover || isSel) {
+        c.strokeStyle = isSel ? '#ffeb7a' : 'rgba(255,255,255,0.6)';
+        c.lineWidth = isSel ? 2 : 1;
+        c.beginPath(); c.arc(it.px, it.py, it.rPx + (isSel ? 6 : 2), 0, Math.PI * 2); c.stroke();
+        c.fillStyle = 'rgba(255,255,255,0.95)';
+        c.fillText(it.label, it.px, it.py - (it.rPx + (isSel ? 8 : 4)));
+      }
+    }
+
+    // 4.c) Selected highlight
+    if (this.selectedId) {
+      const sel = this.items.find(i => i.id === this.selectedId);
+      if (sel) {
+        c.strokeStyle = '#ffeb7a';
+        c.lineWidth = 2;
+        c.beginPath(); c.arc(sel.px, sel.py, sel.rPx + 6, 0, Math.PI * 2); c.stroke();
+      }
+    }
 
     // 5) Border
     c.strokeStyle = 'rgba(255,255,255,0.15)';
     c.lineWidth = 2; c.strokeRect(1, 1, W - 2, H - 2);
     c.restore();
 
+    // 6) Draw cursor crosshair if available
+    if (this.cursorPx !== null && this.cursorPy !== null) {
+      c.save();
+      c.strokeStyle = 'rgba(255,255,255,0.5)';
+      c.lineWidth = 1;
+      const len = 10;
+      c.beginPath();
+      c.moveTo(this.cursorPx - len, this.cursorPy); c.lineTo(this.cursorPx + len, this.cursorPy);
+      c.moveTo(this.cursorPx, this.cursorPy - len); c.lineTo(this.cursorPx, this.cursorPy + len);
+      c.stroke();
+      c.restore();
+    }
+
     // Upload to texture
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, false);
+    // Flip Y so 2D canvas top-left maps to screen top-left
+    gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
@@ -200,5 +285,27 @@ export class SolarSystemPanel {
     gl.bindVertexArray(null);
     if (prevBlend) gl.enable(gl.BLEND); else gl.disable(gl.BLEND);
     if (prevDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+  }
+
+  /** Map a viewport click to the nearest item id within tolerance (in pixels) */
+  public hitTestViewport(clientX: number, clientY: number, canvasRect: DOMRect, viewportW: number, viewportH: number): string | null {
+    if (!this.enabled || this.items.length === 0) return null;
+    // Convert client coords to canvas pixel coords
+    const x = ((clientX - canvasRect.left) / Math.max(1, canvasRect.width)) * viewportW;
+    const y = ((clientY - canvasRect.top) / Math.max(1, canvasRect.height)) * viewportH;
+    // Map to internal map canvas space (texture covers full viewport)
+    const mapX = (x / viewportW) * this.canvas.width;
+    const mapY = (y / viewportH) * this.canvas.height;
+    // Find nearest item within radius+padding
+    let bestId: string | null = null;
+    let bestD = Infinity;
+    for (const it of this.items) {
+      const dx = mapX - it.px;
+      const dy = mapY - it.py;
+      const d = Math.hypot(dx, dy);
+      const tol = it.rPx + 8;
+      if (d <= tol && d < bestD) { bestD = d; bestId = it.id; }
+    }
+    return bestId;
   }
 }

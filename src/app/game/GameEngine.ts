@@ -51,6 +51,8 @@ export class GameEngine {
   private targetDetails!: TargetDetailService;
   private targetPreview!: TargetPreviewRenderer;
   private systemPanel: SolarSystemPanel | null = null;
+  private domCanvas: HTMLCanvasElement | null = null;
+  private mapIdToTarget: Map<string, ITargetable> = new Map();
   
   // Objetos del juego
   private spaceship!: Spaceship;
@@ -171,8 +173,9 @@ export class GameEngine {
   this.systemPanel = new SolarSystemPanel(this.gl, 1024, 1024);
   this.systemPanel.setEnabled(false); // desactivado por defecto
 
-      // Crear cámara
-      const canvas = canvasRef.nativeElement;
+  // Crear cámara
+  const canvas = canvasRef.nativeElement;
+  this.domCanvas = canvas;
       const aspect = canvas.width / canvas.height;
       this.camera = new Camera(aspect);
 
@@ -1092,19 +1095,33 @@ export class GameEngine {
   if (this.systemPanel && this.systemPanel.isEnabled()) {
     try {
       const center = this.primarySun ? { ...this.primarySun.position } : { x: 0, y: 0, z: 0 } as any;
-      const planets = this.planets.map(p => ({
-        id: p.id,
-        pos: { x: p.position.x, y: p.position.y, z: p.position.z },
-        orbit: (p.semiMajor && p.semiMajor > 0)
-          ? { center: { x: p.orbitCenter.x, y: p.orbitCenter.y, z: p.orbitCenter.z }, a: p.semiMajor, b: p.semiMinor, orient: p.orbitOrientation }
-          : undefined
-      }));
-      const clusters = this.asteroidClusterService.getClusters().map(c => ({ id: c.id, center: { x: c.center.x, y: c.center.y, z: c.center.z } }));
-      const debris: Array<{ id: string; pos: { x: number; y: number; z: number } }> = [];
+      // Rebuild id->target mapping each frame for map selection
+      this.mapIdToTarget.clear();
+      const planets = this.planets.map(p => {
+        const label = (p as any).customName || p.getDisplayName?.() || p.id;
+        this.mapIdToTarget.set(p.id, p as unknown as ITargetable);
+        return {
+          id: p.id,
+          label,
+          pos: { x: p.position.x, y: p.position.y, z: p.position.z },
+          orbit: (p.semiMajor && p.semiMajor > 0)
+            ? { center: { x: p.orbitCenter.x, y: p.orbitCenter.y, z: p.orbitCenter.z }, a: p.semiMajor, b: p.semiMinor, orient: p.orbitOrientation }
+            : undefined
+        };
+      });
+      const clusters = this.asteroidClusterService.getClusters().map(c => {
+        const rep: ITargetable | null = (c.proxy as unknown as ITargetable) || (c.objects[0] as unknown as ITargetable) || null;
+        if (rep) this.mapIdToTarget.set(c.id, rep);
+        return { id: c.id, label: c.id, center: { x: c.center.x, y: c.center.y, z: c.center.z } };
+      });
+      const debris: Array<{ id: string; pos: { x: number; y: number; z: number }; label?: string }> = [];
       for (const arr of this.planetDebris.values()) {
-        for (const d of arr) debris.push({ id: d.obj.id, pos: { x: d.obj.position.x, y: d.obj.position.y, z: d.obj.position.z } });
+        for (const d of arr) {
+          debris.push({ id: d.obj.id, pos: { x: d.obj.position.x, y: d.obj.position.y, z: d.obj.position.z }, label: d.obj.getDisplayName?.() || d.obj.id });
+          this.mapIdToTarget.set(d.obj.id, d.obj as unknown as ITargetable);
+        }
       }
-      const ship = this.spaceship ? { pos: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z } } : undefined;
+      const ship = this.spaceship ? { pos: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }, label: 'Ship' } : undefined;
       this.systemPanel.updateMap({ center, planets, clusters, debris, ship, marginPx: 48 });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
@@ -2184,7 +2201,16 @@ export class GameEngine {
     // Toggle panel de mapa del sistema con tecla 'M'
     if (key.toLowerCase() === 'm') {
       if (this.systemPanel) this.systemPanel.setEnabled(!this.systemPanel.isEnabled());
+      try { this.updateMapClickBinding(); } catch {}
       return;
+    }
+    // Escape: cerrar mapa si está activo
+    if (key.toLowerCase() === 'escape') {
+      if (this.systemPanel && this.systemPanel.isEnabled()) {
+        this.systemPanel.setEnabled(false);
+        try { this.updateMapClickBinding(); } catch {}
+        return;
+      }
     }
     // Lanzar VoidJump con tecla 'y' si hay target (seleccionado u hovered)
     if (key.toLowerCase() === 'y') {
@@ -2684,5 +2710,73 @@ export class GameEngine {
       this.camera.projectionMatrix,
       availableTargets
     );
+  }
+
+  /** Attach or detach click binding based on panel enabled state */
+  private updateMapClickBinding(): void {
+    if (!this.domCanvas || !this.systemPanel) return;
+    const el = this.domCanvas;
+    const handler = (this as any)._mapClickHandler as ((e: MouseEvent) => void) | undefined;
+    const moveHandler = (this as any)._mapMoveHandler as ((e: MouseEvent) => void) | undefined;
+    const enabled = this.systemPanel.isEnabled();
+    if (enabled) {
+      if (!handler) {
+        const h = (e: MouseEvent) => {
+          if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl) return;
+          const rect = el.getBoundingClientRect();
+          const id = this.systemPanel!.hitTestViewport(
+            e.clientX,
+            e.clientY,
+            rect,
+            (this.gl!.canvas as HTMLCanvasElement).width,
+            (this.gl!.canvas as HTMLCanvasElement).height
+          );
+          if (id) {
+            const target = this.mapIdToTarget.get(id);
+            if (target && this.reticleManager) {
+              try { this.reticleManager.selectTarget(target); } catch {}
+              try { this.systemPanel!.setSelectedId(id); } catch {}
+            }
+          }
+        };
+        (this as any)._mapClickHandler = h;
+        el.addEventListener('click', h);
+      }
+      if (!moveHandler) {
+        const mh = (e: MouseEvent) => {
+          if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl) return;
+          const rect = el.getBoundingClientRect();
+          // Update cursor position on the map
+          try { this.systemPanel!.setCursorFromViewport(
+            e.clientX,
+            e.clientY,
+            rect,
+            (this.gl!.canvas as HTMLCanvasElement).width,
+            (this.gl!.canvas as HTMLCanvasElement).height
+          ); } catch {}
+          const id = this.systemPanel!.hitTestViewport(
+            e.clientX,
+            e.clientY,
+            rect,
+            (this.gl!.canvas as HTMLCanvasElement).width,
+            (this.gl!.canvas as HTMLCanvasElement).height
+          );
+          try { this.systemPanel!.setHoveredId(id); } catch {}
+        };
+        (this as any)._mapMoveHandler = mh;
+        el.addEventListener('mousemove', mh);
+      }
+    } else {
+      if (handler) {
+        el.removeEventListener('click', handler);
+        (this as any)._mapClickHandler = undefined;
+      }
+      if (moveHandler) {
+        el.removeEventListener('mousemove', moveHandler);
+        (this as any)._mapMoveHandler = undefined;
+      }
+      try { this.systemPanel.setSelectedId(null); } catch {}
+      try { this.systemPanel.setHoveredId(null); } catch {}
+    }
   }
 }

@@ -69,7 +69,13 @@ export class GameInputHandler {
     // Log para debug de controles
     console.log('🎮 Key pressed:', event.key, '(mapped to:', key, ')');
     
-    // Manejar teclas especiales que no se pasan al motor
+    // Manejar teclas especiales: reenviar 'escape' al motor para cerrar mapas/menus
+    if (key === 'escape') {
+      this.gameEngine.handleKeyDown(event.key);
+      event.preventDefault();
+      return true;
+    }
+    // Otras especiales que no se pasan al motor
     if (this.handleSpecialKeys(key)) {
       event.preventDefault();
       return true;
