@@ -297,14 +297,19 @@ export class EarthSplitPlanet extends Planet {
     const nMid  = Math.max(0, Math.round(debrisCount * 0.25));
     const nFar  = Math.max(0, debrisCount - nNear - nMid);
 
-    const addBelt = (count: number, rangeMin: number, rangeMax: number, jitter: number, label: string) => {
+    const addBelt = (count: number, rangeMin: number, rangeMax: number, jitter: number, label: string, thicknessFactor: number) => {
       for (let i = 0; i < count; i++) {
         const t = Math.random() * 2 * Math.PI;
         const mul = rangeMin + Math.random() * (rangeMax - rangeMin);
         const r = R * mul * (1 + (Math.random() - 0.5) * jitter);
         const x = Math.cos(t) * r;
         const z = Math.sin(t) * r;
-        const pos: Vector3 = { x: initialPos.x + x, y: initialPos.y, z: initialPos.z + z };
+        // Dispersión vertical entre hemisferios: más grueso cerca, delgado lejos
+        const sep = separation;
+        const maxHalf = sep * 0.5; // límite natural entre hemisferios
+        const amp = Math.min(maxHalf, sep * thicknessFactor) * (0.6 + Math.random() * 0.4);
+        const yOffset = (Math.random() < 0.5 ? -1 : 1) * (Math.random() * amp);
+        const pos: Vector3 = { x: initialPos.x + x, y: initialPos.y + yOffset, z: initialPos.z + z };
         // Slightly smaller base sizes for large counts; MegaAsteroid constructor multiplies x5
         const size = 0.6 * (0.7 + Math.random() * 0.6);
         debris.push(new MegaAsteroid(`${id}-mega-${label}-${i}`, pos, size));
@@ -312,11 +317,11 @@ export class EarthSplitPlanet extends Planet {
     };
 
     // Dense inner belt hugging the cut
-    addBelt(nNear, 0.9, 1.15, 0.10, 'near');
+    addBelt(nNear, 0.9, 1.15, 0.10, 'near', 0.45);
     // Medium belt hinting ejection
-    addBelt(nMid, 1.4, 1.9, 0.20, 'mid');
+    addBelt(nMid, 1.4, 1.9, 0.20, 'mid', 0.25);
     // Far scattered ejecta
-    addBelt(nFar, 2.1, 2.8, 0.35, 'far');
+    addBelt(nFar, 2.1, 2.8, 0.35, 'far', 0.10);
     return { planet, debris };
   }
 }

@@ -622,7 +622,17 @@ export class OutlineRenderer {
       const dOx = target.position.x - originPos.x;
       const dOy = target.position.y - originPos.y;
       const dOz = target.position.z - originPos.z;
-      const distOrigin = Math.hypot(dOx, dOy, dOz);
+      // Distancia al borde: restar radio del target
+      let radiusForDist = 0;
+      if (anyT.boundingSphere && typeof anyT.boundingSphere.radius === 'number') {
+        radiusForDist = Number(anyT.boundingSphere.radius);
+      } else if (anyT.radius && isFinite(anyT.radius)) {
+        radiusForDist = Number(anyT.radius);
+      } else if (anyT.scale && typeof anyT.scale.x === 'number') {
+        radiusForDist = Number(anyT.scale.x);
+      }
+      const distOriginCenter = Math.hypot(dOx, dOy, dOz);
+      const distOrigin = Math.max(0, distOriginCenter - Math.max(0, radiusForDist));
       const distLabel = `${Math.round(distOrigin)}u`;
       // Sin modulación de alpha por distancia: color constante
       const baseCol = outlineTarget.config.color;
@@ -846,11 +856,17 @@ export class OutlineRenderer {
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
   const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : this.typeToLabel(target.getTargetType?.());
       // Distancia para etiqueta: respecto al origen compartido (p.ej. centro de la nave)
-      const dist = Math.hypot(
+      const anyT: any = target as any;
+      let rEdge = 0;
+      if (anyT.boundingSphere && typeof anyT.boundingSphere.radius === 'number') rEdge = Number(anyT.boundingSphere.radius);
+      else if (anyT.radius && isFinite(anyT.radius)) rEdge = Number(anyT.radius);
+      else if (anyT.scale && typeof anyT.scale.x === 'number') rEdge = Number(anyT.scale.x);
+      const distCenter = Math.hypot(
         target.position.x - originPos.x,
         target.position.y - originPos.y,
         target.position.z - originPos.z
       );
+      const dist = Math.max(0, distCenter - Math.max(0, rEdge));
       const distLabel = `${Math.round(dist)}u`;
   // Color heredado del outline (animosidad)
   const col = outlineTarget.config.color || [0,1,1,0.95];
@@ -1406,7 +1422,13 @@ export class OutlineRenderer {
     const dx = target.position.x - origin.x;
     const dy = target.position.y - origin.y;
     const dz = target.position.z - origin.z;
-    return Math.hypot(dx, dy, dz);
+    const centerDist = Math.hypot(dx, dy, dz);
+    const anyT: any = target as any;
+    let radius = 0;
+    if (anyT.boundingSphere && typeof anyT.boundingSphere.radius === 'number') radius = Number(anyT.boundingSphere.radius);
+    else if (anyT.radius && isFinite(anyT.radius)) radius = Number(anyT.radius);
+    else if (anyT.scale && typeof anyT.scale.x === 'number') radius = Number(anyT.scale.x);
+    return Math.max(0, centerDist - Math.max(0, radius));
   }
 
   /**

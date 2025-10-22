@@ -610,7 +610,42 @@ export class GameEngine {
     // Superasteroides sueltos eliminados: vienen del cluster
 
     // Actualizar sistema de targeting con objetos disponibles (catálogo genérico)
-  const availableTargets = this.targetCatalog.getAllTargets();
+  let availableTargets = this.targetCatalog.getAllTargets();
+  // Excluir completamente los clusters (proxies y miembros) si su centro está a >20,000u de la nave
+  try {
+    const farClusterIds = new Set<string>();
+    const farMemberIds = new Set<string>();
+    for (const c of this.asteroidClusterService.getClusters()) {
+      const dxS = c.center.x - this.spaceship.position.x;
+      const dyS = c.center.y - this.spaceship.position.y;
+      const dzS = c.center.z - this.spaceship.position.z;
+      const distShip = Math.hypot(dxS, dyS, dzS);
+      if (distShip > 20000) {
+        if (c.proxy) farClusterIds.add(c.proxy.id);
+        for (const o of c.objects) farMemberIds.add(o.id);
+      }
+    }
+    if (farClusterIds.size || farMemberIds.size) {
+      availableTargets = availableTargets.filter(t => !farClusterIds.has(t.id) && !farMemberIds.has(t.id));
+    }
+  } catch {}
+  // Filtro: ocultar y excluir megaasteroides de la Tierra si la cámara está a >20,000u de la Tierra
+  try {
+    const earth = this.planets.find(p => p.id === 'planet-earth');
+    if (earth && this.camera) {
+      const dxE = earth.position.x - this.camera.position.x;
+      const dyE = earth.position.y - this.camera.position.y;
+      const dzE = earth.position.z - this.camera.position.z;
+      const distCamToEarth = Math.hypot(dxE, dyE, dzE);
+      if (distCamToEarth > 20000) {
+        const earthDebris = this.planetDebris.get('planet-earth');
+        if (earthDebris && earthDebris.length) {
+          const exIds = new Set(earthDebris.map(d => d.obj.id));
+          availableTargets = availableTargets.filter(t => !exIds.has(t.id));
+        }
+      }
+    }
+  } catch {}
     
     // Debug ocasional para verificar targets
     if (Math.random() < 0.001) { // 0.1% chance
@@ -945,6 +980,12 @@ export class GameEngine {
       const smalls: GameObject[] = [];
       const supers: GameObject[] = [];
       this.asteroidClusterService.getClusters().forEach(c => {
+        // Skip clusters farther than 20,000u from the ship (no render / no account)
+        const dxS = c.center.x - this.spaceship.position.x;
+        const dyS = c.center.y - this.spaceship.position.y;
+        const dzS = c.center.z - this.spaceship.position.z;
+        const distShip = Math.hypot(dxS, dyS, dzS);
+        if (distShip > 20000) return;
         // Cluster-level frustum/distance culling (skip entire cluster if not visible)
         if (!this.isClusterVisible(c, 5000, TargetType.CLUSTER)) {
           return;
@@ -996,6 +1037,12 @@ export class GameEngine {
       );
     } else {
       this.asteroidClusterService.getClusters().forEach(c => {
+        // Skip clusters farther than 20,000u from the ship (no render / no account)
+        const dxS = c.center.x - this.spaceship.position.x;
+        const dyS = c.center.y - this.spaceship.position.y;
+        const dzS = c.center.z - this.spaceship.position.z;
+        const distShip = Math.hypot(dxS, dyS, dzS);
+        if (distShip > 20000) return;
         // Cluster-level frustum/distance culling (skip entire cluster if not visible)
         if (!this.isClusterVisible(c, 4000, TargetType.CLUSTER)) {
           return;
@@ -1359,7 +1406,18 @@ export class GameEngine {
     if (!this.gl || !this.shaderManager) return;
     const cam = this.camera;
     const camPosArr = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
-    for (const arr of this.planetDebris.values()) {
+    // Culling específico: si la cámara está a >20,000u de la Tierra, no renderizar sus debris
+    const earth = this.planets.find(p => p.id === 'planet-earth');
+    let skipEarth = false;
+    if (earth && this.camera) {
+      const dxE = earth.position.x - this.camera.position.x;
+      const dyE = earth.position.y - this.camera.position.y;
+      const dzE = earth.position.z - this.camera.position.z;
+      const distCamToEarth = Math.hypot(dxE, dyE, dzE);
+      skipEarth = distCamToEarth > 20000;
+    }
+    for (const [pid, arr] of this.planetDebris.entries()) {
+      if (skipEarth && pid === 'planet-earth') continue;
       for (const d of arr) {
         const a = d.obj;
         const dx = a.position.x - this.spaceship.position.x;
@@ -2548,7 +2606,42 @@ export class GameEngine {
     if (!this.reticleManager || !this.camera) return;
 
     // Obtener todos los targets de forma genérica
-    const availableTargets = this.targetCatalog.getAllTargets();
+    let availableTargets = this.targetCatalog.getAllTargets();
+    // Excluir clusters lejanos también del render de outlines
+    try {
+      const farClusterIds = new Set<string>();
+      const farMemberIds = new Set<string>();
+      for (const c of this.asteroidClusterService.getClusters()) {
+        const dxS = c.center.x - this.spaceship.position.x;
+        const dyS = c.center.y - this.spaceship.position.y;
+        const dzS = c.center.z - this.spaceship.position.z;
+        const distShip = Math.hypot(dxS, dyS, dzS);
+        if (distShip > 20000) {
+          if (c.proxy) farClusterIds.add(c.proxy.id);
+          for (const o of c.objects) farMemberIds.add(o.id);
+        }
+      }
+      if (farClusterIds.size || farMemberIds.size) {
+        availableTargets = availableTargets.filter(t => !farClusterIds.has(t.id) && !farMemberIds.has(t.id));
+      }
+    } catch {}
+    // Aplicar el mismo filtro de visibilidad para debris de la Tierra
+    try {
+      const earth = this.planets.find(p => p.id === 'planet-earth');
+      if (earth && this.camera) {
+        const dxE = earth.position.x - this.camera.position.x;
+        const dyE = earth.position.y - this.camera.position.y;
+        const dzE = earth.position.z - this.camera.position.z;
+        const distCamToEarth = Math.hypot(dxE, dyE, dzE);
+        if (distCamToEarth > 20000) {
+          const earthDebris = this.planetDebris.get('planet-earth');
+          if (earthDebris && earthDebris.length) {
+            const exIds = new Set(earthDebris.map(d => d.obj.id));
+            availableTargets = availableTargets.filter(t => !exIds.has(t.id));
+          }
+        }
+      }
+    } catch {}
 
     // Renderizar outlines con matrices actuales de la cámara
     this.reticleManager.renderOutlines(

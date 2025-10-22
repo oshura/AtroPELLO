@@ -153,10 +153,16 @@ export class TargetDetector implements ITargetDetector {
           const worldDistance = this.getWorldDistance(target.position);
           
           if (worldDistance < minDistance && worldDistance <= this.config.maxDistance) {
-            minDistance = worldDistance;
+            // Use edge distance (center minus radius), clamped at 0
+            let radiusWorld = this.DEFAULT_TARGET_RADIUS;
+            const anyT: any = target as any;
+            if (anyT.radius && isFinite(anyT.radius)) radiusWorld = Number(anyT.radius);
+            else if (anyT.boundingSphere && typeof anyT.boundingSphere.radius === 'number') radiusWorld = Number(anyT.boundingSphere.radius);
+            const edgeDistance = Math.max(0, worldDistance - Math.max(0, radiusWorld));
+            minDistance = edgeDistance;
             closestHit = {
               target,
-              distance: worldDistance,
+              distance: edgeDistance,
               screenPosition: targetScreenPos,
               worldPosition: target.position,
               normal: { x: 0, y: 0, z: 1 }
