@@ -1159,12 +1159,14 @@ export class HUDManager {
    * CORREGIDO: Geometría en espacio de cámara para que sea FIJA (no rote con nave)
    */
   private createHUDPlaneGeometry(): void {
-    // HUD ajustado para FOV 55° - más lejos y visible
-    const width = 2.0;  // Más ancho para FOV 55°
-    const height = 0.6; // Más alto para mejor visibilidad
-    const baseY = -0.8; // Más abajo para estar en zona visible
-    const baseZ = -1.5; // Más lejos para FOV 55° - dentro del near plane
-    const tilt = 10 * (Math.PI / 180); // Menos inclinación para mejor lectura
+    // Ajuste para FOV 45º: reducir tamaño y alinear borde inferior con corte inferior de la cámara
+    // Nota: con proyección estándar, y_bottom ≈ baseZ / f, donde f = 1/tan(FOV/2). Para FOV 45°, f≈2.414 y con Z=-1.5, y_bottom≈-0.621.
+    // Dejamos un margen mínimo hacia arriba para asegurar visibilidad completa.
+    const width = 1.70;   // Reducido (antes 2.0)
+    const height = 0.48;  // Reducido (antes 0.6)
+    const baseZ = -1.5;   // Profundidad estable y segura dentro del frustum
+  const baseY = -0.63;  // Un poco más bajo para asegurar que no se recorte el borde inferior
+    const tilt = 10 * (Math.PI / 180); // Inclinación ligera para legibilidad
     
     console.log('🎯 === CREANDO GEOMETRÍA HUD ===');
     
@@ -1180,7 +1182,7 @@ export class HUDManager {
       -width/2, baseY + height * Math.cos(tilt), baseZ - height * Math.sin(tilt), 0.0, 0.0
     ];
 
-    console.log('� Coordenadas de vértices (x,y,z,u,v):');
+  console.log('� Coordenadas de vértices (x,y,z,u,v):');
     for (let i = 0; i < vertices.length; i += 5) {
       console.log(`  Vértice ${i/5}: pos(${vertices[i].toFixed(2)}, ${vertices[i+1].toFixed(2)}, ${vertices[i+2].toFixed(2)}) uv(${vertices[i+3].toFixed(2)}, ${vertices[i+4].toFixed(2)})`);
     }

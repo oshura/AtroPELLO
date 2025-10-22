@@ -17,8 +17,9 @@ export abstract class BaseCamera {
   public viewMatrix: Float32Array = new Float32Array(16);
   public projectionMatrix: Float32Array = new Float32Array(16);
   
-  // Configuración de proyección - FOV vertical realista tipo humano
-  public fov: number = 55 * (Math.PI / 180); // 55° vertical → ~90° horizontal en 16:9
+  // Configuración de proyección - FOV vertical
+  // Reducido a 45° para minimizar deformación en bordes (edge stretch) manteniendo buena percepción de velocidad
+  public fov: number = 45 * (Math.PI / 180); // 45° vertical → ~73° horizontal en 16:9
   public aspect: number = 1.0;
   public near: number = 0.1;
   public far: number = 100000.0; // Aumentado para soportar distancias de hasta ~50ku sin recorte
@@ -73,6 +74,21 @@ export abstract class BaseCamera {
    */
   public updateProjectionMatrix(): void {
     this.perspective(this.projectionMatrix, this.fov, this.aspect, this.near, this.far);
+  }
+
+  /** Ajusta el FOV en grados y actualiza proyección */
+  public setFovDegrees(deg: number): void {
+    const clamped = Math.max(30, Math.min(90, deg)); // límites razonables
+    this.fov = clamped * (Math.PI / 180);
+    this.updateProjectionMatrix();
+  }
+
+  /** Ajusta el FOV en radianes y actualiza proyección */
+  public setFovRadians(rad: number): void {
+    const min = 30 * (Math.PI / 180);
+    const max = 90 * (Math.PI / 180);
+    this.fov = Math.max(min, Math.min(max, rad));
+    this.updateProjectionMatrix();
   }
 
   /**
@@ -519,6 +535,22 @@ export class Camera {
     this.rearExternalCamera.updateProjectionMatrix();
     this.cockpitCamera.updateProjectionMatrix();
     this.cockpitInternalCamera.updateProjectionMatrix();
+  }
+
+  /** Ajusta el FOV (grados) en todas las cámaras y actualiza proyección */
+  public setFovDegrees(deg: number): void {
+    this.rearViewCamera.setFovDegrees(deg);
+    this.rearExternalCamera.setFovDegrees(deg);
+    this.cockpitCamera.setFovDegrees(deg);
+    this.cockpitInternalCamera.setFovDegrees(deg);
+  }
+
+  /** Ajusta el FOV (radianes) en todas las cámaras y actualiza proyección */
+  public setFovRadians(rad: number): void {
+    this.rearViewCamera.setFovRadians(rad);
+    this.rearExternalCamera.setFovRadians(rad);
+    this.cockpitCamera.setFovRadians(rad);
+    this.cockpitInternalCamera.setFovRadians(rad);
   }
 
   /**
