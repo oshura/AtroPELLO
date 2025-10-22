@@ -19,6 +19,7 @@ import { RelationService } from '../services/relation.service';
 import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
 import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
+import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { Planet, PlanetColorName } from './Planet';
 import { GaseousPlanet } from './GaseousPlanet';
@@ -49,6 +50,7 @@ export class GameEngine {
   private targetCatalog!: TargetCatalogService;
   private targetDetails!: TargetDetailService;
   private targetPreview!: TargetPreviewRenderer;
+  private systemPanel: SolarSystemPanel | null = null;
   
   // Objetos del juego
   private spaceship!: Spaceship;
@@ -164,6 +166,10 @@ export class GameEngine {
       // Inicializar sistema HUD con texturas dinámicas (FASE 3)
       this.hudManager = new HUDManager(this.gl);
       console.log('🎯 HUDManager inicializado con Canvas 2D → WebGL');
+
+  // Inicializar panel de mapa del sistema (overlay top-down, opaco)
+  this.systemPanel = new SolarSystemPanel(this.gl, 1024, 1024);
+  this.systemPanel.setEnabled(false); // desactivado por defecto
 
       // Crear cámara
       const canvas = canvasRef.nativeElement;
@@ -1082,8 +1088,32 @@ export class GameEngine {
   // Render overlays de animaciones (fade) sobre outlines
   this.animationManager.render(this);
 
-  // Renderizar HUD al final para que quede por encima de objetos y outlines
-  this.renderHUDPlane();
+  // Renderizar overlay de mapa del sistema si está activado (opaco, reemplaza HUD)
+  if (this.systemPanel && this.systemPanel.isEnabled()) {
+    try {
+      const center = this.primarySun ? { ...this.primarySun.position } : { x: 0, y: 0, z: 0 } as any;
+      const planets = this.planets.map(p => ({
+        id: p.id,
+        pos: { x: p.position.x, y: p.position.y, z: p.position.z },
+        orbit: (p.semiMajor && p.semiMajor > 0)
+          ? { center: { x: p.orbitCenter.x, y: p.orbitCenter.y, z: p.orbitCenter.z }, a: p.semiMajor, b: p.semiMinor, orient: p.orbitOrientation }
+          : undefined
+      }));
+      const clusters = this.asteroidClusterService.getClusters().map(c => ({ id: c.id, center: { x: c.center.x, y: c.center.y, z: c.center.z } }));
+      const debris: Array<{ id: string; pos: { x: number; y: number; z: number } }> = [];
+      for (const arr of this.planetDebris.values()) {
+        for (const d of arr) debris.push({ id: d.obj.id, pos: { x: d.obj.position.x, y: d.obj.position.y, z: d.obj.position.z } });
+      }
+      const ship = this.spaceship ? { pos: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z } } : undefined;
+      this.systemPanel.updateMap({ center, planets, clusters, debris, ship, marginPx: 48 });
+      this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
+    } catch (e) {
+      console.warn('SolarSystemPanel render failed', e);
+    }
+  } else {
+    // Renderizar HUD al final para que quede por encima de objetos y outlines
+    this.renderHUDPlane();
+  }
   }
 
   /** Crea 9 planetas en órbitas elípticas concéntricas en el plano XZ
@@ -2150,6 +2180,11 @@ export class GameEngine {
     // Manejo de controles de nave
     if (this.spaceship && !this.animationManager.isBlockingInputs()) {
       this.updateShipControls(key, true);
+    }
+    // Toggle panel de mapa del sistema con tecla 'M'
+    if (key.toLowerCase() === 'm') {
+      if (this.systemPanel) this.systemPanel.setEnabled(!this.systemPanel.isEnabled());
+      return;
     }
     // Lanzar VoidJump con tecla 'y' si hay target (seleccionado u hovered)
     if (key.toLowerCase() === 'y') {
