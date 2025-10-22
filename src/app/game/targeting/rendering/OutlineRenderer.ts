@@ -1105,6 +1105,7 @@ export class OutlineRenderer {
 
   private typeToLabel(tt: any): string {
     const t = String(tt || 'unknown').toLowerCase();
+    if (t.includes('mega_asteroid') || t === 'megaasteroid') return 'MegaAsteroid';
     if (t.includes('super_asteroid') || t === 'superasteroid') return 'SuperAsteroid';
     if (t.includes('cluster')) return 'Cluster';
     if (t.includes('asteroid')) return 'Asteroid';

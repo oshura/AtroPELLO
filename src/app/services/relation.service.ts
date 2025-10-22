@@ -12,6 +12,7 @@ export class RelationService {
     const t = target.getTargetType();
     switch (t) {
       case TargetType.ASTEROID:
+      case TargetType.MEGA_ASTEROID:
       case TargetType.SUPER_ASTEROID:
       case TargetType.CLUSTER:
       case TargetType.PLANET:

@@ -42,7 +42,7 @@ export class TargetDetector implements ITargetDetector {
     this.config = {
       maxDistance: Infinity,
       raycastPrecision: 0.1,
-  targetTypes: ['asteroid', 'super_asteroid', 'cluster', 'spaceship', 'planet', 'portal']
+  targetTypes: ['asteroid', 'mega_asteroid', 'super_asteroid', 'cluster', 'spaceship', 'planet', 'portal']
     };
   }
 
@@ -234,8 +234,9 @@ export class TargetDetector implements ITargetDetector {
     const sizeBoost = 1 + this.TOL_SIZE_GAIN_UNIFIED * Math.max(0, sizeRatio - 1);
     pixelRadius *= sizeBoost;
 
-    // 3) Factores específicos por tipo (super_asteroid, planet, giant planet):
+  // 3) Factores específicos por tipo (mega_asteroid, super_asteroid, planet, giant planet):
     const tType = typeof anyT.getTargetType === 'function' ? String(anyT.getTargetType()) : '';
+  const isMega = tType === 'mega_asteroid';
     const isSuper = tType === 'super_asteroid';
     const isPlanet = tType === 'planet';
     const isGiantPlanet = isPlanet && anyT.planetType === 'Giant';
@@ -250,7 +251,7 @@ export class TargetDetector implements ITargetDetector {
     let maxParamBoost = 1.0;              // cap relative to caller param
     let additivePxCushion = 0;            // additive pixels
 
-    if (isSuper) {
+    if (isMega || isSuper) {
       typeTolBoost = 2.0;
       dynCapBoost = 1.8;
       maxParamBoost = 2.0;

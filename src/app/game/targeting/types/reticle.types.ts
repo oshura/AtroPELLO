@@ -257,7 +257,7 @@ export const DEFAULT_TARGETING_CONFIG: TargetingSystemConfig = {
   detection: {
     maxDistance: Infinity,
     raycastPrecision: 0.1,
-  targetTypes: ['asteroid', 'super_asteroid', 'cluster', 'spaceship', 'planet', 'portal']
+  targetTypes: ['asteroid', 'mega_asteroid', 'super_asteroid', 'cluster', 'spaceship', 'planet', 'portal']
   },
   performance: {
     updateFrequency: 60,

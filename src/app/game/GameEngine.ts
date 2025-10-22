@@ -353,16 +353,16 @@ export class GameEngine {
       });
     });
     this.targetCatalog.register(TargetType.ASTEROID, smalls);
-    this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
+  this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
     // Crear y registrar planetas
     this.createPlanets();
     this.planets.forEach(p => p.initBuffers(this.gl!));
     this.targetCatalog.register(TargetType.PLANET, this.planets as unknown as ITargetable[]);
-    // Inicializar buffers y registrar debris asociados a planetas como SUPER_ASTEROID
+    // Inicializar buffers y registrar debris asociados a planetas como MEGA_ASTEROID
     for (const arr of this.planetDebris.values()) {
       for (const d of arr) {
         if (!d.obj.vertexBuffer) d.obj.initBuffers(this.gl!);
-        this.targetCatalog.add(TargetType.SUPER_ASTEROID, d.obj as unknown as ITargetable);
+        this.targetCatalog.add(TargetType.MEGA_ASTEROID, d.obj as unknown as ITargetable);
       }
     }
 
@@ -817,6 +817,7 @@ export class GameEngine {
   private typeToLabel(t: TargetType): string {
     switch (t) {
       case TargetType.CLUSTER: return 'Cluster';
+      case TargetType.MEGA_ASTEROID: return 'MegaAsteroid';
       case TargetType.SUPER_ASTEROID: return 'SuperAsteroid';
       case TargetType.ASTEROID: return 'Asteroid';
       case TargetType.SPACESHIP: return 'Spaceship';
@@ -1108,7 +1109,7 @@ export class GameEngine {
           y: 0,
           z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
         };
-        const created = EarthSplitPlanet.createWithDebris(`planet-earth`, 'azul_marino', radius, pos, 500, 16);
+  const created = EarthSplitPlanet.createWithDebris(`planet-earth`, 'azul_marino', radius, pos, 500, 320);
         planetObj = created.planet;
         planetObj.customName = 'Tierra';
         planetObj.probabilityOfLifePct = 100;
@@ -1192,13 +1193,19 @@ export class GameEngine {
       p.position.z = p.orbitCenter.z + z;
   // Integrar rotación propia con dt y actualizar matrices
   p.update(dt);
-      // Mover debris asociados (si existen), manteniendo su offset local
+      // Mover debris asociados (si existen), manteniendo su offset local y rotándolos con la Tierra
       const debris = this.planetDebris.get(p.id);
       if (debris && debris.length) {
+        const cosY = Math.cos(p.rotation.y || 0);
+        const sinY = Math.sin(p.rotation.y || 0);
         for (const d of debris) {
-          d.obj.position.x = p.position.x + d.local.x;
+          const lx = d.local.x, lz = d.local.z;
+          // Rotar el offset local alrededor del eje Y para que roten con el planeta
+          const rx = lx * cosY - lz * sinY;
+          const rz = lx * sinY + lz * cosY;
+          d.obj.position.x = p.position.x + rx;
           d.obj.position.y = p.position.y + d.local.y;
-          d.obj.position.z = p.position.z + d.local.z;
+          d.obj.position.z = p.position.z + rz;
           d.obj.updateModelMatrix();
           if (d.obj.boundingSphere) d.obj.boundingSphere.center = { ...d.obj.position } as any;
         }

@@ -3,8 +3,8 @@ import { Planet, PlanetColorName, PlanetType } from './Planet';
 import { MegaAsteroid } from './MegaAsteroid';
 
 /**
- * EarthSplitPlanet: two hemispheres separated along X with layered cap (crust/mantle/core)
- * and optional mega-asteroid debris ring in the split.
+ * EarthSplitPlanet: two hemispheres separated along Y (horizontal cut) with layered cap (crust/mantle/core)
+ * and optional mega-asteroid debris ring around the equator (XZ plane).
  */
 export class EarthSplitPlanet extends Planet {
   // Nota: initGeometry es llamado desde el constructor de GameObject (super),
@@ -29,7 +29,7 @@ export class EarthSplitPlanet extends Planet {
     }
   }
 
-  /** Build two hemispheres (+caps) with layered colors on the cut plane */
+  /** Build two hemispheres (+caps) with layered colors on the cut plane (horizontal split along Y) */
   protected override initGeometry(): void {
     // Asegura estructuras antes de cualquier uso (super() llama a initGeometry antes de inicializar campos)
     this.capRanges = [];
@@ -78,12 +78,12 @@ export class EarthSplitPlanet extends Planet {
 
     const pushTri = (v0: [number, number, number], v1: [number, number, number], v2: [number, number, number],
                      uv0: [number, number], uv1: [number, number], uv2: [number, number],
-                     offsetXWorld: number, tint?: { r: number; g: number; b: number }) => {
+                     offsetYWorld: number, tint?: { r: number; g: number; b: number }) => {
   const baseIndex = vertices.length / 3;
-  const offsetObj = (R > 0 ? offsetXWorld / R : 0); // convert desired world offset to object-space (unit-sphere space)
+  const offsetObj = (R > 0 ? offsetYWorld / R : 0); // convert desired world offset to object-space (unit-sphere space)
       const add = (v: [number, number, number], uv: [number, number]) => {
-        const x = v[0] + offsetObj;
-        const y = v[1];
+        const x = v[0];
+        const y = v[1] + offsetObj;
         const z = v[2];
         vertices.push(x, y, z);
         // normal from unit sphere vector
@@ -98,31 +98,31 @@ export class EarthSplitPlanet extends Planet {
       indices.push(baseIndex, baseIndex + 1, baseIndex + 2);
     };
 
-    // Helper to add a cap (disk) at x = 0 with normal dir +/-X for a hemisphere
-    const addCap = (normalX: number, offsetXWorld: number) => {
+    // Helper to add a cap (disk) at y = 0 with normal dir +/-Y for a hemisphere
+    const addCap = (normalY: number, offsetYWorld: number) => {
       const seg = 64;
       const baseIndex = vertices.length / 3;
-      const offsetObj = (R > 0 ? offsetXWorld / R : 0);
+      const offsetObj = (R > 0 ? offsetYWorld / R : 0);
       // center
-      vertices.push(offsetObj, 0, 0);
-      normals.push(normalX, 0, 0);
+      vertices.push(0, offsetObj, 0);
+      normals.push(0, normalY, 0);
       uvs.push(0.5, 0.5);
       // center color based on core (emissive red)
       const coreCol = { r: 1.0, g: 0.1, b: 0.0 };
       colors.push(coreCol.r, coreCol.g, coreCol.b);
       for (let i = 0; i <= seg; i++) {
         const t = (i / seg) * 2 * Math.PI;
-        const y = Math.cos(t);
+        const x = Math.cos(t);
         const z = Math.sin(t);
-        const rad = Math.hypot(y, z);
+        const rad = Math.hypot(x, z);
         // Layered color based on radius on the disk
         let col: { r: number; g: number; b: number };
         if (rad < 0.35) col = { r: 1.0, g: 0.1, b: 0.0 }; // core (red emissive)
         else if (rad < 0.7) col = { r: 1.0, g: 0.9, b: 0.2 }; // mantle (yellow)
         else col = { r: 0.55, g: 0.35, b: 0.20 }; // crust (brown)
-        vertices.push(offsetObj, y, z);
-        normals.push(normalX, 0, 0);
-        uvs.push(0.5 + (y * 0.5), 0.5 + (z * 0.5));
+        vertices.push(x, offsetObj, z);
+        normals.push(0, normalY, 0);
+        uvs.push(0.5 + (x * 0.5), 0.5 + (z * 0.5));
         colors.push(col.r, col.g, col.b);
       }
       // Triangles fan
@@ -138,13 +138,13 @@ export class EarthSplitPlanet extends Planet {
       this.capRanges.push({ start: startIndex, count: added });
     };
 
-    // Split triangles into L/R by plane x=0
+    // Split triangles into top/bottom by plane y=0 (horizontal cut)
     for (let i = 0; i < baseIdx.length; i += 3) {
       const ia = baseIdx[i], ib = baseIdx[i + 1], ic = baseIdx[i + 2];
       const va = baseVerts[ia], vb = baseVerts[ib], vc = baseVerts[ic];
       const ua = baseUVs[ia], ub = baseUVs[ib], uc = baseUVs[ic];
-      const avgX = (va[0] + vb[0] + vc[0]) / 3;
-      if (avgX >= 0) {
+      const avgY = (va[1] + vb[1] + vc[1]) / 3;
+      if (avgY >= 0) {
         pushTri(va, vb, vc, ua, ub, uc, +sepHalf);
       } else {
         pushTri(va, vb, vc, ua, ub, uc, -sepHalf);
@@ -154,8 +154,8 @@ export class EarthSplitPlanet extends Planet {
   // Registrar cuántos índices había antes de agregar tapas
   const surfaceIndexCountBeforeCaps = indices.length;
   // Caps (se agregan al final del buffer de índices)
-  addCap(+1, +sepHalf); // right hemisphere, normal +X
-  addCap(-1, -sepHalf); // left hemisphere, normal -X
+  addCap(+1, +sepHalf); // top hemisphere, normal +Y
+  addCap(-1, -sepHalf); // bottom hemisphere, normal -Y
   // Guardar el conteo principal (solo superficie)
   this.mainIndexCount = surfaceIndexCountBeforeCaps;
 
@@ -293,14 +293,30 @@ export class EarthSplitPlanet extends Planet {
     planet.planetType = PlanetType.Tierra;
     const debris: MegaAsteroid[] = [];
     const R = radius;
-    for (let i = 0; i < debrisCount; i++) {
-      const t = (i / debrisCount) * 2 * Math.PI;
-      const y = Math.cos(t) * R * (0.95 + Math.random() * 0.1);
-      const z = Math.sin(t) * R * (0.95 + Math.random() * 0.1);
-      const pos: Vector3 = { x: initialPos.x, y: initialPos.y + y, z: initialPos.z + z };
-      const size = 1.0 * (0.8 + Math.random() * 0.4); // base size; MegaAsteroid multiplies by 5
-      debris.push(new MegaAsteroid(`${id}-mega-${i}`, pos, size));
-    }
+    const nNear = Math.max(0, Math.round(debrisCount * 0.6));
+    const nMid  = Math.max(0, Math.round(debrisCount * 0.25));
+    const nFar  = Math.max(0, debrisCount - nNear - nMid);
+
+    const addBelt = (count: number, rangeMin: number, rangeMax: number, jitter: number, label: string) => {
+      for (let i = 0; i < count; i++) {
+        const t = Math.random() * 2 * Math.PI;
+        const mul = rangeMin + Math.random() * (rangeMax - rangeMin);
+        const r = R * mul * (1 + (Math.random() - 0.5) * jitter);
+        const x = Math.cos(t) * r;
+        const z = Math.sin(t) * r;
+        const pos: Vector3 = { x: initialPos.x + x, y: initialPos.y, z: initialPos.z + z };
+        // Slightly smaller base sizes for large counts; MegaAsteroid constructor multiplies x5
+        const size = 0.6 * (0.7 + Math.random() * 0.6);
+        debris.push(new MegaAsteroid(`${id}-mega-${label}-${i}`, pos, size));
+      }
+    };
+
+    // Dense inner belt hugging the cut
+    addBelt(nNear, 0.9, 1.15, 0.10, 'near');
+    // Medium belt hinting ejection
+    addBelt(nMid, 1.4, 1.9, 0.20, 'mid');
+    // Far scattered ejecta
+    addBelt(nFar, 2.1, 2.8, 0.35, 'far');
     return { planet, debris };
   }
 }

@@ -39,6 +39,16 @@ export class TargetDetailService {
             massTons: (target as any).massTons ?? (50 + Math.floor(Math.random() * 101)),
           }
         };
+      case TargetType.MEGA_ASTEROID: {
+        return {
+          type: TargetType.ASTEROID,
+          data: {
+            composition: (target as any).composition ?? 'mixed',
+            albedo: (target as any).albedo ?? Number((0.35 + Math.random() * 0.25).toFixed(2)),
+            massTons: (target as any).massTons ?? (1500 + Math.floor(Math.random() * 2501)),
+          }
+        } as any;
+      }
       case TargetType.SUPER_ASTEROID: {
         return {
           type: TargetType.ASTEROID,
