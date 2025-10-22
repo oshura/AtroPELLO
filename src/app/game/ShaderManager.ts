@@ -14,6 +14,8 @@ export class ShaderManager {
   public basicProgram: WebGLProgram | null = null;
   public litProgram: WebGLProgram | null = null;
   public texturedProgram: WebGLProgram | null = null;
+  public glowProgram: WebGLProgram | null = null;
+  public unlitTexProgram: WebGLProgram | null = null;
   // Modular services own these programs, we expose getters for back-compat
   private hudSvc: HudShaderService | null = null;
   private reticleSvc: ReticleShaderService | null = null;
@@ -46,6 +48,8 @@ export class ShaderManager {
   public hudAttributes: { [key: string]: number } = {};
   public reticleAttributes: { [key: string]: number } = {};
   public outlineAttributes: { [key: string]: number } = {};
+  public glowAttributes: { [key: string]: number } = {};
+  public unlitTexAttributes: { [key: string]: number } = {};
   // Attributes for instanced-lit are exposed via helper getters
 
   constructor(private webglService: WebGLService) {
@@ -80,6 +84,18 @@ export class ShaderManager {
       this.getTexturedFragmentShader()
     );
 
+    // Programa para glows con caída radial (color con alpha)
+    this.glowProgram = this.createProgram(
+      this.getGlowVertexShader(),
+      this.getGlowFragmentShader()
+    );
+
+    // Programa texturizado sin iluminación (para magma del Sol)
+    this.unlitTexProgram = this.createProgram(
+      this.getUnlitTexVertexShader(),
+      this.getUnlitTexFragmentShader()
+    );
+
     // Servicios modulares
     this.hudSvc = new HudShaderService(this.webglService); this.hudSvc.initialize();
     this.reticleSvc = new ReticleShaderService(this.webglService); this.reticleSvc.initialize();
@@ -105,8 +121,122 @@ export class ShaderManager {
     if (this.hudProgram) this.getHUDProgramLocations();
     if (this.reticleProgram) this.getReticleProgramLocations();
     if (this.outlineProgram) this.getOutlineProgramLocations();
+  if (this.glowProgram) this.getGlowProgramLocations();
+  if (this.unlitTexProgram) this.getUnlitTexProgramLocations();
 
     // Locations for instanced program are held inside the service
+  }
+
+  private getGlowVertexShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec3 a_position;
+    in vec2 a_uv;
+    in vec4 a_color;
+    uniform mat4 u_modelMatrix;
+    uniform mat4 u_viewMatrix;
+    uniform mat4 u_projectionMatrix;
+    out vec4 v_color;
+    out vec2 v_uv;
+    void main(){
+      vec4 world = u_modelMatrix * vec4(a_position,1.0);
+      vec4 view = u_viewMatrix * world;
+      gl_Position = u_projectionMatrix * view;
+      v_color = a_color;
+      v_uv = a_uv;
+    }`;
+  }
+
+  private getGlowFragmentShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec4 v_color;
+    in vec2 v_uv;
+    out vec4 fragColor;
+    void main(){
+      // v_uv in [-1,1]x[-1,1]; use radial falloff to make billboard look circular
+      float r = length(v_uv);
+      // Outer edge fade from r ~ 0.7 -> 1.0
+      float edge = 1.0 - smoothstep(0.7, 1.0, r);
+      // Cut out the inner core so glow doesn't overlay the Sun disk
+      float coreMask = smoothstep(0.25, 0.35, r);
+      float alpha = v_color.a * edge * coreMask;
+      fragColor = vec4(v_color.rgb, alpha);
+    }`;
+  }
+
+  private getGlowProgramLocations(): void {
+    if (!this.gl || !this.glowProgram) return;
+    const gl = this.gl;
+    this.glowAttributes['position'] = gl.getAttribLocation(this.glowProgram, 'a_position');
+    this.glowAttributes['uv'] = gl.getAttribLocation(this.glowProgram, 'a_uv');
+    this.glowAttributes['color'] = gl.getAttribLocation(this.glowProgram, 'a_color');
+  }
+
+  // ===== Unlit textured (diffuse-only) for Sun magma =====
+  private getUnlitTexVertexShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec3 a_position;
+    in vec2 a_uv;
+    uniform mat4 u_modelMatrix;
+    uniform mat4 u_viewMatrix;
+    uniform mat4 u_projectionMatrix;
+    out vec2 v_uv;
+    void main(){
+      vec4 world = u_modelMatrix * vec4(a_position,1.0);
+      vec4 view = u_viewMatrix * world;
+      gl_Position = u_projectionMatrix * view;
+      v_uv = a_uv;
+    }`;
+  }
+  private getUnlitTexFragmentShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec2 v_uv;
+    uniform sampler2D u_diffuse;
+    out vec4 fragColor;
+    void main(){
+      vec4 c = texture(u_diffuse, v_uv);
+      fragColor = c;
+    }`;
+  }
+  private getUnlitTexProgramLocations(): void {
+    if (!this.gl || !this.unlitTexProgram) return;
+    const gl = this.gl;
+    this.unlitTexAttributes['position'] = gl.getAttribLocation(this.unlitTexProgram, 'a_position');
+    this.unlitTexAttributes['uv'] = gl.getAttribLocation(this.unlitTexProgram, 'a_uv');
+  }
+  public useUnlitTexProgram(): void { if (this.gl && this.unlitTexProgram) this.gl.useProgram(this.unlitTexProgram); }
+  public setUnlitTexMatrices(model: Float32Array, view: Float32Array, proj: Float32Array): void {
+    if (!this.gl || !this.unlitTexProgram) return;
+    const gl = this.gl;
+    const uModel = gl.getUniformLocation(this.unlitTexProgram, 'u_modelMatrix');
+    const uView = gl.getUniformLocation(this.unlitTexProgram, 'u_viewMatrix');
+    const uProj = gl.getUniformLocation(this.unlitTexProgram, 'u_projectionMatrix');
+    if (uModel) gl.uniformMatrix4fv(uModel, false, model);
+    if (uView) gl.uniformMatrix4fv(uView, false, view);
+    if (uProj) gl.uniformMatrix4fv(uProj, false, proj);
+  }
+  public setUnlitDiffuseTexture(tex: WebGLTexture): void {
+    if (!this.gl || !this.unlitTexProgram) return;
+    const gl = this.gl;
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    const loc = gl.getUniformLocation(this.unlitTexProgram, 'u_diffuse');
+    if (loc) gl.uniform1i(loc, 0);
+  }
+
+  public useGlowProgram(): void { if (this.gl && this.glowProgram) this.gl.useProgram(this.glowProgram); }
+  public setGlowMatrices(model: Float32Array, view: Float32Array, proj: Float32Array): void {
+    if (!this.gl || !this.glowProgram) return;
+    const gl = this.gl;
+    const uModel = gl.getUniformLocation(this.glowProgram, 'u_modelMatrix');
+    const uView = gl.getUniformLocation(this.glowProgram, 'u_viewMatrix');
+    const uProj = gl.getUniformLocation(this.glowProgram, 'u_projectionMatrix');
+    if (uModel) gl.uniformMatrix4fv(uModel, false, model);
+    if (uView) gl.uniformMatrix4fv(uView, false, view);
+    if (uProj) gl.uniformMatrix4fv(uProj, false, proj);
   }
 
   /**

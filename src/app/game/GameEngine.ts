@@ -23,6 +23,7 @@ import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer
 import { Planet, PlanetColorName } from './Planet';
 import { GaseousPlanet } from './GaseousPlanet';
 import { GiantPlanet } from './GiantPlanet';
+import { Sun } from './Sun';
 import { EarthSplitPlanet } from './EarthSplitPlanet';
 import { MegaAsteroid } from './MegaAsteroid';
 
@@ -54,6 +55,7 @@ export class GameEngine {
   private asteroids: Asteroid[] = [];
   private superAsteroids: SuperAsteroid[] = [];
   private planets: Planet[] = [];
+  private primarySun: Sun | null = null;
   // Debris asociados a un planeta (e.g., anillo de mega-asteroides de la Tierra dividida)
   private planetDebris: Map<string, Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }>> = new Map();
   
@@ -64,8 +66,8 @@ export class GameEngine {
   // Configuración de iluminación
   private lightDirection = new Float32Array([0.5, -0.8, 0.3]); // Luz desde arriba-derecha
   private lightColor = new Float32Array([1.0, 1.0, 0.9]);      // Luz blanca-amarillenta
-  private ambientColor = new Float32Array([0.3, 0.3, 0.4]);   // Ambiente azulado tenue
-  private ambientStrength = 0.4;
+  private ambientColor = new Float32Array([0.25, 0.25, 0.35]); // Ambiente más tenue para mayor contraste
+  private ambientStrength = 0.25;
   
   // El efecto de propulsión ahora se maneja en ParticleEffectsService
   
@@ -146,6 +148,14 @@ export class GameEngine {
       this.textureManager = new TextureManager(this.gl);
       this.textureManager.createMetallicTexture();
       this.textureManager.createGradientTexture();
+      // Pre-cargar textura de magma (ruta de asset). Probar rutas comunes.
+      // Puedes colocar tu asset en /assets/textures/magma.png (Angular) o /textures/magma.png (público)
+      try {
+        const tried = await this.textureManager.loadTextureFromUrl('magma', '/assets/textures/magma.png');
+        if (!tried) {
+          await this.textureManager.loadTextureFromUrl('magma', '/textures/magma.png');
+        }
+      } catch {}
 
       // Inicializar sistema de partículas
       this.particleEffects = this.particleEffectsService;
@@ -355,6 +365,10 @@ export class GameEngine {
         this.targetCatalog.add(TargetType.SUPER_ASTEROID, d.obj as unknown as ITargetable);
       }
     }
+
+    // Reposicionar inicio: nave y clusters a ~5000u de la superficie del Sol en dirección aleatoria
+    // Nota: ejecutamos después de crear planetas para disponer de primarySun
+    this.randomizeStartNearSun(5000);
   }
 
   /**
@@ -381,6 +395,75 @@ export class GameEngine {
   public stop(): void {
     this.isRunning = false;
     console.log('GameEngine detenido');
+  }
+
+  /**
+   * Reubica la nave y traslada todos los clusters para comenzar a ~distFromSurface del Sol
+   * en una dirección aleatoria. Mantiene offsets relativos de miembros en cada clúster.
+   */
+  private randomizeStartNearSun(distFromSurface: number = 5000): void {
+    if (!this.primarySun) return;
+    const sunCenter = this.primarySun.position;
+    const sunRadius = this.primarySun.scale.x; // radio en this.scale
+    // Vector unitario aleatorio uniforme en la esfera
+    const u = Math.random();
+    const v = Math.random();
+    const theta = 2 * Math.PI * u;
+    const z = 2 * v - 1; // [-1,1]
+    const r = Math.sqrt(Math.max(0, 1 - z * z));
+    const dir = { x: r * Math.cos(theta), y: z, z: r * Math.sin(theta) };
+    const spawnDist = sunRadius + Math.max(0, distFromSurface);
+    const startPos = {
+      x: sunCenter.x + dir.x * spawnDist,
+      y: sunCenter.y + dir.y * spawnDist,
+      z: sunCenter.z + dir.z * spawnDist,
+    };
+
+    // Mover nave
+    this.spaceship.position.x = startPos.x;
+    this.spaceship.position.y = startPos.y;
+    this.spaceship.position.z = startPos.z;
+    this.spaceship.updateModelMatrix();
+
+    // Trasladar clusters completos para que queden alrededor de la nueva zona de inicio
+    const clusters = this.asteroidClusterService.getClusters();
+    if (clusters.length) {
+      // Calcular centroide actual de clusters
+      let cx = 0, cy = 0, cz = 0;
+      for (const c of clusters) { cx += c.center.x; cy += c.center.y; cz += c.center.z; }
+      cx /= clusters.length; cy /= clusters.length; cz /= clusters.length;
+      const shift = { x: startPos.x - cx, y: startPos.y - cy, z: startPos.z - cz };
+      for (const c of clusters) {
+        // Mover centro
+        c.center.x += shift.x;
+        c.center.y += shift.y;
+        c.center.z += shift.z;
+        // Reposicionar miembros como center + offset persistente y actualizar matrices
+        for (const obj of c.objects) {
+          const off = c.memberOffsets.get(obj.id);
+          if (off) {
+            obj.position.x = c.center.x + off.x;
+            obj.position.y = c.center.y + off.y;
+            obj.position.z = c.center.z + off.z;
+          } else {
+            // Si no hubiera offset registrado (caso raro), aplicar misma traslación
+            obj.position.x += shift.x;
+            obj.position.y += shift.y;
+            obj.position.z += shift.z;
+          }
+          obj.update(0);
+        }
+        // Si existiera proxy inicializado (no debería aún), trasladarlo también
+        if (c.proxy) {
+          c.proxy.position.x += shift.x;
+          c.proxy.position.y += shift.y;
+          c.proxy.position.z += shift.z;
+          c.proxy.update(0);
+        }
+      }
+    }
+
+    console.log('🎯 Randomized start near Sun:', { startPos, sunRadius, distFromSurface });
   }
 
   /**
@@ -967,14 +1050,23 @@ export class GameEngine {
     if (this.planets.length > 0) return;
 
     const center = { x: 0, y: 0, z: 0 };
-    const count = 9;
+    // Crear Sol en el centro (inmóvil)
+    const sunRadius = 1800; // radio grande
+    const sun = new Sun('sol-primario', sunRadius, { ...center });
+    sun.orbitCenter = { ...center };
+    sun.semiMajor = 0; sun.semiMinor = 0; sun.orbitAngularSpeed = 0; sun.orbitAngle = 0;
+    sun.angularVelocity.y = 0.0005; // leve rotación visual
+    sun.customName = 'Sol';
+    this.planets.push(sun);
+    this.primarySun = sun;
+  const count = 9;
     const minA = 50000; // semi-eje mayor mínimo
     const maxA = 100000; // semi-eje mayor máximo
 
     // Precalcular órbitas base para 9 anillos (lineal en a)
     type Orbit = { a: number; b: number; orient: number; angle0: number };
     const baseOrbits: Orbit[] = [];
-    for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count; i++) {
       const t = i / Math.max(1, count - 1);
       const a = Math.round(minA + t * (maxA - minA));
       const e = 0.25 + Math.random() * 0.25; // 0.25..0.5
@@ -1129,6 +1221,25 @@ export class GameEngine {
     this.gl.enable(this.gl.DEPTH_TEST);
     this.gl.depthMask(true);
     for (const p of this.planets) {
+      const isSun = (p as any).planetType === 'Sun';
+      // Calcular iluminación basada en Sol si existe (direccional desde el sol al objeto)
+      let lightDir = this.lightDirection;
+      let ambientStrengthLocal = this.ambientStrength;
+      let lightColorLocal = this.lightColor;
+      if (this.primarySun) {
+        const lx = p.position.x - this.primarySun.position.x;
+        const ly = p.position.y - this.primarySun.position.y;
+        const lz = p.position.z - this.primarySun.position.z;
+        const len = Math.hypot(lx, ly, lz) || 1;
+        lightDir = new Float32Array([lx / len, ly / len, lz / len]);
+        // Luz más cálida
+        lightColorLocal = new Float32Array([1.0, 0.95, 0.75]);
+        // Ambiente dependiente de distancia (más cerca = más luz rebotada)
+        const d = Math.max(1, len);
+        const inv = 1.0 / Math.pow(d / 5000, 1.2);
+        // Reducir base ambiental para más contraste lejos del Sol
+        ambientStrengthLocal = Math.min(0.6, 0.03 + inv * 0.55);
+      }
       // Distancia desde la nave (criterio de cercanía pedido)
       const dx = p.position.x - this.spaceship.position.x;
       const dy = p.position.y - this.spaceship.position.y;
@@ -1137,13 +1248,34 @@ export class GameEngine {
 
       // Render normal; caps emisivas se pintan en un segundo pase después
 
-      if (distShip < 5000) {
+      if (isSun) {
+        // Distancia cámara-Sol para decidir magma
+        const cdx = p.position.x - cam.position.x;
+        const cdy = p.position.y - cam.position.y;
+        const cdz = p.position.z - cam.position.z;
+        const distCam = Math.hypot(cdx, cdy, cdz);
+        const magma = this.textureManager.getTexture('magma');
+        if (distCam < 20000 && magma && this.shaderManager.unlitTexProgram) {
+          // Sun core con textura de magma (self-lit, sin iluminación)
+          this.shaderManager.useUnlitTexProgram();
+          this.calculateNormalMatrix(p.modelMatrix);
+          this.shaderManager.setUnlitTexMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
+          this.shaderManager.setUnlitDiffuseTexture(magma);
+          p.render(this.gl, this.shaderManager.unlitTexProgram!, cam.viewMatrix, cam.projectionMatrix);
+        } else {
+          // Sun core: self-lit, flat color
+          this.shaderManager.useBasicProgram();
+          this.calculateNormalMatrix(p.modelMatrix);
+          this.shaderManager.setBasicMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
+          p.render(this.gl, this.shaderManager.basicProgram!, cam.viewMatrix, cam.projectionMatrix);
+        }
+      } else if (distShip < 5000) {
         // Cercano: texturizado tintado con baseColor (detalle alto)
         this.shaderManager.useTexturedProgram();
         this.calculateNormalMatrix(p.modelMatrix);
         this.shaderManager.setTexturedMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
         const base = new Float32Array([p.color.r, p.color.g, p.color.b]);
-        this.shaderManager.setTexturedLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength, base);
+        this.shaderManager.setTexturedLighting(lightDir, lightColorLocal, this.ambientColor, ambientStrengthLocal, base);
         const metallicTexture = this.textureManager.getTexture('metallic');
         const gradientTexture = this.textureManager.getTexture('gradient');
         if (metallicTexture && gradientTexture) {
@@ -1155,7 +1287,7 @@ export class GameEngine {
         this.shaderManager.useLitProgram();
         this.calculateNormalMatrix(p.modelMatrix);
         this.shaderManager.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-        this.shaderManager.setLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength);
+        this.shaderManager.setLighting(lightDir, lightColorLocal, this.ambientColor, ambientStrengthLocal);
         // Anular especular en mid-range (reduce ruido por precisión)
         const camPos = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
         this.shaderManager.setSpecular(camPos, 0.0, 1.0);
@@ -1178,6 +1310,28 @@ export class GameEngine {
         } catch (e) {
           console.warn('renderCapsEmissive failed', e);
         }
+      }
+      // Brillo del Sol (si aplica)
+      if ((p as any).renderGlow) {
+        try {
+          (p as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
+        } catch (e) {
+          console.warn('renderGlow(sun) failed', e);
+        }
+      }
+      // Si el sol está detrás de la cámara, mantener un glow ambiente suave
+      if (isSun) {
+        try {
+          const camPos = this.camera.position;
+          const camFwd = { x: this.camera.target.x - camPos.x, y: this.camera.target.y - camPos.y, z: this.camera.target.z - camPos.z };
+          const camFwdLen = Math.hypot(camFwd.x, camFwd.y, camFwd.z) || 1; camFwd.x/=camFwdLen; camFwd.y/=camFwdLen; camFwd.z/=camFwdLen;
+          const toSun = { x: p.position.x - camPos.x, y: p.position.y - camPos.y, z: p.position.z - camPos.z };
+          const toSunLen = Math.hypot(toSun.x, toSun.y, toSun.z) || 1; const nd = { x: toSun.x/toSunLen, y: toSun.y/toSunLen, z: toSun.z/toSunLen };
+          const dot = camFwd.x*nd.x + camFwd.y*nd.y + camFwd.z*nd.z;
+          if (dot < 0) {
+            (p as any).renderAmbientGlow(this.gl as any, this.shaderManager, this.camera, 0.035);
+          }
+        } catch {}
       }
     }
     // Renderizar debris asociados a planetas con LOD sencillo
@@ -2009,10 +2163,10 @@ export class GameEngine {
         this.spaceship.controls.right = pressed; // Yaw right (remapeado)
         break;
       case 'q':
-        this.spaceship.controls.rollLeft = pressed; // Roll left (remapeado)
+        this.spaceship.controls.rollRight = pressed; // Invertido: Q hace lo de E
         break;
       case 'e':
-        this.spaceship.controls.rollRight = pressed; // Roll right (remapeado)
+        this.spaceship.controls.rollLeft = pressed;  // Invertido: E hace lo de Q
         break;
       case '+':
       case '=':

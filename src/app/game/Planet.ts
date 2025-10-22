@@ -93,4 +93,5 @@ export enum PlanetType {
   Gaseous = 'Gaseous',
   Tierra = 'Tierra',
   Planetoid = 'Planetoid',
+  Sun = 'Sun',
 }
