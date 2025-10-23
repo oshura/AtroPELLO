@@ -156,14 +156,16 @@ export class GameEngine {
       this.textureManager = new TextureManager(this.gl);
       this.textureManager.createMetallicTexture();
       this.textureManager.createGradientTexture();
-      // Pre-cargar textura de magma (ruta de asset). Probar rutas comunes.
-      // Puedes colocar tu asset en /assets/textures/magma.png (Angular) o /textures/magma.png (público)
-      try {
-        const tried = await this.textureManager.loadTextureFromUrl('magma', '/assets/textures/magma.png');
-        if (!tried) {
-          await this.textureManager.loadTextureFromUrl('magma', '/textures/magma.png');
-        }
-      } catch {}
+      // Pre-cargar textura de magma (opcional). Desactivado por defecto para evitar 404s si no existe el asset.
+      const USE_SUN_MAGMA_TEXTURE = false;
+      if (USE_SUN_MAGMA_TEXTURE) {
+        try {
+          const tried = await this.textureManager.loadTextureFromUrl('magma', '/assets/textures/magma.png');
+          if (!tried) {
+            await this.textureManager.loadTextureFromUrl('magma', '/textures/magma.png');
+          }
+        } catch {}
+      }
 
       // Inicializar sistema de partículas
       this.particleEffects = this.particleEffectsService;
@@ -712,20 +714,33 @@ export class GameEngine {
       availableTargets = availableTargets.filter(t => !farClusterIds.has(t.id) && !farMemberIds.has(t.id));
     }
   } catch {}
-  // Filtro: ocultar y excluir megaasteroides de la Tierra si la cámara está a >20,000u de la Tierra
+  // Filtro: mega-asteroides de la Tierra no seleccionables hasta estar "cerca"
+  // Cerca = nave a < 20,000u de cada megaasteroide; en distancias medias se dibujan, pero no aparecen como target
   try {
-    const earth = this.planets.find(p => p.id === 'planet-earth');
-    if (earth && this.camera) {
-      const dxE = earth.position.x - this.camera.position.x;
-      const dyE = earth.position.y - this.camera.position.y;
-      const dzE = earth.position.z - this.camera.position.z;
-      const distCamToEarth = Math.hypot(dxE, dyE, dzE);
-      if (distCamToEarth > 20000) {
-        const earthDebris = this.planetDebris.get('planet-earth');
-        if (earthDebris && earthDebris.length) {
-          const exIds = new Set(earthDebris.map(d => d.obj.id));
-          availableTargets = availableTargets.filter(t => !exIds.has(t.id));
-        }
+    const earthDebris = this.planetDebris.get('planet-earth');
+    if (earthDebris && earthDebris.length) {
+      const NEAR_RANGE = 20000;
+      const allowedNear = new Set<string>();
+      for (const d of earthDebris) {
+        const dx = d.obj.position.x - this.spaceship.position.x;
+        const dy = d.obj.position.y - this.spaceship.position.y;
+        const dz = d.obj.position.z - this.spaceship.position.z;
+        const distShip = Math.hypot(dx, dy, dz);
+        if (distShip < NEAR_RANGE) allowedNear.add(d.obj.id);
+      }
+      if (allowedNear.size) {
+        availableTargets = availableTargets.filter(t => {
+          const type = (t as any).getTargetType ? (t as any).getTargetType() : undefined;
+          // Si es MEGA_ASTEROID de la Tierra, solo permitir si está en rango cercano
+          if (type === TargetType.MEGA_ASTEROID) {
+            return allowedNear.has(t.id);
+          }
+          return true;
+        });
+      } else {
+        // Ningún megaasteroide en rango cercano: excluir todos los megaasteroides de la Tierra del listado
+        const exIds = new Set(earthDebris.map(d => d.obj.id));
+        availableTargets = availableTargets.filter(t => !exIds.has(t.id));
       }
     }
   } catch {}
@@ -1614,7 +1629,7 @@ export class GameEngine {
     if (!this.gl || !this.shaderManager) return;
     const cam = this.camera;
     const camPosArr = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
-    // Culling específico: si la cámara está a >20,000u de la Tierra, no renderizar sus debris
+    // Culling específico: si la cámara está a >= SPRITE LOD (~50,000u), no renderizar sus debris
     const earth = this.planets.find(p => p.id === 'planet-earth');
     let skipEarth = false;
     if (earth && this.camera) {
@@ -1622,7 +1637,9 @@ export class GameEngine {
       const dyE = earth.position.y - this.camera.position.y;
       const dzE = earth.position.z - this.camera.position.z;
       const distCamToEarth = Math.hypot(dxE, dyE, dzE);
-      skipEarth = distCamToEarth > 20000;
+      // Mantener debris visibles en distancia media (no-sprite) pero ocultarlos cuando ya es sprite lejano
+      const SPRITE_LOD_DISTANCE = 50000;
+      skipEarth = distCamToEarth >= SPRITE_LOD_DISTANCE;
     }
     for (const [pid, arr] of this.planetDebris.entries()) {
       if (skipEarth && pid === 'planet-earth') continue;

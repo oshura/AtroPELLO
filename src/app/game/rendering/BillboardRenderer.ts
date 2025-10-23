@@ -115,12 +115,30 @@ export class BillboardRenderer {
     // dotted debris ring
     ctx.strokeStyle = 'rgba(200,200,200,0.9)';
     ctx.fillStyle = 'rgba(210,210,210,0.9)';
-    for (let i=0;i<40;i++){
-      const t = (i/40)*Math.PI*2;
+    const debrisCount = 42;
+    for (let i=0;i<debrisCount;i++){
+      const t = (i/debrisCount)*Math.PI*2;
       const rr = r*1.25 + (Math.random()-0.5)*r*0.1;
       const x = cx + Math.cos(t)*rr;
       const y = cy + Math.sin(t)*rr*0.7; // elliptical hint
       const s = 1 + Math.random()*1.5;
+      ctx.beginPath(); ctx.arc(x,y,s,0,Math.PI*2); ctx.fill();
+    }
+    // emphasize a few mega-asteroids as larger bright points
+    for (let i=0;i<6;i++){
+      const t = Math.random()*Math.PI*2;
+      const rr = r*1.25 + (Math.random()-0.5)*r*0.08;
+      const x = cx + Math.cos(t)*rr;
+      const y = cy + Math.sin(t)*rr*0.7;
+      const s = 2.5 + Math.random()*2.0; // larger
+      // soft glow: draw a faint outer circle first
+      const grad = ctx.createRadialGradient(x,y,0, x,y,s*2.2);
+      grad.addColorStop(0, 'rgba(255,255,255,0.35)');
+      grad.addColorStop(1, 'rgba(255,255,255,0.0)');
+      ctx.fillStyle = grad;
+      ctx.beginPath(); ctx.arc(x,y,s*2.2,0,Math.PI*2); ctx.fill();
+      // core
+      ctx.fillStyle = 'rgba(255,255,255,0.95)';
       ctx.beginPath(); ctx.arc(x,y,s,0,Math.PI*2); ctx.fill();
     }
     ctx.restore();

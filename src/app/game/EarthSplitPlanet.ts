@@ -29,6 +29,18 @@ export class EarthSplitPlanet extends Planet {
   private coreCB: WebGLBuffer | null = null;
   private coreIB: WebGLBuffer | null = null;
   private coreIndexCount: number = 0;
+  // Lightning on core surface: transient spark bursts state
+  private lightningBursts: Array<{
+    elapsed: number;       // seconds since spawn
+    total: number;         // total lifetime (rise+flash+decay)
+    rise: number;          // seconds to form (default 2.0)
+    flash: number;         // seconds of super-bright (default 0.25)
+    decay: number;         // seconds to fade (default 1.25)
+    pointsObj: Array<[number, number, number]>; // points on unit sphere (object space, length≈1)
+    width: number;         // base width in world units for bolt segment
+    color: [number, number, number, number]; // rgba for glow shader
+  }> = [];
+  private lightningSpawnCooldown: number = 0; // seconds until next spawn window
 
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3, separation: number = 300) {
     super(id, colorName, radius, initialPos);
@@ -249,6 +261,104 @@ export class EarthSplitPlanet extends Planet {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
   }
 
+  /** Update planet plus lightning flicker state */
+  public override update(deltaTime: number): void {
+    super.update(deltaTime);
+    // Update existing bursts lifetimes
+    if (this.lightningBursts.length) {
+      this.lightningBursts = this.lightningBursts.filter(b => {
+        b.elapsed += deltaTime;
+        return b.elapsed < b.total;
+      });
+    }
+    // Spawn logic: brief windows producing 1-2 bursts
+    this.lightningSpawnCooldown -= deltaTime;
+    if (this.lightningSpawnCooldown <= 0) {
+      // Much less frequent spawns; arcs last ~3.5s total
+      const spawnNow = Math.random() < 0.25;
+      if (spawnNow && this.lightningBursts.length < 4) {
+        this.spawnLightningBurst();
+        // Next window in 1.2..2.4s
+        this.lightningSpawnCooldown = 1.2 + Math.random() * 1.2;
+      } else {
+        this.lightningSpawnCooldown = 0.4 + Math.random() * 0.6;
+      }
+    }
+  }
+
+  /** Create a short lightning arc along the core surface */
+  private spawnLightningBurst(): void {
+    // Pick a random great-circle direction
+    const rndDir = (): [number, number, number] => {
+      let x = Math.random() * 2 - 1;
+      let y = Math.random() * 2 - 1;
+      let z = Math.random() * 2 - 1;
+      const len = Math.hypot(x, y, z) || 1; x /= len; y /= len; z /= len;
+      return [x, y, z];
+    };
+    const a = rndDir();
+    let b = rndDir();
+    // Ensure b not parallel to a
+    let dot = a[0]*b[0] + a[1]*b[1] + a[2]*b[2];
+    if (Math.abs(dot) > 0.9) b = rndDir();
+    // Build an arc by SLERP over small angle range
+  const steps = 14 + Math.floor(Math.random() * 10); // 14..23 points for smoother arcs
+  const span = 0.8 + Math.random() * 1.2; // radians along great-circle (~45..105 deg)
+    const points: Array<[number, number, number]> = [];
+    for (let i = 0; i < steps; i++) {
+      const t = i / (steps - 1);
+      const ang = (t - 0.5) * span; // center at midpoint between a and b
+      // Orthogonal basis on sphere: use a as base, u as perpendicular to a in plane of a-b
+      const cross: [number, number, number] = [
+        a[1]*b[2] - a[2]*b[1],
+        a[2]*b[0] - a[0]*b[2],
+        a[0]*b[1] - a[1]*b[0],
+      ];
+      let cl = Math.hypot(cross[0], cross[1], cross[2]);
+      if (cl < 1e-5) { cross[0] = -a[1]; cross[1] = a[0]; cross[2] = 0; cl = Math.hypot(cross[0], cross[1], cross[2]) || 1; }
+      cross[0] /= cl; cross[1] /= cl; cross[2] /= cl;
+      const ca = Math.cos(ang), sa = Math.sin(ang);
+      const x = a[0] * ca + cross[0] * sa;
+      const y = a[1] * ca + cross[1] * sa;
+      const z = a[2] * ca + cross[2] * sa;
+      // Normalize to be safe
+      const L = Math.hypot(x, y, z) || 1;
+      points.push([x / L, y / L, z / L]);
+    }
+    // World-size and color
+    const width = 5 + Math.random() * 8; // world units (segment half-width ~ width/2 visually)
+    const baseAlpha = 0.14 + Math.random() * 0.16; // fairly bright (additive)
+    const color: [number, number, number, number] = [1.0, 0.96, 0.9, baseAlpha];
+    const rise = 2.0; const flash = 0.25; const decay = 1.25; const total = rise + flash + decay;
+    this.lightningBursts.push({ elapsed: 0, total, rise, flash, decay, pointsObj: points, width, color });
+  }
+
+  /** Extract camera right/up vectors from a standard column-major view matrix */
+  private extractCameraBasis(view: Float32Array): { right: {x:number;y:number;z:number}, up: {x:number;y:number;z:number} } {
+    // For typical OpenGL-style view matrices, first and second columns are right and up in world space
+    const right = { x: view[0], y: view[4], z: view[8] };
+    const up = { x: view[1], y: view[5], z: view[9] };
+    const rl = Math.hypot(right.x, right.y, right.z) || 1; right.x/=rl; right.y/=rl; right.z/=rl;
+    const ul = Math.hypot(up.x, up.y, up.z) || 1; up.x/=ul; up.y/=ul; up.z/=ul;
+    return { right, up };
+  }
+
+  /** Multiply model matrix by a vec3 position (object→world), w=1 */
+  private objToWorld(v: [number, number, number]): { x:number;y:number;z:number } {
+    const m = this.modelMatrix;
+    const x = v[0], y = v[1], z = v[2];
+    return {
+      x: m[0]*x + m[4]*y + m[8]*z + m[12],
+      y: m[1]*x + m[5]*y + m[9]*z + m[13],
+      z: m[2]*x + m[6]*y + m[10]*z + m[14],
+    };
+  }
+
+  private normalize(v: { x:number;y:number;z:number }): { x:number;y:number;z:number } {
+    const l = Math.hypot(v.x, v.y, v.z) || 1;
+    return { x: v.x / l, y: v.y / l, z: v.z / l };
+  }
+
   /**
    * Render principal del planeta: dibuja solo la superficie (excluye tapas)
    * para que las tapas no reciban el shader/textura del planeta.
@@ -401,6 +511,147 @@ export class EarthSplitPlanet extends Planet {
       if (wasCull2) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
       if (prevProg2) gl.useProgram(prevProg2 as any);
     }
+
+    // Lightning sparks over core surface (additive glow quads)
+    this.renderCoreLightning(gl as unknown as WebGL2RenderingContext, shaderManager, viewMatrix, projectionMatrix);
+  }
+
+  private renderCoreLightning(gl: WebGL2RenderingContext, shaderManager: any, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
+    if (!this.lightningBursts.length) return;
+    if (!shaderManager?.glowProgram) return;
+    const { right, up } = this.extractCameraBasis(viewMatrix);
+    const fwd = this.normalize({
+      x: up.y * right.z - up.z * right.y,
+      y: up.z * right.x - up.x * right.z,
+      z: up.x * right.y - up.y * right.x,
+    });
+    const aPos = shaderManager.glowAttributes?.['position'];
+    const aUv = shaderManager.glowAttributes?.['uv'];
+    const aCol = shaderManager.glowAttributes?.['color'];
+    if (aPos == null || aUv == null || aCol == null) return;
+
+    // GL state: additive glow, test depth but don't write to keep core depth
+    const wasBlend = gl.isEnabled(gl.BLEND);
+    const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
+    const prevProg = gl.getParameter(gl.CURRENT_PROGRAM);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+
+  shaderManager.useGlowProgram();
+  // IMPORTANT: We're building quad vertices in WORLD space, so use identity model matrix like Sun.renderGlow
+  const I = new Float32Array([1,0,0,0,  0,1,0,0,  0,0,1,0,  0,0,0,1]);
+  shaderManager.setGlowMatrices(I, viewMatrix, projectionMatrix);
+
+    // Reusable buffers allocated once per draw-call batch
+    const vbo = gl.createBuffer()!;
+    const ubo = gl.createBuffer()!;
+    const cbo = gl.createBuffer()!;
+    const ibo = gl.createBuffer()!;
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+    const idx = new Uint16Array([0,1,2, 0,2,3]);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.DYNAMIC_DRAW);
+
+    for (const b of this.lightningBursts) {
+      // Phase computation
+      const t = b.elapsed;
+      let cover = 0; // [0..1] visible portion along arc
+      let flashMul = 1.0;
+      if (t < b.rise) {
+        // Ease-in cubic for smoother growth
+        const x = Math.max(0, Math.min(1, t / b.rise));
+        cover = x * x * (3 - 2 * x);
+      } else if (t < b.rise + b.flash) {
+        cover = 1.0;
+        flashMul = 2.2; // super-bright window
+      } else {
+        cover = 1.0;
+        const td = Math.max(0, Math.min(1, (t - b.rise - b.flash) / b.decay));
+        flashMul = 1.0 - 0.9 * td; // fade to ~10% of base at the end
+      }
+
+      // Slight per-burst jitter for flicker
+      const intensity = Math.min(1.0, b.color[3] * flashMul * (0.9 + Math.random() * 0.25));
+      const col = new Float32Array([
+        b.color[0], b.color[1], b.color[2], intensity,
+        b.color[0], b.color[1], b.color[2], intensity,
+        b.color[0], b.color[1], b.color[2], intensity,
+        b.color[0], b.color[1], b.color[2], intensity,
+      ]);
+
+      // Determine how many segments to show
+      const segCount = Math.max(0, b.pointsObj.length - 1);
+      const visible = Math.max(1, Math.floor(segCount * cover));
+      if (visible <= 0) continue;
+
+      // Precompute world radius and epsilon
+      const Rw = (this as any).scale?.x || 1;
+      const coreRobj = 50 / Rw;
+      const epsObj = 1.0 / Rw; // 1u outward
+
+      for (let i = 0; i < visible; i++) {
+        const pa = b.pointsObj[i];
+        const pb = b.pointsObj[i + 1];
+        const aObj: [number, number, number] = [pa[0] * (coreRobj + epsObj), pa[1] * (coreRobj + epsObj), pa[2] * (coreRobj + epsObj)];
+        const bObj: [number, number, number] = [pb[0] * (coreRobj + epsObj), pb[1] * (coreRobj + epsObj), pb[2] * (coreRobj + epsObj)];
+        const aw = this.objToWorld(aObj);
+        const bw = this.objToWorld(bObj);
+        // Segment basis
+        const dir = this.normalize({ x: bw.x - aw.x, y: bw.y - aw.y, z: bw.z - aw.z });
+        let side = this.normalize({ x: dir.y * fwd.z - dir.z * fwd.y, y: dir.z * fwd.x - dir.x * fwd.z, z: dir.x * fwd.y - dir.y * fwd.x });
+        // Guard against degenerate side
+        if (Math.hypot(side.x, side.y, side.z) < 1e-4) side = { ...up };
+        const halfLen = 0.5 * Math.hypot(bw.x - aw.x, bw.y - aw.y, bw.z - aw.z) * 1.02; // slight overshoot
+        const halfWid = Math.max(0.5, b.width * 0.5);
+        const cx = (aw.x + bw.x) * 0.5, cy = (aw.y + bw.y) * 0.5, cz = (aw.z + bw.z) * 0.5;
+        const tl = { x: cx - dir.x * halfLen + side.x * halfWid, y: cy - dir.y * halfLen + side.y * halfWid, z: cz - dir.z * halfLen + side.z * halfWid };
+        const tr = { x: cx + dir.x * halfLen + side.x * halfWid, y: cy + dir.y * halfLen + side.y * halfWid, z: cz + dir.z * halfLen + side.z * halfWid };
+        const br = { x: cx + dir.x * halfLen - side.x * halfWid, y: cy + dir.y * halfLen - side.y * halfWid, z: cz + dir.z * halfLen - side.z * halfWid };
+        const bl = { x: cx - dir.x * halfLen - side.x * halfWid, y: cy - dir.y * halfLen - side.y * halfWid, z: cz - dir.z * halfLen - side.z * halfWid };
+
+        const verts = new Float32Array([
+          tl.x, tl.y, tl.z,
+          tr.x, tr.y, tr.z,
+          br.x, br.y, br.z,
+          bl.x, bl.y, bl.z,
+        ]);
+        const uvs = new Float32Array([
+          -1,  1,
+           1,  1,
+           1, -1,
+          -1, -1,
+        ]);
+        gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+        gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STREAM_DRAW);
+        gl.enableVertexAttribArray(aPos);
+        gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, ubo);
+        gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STREAM_DRAW);
+        gl.enableVertexAttribArray(aUv);
+        gl.vertexAttribPointer(aUv, 2, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ARRAY_BUFFER, cbo);
+        gl.bufferData(gl.ARRAY_BUFFER, col, gl.STREAM_DRAW);
+        gl.enableVertexAttribArray(aCol);
+        gl.vertexAttribPointer(aCol, 4, gl.FLOAT, false, 0, 0);
+        gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
+      }
+    }
+
+    // Restore state and cleanup
+  gl.depthMask(true);
+    if (!wasBlend) gl.disable(gl.BLEND);
+    if (wasDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+    if (prevProg) gl.useProgram(prevProg as any);
+    gl.disableVertexAttribArray(aPos);
+    gl.disableVertexAttribArray(aUv);
+    gl.disableVertexAttribArray(aCol);
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    gl.deleteBuffer(vbo);
+    gl.deleteBuffer(ubo);
+    gl.deleteBuffer(cbo);
+    gl.deleteBuffer(ibo);
   }
 
   // --- Gestión de texturas de hemisferio (cargadas on-demand) ---
