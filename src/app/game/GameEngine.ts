@@ -288,73 +288,145 @@ export class GameEngine {
       indices: this.spaceship.indices.length
     });
     
-    // Crear varios clusters asteroidales en una cuadrícula 10x10 (100 total)
-    // - 10 por línea alineados a lo largo de baseDir (50u de separación)
-    // - 10 líneas paralelas separadas 50u en una dirección perpendicular a baseDir
-  const CLUSTER_ROWS = 100 ; // líneas
-  const CLUSTER_COLS = 10; // por línea
-  // Aumentar el espaciado inicial de clusters en +100u
-  const CLUSTER_SPACING_ALONG = 75; // separación a lo largo del vector base (antes 50)
-  const CLUSTER_ROW_SPACING = 75; // separación entre líneas (perpendicular) (antes 50)
-    const CLUSTER_SPEED = 1.5; // misma velocidad para todos
-    const CLUSTER_COUNT_PER = 8; // número de asteroides pequeños por clúster
-    const CLUSTER_INCLUDE_SUPER = true;
-    const CLUSTER_RADIUS = 12;
-    const CLUSTER_CENTER_FACTOR = 0.5;
+    // 1) Crear y registrar planetas primero (necesitamos la órbita de la Tierra)
+    this.createPlanets();
+    this.planets.forEach(p => p.initBuffers(this.gl!));
+    this.targetCatalog.register(TargetType.PLANET, this.planets as unknown as ITargetable[]);
 
-    const baseDir = this.normalize({ x: 0.6, y: 0.2, z: 0.1 });
-    const baseCenter = { x: 20, y: 0, z: 30 };
-
-    // Vector perpendicular a baseDir para desplazar entre filas
-    const up = { x: 0, y: 1, z: 0 };
-    // cross(baseDir, up)
-    let perp = {
-      x: baseDir.y * up.z - baseDir.z * up.y,
-      y: baseDir.z * up.x - baseDir.x * up.z,
-      z: baseDir.x * up.y - baseDir.y * up.x,
-    };
-    const perpLen = Math.hypot(perp.x, perp.y, perp.z);
-    if (perpLen < 1e-3) {
-      // baseDir casi paralelo a up; usar eje X para calcular un perpendicular
-      const right = { x: 1, y: 0, z: 0 };
-      perp = {
-        x: baseDir.y * right.z - baseDir.z * right.y,
-        y: baseDir.z * right.x - baseDir.x * right.z,
-        z: baseDir.x * right.y - baseDir.y * right.x,
-      };
-    }
-    // normalizar perp
-    const pLen = Math.hypot(perp.x, perp.y, perp.z) || 1;
-    perp = { x: perp.x / pLen, y: perp.y / pLen, z: perp.z / pLen };
-
+    // 2) Construir un rastro de clusters a lo largo de la elipse orbital de la Tierra
+    const earth = this.planets.find(p => p.id === 'planet-earth');
     const createdClusters: ReturnType<typeof this.asteroidClusterService.createCluster>[] = [];
-    for (let r = 0; r < CLUSTER_ROWS; r++) {
-      for (let c = 0; c < CLUSTER_COLS; c++) {
-        const center = {
-          x: baseCenter.x + baseDir.x * CLUSTER_SPACING_ALONG * c + perp.x * CLUSTER_ROW_SPACING * r,
-          y: baseCenter.y + baseDir.y * CLUSTER_SPACING_ALONG * c + perp.y * CLUSTER_ROW_SPACING * r,
-          z: baseCenter.z + baseDir.z * CLUSTER_SPACING_ALONG * c + perp.z * CLUSTER_ROW_SPACING * r,
-        };
-        // Pequeña perturbación para direcciones paralelas y mismo sentido
-        const jitter = {
-          x: (Math.random() - 0.5) * 0.02,
-          y: (Math.random() - 0.5) * 0.02,
-          z: (Math.random() - 0.5) * 0.02,
-        };
-        const dir = this.normalize({ x: baseDir.x + jitter.x, y: baseDir.y + jitter.y, z: baseDir.z + jitter.z });
+    if (earth) {
+      const a = earth.semiMajor;
+      const b = earth.semiMinor;
+      const orient = earth.orbitOrientation;
+      const ctr = earth.orbitCenter;
+      const phiEarth = earth.orbitAngle;
 
-        const cluster = this.asteroidClusterService.createCluster({
-          id: `cluster-${r}-${c}`,
-          center,
-          direction: dir,
-          speed: CLUSTER_SPEED,
-          count: CLUSTER_COUNT_PER,
-          includeSuper: CLUSTER_INCLUDE_SUPER,
-          radius: CLUSTER_RADIUS,
-          centerSpeedFactor: CLUSTER_CENTER_FACTOR
-        });
-        createdClusters.push(cluster);
+      // Utilidades para la elipse en XZ
+      const rot = (x: number, z: number) => ({
+        x: x * Math.cos(orient) - z * Math.sin(orient),
+        z: x * Math.sin(orient) + z * Math.cos(orient)
+      });
+      const posAt = (phi: number) => {
+        const cx = Math.cos(phi) * a;
+        const cz = Math.sin(phi) * b;
+        const r = rot(cx, cz);
+        return { x: ctr.x + r.x, y: 0, z: ctr.z + r.z };
+      };
+      const tanAt = (phi: number) => {
+        // d/dphi antes de rotación
+        const dx = -a * Math.sin(phi);
+        const dz = b * Math.cos(phi);
+        const r = rot(dx, dz);
+        const len = Math.hypot(r.x, r.z) || 1;
+        return { x: r.x / len, y: 0, z: r.z / len };
+      };
+      const speedAt = (phi: number) => Math.hypot(a * Math.sin(phi), b * Math.cos(phi));
+      const phiBehindBy = (ds: number) => {
+        // Integración simple hacia atrás en phi para alcanzar distancia ds ≈ ∫|r'(phi)| dphi
+        let acc = 0;
+        let phi = phiEarth;
+        const maxIter = 10000;
+        for (let i = 0; i < maxIter && acc < ds; i++) {
+          const s = speedAt(phi);
+          const dphi = Math.min(0.01, (ds - acc) / Math.max(1e-6, s));
+          acc += s * dphi;
+          phi -= dphi; // hacia atrás (opuesto al avance orbital)
+        }
+        return phi;
+      };
+
+      // Especificación de filas y longitudes: [20, 40, 50, 50, 40, 20]
+      const rowsSpec = [20, 40, 50, 50, 40, 20];
+      const maxCols = Math.max(...rowsSpec);
+      const ROW_SPACING = 75; // separación lateral entre filas
+      const COL_SPACING = 300; // separación a lo largo de la órbita entre clusters
+      const START_OFFSET = 10000; // inicio del rastro detrás de la Tierra
+
+      // Precalcular los phi de columna para la fila más larga (referencia)
+      const phiCols: number[] = [];
+      for (let c = 0; c < maxCols; c++) {
+        const ds = START_OFFSET + c * COL_SPACING;
+        phiCols.push(phiBehindBy(ds));
       }
+
+  // Offsets laterales base por fila (simétricos). Se aplicará un "abanico":
+  // la anchura crecerá con la columna (más lejos en el rastro, más abierto)
+  const baseRowOffsets = [-2.5, -1.5, -0.5, 0.5, 1.5, 2.5].map(m => m * ROW_SPACING);
+
+      // Crear los clusters fila por fila
+  const CLUSTER_SPEED = 1.5;
+      const CLUSTER_COUNT_PER = 8;
+      const CLUSTER_INCLUDE_SUPER = true;
+      const CLUSTER_RADIUS = 12;
+      const CLUSTER_CENTER_FACTOR = 0.5;
+  const FAN_FACTOR = 1.2; // 0 = sin abanico; 1.2 = 120% más ancho al final
+  const JITTER_LATERAL = 40; // variación aleatoria lateral (u)
+  const JITTER_ALONG = 60;   // variación aleatoria a lo largo (u)
+  const JITTER_Y = 5;        // pequeña variación vertical (u)
+
+      for (let r = 0; r < rowsSpec.length; r++) {
+        const cols = rowsSpec[r];
+        for (let c = 0; c < cols; c++) {
+          const phi = phiCols[c];
+          const base = posAt(phi);
+          const t = tanAt(phi); // sentido de movimiento de Earth
+          const n = { x: -t.z, y: 0, z: t.x }; // normal lateral en el plano XZ
+          // Abanico: ampliar lateral en función de la columna dentro de la fila
+          const fRow = cols > 1 ? (c / (cols - 1)) : 0;
+          const spread = 1 + FAN_FACTOR * fRow;
+          const lateralBase = baseRowOffsets[r] * spread;
+          // Jitter para romper la regularidad
+          const jLat = (Math.random() * 2 - 1) * JITTER_LATERAL;
+          const jAlong = (Math.random() * 2 - 1) * JITTER_ALONG;
+          const jY = (Math.random() * 2 - 1) * JITTER_Y;
+          const center = {
+            x: base.x + n.x * (lateralBase + jLat) + t.x * jAlong,
+            y: jY,
+            z: base.z + n.z * (lateralBase + jLat) + t.z * jAlong
+          };
+          const dir = t; // seguir el sentido de movimiento (no invertido)
+          const cluster = this.asteroidClusterService.createCluster({
+            id: `trail-${r}-${c}`,
+            center,
+            direction: dir,
+            speed: CLUSTER_SPEED,
+            count: CLUSTER_COUNT_PER,
+            includeSuper: CLUSTER_INCLUDE_SUPER,
+            radius: CLUSTER_RADIUS,
+            centerSpeedFactor: CLUSTER_CENTER_FACTOR
+          });
+          createdClusters.push(cluster);
+        }
+      }
+
+      // Posicionar la nave en la otra punta del rastro (extremo más lejano) y mirando hacia la Tierra
+      try {
+        const cEnd = maxCols - 1; // última columna de las filas más largas
+        const phiEnd = phiCols[cEnd];
+        const endPos = posAt(phiEnd);
+        const tEnd = tanAt(phiEnd);
+        const nEnd = { x: -tEnd.z, y: 0, z: tEnd.x };
+        // Fila central con longitud máxima (primera coincidencia)
+        const rCenter = rowsSpec.findIndex(v => v === maxCols);
+        // En el extremo final c = cols-1 -> fRow = 1 -> spread máximo
+        const spread = 1 + FAN_FACTOR * 1;
+        const lateralBase = baseRowOffsets[(rCenter >= 0 ? rCenter : 2)] * spread;
+        const shipPos = {
+          x: endPos.x + nEnd.x * (lateralBase + 150),
+          y: 0,
+          z: endPos.z + nEnd.z * (lateralBase + 150)
+        };
+        this.spaceship.position.x = shipPos.x;
+        this.spaceship.position.y = shipPos.y;
+        this.spaceship.position.z = shipPos.z;
+        // Orientar la nave hacia la Tierra
+        this.spaceship.lookAt({ x: earth.position.x, y: earth.position.y, z: earth.position.z });
+        this.spaceship.updateModelMatrix();
+      } catch {}
+    } else {
+      console.warn('⚠️ No se encontró la Tierra; se omite rastro de clusters.');
     }
 
     // Inicializar buffers de los objetos de todos los clusters
@@ -370,11 +442,7 @@ export class GameEngine {
       });
     });
     this.targetCatalog.register(TargetType.ASTEROID, smalls);
-  this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
-    // Crear y registrar planetas
-    this.createPlanets();
-    this.planets.forEach(p => p.initBuffers(this.gl!));
-    this.targetCatalog.register(TargetType.PLANET, this.planets as unknown as ITargetable[]);
+    this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
     // Inicializar buffers y registrar debris asociados a planetas como MEGA_ASTEROID
     for (const arr of this.planetDebris.values()) {
       for (const d of arr) {
@@ -383,9 +451,7 @@ export class GameEngine {
       }
     }
 
-    // Reposicionar inicio: nave y clusters a ~5000u de la superficie del Sol en dirección aleatoria
-    // Nota: ejecutamos después de crear planetas para disponer de primarySun
-    this.randomizeStartNearSun(5000);
+  // Ya posicionamos la nave en el inicio del rastro; no mover todo cerca del Sol
   }
 
   /**
