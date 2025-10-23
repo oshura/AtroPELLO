@@ -2216,7 +2216,13 @@ export class GameEngine {
     }
     // Toggle panel de mapa del sistema con tecla 'M'
     if (key.toLowerCase() === 'm') {
-      if (this.systemPanel) this.systemPanel.setEnabled(!this.systemPanel.isEnabled());
+      if (this.systemPanel) {
+        const next = !this.systemPanel.isEnabled();
+        this.systemPanel.setEnabled(next);
+        if (next) {
+          try { this.systemPanel.resetView(); } catch {}
+        }
+      }
       try { this.updateMapClickBinding(); } catch {}
       return;
     }
@@ -2267,6 +2273,10 @@ export class GameEngine {
    * Maneja el zoom de la cámara
    */
   public handleZoom(delta: number): void {
+    // Ignore camera zoom while the system map is active
+    if (this.systemPanel && this.systemPanel.isEnabled()) {
+      return;
+    }
     if (this.camera) {
       this.camera.handleZoom(delta);
     }
@@ -2798,7 +2808,14 @@ export class GameEngine {
             );
           } catch {}
           // Prevent page scroll when zooming the map
-          try { e.preventDefault(); } catch {}
+          try {
+            e.preventDefault();
+            // Also stop propagation so other handlers (e.g., camera zoom) don't receive it
+            e.stopPropagation();
+            // Some handlers may be registered in the same phase; be extra safe
+            (e as any).cancelBubble = true;
+            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
+          } catch {}
         };
         (this as any)._mapWheelHandler = wh;
         // Use non-passive to allow preventDefault
