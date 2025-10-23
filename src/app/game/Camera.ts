@@ -21,8 +21,8 @@ export abstract class BaseCamera {
   // Reducido a 45° para minimizar deformación en bordes (edge stretch) manteniendo buena percepción de velocidad
   public fov: number = 45 * (Math.PI / 180); // 45° vertical → ~73° horizontal en 16:9
   public aspect: number = 1.0;
-  public near: number = 0.1;
-  public far: number = 100000.0; // Aumentado para soportar distancias de hasta ~50ku sin recorte
+  public near: number = 1.0;
+  public far: number = 500000.0; // Ampliado para soportar >100ku sin recorte y reducir clipping lejano
   
   // Configuración de zoom dinámico - ajustado para FOV 55°
   protected zoomDistance: number = 4.5; // Aumentado para compensar FOV más estrecho

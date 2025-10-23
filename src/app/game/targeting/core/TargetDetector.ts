@@ -465,6 +465,9 @@ export class TargetDetector implements ITargetDetector {
     
     // Verificar que está delante de la cámara
     if (v[3] <= 0) return null;
+    // Verificar que está dentro del rango de clip en Z (evita usar posiciones más allá del far/near)
+    const ndcZ = v[2] / v[3];
+    if (ndcZ < -1.0 || ndcZ > 1.0) return null;
 
     // Dividir por w y mapear a coordenadas de pantalla (CSS px)
     const ndcX = v[0] / v[3];
