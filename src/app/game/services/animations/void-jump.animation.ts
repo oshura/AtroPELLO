@@ -17,8 +17,9 @@ export class VoidJumpAnimation implements GameAnimation {
   private speedRampTime = 1.8;
   private speedHoldTime = 3.5; // keep 200 for a bit
   private fadeInTime = 0.6;
-  private fadeHoldTime = 0.25;
+  private fadeHoldTime = 0.0; // no simple hold; we'll show an image instead
   private fadeOutTime = 1.8;
+  private imageDisplayTime = 3.0; // show image for 3 seconds
 
   private totalTime = 0;
   private teleportMoment = 0; // time at which teleport happens
@@ -30,6 +31,9 @@ export class VoidJumpAnimation implements GameAnimation {
   private originalDeceleration = 0;
 
   private overlayAlpha = 0;
+  private overlayColor: [number, number, number] = [1, 1, 1];
+  private flashImageUrls: string[] = [];
+  private flashTextures: WebGLTexture[] = [];
   // Particle streaks during jump (static seeds in camera-local space)
   private streakSeeds: Array<{x:number;y:number;z:number}> = [];
   private streakNearZ = 2;
@@ -68,10 +72,43 @@ export class VoidJumpAnimation implements GameAnimation {
       this.streakSeeds.push({x, y, z});
     }
 
-    // Timeline: orient → ramp → HOLD@200 → fade-in → hold → fade-out
-    this.teleportMoment = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime * 0.9; // near end of fade-in
-    this.totalTime = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime + this.fadeHoldTime + this.fadeOutTime;
+  // Timeline: orient → ramp → HOLD@200 → fade to black → [IMAGE 3s with zoom] → fade-in to scene
+  this.teleportMoment = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime * 0.9; // near end of fade-to-black
+  this.totalTime = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime + this.imageDisplayTime + this.fadeOutTime;
     this.lastUpdateTime = 0;
+
+    // Prepare optional flash images (if configured)
+    this.flashTextures = [];
+    if (this.flashImageUrls.length && (engine as any).textureManager) {
+      this.overlayColor = [0, 0, 0]; // better contrast for images
+      const tm = (engine as any).textureManager as any;
+      this.flashImageUrls.forEach((url, i) => {
+        const key = `void-flash-${i}`;
+        // Try multiple locations to be resilient with asset placement
+        const basename = url.split('/').pop() || url;
+        const candidates = [
+          url, // as provided
+          `/assets/${basename}`,
+          `/app/assets/${basename}`,
+          `/src/app/assets/${basename}`
+        ];
+        (async () => {
+          for (const cand of candidates) {
+            try {
+              const res = await tm.loadTextureFromUrl(key, cand);
+              const tex = tm.getTexture(key);
+              if (tex) { this.flashTextures[i] = tex as WebGLTexture; break; }
+            } catch {
+              // On failure, TextureManager still registers placeholder; attach it so something can draw
+              const tex = tm.getTexture(key);
+              if (tex) { this.flashTextures[i] = tex as WebGLTexture; break; }
+            }
+          }
+        })();
+      });
+    } else {
+      this.overlayColor = [1, 1, 1];
+    }
   }
 
   update(engine: GameEngine, dt: number): boolean {
@@ -128,11 +165,11 @@ export class VoidJumpAnimation implements GameAnimation {
       ship.targetSpeed = Math.min(ship.maxSpeed, 200);
     }
 
-    // Phase 3: fade in
+    // Phase 3: fade to overlay (black if images, white otherwise)
     const fadeStart = this.orientTime + this.speedRampTime + this.speedHoldTime;
     if (this.t > fadeStart) {
       const k = clamp01((this.t - fadeStart) / this.fadeInTime);
-      this.overlayAlpha = lerp(0, 0.85, k);
+      this.overlayAlpha = lerp(0, 1.0, k);
     }
 
     // Teleport once at teleportMoment
@@ -144,17 +181,18 @@ export class VoidJumpAnimation implements GameAnimation {
       ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
     }
 
-    // Phase 4: hold white briefly
+    // Phase 4: show image during 3s window (overlay stays opaque)
     const holdStart = fadeStart + this.fadeInTime;
-    if (this.t >= holdStart && this.t <= holdStart + this.fadeHoldTime) {
-      this.overlayAlpha = 0.85;
+    const holdEnd = holdStart + this.imageDisplayTime;
+    if (this.t >= holdStart && this.t <= holdEnd) {
+      this.overlayAlpha = 1.0;
     }
 
-    // Phase 5: fade out
-    const fadeOutStart = holdStart + this.fadeHoldTime;
+    // Phase 5: fade-in scene (remove overlay)
+    const fadeOutStart = holdEnd;
     if (this.t > fadeOutStart) {
       const k = clamp01((this.t - fadeOutStart) / this.fadeOutTime);
-      this.overlayAlpha = lerp(0.85, 0.0, k);
+      this.overlayAlpha = lerp(1.0, 0.0, k);
     }
 
     // Finish
@@ -181,6 +219,7 @@ export class VoidJumpAnimation implements GameAnimation {
     const shaderManager = (engine as any).shaderManager as any;
     const cam = (engine as any).camera;
     if (!gl || !shaderManager || !cam) return;
+    const overlay = (engine as any).overlayRenderer as any;
 
   // First: draw speed streaks (lines) only after the look-at phase has completed
     // Streak length grows with current visual speed factor (0..1)
@@ -237,107 +276,35 @@ export class VoidJumpAnimation implements GameAnimation {
       gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.deleteBuffer(vbo); gl.deleteBuffer(cbo);
     }
 
-    // Then: white overlay fade
-    if (this.overlayAlpha <= 0) return;
-
-    // Build a camera-facing full-screen quad at distance d
-    const d = 1.0;
-    const proj = cam.projectionMatrix as Float32Array;
-    const f = proj[5] || 1; // = 1/tan(fov/2)
-    const tanHalfFovy = 1 / f;
-    const aspect = (proj[0] !== 0) ? (f / proj[0]) : 1.7777778;
-    const halfH = d * tanHalfFovy;
-    const halfW = halfH * aspect;
-
-    // Camera basis
-    const camPos = cam.position;
-    const fwd = this.normalize({ x: cam.target.x - camPos.x, y: cam.target.y - camPos.y, z: cam.target.z - camPos.z });
-    const worldUp = cam.up;
-    const right = this.normalize({
-      x: fwd.y * worldUp.z - fwd.z * worldUp.y,
-      y: fwd.z * worldUp.x - fwd.x * worldUp.z,
-      z: fwd.x * worldUp.y - fwd.y * worldUp.x,
-    });
-    const up = {
-      x: right.y * fwd.z - right.z * fwd.y,
-      y: right.z * fwd.x - right.x * fwd.z,
-      z: right.x * fwd.y - right.y * fwd.x,
-    };
-
-    const center = { x: camPos.x + fwd.x * d, y: camPos.y + fwd.y * d, z: camPos.z + fwd.z * d };
-
-    const tl = { x: center.x - right.x * halfW + up.x * halfH, y: center.y - right.y * halfW + up.y * halfH, z: center.z - right.z * halfW + up.z * halfH };
-    const tr = { x: center.x + right.x * halfW + up.x * halfH, y: center.y + right.y * halfW + up.y * halfH, z: center.z + right.z * halfW + up.z * halfH };
-    const br = { x: center.x + right.x * halfW - up.x * halfH, y: center.y + right.y * halfW - up.y * halfH, z: center.z + right.z * halfW - up.z * halfH };
-    const bl = { x: center.x - right.x * halfW - up.x * halfH, y: center.y - right.y * halfW - up.y * halfH, z: center.z - right.z * halfW - up.z * halfH };
-
-    const verts = new Float32Array([
-      tl.x, tl.y, tl.z,
-      tr.x, tr.y, tr.z,
-      br.x, br.y, br.z,
-      bl.x, bl.y, bl.z,
-    ]);
-    const idx = new Uint16Array([0,1,2, 0,2,3]);
-
-  // Draw using lit program with pure white color and opacity
-    shaderManager.useLitProgram();
-    shaderManager.setLitColor(new Float32Array([1, 1, 1]));
-    shaderManager.setSpecular(new Float32Array([cam.position.x, cam.position.y, cam.position.z]), 0.0, 1.0);
-
-    // Build a model matrix via manual buffer (non-indexed attributes not needed, we just draw a small mesh)
-    const vbo = gl.createBuffer()!;
-    const ibo = gl.createBuffer()!;
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, verts, gl.DYNAMIC_DRAW);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STREAM_DRAW);
-
-    // Bind position attribute for lit program
-    const aPos = shaderManager.litAttributes['position'];
-    gl.enableVertexAttribArray(aPos);
-    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
-
-    // Ensure a stable normal for the overlay quad: set constant normal (0,0,1)
-    const aNormal = shaderManager.litAttributes['normal'];
-    if (typeof aNormal === 'number' && aNormal >= 0) {
-      try {
-        gl.disableVertexAttribArray(aNormal);
-        gl.vertexAttrib3f(aNormal, 0, 0, 1);
-      } catch {}
+    // Then: robust full-screen overlay via unlit full-screen triangle (background)
+    if (this.overlayAlpha > 0 && overlay && overlay.drawSolid) {
+      try { overlay.drawSolid(this.overlayColor, this.overlayAlpha); } catch {}
     }
 
-    // Model matrix is identity; we provide coordinates directly in world space
-    const identity = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
-    // No normals used; use existing lighting but color is white and opacity does the fade
-    const normalM = identity;
-    (engine as any).calculateNormalMatrix(identity);
-    shaderManager.setLitMatrices(identity, cam.viewMatrix, cam.projectionMatrix, normalM);
-
-  // Blending setup (preserve previous state)
-  const wasBlend = gl.isEnabled(gl.BLEND);
-  gl.enable(gl.BLEND);
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    if (shaderManager.setLitOpacity) shaderManager.setLitOpacity(this.overlayAlpha);
-
-  // Depth-off to ensure overlay draws on top
-    const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
-    if (wasDepth) gl.disable(gl.DEPTH_TEST);
-
-  // Ensure culling is off so both overlay triangles render regardless of winding
-  const wasCull = gl.isEnabled(gl.CULL_FACE);
-  if (wasCull) gl.disable(gl.CULL_FACE);
-
-    gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
-
-    // Cleanup
-    if (wasDepth) gl.enable(gl.DEPTH_TEST);
-  if (!wasBlend) gl.disable(gl.BLEND);
-  if (wasCull) gl.enable(gl.CULL_FACE);
-    gl.disableVertexAttribArray(aPos);
-    gl.bindBuffer(gl.ARRAY_BUFFER, null);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-    gl.deleteBuffer(vbo);
-    gl.deleteBuffer(ibo);
+    // Image window rendering with cover scaling and zoom
+    if (overlay) {
+      const texIndex = 0; // single configured image per jump
+      const tex = this.flashTextures[texIndex] as WebGLTexture | undefined;
+      if (tex) {
+        const imageStart = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime;
+        const imageEnd = imageStart + this.imageDisplayTime;
+        if (this.t >= imageStart && this.t <= imageEnd) {
+          // Linear zoom from 1.0 -> 1.3 across 3s
+          const k = clamp01((this.t - imageStart) / Math.max(0.0001, this.imageDisplayTime));
+          const zoom = 1.0 + 0.3 * k;
+          // Query texture size (for proper cover)
+          const tm = (engine as any).textureManager as any;
+          const key = `void-flash-0`;
+          const size = tm?.getTextureSize?.(key) || null;
+          if (size && overlay.drawTextureCover) {
+            try { overlay.drawTextureCover(tex, size.width, size.height, zoom, 1.0); } catch {}
+          } else if (overlay.drawTexture) {
+            // Fallback: stretch
+            try { overlay.drawTexture(tex, [1,1,1], 1.0); } catch {}
+          }
+        }
+      }
+    }
   }
 
   isBlockingInputs(): boolean { return this.blocking; }
@@ -382,3 +349,13 @@ export class VoidJumpAnimation implements GameAnimation {
     ship.lookAt(c);
   }
 }
+
+// Public helper to configure flash images from outside
+export interface VoidJumpFlashConfig { images: string[] }
+export interface VoidJumpAnimation {
+  setFlashConfig?: (cfg: VoidJumpFlashConfig) => void;
+}
+VoidJumpAnimation.prototype.setFlashConfig = function(cfg: VoidJumpFlashConfig) {
+  if (!cfg || !Array.isArray(cfg.images)) return;
+  (this as any).flashImageUrls = cfg.images.slice(0, 4);
+};

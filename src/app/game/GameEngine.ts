@@ -20,6 +20,7 @@ import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test
 import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { SolarSystemPanel } from './hud/SolarSystemPanel';
+import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
 import { Planet, PlanetColorName } from './Planet';
@@ -52,6 +53,7 @@ export class GameEngine {
   private targetDetails!: TargetDetailService;
   private targetPreview!: TargetPreviewRenderer;
   private systemPanel: SolarSystemPanel | null = null;
+  private overlayRenderer: ScreenOverlayRenderer | null = null;
   private domCanvas: HTMLCanvasElement | null = null;
   private mapIdToTarget: Map<string, ITargetable> = new Map();
   
@@ -185,8 +187,10 @@ export class GameEngine {
       if (this.USE_INSTANCING) {
         this.instancedRenderer = new InstancedAsteroidRenderer(this.gl, this.shaderManager);
       }
-      // Billboard renderer for distant impostors (planets, etc.)
+  // Billboard renderer for distant impostors (planets, etc.)
       this.billboardRenderer = new BillboardRenderer(this.gl);
+  // Overlay renderer for robust full-screen fades and image flashes
+  this.overlayRenderer = new ScreenOverlayRenderer(this.gl);
 
       // Inicializar sistema de retícula con renderizado (FASE 2)
       const reticleInit = await this.reticleManager.initialize(this.camera, this.shaderManager);

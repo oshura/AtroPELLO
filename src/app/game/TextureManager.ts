@@ -4,6 +4,7 @@
 export class TextureManager {
   private gl: WebGL2RenderingContext;
   private textures: Map<string, WebGLTexture> = new Map();
+  private textureSizes: Map<string, { width: number; height: number }> = new Map();
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -133,17 +134,24 @@ export class TextureManager {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([255, 255, 255, 255]));
 
     try {
-      const img = await this.loadImage(url);
-      gl.bindTexture(gl.TEXTURE_2D, texture);
-      gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+  const img = await this.loadImage(url);
+  gl.bindTexture(gl.TEXTURE_2D, texture);
+  // Scope UNPACK_FLIP_Y to this upload only to avoid affecting later uploads
+  let prevFlip: any;
+  try { prevFlip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL); } catch { prevFlip = 0; }
+  gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1);
+  gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
       gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
       gl.generateMipmap(gl.TEXTURE_2D);
       this.textures.set(name, texture);
+      // Store size metadata for cover rendering
+      this.textureSizes.set(name, { width: img.width, height: img.height });
       console.log(`✅ Loaded texture '${name}' from`, url);
+      // Restore previous flip state
+      try { gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, prevFlip ? 1 : 0); } catch {}
       return texture;
     } catch (e) {
       console.warn(`⚠️ Failed to load texture '${name}' from ${url}`, e);
@@ -171,5 +179,11 @@ export class TextureManager {
       this.gl.deleteTexture(texture);
     });
     this.textures.clear();
+    this.textureSizes.clear();
+  }
+
+  /** Returns texture size if known (from loadTextureFromUrl), else null */
+  public getTextureSize(name: string): { width: number; height: number } | null {
+    return this.textureSizes.get(name) || null;
   }
 }

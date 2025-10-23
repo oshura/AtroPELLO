@@ -7,6 +7,12 @@ import { GameAnimation } from './types';
 export class AnimationManagerService {
   private current: GameAnimation | null = null;
   private cachedVoidJumpCtor: ({ new(): GameAnimation }) | null = null;
+  private flashImages: string[] = [
+    '/assets/Athathoth.jpg',
+    '/assets/GreatCthulhu.webp',
+    '/assets/Nodens.webp'
+  ];
+  private flashIndex = 0;
 
   constructor() {
     // Preload the void-jump module to avoid first-use delay on 'y'
@@ -18,6 +24,9 @@ export class AnimationManagerService {
     // If cached ctor available, start immediately; else lazy-load with stub
     if (this.cachedVoidJumpCtor) {
       const anim = new this.cachedVoidJumpCtor();
+      // Configure one image per jump (cycle)
+      const pick = this.flashImages[(this.flashIndex++) % this.flashImages.length];
+      try { (anim as any).setFlashConfig?.({ images: [pick] }); } catch {}
       anim.start(engine, target);
       this.current = anim;
       return true;
@@ -29,6 +38,8 @@ export class AnimationManagerService {
         const AnimClass = (mod2 as any).VoidJumpAnimation as { new(): GameAnimation };
         this.cachedVoidJumpCtor = AnimClass;
         const anim = new AnimClass();
+        const pick = this.flashImages[(this.flashIndex++) % this.flashImages.length];
+        try { (anim as any).setFlashConfig?.({ images: [pick] }); } catch {}
         anim.start(engine, target);
         this.current = anim;
       } catch (e) {
