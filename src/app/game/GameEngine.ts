@@ -21,6 +21,7 @@ import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
+import { BillboardRenderer } from './rendering/BillboardRenderer';
 import { Planet, PlanetColorName } from './Planet';
 import { GaseousPlanet } from './GaseousPlanet';
 import { GiantPlanet } from './GiantPlanet';
@@ -83,6 +84,7 @@ export class GameEngine {
   // Feature flag: toggle instanced rendering for asteroids
   private readonly USE_INSTANCING = true;
   private instancedRenderer: InstancedAsteroidRenderer | null = null;
+  private billboardRenderer: BillboardRenderer | null = null;
   // Tipos de target que NO deben ser descartados por culling distancia/frustum
   private readonly neverCullTypes = new Set([TargetType.PLANET]);
 
@@ -183,6 +185,8 @@ export class GameEngine {
       if (this.USE_INSTANCING) {
         this.instancedRenderer = new InstancedAsteroidRenderer(this.gl, this.shaderManager);
       }
+      // Billboard renderer for distant impostors (planets, etc.)
+      this.billboardRenderer = new BillboardRenderer(this.gl);
 
       // Inicializar sistema de retícula con renderizado (FASE 2)
       const reticleInit = await this.reticleManager.initialize(this.camera, this.shaderManager);
@@ -1331,6 +1335,11 @@ export class GameEngine {
   private renderPlanets(): void {
     if (!this.gl || !this.shaderManager) return;
     const cam = this.camera;
+    const proj = cam.projectionMatrix as unknown as Float32Array;
+    const f = proj[5] || 1.0;
+    const fovV = 2 * Math.atan(1 / f);
+    const viewportH = (this.gl.canvas as HTMLCanvasElement).height || 1;
+    const SPRITE_LOD_DISTANCE = 50000; // u
     // Guardar estado mínimo para no interferir con otros pases
     const prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
     const wasBlend = this.gl.isEnabled(this.gl.BLEND);
@@ -1363,14 +1372,48 @@ export class GameEngine {
       const dz = p.position.z - this.spaceship.position.z;
       const distShip = Math.hypot(dx, dy, dz);
 
+      // Distancia cámara-planet para LOD de sprite
+      const cdx = p.position.x - cam.position.x;
+      const cdy = p.position.y - cam.position.y;
+      const cdz = p.position.z - cam.position.z;
+      const distCam = Math.hypot(cdx, cdy, cdz);
+
+      // LOD de sprite: a partir de 50k u, render como billboard para mayor estabilidad/ rendimiento
+      if (this.billboardRenderer && distCam >= SPRITE_LOD_DISTANCE) {
+        // Calcular diámetro en píxeles según tamaño angular geométrico y clamp
+        const Rw = (p as any).scale?.x ?? 1;
+        let diameterPx = (2 * Rw * viewportH) / (Math.max(1e-3, distCam) * fovV);
+        diameterPx = Math.max(8, Math.min(256, diameterPx));
+        // Textura: especial para Tierra partida, genérica circular para otros (tint = blanco)
+  const isEarthSplit = (p as any).planetType === 'Tierra';
+        const tex = isEarthSplit
+          ? this.billboardRenderer.getEarthSplitTexture()
+          : this.billboardRenderer.getCircleTexture(this.rgbToHex(p.color.r, p.color.g, p.color.b));
+        const tint: [number,number,number,number] = [1,1,1,1];
+        // Compute camera basis (forward from target-position; right = forward x up; up re-orthonormalized)
+        const fwdU = this.normalize({ x: cam.target.x - cam.position.x, y: cam.target.y - cam.position.y, z: cam.target.z - cam.position.z });
+        const upW = cam.up;
+        const right = this.normalize({ x: fwdU.y*upW.z - fwdU.z*upW.y, y: fwdU.z*upW.x - fwdU.x*upW.z, z: fwdU.x*upW.y - fwdU.y*upW.x });
+        const upB = { x: right.y*fwdU.z - right.z*fwdU.y, y: right.z*fwdU.x - right.x*fwdU.z, z: right.x*fwdU.y - right.y*fwdU.x };
+        this.billboardRenderer.render(
+          p.position,
+          diameterPx,
+          cam.viewMatrix,
+          cam.projectionMatrix,
+          cam.position,
+          upB,
+          right,
+          tint,
+          tex
+        );
+        // Saltar render geométrico y pases especiales (caps/glow) en modo sprite
+        continue;
+      }
+
       // Render normal; caps emisivas se pintan en un segundo pase después
 
       if (isSun) {
         // Distancia cámara-Sol para decidir magma
-        const cdx = p.position.x - cam.position.x;
-        const cdy = p.position.y - cam.position.y;
-        const cdz = p.position.z - cam.position.z;
-        const distCam = Math.hypot(cdx, cdy, cdz);
         const magma = this.textureManager.getTexture('magma');
         if (distCam < 20000 && magma && this.shaderManager.unlitTexProgram) {
           // Sun core con textura de magma (self-lit, sin iluminación)
@@ -1462,6 +1505,13 @@ export class GameEngine {
     // Restaurar estado
     if (!wasBlend) this.gl.disable(this.gl.BLEND);
     if (prevProgram) this.gl.useProgram(prevProgram);
+  }
+
+  /** Convert float RGB [0..1] to hex string */
+  private rgbToHex(r: number, g: number, b: number): string {
+    const toByte = (x: number) => Math.max(0, Math.min(255, Math.round(x * 255)));
+    const h = (n: number) => n.toString(16).padStart(2, '0');
+    return `#${h(toByte(r))}${h(toByte(g))}${h(toByte(b))}`;
   }
 
   /** Renderiza los mega-asteroides de debris vinculados a planetas con un LOD simple */
