@@ -16,6 +16,7 @@ export class ShaderManager {
   public texturedProgram: WebGLProgram | null = null;
   public glowProgram: WebGLProgram | null = null;
   public unlitTexProgram: WebGLProgram | null = null;
+  public stormShellProgram: WebGLProgram | null = null;
   // Modular services own these programs, we expose getters for back-compat
   private hudSvc: HudShaderService | null = null;
   private reticleSvc: ReticleShaderService | null = null;
@@ -50,6 +51,8 @@ export class ShaderManager {
   public outlineAttributes: { [key: string]: number } = {};
   public glowAttributes: { [key: string]: number } = {};
   public unlitTexAttributes: { [key: string]: number } = {};
+  public stormShellAttributes: { [key: string]: number } = {};
+  public stormShellUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   // Attributes for instanced-lit are exposed via helper getters
 
   constructor(private webglService: WebGLService) {
@@ -98,6 +101,12 @@ export class ShaderManager {
       this.getUnlitTexFragmentShader()
     );
 
+    // Programa de cúpula de tormenta (procedural sobre esfera)
+    this.stormShellProgram = this.createProgram(
+      this.getStormShellVertexShader(),
+      this.getStormShellFragmentShader()
+    );
+
     // Servicios modulares
     this.hudSvc = new HudShaderService(this.webglService); this.hudSvc.initialize();
     this.reticleSvc = new ReticleShaderService(this.webglService); this.reticleSvc.initialize();
@@ -125,6 +134,7 @@ export class ShaderManager {
     if (this.outlineProgram) this.getOutlineProgramLocations();
   if (this.glowProgram) this.getGlowProgramLocations();
   if (this.unlitTexProgram) this.getUnlitTexProgramLocations();
+  if (this.stormShellProgram) this.getStormShellProgramLocations();
 
     // Locations for instanced program are held inside the service
   }
@@ -239,6 +249,120 @@ export class ShaderManager {
     if (uModel) gl.uniformMatrix4fv(uModel, false, model);
     if (uView) gl.uniformMatrix4fv(uView, false, view);
     if (uProj) gl.uniformMatrix4fv(uProj, false, proj);
+  }
+
+  // ===== Storm shell program (procedural veins over sphere) =====
+  private getStormShellVertexShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec3 a_position;
+    uniform mat4 u_modelMatrix;
+    uniform mat4 u_viewMatrix;
+    uniform mat4 u_projectionMatrix;
+    uniform float u_shellScale;
+    out vec3 v_normalObj;
+    void main(){
+      vec3 pos = a_position * u_shellScale;
+      v_normalObj = normalize(a_position);
+      vec4 world = u_modelMatrix * vec4(pos, 1.0);
+      gl_Position = u_projectionMatrix * (u_viewMatrix * world);
+    }`;
+  }
+  private getStormShellFragmentShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec3 v_normalObj;
+    out vec4 fragColor;
+    uniform float u_time;
+    uniform float u_intensity; // base intensity multiplier
+    uniform float u_flash;     // 0..1 extra boost
+    uniform vec3 u_colorBase;  // faint lava color
+    uniform vec3 u_colorVein;  // bright vein color
+
+    // Tiny hash/noise helpers (cheap, not perfect but adequate for stylized effect)
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+    float noise(vec2 p){
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      float a = hash(i);
+      float b = hash(i + vec2(1.0, 0.0));
+      float c = hash(i + vec2(0.0, 1.0));
+      float d = hash(i + vec2(1.0, 1.0));
+      vec2 u = f*f*(3.0-2.0*f);
+      return mix(a, b, u.x) + (c - a)*u.y*(1.0 - u.x) + (d - b)*u.x*u.y;
+    }
+    float fbm(vec2 p){
+      float v = 0.0;
+      float a = 0.5;
+      for(int i=0;i<4;i++){
+        v += a * noise(p);
+        p *= 2.03;
+        a *= 0.5;
+      }
+      return v;
+    }
+
+    void main(){
+      // Spherical coords from object normal
+      vec3 n = normalize(v_normalObj);
+      float lon = atan(n.z, n.x);           // [-pi, pi]
+      float lat = asin(clamp(n.y, -1.0, 1.0)); // [-pi/2, pi/2]
+      vec2 uv = vec2(lon / (6.28318530718) + 0.5, lat / 3.14159265359 + 0.5);
+
+      float t = u_time * 0.35; // slow drift
+      // Vein field: stripes + noise warping
+      vec2 q = uv * vec2(12.0, 6.0);
+      float w = fbm(q + vec2(t*0.6, -t*0.4));
+      float stripes = abs(sin((q.x + w*1.8) * 3.14159265));
+      float veins = smoothstep(0.82, 0.96, 1.0 - stripes);
+      // Secondary cross-stripes to create branching
+      float stripes2 = abs(sin((q.y + w*1.3 + uv.x*2.0) * 3.14159265));
+      veins = max(veins, smoothstep(0.86, 0.97, 1.0 - stripes2));
+
+      // Animate crack flicker
+      float flicker = 0.85 + 0.3 * noise(uv*20.0 + t*3.0);
+      float flash = u_flash; // external flash pulse
+
+      // Base faint lava + bright veins
+      vec3 baseCol = u_colorBase * (0.35 * u_intensity);
+      vec3 veinCol = u_colorVein * (0.8 + 0.6*flicker + 1.2*flash);
+      vec3 col = baseCol + veinCol * veins;
+      // Alpha small; additive blending will accumulate
+      float alpha = clamp(0.08 * u_intensity + veins * (0.25 + 0.35*flash), 0.0, 0.65);
+      fragColor = vec4(col, alpha);
+    }`;
+  }
+  private getStormShellProgramLocations(): void {
+    if (!this.gl || !this.stormShellProgram) return;
+    const gl = this.gl;
+    this.stormShellAttributes['position'] = gl.getAttribLocation(this.stormShellProgram, 'a_position');
+    this.stormShellUniforms['modelMatrix'] = gl.getUniformLocation(this.stormShellProgram, 'u_modelMatrix');
+    this.stormShellUniforms['viewMatrix'] = gl.getUniformLocation(this.stormShellProgram, 'u_viewMatrix');
+    this.stormShellUniforms['projectionMatrix'] = gl.getUniformLocation(this.stormShellProgram, 'u_projectionMatrix');
+    this.stormShellUniforms['shellScale'] = gl.getUniformLocation(this.stormShellProgram, 'u_shellScale');
+    this.stormShellUniforms['time'] = gl.getUniformLocation(this.stormShellProgram, 'u_time');
+    this.stormShellUniforms['intensity'] = gl.getUniformLocation(this.stormShellProgram, 'u_intensity');
+    this.stormShellUniforms['flash'] = gl.getUniformLocation(this.stormShellProgram, 'u_flash');
+    this.stormShellUniforms['colorBase'] = gl.getUniformLocation(this.stormShellProgram, 'u_colorBase');
+    this.stormShellUniforms['colorVein'] = gl.getUniformLocation(this.stormShellProgram, 'u_colorVein');
+  }
+  public useStormShellProgram(): void { if (this.gl && this.stormShellProgram) this.gl.useProgram(this.stormShellProgram); }
+  public setStormShellMatrices(model: Float32Array, view: Float32Array, proj: Float32Array): void {
+    if (!this.gl || !this.stormShellProgram) return;
+    const gl = this.gl;
+    if (this.stormShellUniforms['modelMatrix']) gl.uniformMatrix4fv(this.stormShellUniforms['modelMatrix'], false, model);
+    if (this.stormShellUniforms['viewMatrix']) gl.uniformMatrix4fv(this.stormShellUniforms['viewMatrix'], false, view);
+    if (this.stormShellUniforms['projectionMatrix']) gl.uniformMatrix4fv(this.stormShellUniforms['projectionMatrix'], false, proj);
+  }
+  public setStormShellParams(time: number, intensity: number, flash: number, shellScale: number, colorBase: Float32Array, colorVein: Float32Array): void {
+    if (!this.gl || !this.stormShellProgram) return;
+    const gl = this.gl;
+    if (this.stormShellUniforms['time']) gl.uniform1f(this.stormShellUniforms['time'], time);
+    if (this.stormShellUniforms['intensity']) gl.uniform1f(this.stormShellUniforms['intensity'], intensity);
+    if (this.stormShellUniforms['flash']) gl.uniform1f(this.stormShellUniforms['flash'], flash);
+    if (this.stormShellUniforms['shellScale']) gl.uniform1f(this.stormShellUniforms['shellScale'], shellScale);
+    if (this.stormShellUniforms['colorBase']) gl.uniform3fv(this.stormShellUniforms['colorBase'], colorBase);
+    if (this.stormShellUniforms['colorVein']) gl.uniform3fv(this.stormShellUniforms['colorVein'], colorVein);
   }
 
   /**

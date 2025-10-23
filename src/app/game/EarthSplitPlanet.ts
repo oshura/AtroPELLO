@@ -41,6 +41,10 @@ export class EarthSplitPlanet extends Planet {
     color: [number, number, number, number]; // rgba for glow shader
   }> = [];
   private lightningSpawnCooldown: number = 0; // seconds until next spawn window
+  // Storm shell state (procedural cúpula alrededor del núcleo)
+  private stormTime: number = 0;
+  private stormFlashRemaining: number = 0; // seconds left in flash
+  private stormNextFlashCooldown: number = 0; // seconds until next flash window
 
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3, separation: number = 300) {
     super(id, colorName, radius, initialPos);
@@ -264,6 +268,19 @@ export class EarthSplitPlanet extends Planet {
   /** Update planet plus lightning flicker state */
   public override update(deltaTime: number): void {
     super.update(deltaTime);
+    // Storm time and flash scheduling
+    this.stormTime += deltaTime;
+    this.stormFlashRemaining = Math.max(0, this.stormFlashRemaining - deltaTime);
+    this.stormNextFlashCooldown -= deltaTime;
+    if (this.stormNextFlashCooldown <= 0) {
+      // Sporadic flashes ~0.25s
+      if (Math.random() < 0.25) {
+        this.stormFlashRemaining = 0.25;
+        this.stormNextFlashCooldown = 2.0 + Math.random() * 3.0; // 2..5s
+      } else {
+        this.stormNextFlashCooldown = 0.6 + Math.random() * 0.8; // try again soon
+      }
+    }
     // Update existing bursts lifetimes
     if (this.lightningBursts.length) {
       this.lightningBursts = this.lightningBursts.filter(b => {
@@ -514,6 +531,8 @@ export class EarthSplitPlanet extends Planet {
 
     // Lightning sparks over core surface (additive glow quads)
     this.renderCoreLightning(gl as unknown as WebGL2RenderingContext, shaderManager, viewMatrix, projectionMatrix);
+    // Procedural storm shell around the core (procedural veins)
+    this.renderStormShell(gl as unknown as WebGL2RenderingContext, shaderManager, viewMatrix, projectionMatrix);
   }
 
   private renderCoreLightning(gl: WebGL2RenderingContext, shaderManager: any, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
@@ -652,6 +671,50 @@ export class EarthSplitPlanet extends Planet {
     gl.deleteBuffer(ubo);
     gl.deleteBuffer(cbo);
     gl.deleteBuffer(ibo);
+  }
+
+  private renderStormShell(gl: WebGL2RenderingContext, shaderManager: any, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
+    if (!this.coreVB || !this.coreIB || !shaderManager?.stormShellProgram) return;
+    // GL state: additive blending, depth test on, no depth writes; draw both sides
+    const wasBlend = gl.isEnabled(gl.BLEND);
+    const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
+    const wasCull = gl.isEnabled(gl.CULL_FACE);
+    const prevProg = gl.getParameter(gl.CURRENT_PROGRAM);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
+
+    shaderManager.useStormShellProgram();
+    shaderManager.setStormShellMatrices(this.modelMatrix, viewMatrix, projectionMatrix);
+    // Parameters
+    const time = this.stormTime;
+    const intensity = 1.0; // base intensity
+    // Smooth flash strength (ease out)
+    const fr = this.stormFlashRemaining;
+    const flash = fr > 0 ? Math.min(1.0, fr / 0.25) : 0.0;
+    // Colors: base lava-ish, vein bright
+    const base = new Float32Array([1.0, 0.35, 0.08]);
+    const vein = new Float32Array([1.0, 0.95, 0.85]);
+    const shellScale = 1.08; // 54u world if core is 50u
+    shaderManager.setStormShellParams(time, intensity, flash, shellScale, base, vein);
+
+    // Bind buffers and draw
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.coreVB);
+    const aPos = shaderManager.stormShellAttributes['position'];
+    gl.enableVertexAttribArray(aPos);
+    gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.coreIB);
+    gl.drawElements(gl.TRIANGLES, this.coreIndexCount, gl.UNSIGNED_SHORT, 0);
+    gl.disableVertexAttribArray(aPos);
+
+    // Restore state
+    gl.depthMask(true);
+    if (!wasBlend) gl.disable(gl.BLEND);
+    if (wasDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+    if (wasCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
+    if (prevProg) gl.useProgram(prevProg as any);
   }
 
   // --- Gestión de texturas de hemisferio (cargadas on-demand) ---
