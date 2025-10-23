@@ -364,10 +364,16 @@ export class ShaderManager {
     uniform vec3 u_ambientColor;
     uniform float u_ambientStrength;
     uniform vec3 u_baseColor;
-  uniform float u_opacity;
+    uniform float u_opacity;
     uniform vec3 u_cameraPos;
     uniform float u_specularStrength;
     uniform float u_shininess;
+    // Emissive point light (optional)
+    uniform vec3 u_pointPos;
+    uniform vec3 u_pointColor;
+    uniform float u_pointIntensity;
+    uniform float u_pointRadius;
+    uniform float u_twoSidedLighting;
 
     // Salida
     out vec4 fragColor;
@@ -390,8 +396,19 @@ export class ShaderManager {
   float spec = pow(max(dot(N, H), 0.0), max(u_shininess, 1.0)) * u_specularStrength;
   vec3 specular = spec * u_lightColor;
 
+  // Emissive point light contribution (attenuated)
+  vec3 pointLit = vec3(0.0);
+  if (u_pointIntensity > 0.0001 && u_pointRadius > 0.0) {
+    vec3 toL = u_pointPos - v_worldPos;
+    float d = length(toL);
+    float atten = 1.0 - smoothstep(0.0, u_pointRadius, d);
+    vec3 Lp = normalize(toL);
+    float ndl = u_twoSidedLighting > 0.5 ? abs(dot(N, Lp)) : max(dot(N, Lp), 0.0);
+    pointLit = u_pointColor * (u_pointIntensity * atten) * ndl;
+  }
+
   // Color final
-  vec3 finalColor = baseColor * (ambient + diffuse) + specular;
+  vec3 finalColor = baseColor * (ambient + diffuse) + specular + pointLit;
 
       // Asegurar que el color no sea demasiado oscuro
       finalColor = max(finalColor, baseColor * 0.2);
@@ -468,13 +485,19 @@ export class ShaderManager {
     in vec3 v_worldPos;
     in float v_lightIntensity;
 
-    // Uniformes
+  // Uniformes
     uniform sampler2D u_metallicTexture;
     uniform sampler2D u_gradientTexture;
     uniform vec3 u_lightColor;
     uniform vec3 u_ambientColor;
     uniform float u_ambientStrength;
-    uniform vec3 u_baseColor;
+  uniform vec3 u_baseColor;
+  // Emissive point light (optional)
+  uniform vec3 u_pointPos;
+  uniform vec3 u_pointColor;
+  uniform float u_pointIntensity;
+  uniform float u_pointRadius;
+  uniform float u_twoSidedLighting;
 
     // Salida
     out vec4 fragColor;
@@ -496,7 +519,19 @@ export class ShaderManager {
       vec3 diffuse = v_lightIntensity * u_lightColor * 1.5;
       float specular = pow(max(v_lightIntensity, 0.0), 32.0) * 0.8;
       
-      vec3 finalColor = gradientColor * (ambient + diffuse) + vec3(specular);
+      // Emissive point light contribution
+      vec3 N = normalize(v_normal);
+      vec3 pointLit = vec3(0.0);
+      if (u_pointIntensity > 0.0001 && u_pointRadius > 0.0) {
+        vec3 toL = u_pointPos - v_worldPos;
+        float d = length(toL);
+        float atten = 1.0 - smoothstep(0.0, u_pointRadius, d);
+        vec3 Lp = normalize(toL);
+        float ndl = u_twoSidedLighting > 0.5 ? abs(dot(N, Lp)) : max(dot(N, Lp), 0.0);
+        pointLit = u_pointColor * (u_pointIntensity * atten) * ndl;
+      }
+      
+      vec3 finalColor = gradientColor * (ambient + diffuse) + vec3(specular) + pointLit;
       finalColor = clamp(finalColor, gradientColor * 0.3, gradientColor * 2.0);
       fragColor = vec4(finalColor, 1.0);
     }`;
@@ -606,7 +641,13 @@ export class ShaderManager {
     this.litUniforms['opacity'] = this.gl.getUniformLocation(this.litProgram, 'u_opacity');
     this.litUniforms['cameraPos'] = this.gl.getUniformLocation(this.litProgram, 'u_cameraPos');
     this.litUniforms['specularStrength'] = this.gl.getUniformLocation(this.litProgram, 'u_specularStrength');
-    this.litUniforms['shininess'] = this.gl.getUniformLocation(this.litProgram, 'u_shininess');
+  this.litUniforms['shininess'] = this.gl.getUniformLocation(this.litProgram, 'u_shininess');
+  // Point light uniforms
+  this.litUniforms['pointPos'] = this.gl.getUniformLocation(this.litProgram, 'u_pointPos');
+  this.litUniforms['pointColor'] = this.gl.getUniformLocation(this.litProgram, 'u_pointColor');
+  this.litUniforms['pointIntensity'] = this.gl.getUniformLocation(this.litProgram, 'u_pointIntensity');
+  this.litUniforms['pointRadius'] = this.gl.getUniformLocation(this.litProgram, 'u_pointRadius');
+  this.litUniforms['twoSidedLighting'] = this.gl.getUniformLocation(this.litProgram, 'u_twoSidedLighting');
   }
 
   /**
@@ -631,7 +672,13 @@ export class ShaderManager {
     this.texturedUniforms['lightColor'] = this.gl.getUniformLocation(this.texturedProgram, 'u_lightColor');
     this.texturedUniforms['ambientColor'] = this.gl.getUniformLocation(this.texturedProgram, 'u_ambientColor');
     this.texturedUniforms['ambientStrength'] = this.gl.getUniformLocation(this.texturedProgram, 'u_ambientStrength');
-    this.texturedUniforms['baseColor'] = this.gl.getUniformLocation(this.texturedProgram, 'u_baseColor');
+  this.texturedUniforms['baseColor'] = this.gl.getUniformLocation(this.texturedProgram, 'u_baseColor');
+  // Point light uniforms
+  this.texturedUniforms['pointPos'] = this.gl.getUniformLocation(this.texturedProgram, 'u_pointPos');
+  this.texturedUniforms['pointColor'] = this.gl.getUniformLocation(this.texturedProgram, 'u_pointColor');
+  this.texturedUniforms['pointIntensity'] = this.gl.getUniformLocation(this.texturedProgram, 'u_pointIntensity');
+  this.texturedUniforms['pointRadius'] = this.gl.getUniformLocation(this.texturedProgram, 'u_pointRadius');
+  this.texturedUniforms['twoSidedLighting'] = this.gl.getUniformLocation(this.texturedProgram, 'u_twoSidedLighting');
 
     // Uniformes de textura
     this.texturedUniforms['metallicTexture'] = this.gl.getUniformLocation(this.texturedProgram, 'u_metallicTexture');
@@ -710,6 +757,16 @@ export class ShaderManager {
     this.gl.uniform1f(this.litUniforms['shininess'], shininess);
   }
 
+  /** Configura una luz puntual emisiva opcional para el shader lit */
+  public setPointLightLit(pos: Float32Array, color: Float32Array, intensity: number, radius: number, twoSided: boolean): void {
+    if (!this.gl || !this.litProgram) return;
+    if (this.litUniforms['pointPos']) this.gl.uniform3fv(this.litUniforms['pointPos'], pos);
+    if (this.litUniforms['pointColor']) this.gl.uniform3fv(this.litUniforms['pointColor'], color);
+    if (this.litUniforms['pointIntensity']) this.gl.uniform1f(this.litUniforms['pointIntensity'], intensity);
+    if (this.litUniforms['pointRadius']) this.gl.uniform1f(this.litUniforms['pointRadius'], radius);
+    if (this.litUniforms['twoSidedLighting']) this.gl.uniform1f(this.litUniforms['twoSidedLighting'], twoSided ? 1.0 : 0.0);
+  }
+
   /**
    * Establece el color base para el shader lit
    */
@@ -769,6 +826,16 @@ export class ShaderManager {
     this.gl.uniform3fv(this.texturedUniforms['ambientColor'], ambientColor);
     this.gl.uniform1f(this.texturedUniforms['ambientStrength'], ambientStrength);
     this.gl.uniform3fv(this.texturedUniforms['baseColor'], baseColor);
+  }
+
+  /** Configura una luz puntual emisiva opcional para el shader texturizado */
+  public setPointLightTextured(pos: Float32Array, color: Float32Array, intensity: number, radius: number, twoSided: boolean): void {
+    if (!this.gl || !this.texturedProgram) return;
+    if (this.texturedUniforms['pointPos']) this.gl.uniform3fv(this.texturedUniforms['pointPos'], pos);
+    if (this.texturedUniforms['pointColor']) this.gl.uniform3fv(this.texturedUniforms['pointColor'], color);
+    if (this.texturedUniforms['pointIntensity']) this.gl.uniform1f(this.texturedUniforms['pointIntensity'], intensity);
+    if (this.texturedUniforms['pointRadius']) this.gl.uniform1f(this.texturedUniforms['pointRadius'], radius);
+    if (this.texturedUniforms['twoSidedLighting']) this.gl.uniform1f(this.texturedUniforms['twoSidedLighting'], twoSided ? 1.0 : 0.0);
   }
 
   /**

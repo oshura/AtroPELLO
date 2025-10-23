@@ -1516,6 +1516,16 @@ export class GameEngine {
         if (metallicTexture && gradientTexture) {
           this.shaderManager.setTexturedTextures(metallicTexture, gradientTexture);
         }
+        // Emissive point light from Earth's core (only for Earth)
+        if (p.id === 'planet-earth') {
+          const lp = new Float32Array([p.position.x, p.position.y, p.position.z]);
+          const lc = new Float32Array([1.0, 0.25, 0.05]);
+          this.shaderManager.setPointLightTextured(lp, lc, 2.0, 1500.0, true);
+        } else {
+          const lp = new Float32Array([0,0,0]);
+          const lc = new Float32Array([0,0,0]);
+          this.shaderManager.setPointLightTextured(lp, lc, 0.0, 0.0, false);
+        }
         p.render(this.gl, this.shaderManager.texturedProgram!, cam.viewMatrix, cam.projectionMatrix);
       } else if (distShip < 20000) {
         // Medio: iluminación simple sin especular para evitar el parpadeo a distancia
@@ -1527,6 +1537,16 @@ export class GameEngine {
         const camPos = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
         this.shaderManager.setSpecular(camPos, 0.0, 1.0);
         this.shaderManager.setLitColor(new Float32Array([p.color.r, p.color.g, p.color.b]));
+        // Emissive point light from Earth's core (only for Earth)
+        if (p.id === 'planet-earth') {
+          const lp = new Float32Array([p.position.x, p.position.y, p.position.z]);
+          const lc = new Float32Array([1.0, 0.25, 0.05]);
+          this.shaderManager.setPointLightLit(lp, lc, 1.5, 2000.0, true);
+        } else {
+          const lp = new Float32Array([0,0,0]);
+          const lc = new Float32Array([0,0,0]);
+          this.shaderManager.setPointLightLit(lp, lc, 0.0, 0.0, false);
+        }
         p.render(this.gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
       } else {
         // Lejano: sin iluminación (flat color) para máxima estabilidad visual

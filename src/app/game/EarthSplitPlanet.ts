@@ -17,6 +17,11 @@ export class EarthSplitPlanet extends Planet {
   // Cantidad de índices de la superficie principal (excluye tapas);
   // se usa para evitar dibujar las tapas en el pase principal
   private mainIndexCount: number = 0;
+  // Núcleo simple: esfera roja de 100u de diámetro (50u radio)
+  private coreVB: WebGLBuffer | null = null;
+  private coreCB: WebGLBuffer | null = null;
+  private coreIB: WebGLBuffer | null = null;
+  private coreIndexCount: number = 0;
 
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3, separation: number = 300) {
     super(id, colorName, radius, initialPos);
@@ -166,6 +171,49 @@ export class EarthSplitPlanet extends Planet {
     this.layeredColors = new Float32Array(colors);
   }
 
+  /** Inicializa buffers incluyendo un núcleo simple de 100u de diámetro en el centro (Y=0) */
+  public override initBuffers(gl: WebGLRenderingContext): void {
+    super.initBuffers(gl);
+    // Generar una esfera pequeña centrada en (0,0,0) en espacio objeto; el modelMatrix del planeta la escala
+    const Rworld = (this as any).scale?.x ?? 1; // radio del planeta en mundo (escala X)
+    const coreRobj = 50 / (Rworld || 1); // 50u en mundo -> radio en espacio objeto
+    const latBands = 16, lonBands = 20;
+    const verts: number[] = [];
+    const cols: number[] = [];
+    const idx: number[] = [];
+    for (let lat = 0; lat <= latBands; lat++) {
+      const theta = (lat / latBands) * Math.PI;
+      const sinT = Math.sin(theta), cosT = Math.cos(theta);
+      for (let lon = 0; lon <= lonBands; lon++) {
+        const phi = (lon / lonBands) * 2 * Math.PI;
+        const sinP = Math.sin(phi), cosP = Math.cos(phi);
+        const x = cosP * sinT * coreRobj;
+        const y = cosT * coreRobj; // centrado en Y=0
+        const z = sinP * sinT * coreRobj;
+        verts.push(x, y, z);
+        cols.push(1.0, 0.1, 0.0); // rojo brillante simple
+      }
+    }
+    for (let lat = 0; lat < latBands; lat++) {
+      for (let lon = 0; lon < lonBands; lon++) {
+        const first = lat * (lonBands + 1) + lon;
+        const second = first + lonBands + 1;
+        idx.push(first, second, first + 1);
+        idx.push(second, second + 1, first + 1);
+      }
+    }
+    this.coreIndexCount = idx.length;
+    this.coreVB = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.coreVB);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.STATIC_DRAW);
+    this.coreCB = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.coreCB);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cols), gl.STATIC_DRAW);
+    this.coreIB = gl.createBuffer();
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.coreIB);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(idx), gl.STATIC_DRAW);
+  }
+
   /**
    * Render principal del planeta: dibuja solo la superficie (excluye tapas)
    * para que las tapas no reciban el shader/textura del planeta.
@@ -276,6 +324,43 @@ export class EarthSplitPlanet extends Planet {
     if (!wasBlend) gl.disable(gl.BLEND); else gl.enable(gl.BLEND);
     if (wasDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
     if (prevProgram) gl.useProgram(prevProgram as any);
+
+    // Núcleo: esfera roja simple (100u diámetro). Para hacerlo visible SIEMPRE y simple, desactivar depth test.
+    if (this.coreVB && this.coreCB && this.coreIB && shaderManager?.basicProgram) {
+      const wasBlend2 = gl.getParameter(gl.BLEND);
+      const wasDepth2 = gl.getParameter(gl.DEPTH_TEST);
+      const prevProg2 = gl.getParameter(gl.CURRENT_PROGRAM);
+      gl.enable(gl.BLEND);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false);
+
+      const program: WebGLProgram = shaderManager.basicProgram;
+      gl.useProgram(program);
+      if (shaderManager.setBasicMatrices) shaderManager.setBasicMatrices(this.modelMatrix, viewMatrix, projectionMatrix);
+      else {
+        const uModel = gl.getUniformLocation(program, 'u_modelMatrix');
+        const uView = gl.getUniformLocation(program, 'u_viewMatrix');
+        const uProj = gl.getUniformLocation(program, 'u_projectionMatrix');
+        if (uModel) gl.uniformMatrix4fv(uModel, false, this.modelMatrix);
+        if (uView) gl.uniformMatrix4fv(uView, false, viewMatrix);
+        if (uProj) gl.uniformMatrix4fv(uProj, false, projectionMatrix);
+      }
+      const aPos = gl.getAttribLocation(program, 'a_position');
+      const aCol = gl.getAttribLocation(program, 'a_color');
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.coreVB);
+      if (aPos >= 0) { gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0); }
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.coreCB);
+      if (aCol >= 0) { gl.enableVertexAttribArray(aCol); gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 0, 0); }
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.coreIB);
+      gl.drawElements(gl.TRIANGLES, this.coreIndexCount, gl.UNSIGNED_SHORT, 0);
+      if (aPos >= 0) gl.disableVertexAttribArray(aPos);
+      if (aCol >= 0) gl.disableVertexAttribArray(aCol);
+      gl.depthMask(true);
+      if (!wasBlend2) gl.disable(gl.BLEND); else gl.enable(gl.BLEND);
+      if (wasDepth2) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+      if (prevProg2) gl.useProgram(prevProg2 as any);
+    }
   }
 
   /**
