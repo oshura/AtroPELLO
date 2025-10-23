@@ -2809,6 +2809,10 @@ export class GameEngine {
             (this.gl!.canvas as HTMLCanvasElement).height
           );
           if (id) {
+            // No permitir selección de la nave en el mapa (solo hover outline)
+            if (id === 'ship') {
+              return;
+            }
             const target = this.mapIdToTarget.get(id);
             if (target && this.reticleManager) {
               try { this.reticleManager.selectTarget(target); } catch {}

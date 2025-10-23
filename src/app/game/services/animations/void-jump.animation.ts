@@ -279,7 +279,7 @@ export class VoidJumpAnimation implements GameAnimation {
     ]);
     const idx = new Uint16Array([0,1,2, 0,2,3]);
 
-    // Draw using lit program with pure white color and opacity
+  // Draw using lit program with pure white color and opacity
     shaderManager.useLitProgram();
     shaderManager.setLitColor(new Float32Array([1, 1, 1]));
     shaderManager.setSpecular(new Float32Array([cam.position.x, cam.position.y, cam.position.z]), 0.0, 1.0);
@@ -297,6 +297,15 @@ export class VoidJumpAnimation implements GameAnimation {
     gl.enableVertexAttribArray(aPos);
     gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
 
+    // Ensure a stable normal for the overlay quad: set constant normal (0,0,1)
+    const aNormal = shaderManager.litAttributes['normal'];
+    if (typeof aNormal === 'number' && aNormal >= 0) {
+      try {
+        gl.disableVertexAttribArray(aNormal);
+        gl.vertexAttrib3f(aNormal, 0, 0, 1);
+      } catch {}
+    }
+
     // Model matrix is identity; we provide coordinates directly in world space
     const identity = new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]);
     // No normals used; use existing lighting but color is white and opacity does the fade
@@ -304,19 +313,26 @@ export class VoidJumpAnimation implements GameAnimation {
     (engine as any).calculateNormalMatrix(identity);
     shaderManager.setLitMatrices(identity, cam.viewMatrix, cam.projectionMatrix, normalM);
 
-    // Blending setup
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+  // Blending setup (preserve previous state)
+  const wasBlend = gl.isEnabled(gl.BLEND);
+  gl.enable(gl.BLEND);
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
     if (shaderManager.setLitOpacity) shaderManager.setLitOpacity(this.overlayAlpha);
 
-    // Depth-off to ensure overlay draws on top
+  // Depth-off to ensure overlay draws on top
     const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
     if (wasDepth) gl.disable(gl.DEPTH_TEST);
+
+  // Ensure culling is off so both overlay triangles render regardless of winding
+  const wasCull = gl.isEnabled(gl.CULL_FACE);
+  if (wasCull) gl.disable(gl.CULL_FACE);
 
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
 
     // Cleanup
     if (wasDepth) gl.enable(gl.DEPTH_TEST);
+  if (!wasBlend) gl.disable(gl.BLEND);
+  if (wasCull) gl.enable(gl.CULL_FACE);
     gl.disableVertexAttribArray(aPos);
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
