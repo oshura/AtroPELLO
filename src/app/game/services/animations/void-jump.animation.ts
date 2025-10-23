@@ -13,7 +13,7 @@ export class VoidJumpAnimation implements GameAnimation {
   private blocking = true;
 
   // Phase timings (seconds) - tuned for slower lookAt, longer accel to 200, and short hold at top speed
-  private orientTime = 2.0;
+  private orientTime = 6.0; // much slower reorientation for dramatic buildup
   private speedRampTime = 1.8;
   private speedHoldTime = 3.5; // keep 200 for a bit
   private fadeInTime = 0.6;
@@ -135,7 +135,9 @@ export class VoidJumpAnimation implements GameAnimation {
 
     // Phase 1: orient
     if (this.t <= this.orientTime) {
-      const k = clamp01(this.t / this.orientTime);
+      const kLin = clamp01(this.t / this.orientTime);
+      // Smoothstep easing for slower start/end of the look-at motion
+      const k = kLin * kLin * (3 - 2 * kLin);
       // Smoothly steer nose to target center
       const center = this.getTargetCenter(engine, this.target);
       // Interpolate look direction by slerp-like lerp on direction vectors

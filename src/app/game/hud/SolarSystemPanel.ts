@@ -255,10 +255,11 @@ export class SolarSystemPanel {
     c.textBaseline = 'bottom';
     for (const it of this.items) {
       const isPlanet = it.category === 'planet';
+      const isCenter = it.category === 'center';
       const isSel = this.selectedId === it.id;
       const isHover = this.hoveredId === it.id;
-      // Always show planet labels (no circle unless hover/selected)
-      if (isPlanet) {
+      // Show persistent labels for planets and the Sun (center) EXCEPT when hovered/selected to avoid double text
+      if ((isPlanet || isCenter) && !(isHover || isSel)) {
         c.fillStyle = 'rgba(255,255,255,0.9)';
         c.fillText(it.label, it.px, it.py - (it.rPx + 4));
       }
@@ -290,7 +291,69 @@ export class SolarSystemPanel {
     c.lineWidth = 2; c.strokeRect(1, 1, W - 2, H - 2);
     c.restore();
 
-    // 6) Draw cursor crosshair if available
+    // 6) Info panel (Tipo Nombre ------- distancia) for hovered or selected item
+    {
+      const active = (this.selectedId && this.items.find(i => i.id === this.selectedId))
+        || (this.hoveredId && this.items.find(i => i.id === this.hoveredId))
+        || null;
+      if (active) {
+        const ship = data.ship;
+        const dx = (ship ? (active.pos.x - ship.pos.x) : 0);
+        const dy = (ship ? (active.pos.y - ship.pos.y) : 0);
+        const dz = (ship ? (active.pos.z - ship.pos.z) : 0);
+        const dist = ship ? Math.hypot(dx, dy, dz) : 0;
+        const typeStr = (() => {
+          switch (active!.category) {
+            case 'planet': return 'Planeta';
+            case 'center': return 'Estrella';
+            case 'cluster': return 'Cúmulo';
+            case 'debris': return 'Escombros';
+            case 'ship': return 'Nave';
+            default: return 'Objeto';
+          }
+        })();
+
+        const leftPad = 12; const bottomPad = 12;
+        const boxW = Math.min(W - 24, 420);
+        const boxH = 40;
+        const bx = leftPad;
+        const by = H - bottomPad - boxH;
+        c.save();
+        // Background box
+        c.fillStyle = 'rgba(0, 0, 0, 0.55)';
+        c.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+        c.lineWidth = 1;
+        c.beginPath();
+        // simple rounded rect
+        const r = 8;
+        c.moveTo(bx + r, by);
+        c.lineTo(bx + boxW - r, by);
+        c.quadraticCurveTo(bx + boxW, by, bx + boxW, by + r);
+        c.lineTo(bx + boxW, by + boxH - r);
+        c.quadraticCurveTo(bx + boxW, by + boxH, bx + boxW - r, by + boxH);
+        c.lineTo(bx + r, by + boxH);
+        c.quadraticCurveTo(bx, by + boxH, bx, by + boxH - r);
+        c.lineTo(bx, by + r);
+        c.quadraticCurveTo(bx, by, bx + r, by);
+        c.closePath();
+        c.fill();
+        c.stroke();
+
+        // Texts
+        c.fillStyle = 'rgba(255,255,255,0.95)';
+        c.textAlign = 'left';
+        c.textBaseline = 'middle';
+        c.font = '12px Segoe UI, Roboto, sans-serif';
+        const dash = ' ------- ';
+        const name = active.label;
+        const distText = ship ? `${dist.toFixed(0)} u` : '';
+        const text = `${typeStr} ${name}${dash}${distText}`;
+        c.fillText(text, bx + 12, by + boxH / 2);
+        c.restore();
+      }
+    }
+
+    // 7) Draw cursor crosshair if available
     if (this.cursorPx !== null && this.cursorPy !== null) {
       c.save();
       c.strokeStyle = 'rgba(255,255,255,0.5)';

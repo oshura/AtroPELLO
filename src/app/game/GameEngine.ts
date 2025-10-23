@@ -1118,7 +1118,8 @@ export class GameEngine {
         this.mapIdToTarget.set('center', this.primarySun as unknown as ITargetable);
       }
       const planets = this.planets.map(p => {
-        const label = (p as any).customName || p.getDisplayName?.() || p.id;
+        // Prefer Planet.getDisplayName() which already returns customName if present
+        const label = (p.getDisplayName?.() || (p as any).customName || p.id);
         this.mapIdToTarget.set(p.id, p as unknown as ITargetable);
         return {
           id: p.id,
@@ -1228,8 +1229,8 @@ export class GameEngine {
           z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
         };
   const created = EarthSplitPlanet.createWithDebris(`planet-earth`, 'azul_marino', radius, pos, 500, 320);
-        planetObj = created.planet;
-        planetObj.customName = 'Tierra';
+  planetObj = created.planet;
+  planetObj.customName = 'Earth';
         planetObj.probabilityOfLifePct = 100;
         // Registrar offsets locales para que los debris sigan a la Tierra
         const arr: Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }> = [];
@@ -1238,7 +1239,7 @@ export class GameEngine {
           arr.push({ obj: m, local });
         }
         this.planetDebris.set('planet-earth', arr);
-      } else if (i === giantIdx) {
+  } else if (i === giantIdx) {
         // Gigante con órbita 15% mayor (min y max efectivos)
         a = Math.round(aBase * 1.15);
         b = Math.round(bBase * 1.15);
@@ -1251,9 +1252,8 @@ export class GameEngine {
         };
         // Radio base más grande, GiantPlanet multiplica x10 internamente
         radius = 300 + Math.random() * 200; // 300..500 (antes de x10)
-        planetObj = new GiantPlanet(`planet-giant`, 'marron', radius, pos);
-        planetObj.customName = 'Gigante';
-      } else if (i === gaseousIdx) {
+  planetObj = new GiantPlanet(`planet-giant`, 'marron', radius, pos);
+  } else if (i === gaseousIdx) {
         // Gaseoso
         const cx = Math.cos(angle0) * a;
         const cz = Math.sin(angle0) * b;
@@ -1263,8 +1263,7 @@ export class GameEngine {
           z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
         };
         radius = 350 + Math.random() * 250; // 350..600
-        planetObj = new GaseousPlanet(`planet-gaseous`, 'violeta_oscuro', radius, pos);
-        planetObj.customName = 'Gaseoso';
+  planetObj = new GaseousPlanet(`planet-gaseous`, 'violeta_oscuro', radius, pos);
       } else {
         // Planetoide genérico
         const cx = Math.cos(angle0) * a;
@@ -1290,7 +1289,13 @@ export class GameEngine {
       // Rotación propia: 1 vuelta/300s
       planetObj.angularVelocity.y = (Math.PI * 2) / 300;
 
-      this.planets.push(planetObj);
+  // Assign canonical catalog-like name at construction only if not already named
+  try {
+    if (!(planetObj as any).customName) {
+      (planetObj as any).customName = this.generatePlanetName();
+    }
+  } catch {}
+  this.planets.push(planetObj);
     }
   }
 
