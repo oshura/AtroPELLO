@@ -17,6 +17,13 @@ export class EarthSplitPlanet extends Planet {
   // Cantidad de índices de la superficie principal (excluye tapas);
   // se usa para evitar dibujar las tapas en el pase principal
   private mainIndexCount: number = 0;
+  // Índices separados por semiesfera para texturizado (norte/sur)
+  private topIndices: number[] = [];
+  private bottomIndices: number[] = [];
+  private topIndexBuffer: WebGLBuffer | null = null;
+  private bottomIndexBuffer: WebGLBuffer | null = null;
+  private topIndexCount: number = 0;
+  private bottomIndexCount: number = 0;
   // Núcleo simple: esfera roja de 100u de diámetro (50u radio)
   private coreVB: WebGLBuffer | null = null;
   private coreCB: WebGLBuffer | null = null;
@@ -38,6 +45,9 @@ export class EarthSplitPlanet extends Planet {
   protected override initGeometry(): void {
     // Asegura estructuras antes de cualquier uso (super() llama a initGeometry antes de inicializar campos)
     this.capRanges = [];
+    // Importante: estos arrays pueden no estar inicializados aún (initGeometry se llama desde super())
+    this.topIndices = [];
+    this.bottomIndices = [];
     const latBands = 40;
     const lonBands = 40;
     // Base unit sphere vertices
@@ -81,9 +91,11 @@ export class EarthSplitPlanet extends Planet {
     const colors: number[] = [];
     const indices: number[] = [];
 
-    const pushTri = (v0: [number, number, number], v1: [number, number, number], v2: [number, number, number],
-                     uv0: [number, number], uv1: [number, number], uv2: [number, number],
-                     offsetYWorld: number, tint?: { r: number; g: number; b: number }) => {
+    const pushTri = (
+      v0: [number, number, number], v1: [number, number, number], v2: [number, number, number],
+      uv0: [number, number], uv1: [number, number], uv2: [number, number],
+      offsetYWorld: number, target: 'top' | 'bottom', tint?: { r: number; g: number; b: number }
+    ) => {
   const baseIndex = vertices.length / 3;
   const offsetObj = (R > 0 ? offsetYWorld / R : 0); // convert desired world offset to object-space (unit-sphere space)
       const add = (v: [number, number, number], uv: [number, number]) => {
@@ -101,44 +113,50 @@ export class EarthSplitPlanet extends Planet {
       };
       add(v0, uv0); add(v1, uv1); add(v2, uv2);
       indices.push(baseIndex, baseIndex + 1, baseIndex + 2);
+      if (target === 'top') {
+        this.topIndices.push(baseIndex, baseIndex + 1, baseIndex + 2);
+      } else {
+        this.bottomIndices.push(baseIndex, baseIndex + 1, baseIndex + 2);
+      }
     };
 
-    // Helper to add a cap (disk) at y = 0 with normal dir +/-Y for a hemisphere
-    const addCap = (normalY: number, offsetYWorld: number) => {
-      const seg = 64;
-      const baseIndex = vertices.length / 3;
+    // Helper to add a cap ring (annulus) with inner hole to expose the core
+    const addCap = (normalY: number, offsetYWorld: number, innerRadiusObj: number) => {
+      const seg = 96;
       const offsetObj = (R > 0 ? offsetYWorld / R : 0);
-      // center
-      vertices.push(0, offsetObj, 0);
-      normals.push(0, normalY, 0);
-      uvs.push(0.5, 0.5);
-      // center color based on core (emissive red)
-      const coreCol = { r: 1.0, g: 0.1, b: 0.0 };
-      colors.push(coreCol.r, coreCol.g, coreCol.b);
+      const inner = Math.max(0.05, Math.min(0.95, innerRadiusObj));
+      const outer = 1.0;
+      const baseVertIndex = vertices.length / 3;
+      const ringOuterIdx: number[] = [];
+      const ringInnerIdx: number[] = [];
       for (let i = 0; i <= seg; i++) {
         const t = (i / seg) * 2 * Math.PI;
-        const x = Math.cos(t);
-        const z = Math.sin(t);
-        const rad = Math.hypot(x, z);
-        // Layered color based on radius on the disk
-        let col: { r: number; g: number; b: number };
-        if (rad < 0.35) col = { r: 1.0, g: 0.1, b: 0.0 }; // core (red emissive)
-        else if (rad < 0.7) col = { r: 1.0, g: 0.9, b: 0.2 }; // mantle (yellow)
-        else col = { r: 0.55, g: 0.35, b: 0.20 }; // crust (brown)
-        vertices.push(x, offsetObj, z);
+        const cx = Math.cos(t), cz = Math.sin(t);
+        // Outer vertex (crust - brown)
+        vertices.push(cx * outer, offsetObj, cz * outer);
         normals.push(0, normalY, 0);
-        uvs.push(0.5 + (x * 0.5), 0.5 + (z * 0.5));
-        colors.push(col.r, col.g, col.b);
+        uvs.push(0.5 + (cx * 0.5 * outer), 0.5 + (cz * 0.5 * outer));
+        const colOuter = { r: 0.55, g: 0.35, b: 0.20 };
+        colors.push(colOuter.r, colOuter.g, colOuter.b);
+        ringOuterIdx.push(baseVertIndex + i * 2);
+        // Inner vertex (mantle/core - reddish/yellow)
+        vertices.push(cx * inner, offsetObj, cz * inner);
+        normals.push(0, normalY, 0);
+        uvs.push(0.5 + (cx * 0.5 * inner), 0.5 + (cz * 0.5 * inner));
+        const colInner = inner < 0.6 ? { r: 1.0, g: 0.1, b: 0.0 } : { r: 1.0, g: 0.9, b: 0.2 };
+        colors.push(colInner.r, colInner.g, colInner.b);
+        ringInnerIdx.push(baseVertIndex + i * 2 + 1);
       }
-      // Triangles fan
-      const startIndex = indices.length; // comienzo del abanico
-      for (let i = 1; i <= seg; i++) {
-        const i0 = baseIndex; // center
-        const i1 = baseIndex + i;
-        const i2 = baseIndex + ((i % (seg)) + 1);
-        indices.push(i0, i1, i2);
+      // Build triangles for the ring
+      const startIndex = indices.length;
+      for (let i = 0; i < seg; i++) {
+        const iOut0 = ringOuterIdx[i];
+        const iIn0 = ringInnerIdx[i];
+        const iOut1 = ringOuterIdx[i + 1];
+        const iIn1 = ringInnerIdx[i + 1];
+        indices.push(iOut0, iIn0, iOut1);
+        indices.push(iOut1, iIn0, iIn1);
       }
-      // Registrar rango de la tapa para renderizado posterior (emisivo)
       const added = indices.length - startIndex;
       this.capRanges.push({ start: startIndex, count: added });
     };
@@ -150,17 +168,19 @@ export class EarthSplitPlanet extends Planet {
       const ua = baseUVs[ia], ub = baseUVs[ib], uc = baseUVs[ic];
       const avgY = (va[1] + vb[1] + vc[1]) / 3;
       if (avgY >= 0) {
-        pushTri(va, vb, vc, ua, ub, uc, +sepHalf);
+        pushTri(va, vb, vc, ua, ub, uc, +sepHalf, 'top');
       } else {
-        pushTri(va, vb, vc, ua, ub, uc, -sepHalf);
+        pushTri(va, vb, vc, ua, ub, uc, -sepHalf, 'bottom');
       }
     }
 
   // Registrar cuántos índices había antes de agregar tapas
   const surfaceIndexCountBeforeCaps = indices.length;
-  // Caps (se agregan al final del buffer de índices)
-  addCap(+1, +sepHalf); // top hemisphere, normal +Y
-  addCap(-1, -sepHalf); // bottom hemisphere, normal -Y
+  // Caps as annular rings (leave a hole to see the core)
+  const coreRobj = 50 / (R || 1); // core radius in object space for 100u world diameter
+  const innerHole = Math.min(0.9, coreRobj * 1.25);
+  addCap(+1, +sepHalf, innerHole); // top hemisphere, normal +Y
+  addCap(-1, -sepHalf, innerHole); // bottom hemisphere, normal -Y
   // Guardar el conteo principal (solo superficie)
   this.mainIndexCount = surfaceIndexCountBeforeCaps;
 
@@ -171,9 +191,24 @@ export class EarthSplitPlanet extends Planet {
     this.layeredColors = new Float32Array(colors);
   }
 
+  
+
   /** Inicializa buffers incluyendo un núcleo simple de 100u de diámetro en el centro (Y=0) */
   public override initBuffers(gl: WebGLRenderingContext): void {
     super.initBuffers(gl);
+    // Crear index buffers separados para semiesferas
+    if (this.topIndices.length > 0) {
+      this.topIndexBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.topIndexBuffer);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.topIndices), gl.STATIC_DRAW);
+      this.topIndexCount = this.topIndices.length;
+    }
+    if (this.bottomIndices.length > 0) {
+      this.bottomIndexBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.bottomIndexBuffer);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.bottomIndices), gl.STATIC_DRAW);
+      this.bottomIndexCount = this.bottomIndices.length;
+    }
     // Generar una esfera pequeña centrada en (0,0,0) en espacio objeto; el modelMatrix del planeta la escala
     const Rworld = (this as any).scale?.x ?? 1; // radio del planeta en mundo (escala X)
     const coreRobj = 50 / (Rworld || 1); // 50u en mundo -> radio en espacio objeto
@@ -319,21 +354,25 @@ export class EarthSplitPlanet extends Planet {
     if (aPos >= 0) gl.disableVertexAttribArray(aPos);
     if (aCol >= 0) gl.disableVertexAttribArray(aCol);
 
-    // Restaurar estado GL
+    // Restaurar estado GL del pase de tapas
     gl.depthMask(true);
     if (!wasBlend) gl.disable(gl.BLEND); else gl.enable(gl.BLEND);
     if (wasDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
     if (prevProgram) gl.useProgram(prevProgram as any);
 
-    // Núcleo: esfera roja simple (100u diámetro). Para hacerlo visible SIEMPRE y simple, desactivar depth test.
+    // Núcleo: esfera roja simple (100u diámetro), con depth test habilitado para respetar oclusión.
     if (this.coreVB && this.coreCB && this.coreIB && shaderManager?.basicProgram) {
       const wasBlend2 = gl.getParameter(gl.BLEND);
       const wasDepth2 = gl.getParameter(gl.DEPTH_TEST);
       const prevProg2 = gl.getParameter(gl.CURRENT_PROGRAM);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-      gl.disable(gl.DEPTH_TEST);
-      gl.depthMask(false);
+  gl.enable(gl.DEPTH_TEST);
+  // Important: write depth for the core so distant billboards behind it get occluded.
+  // Previously we left depthMask(false) which caused sprites to draw over the core through the hole.
+  gl.depthMask(true);
+      const wasCull2 = (gl as any).isEnabled ? (gl as any).isEnabled(gl.CULL_FACE) : false;
+      gl.disable(gl.CULL_FACE);
 
       const program: WebGLProgram = shaderManager.basicProgram;
       gl.useProgram(program);
@@ -359,9 +398,13 @@ export class EarthSplitPlanet extends Planet {
       gl.depthMask(true);
       if (!wasBlend2) gl.disable(gl.BLEND); else gl.enable(gl.BLEND);
       if (wasDepth2) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+      if (wasCull2) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
       if (prevProg2) gl.useProgram(prevProg2 as any);
     }
   }
+
+  // --- Gestión de texturas de hemisferio (cargadas on-demand) ---
+  // Texturas de hemisferios: se retiró el camino de renderizado directo unlit para estabilidad.
 
   /**
    * Factory to create split planet plus debris ring of MegaAsteroids along the cut.

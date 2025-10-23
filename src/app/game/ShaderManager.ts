@@ -58,6 +58,8 @@ export class ShaderManager {
     if (this.gl) {
       this.initializeShaders();
     }
+    // Exponer referencia global opcional para renderizados especializados
+    try { (window as any).shaderManagerInstance = this; } catch {}
   }
 
   /**
