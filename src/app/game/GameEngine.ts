@@ -1492,8 +1492,9 @@ export class GameEngine {
       const cdz = p.position.z - cam.position.z;
       const distCam = Math.hypot(cdx, cdy, cdz);
 
-      // LOD de sprite: a partir de 50k u, render como billboard para mayor estabilidad/ rendimiento
-      if (this.billboardRenderer && distCam >= SPRITE_LOD_DISTANCE) {
+  // LOD de sprite: a partir de 50k u, render como billboard para mayor estabilidad/ rendimiento
+  // EXCEPCIÓN: el Sol nunca usa sprite para asegurar el glow y la estabilidad de brillo
+  if (this.billboardRenderer && distCam >= SPRITE_LOD_DISTANCE && !isSun) {
         // Calcular diámetro en píxeles según tamaño angular geométrico y clamp
         const Rw = (p as any).scale?.x ?? 1;
         let diameterPx = (2 * Rw * viewportH) / (Math.max(1e-3, distCam) * fovV);
@@ -1798,12 +1799,27 @@ export class GameEngine {
       this.camera.projectionMatrix,
       this.normalMatrix
     );
+    // Iluminación de la nave: dirigir la luz desde el Sol hacia la nave si existe
+    let shipLightDir = this.lightDirection;
+    let shipLightColor = this.lightColor;
+    if (this.primarySun) {
+      const lx = this.spaceship.position.x - this.primarySun.position.x;
+      const ly = this.spaceship.position.y - this.primarySun.position.y;
+      const lz = this.spaceship.position.z - this.primarySun.position.z;
+      const len = Math.hypot(lx, ly, lz) || 1;
+      shipLightDir = new Float32Array([lx / len, ly / len, lz / len]);
+      // Luz algo más cálida para la nave
+      shipLightColor = new Float32Array([1.0, 0.95, 0.8]);
+    }
     this.shaderManager.setLighting(
-      this.lightDirection,
-      this.lightColor,
+      shipLightDir,
+      shipLightColor,
       this.ambientColor,
       this.ambientStrength
     );
+    // Habilitar iluminación a doble cara para evitar caras negras en módulos finos (alas)
+    // Usamos setPointLightLit con intensidad 0 como vector para fijar u_twoSidedLighting = 1.0
+    this.shaderManager.setPointLightLit(new Float32Array([0,0,0]), new Float32Array([0,0,0]), 0.0, 0.0, true);
 
   // Debug: before ship modules, check a_normal enabled state
   this.debugNormalAttribEnabled('before-ship-modules');
