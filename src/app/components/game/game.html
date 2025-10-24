@@ -6,7 +6,7 @@
 
 <app-modal 
   [isVisible]="!isGameRunning" 
-  [title]="'Bienvenido a AtroPELLO'" 
+  [title]="'Bienvenido a The Old & Only One'" 
   [closeOnBackdrop]="false"
   (onClose)="startGame()">
   
@@ -23,7 +23,7 @@
         </defs>
       </svg>
     </div>
-    <p class="welcome-text">Prepárate para una experiencia de juego increíble con tecnología OpenGL en tu navegador.</p>
+    <p class="welcome-text">Prepárate para una experiencia de juego increíble en el universo de H.P. Lovecraft en tu navegador.</p>
     
     <div class="controls-info">
       <h4>🎮 Controles de Vuelo</h4>
@@ -32,15 +32,18 @@
         <span>A/D: Guiñar ←/→</span>
         <span>Q/E: Alabear ↺/↻</span>
         <span>+/-: Acelerar/Frenar</span>
-        <span>F1: Debug overlay</span>
-  <span>P: Pausa</span>
-        <span>T / Shift+T: Ciclar target sig./ant.</span>
+        <span>P: Pausa</span>
+        <span>M: Mapa</span>
+        <span>L: Libro</span>
+        <span>T/Shift+T: Ciclar targets</span>
+        <span>7/8/9/0: Camaras</span>
+        <span>Ñ: Frame rate & stats</span>
       </div>
       <div class="controls-note">
-        <small>💡 Vuelo en 6 grados de libertad - Cámara fija relativa</small>
+        <small>💡 Cuida tu cordura...</small>
       </div>
     </div>
-
+<!--
     <div class="game-features">
       <div class="feature">
         <span class="feature-icon">⚡</span>
@@ -55,8 +58,9 @@
         <span>Entorno espacial inmersivo</span>
       </div>
     </div>
+-->  
   </div>
-  
+
   <div slot="footer">
     <button class="start-button" (click)="startGame()">
       <span>Comenzar Aventura</span>

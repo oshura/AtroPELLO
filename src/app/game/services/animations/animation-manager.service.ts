@@ -9,7 +9,7 @@ export class AnimationManagerService {
   private cachedVoidJumpCtor: ({ new(): GameAnimation }) | null = null;
   private flashImages: string[] = [
     '/assets/Athathoth.jpg',
-    '/assets/GreatCthulhu.webp',
+    '/assets/GreatCthulhu.jpg',
     '/assets/Nodens.webp'
   ];
   private flashIndex = 0;
