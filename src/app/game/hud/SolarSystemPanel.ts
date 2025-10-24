@@ -172,6 +172,10 @@ export class SolarSystemPanel {
     const W = this.canvas.width, H = this.canvas.height;
     const cx = W / 2, cy = H / 2;
     const margin = Math.max(16, Math.min(128, data.marginPx ?? 48));
+    // Palette
+    const planetColor = '#68a0ff';
+    const megaColor = '#e88d3a'; // shared for debris and clusters
+    const shipColor = '#32d296';
 
     // 1) Compute max radial distance in XZ plane from center
     let maxR = 1;
@@ -240,14 +244,14 @@ export class SolarSystemPanel {
   pushItem('center', 'Sol', 'center', data.center, 5, '#ffe08a');
     // Planets
     for (const p of data.planets) {
-      pushItem(p.id, p.label ?? p.id, 'planet', p.pos, 3, '#68a0ff');
+      pushItem(p.id, p.label ?? p.id, 'planet', p.pos, 3, planetColor);
     }
     // Debris
-    for (const d of data.debris) pushItem(d.id, d.label ?? d.id, 'debris', d.pos, 1.5, '#e88d3a');
+    for (const d of data.debris) pushItem(d.id, d.label ?? d.id, 'debris', d.pos, 1.5, megaColor);
     // Clusters (always included)
-    for (const cl of data.clusters) pushItem(cl.id, cl.label ?? cl.id, 'cluster', cl.center, 2.5, '#9ae6b4');
+    for (const cl of data.clusters) pushItem(cl.id, cl.label ?? cl.id, 'cluster', cl.center, 2.5, megaColor);
   // Ship (friendly green)
-  if (data.ship) pushItem('ship', data.ship.label ?? 'Ship', 'ship', data.ship.pos, 3.5, '#32d296');
+  if (data.ship) pushItem('ship', data.ship.label ?? 'Ship', 'ship', data.ship.pos, 3.5, shipColor);
 
     // 4.b) Simple outliner: draw circle stroke + label based on rules
     c.font = '12px Segoe UI, Roboto, sans-serif';

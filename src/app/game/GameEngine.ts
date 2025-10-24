@@ -339,8 +339,8 @@ export class GameEngine {
         return phi;
       };
 
-      // Especificación de filas y longitudes: [20, 40, 50, 50, 40, 20]
-      const rowsSpec = [20, 40, 50, 50, 40, 20];
+  // Especificación de filas y longitudes: fila 4 es 10 más larga que la 3 → [20, 40, 50, 60, 40, 20]
+  const rowsSpec = [20, 40, 50, 60, 40, 20];
       const maxCols = Math.max(...rowsSpec);
       const ROW_SPACING = 75; // separación lateral entre filas
       const COL_SPACING = 300; // separación a lo largo de la órbita entre clusters
@@ -364,30 +364,47 @@ export class GameEngine {
       const CLUSTER_RADIUS = 12;
       const CLUSTER_CENTER_FACTOR = 0.5;
   const FAN_FACTOR = 1.2; // 0 = sin abanico; 1.2 = 120% más ancho al final
-  const JITTER_LATERAL = 40; // variación aleatoria lateral (u)
-  const JITTER_ALONG = 60;   // variación aleatoria a lo largo (u)
-  const JITTER_Y = 5;        // pequeña variación vertical (u)
+  // Jitter base aumentado para romper alineaciones
+  const JITTER_LATERAL = 120; // variación aleatoria lateral (u)
+  const JITTER_ALONG = 180;   // variación aleatoria a lo largo (u)
+  const JITTER_Y = 80;        // variación vertical (u)
+  // Caos omnidireccional adicional alrededor del origen del clúster
+  const CHAOS_BASE = 120;     // radio mínimo de caos cerca de la Tierra
+  const CHAOS_FAR = 600;      // radio adicional hacia el extremo lejano (se escala con distancia)
 
       for (let r = 0; r < rowsSpec.length; r++) {
         const cols = rowsSpec[r];
+        // Desplazar filas cortas para que ocupen el tramo lejano (más grueso)
+        const cStart = Math.max(0, maxCols - cols);
         for (let c = 0; c < cols; c++) {
-          const phi = phiCols[c];
+          const cGlobal = cStart + c;
+          const phi = phiCols[cGlobal];
           const base = posAt(phi);
           const t = tanAt(phi); // sentido de movimiento de Earth
           const n = { x: -t.z, y: 0, z: t.x }; // normal lateral en el plano XZ
-          // Abanico: ampliar lateral en función de la columna dentro de la fila
-          const fRow = cols > 1 ? (c / (cols - 1)) : 0;
-          const spread = 1 + FAN_FACTOR * fRow;
+          // Abanico GLOBAL: poco abierto cerca de la Tierra (cGlobal≈0) y más abierto lejos (cGlobal≈maxCols-1)
+          const gFrac = (maxCols > 1) ? (cGlobal / (maxCols - 1)) : 0;
+          const spread = 1 + FAN_FACTOR * gFrac;
           const lateralBase = baseRowOffsets[r] * spread;
           // Jitter para romper la regularidad
           const jLat = (Math.random() * 2 - 1) * JITTER_LATERAL;
           const jAlong = (Math.random() * 2 - 1) * JITTER_ALONG;
           const jY = (Math.random() * 2 - 1) * JITTER_Y;
-          const center = {
+          let center = {
             x: base.x + n.x * (lateralBase + jLat) + t.x * jAlong,
             y: jY,
             z: base.z + n.z * (lateralBase + jLat) + t.z * jAlong
           };
+          // Caos omnidireccional: desplazar el origen en una dirección aleatoria 3D
+          const chaosR = CHAOS_BASE + CHAOS_FAR * gFrac;
+          const rx = Math.random() * 2 - 1;
+          const ry = Math.random() * 2 - 1;
+          const rz = Math.random() * 2 - 1;
+          const rlen = Math.hypot(rx, ry, rz) || 1;
+          const k = Math.random() * chaosR; // magnitud aleatoria hasta chaosR
+          center.x += (rx / rlen) * k;
+          center.y += (ry / rlen) * k;
+          center.z += (rz / rlen) * k;
           const dir = t; // seguir el sentido de movimiento (no invertido)
           const cluster = this.asteroidClusterService.createCluster({
             id: `trail-${r}-${c}`,
@@ -403,16 +420,17 @@ export class GameEngine {
         }
       }
 
-      // Posicionar la nave en la otra punta del rastro (extremo más lejano) y mirando hacia la Tierra
+      // Posicionar la nave en la otra punta del rastro (extremo más lejano, más grueso) y mirando hacia la Tierra
       try {
-        const cEnd = maxCols - 1; // última columna de las filas más largas
+        // Usar la última columna global (más lejana) para alinear con la parte más abierta
+        const cEnd = maxCols - 1;
         const phiEnd = phiCols[cEnd];
         const endPos = posAt(phiEnd);
         const tEnd = tanAt(phiEnd);
         const nEnd = { x: -tEnd.z, y: 0, z: tEnd.x };
         // Fila central con longitud máxima (primera coincidencia)
         const rCenter = rowsSpec.findIndex(v => v === maxCols);
-        // En el extremo final c = cols-1 -> fRow = 1 -> spread máximo
+        // Usar apertura máxima del abanico en el extremo lejano
         const spread = 1 + FAN_FACTOR * 1;
         const lateralBase = baseRowOffsets[(rCenter >= 0 ? rCenter : 2)] * spread;
         const shipPos = {
