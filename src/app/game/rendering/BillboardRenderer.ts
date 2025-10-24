@@ -100,36 +100,36 @@ export class BillboardRenderer {
     const ctx = cnv.getContext('2d')!;
     const cx = size/2, cy = size/2; const r = size*0.46;
     ctx.clearRect(0,0,size,size);
-    // draw two hemispheres separated by a small gap
+  // draw two hemispheres separated by a slightly smaller gap
     ctx.save();
     const topGrad = ctx.createRadialGradient(cx, cy - r*0.2, r*0.1, cx, cy - r*0.2, r);
     topGrad.addColorStop(0, 'rgba(120,180,255,1)');
     topGrad.addColorStop(1, 'rgba(60,90,150,1)');
     ctx.fillStyle = topGrad;
-    ctx.beginPath(); ctx.arc(cx, cy - r*0.35, r*0.9, Math.PI, 0); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy - r*0.20, r*0.9, Math.PI, 0); ctx.fill();
     const botGrad = ctx.createRadialGradient(cx, cy + r*0.2, r*0.1, cx, cy + r*0.2, r);
     botGrad.addColorStop(0, 'rgba(120,180,255,1)');
     botGrad.addColorStop(1, 'rgba(60,90,150,1)');
     ctx.fillStyle = botGrad;
-    ctx.beginPath(); ctx.arc(cx, cy + r*0.35, r*0.9, 0, Math.PI); ctx.fill();
+  ctx.beginPath(); ctx.arc(cx, cy + r*0.20, r*0.9, 0, Math.PI); ctx.fill();
     // dotted debris ring
     ctx.strokeStyle = 'rgba(200,200,200,0.9)';
     ctx.fillStyle = 'rgba(210,210,210,0.9)';
     const debrisCount = 42;
     for (let i=0;i<debrisCount;i++){
       const t = (i/debrisCount)*Math.PI*2;
-      const rr = r*1.25 + (Math.random()-0.5)*r*0.1;
+      const rr = r*1.25 + (Math.random()-0.5)*r*0.06; // tighter ring
       const x = cx + Math.cos(t)*rr;
-      const y = cy + Math.sin(t)*rr*0.7; // elliptical hint
+      const y = cy + Math.sin(t)*rr*0.55; // less vertical dispersion
       const s = 1 + Math.random()*1.5;
       ctx.beginPath(); ctx.arc(x,y,s,0,Math.PI*2); ctx.fill();
     }
     // emphasize a few mega-asteroids as larger bright points
     for (let i=0;i<6;i++){
       const t = Math.random()*Math.PI*2;
-      const rr = r*1.25 + (Math.random()-0.5)*r*0.08;
+      const rr = r*1.25 + (Math.random()-0.5)*r*0.045; // tighter mega-asteroids
       const x = cx + Math.cos(t)*rr;
-      const y = cy + Math.sin(t)*rr*0.7;
+      const y = cy + Math.sin(t)*rr*0.55;
       const s = 2.5 + Math.random()*2.0; // larger
       // soft glow: draw a faint outer circle first
       const grad = ctx.createRadialGradient(x,y,0, x,y,s*2.2);

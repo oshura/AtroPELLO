@@ -7,6 +7,8 @@ import { MegaAsteroid } from './MegaAsteroid';
  * and optional mega-asteroid debris ring around the equator (XZ plane).
  */
 export class EarthSplitPlanet extends Planet {
+  // Feature flags
+  private readonly enableCoreLightning: boolean = false; // disable simple core lightning; keep storm shell
   // Nota: initGeometry es llamado desde el constructor de GameObject (super),
   // por lo que NUNCA dependas de campos inicializados en este constructor.
   // Usa this.scale.x para el radio y provee un valor por defecto para separation.
@@ -51,10 +53,14 @@ export class EarthSplitPlanet extends Planet {
     this.planetType = PlanetType.Tierra;
     // Asignar separación solicitada (initGeometry ya se ejecutó, pero volveremos a aplicar colores más abajo)
     this.separation = Math.max(0, separation);
+    // Reconstruir geometría con la separación final (super() ya ejecutó initGeometry con el valor por defecto)
+    this.initGeometry();
     // Reapply layered per-vertex colors overriding the uniform colors set by base constructor
     if (this.layeredColors) {
       this.colors = this.layeredColors;
     }
+    // Recalcular bounding sphere acorde a la nueva geometría
+    (this as any).computeBoundingSphere?.();
   }
 
   /** Build two hemispheres (+caps) with layered colors on the cut plane (horizontal split along Y) */
@@ -281,25 +287,30 @@ export class EarthSplitPlanet extends Planet {
         this.stormNextFlashCooldown = 0.6 + Math.random() * 0.8; // try again soon
       }
     }
-    // Update existing bursts lifetimes
-    if (this.lightningBursts.length) {
-      this.lightningBursts = this.lightningBursts.filter(b => {
-        b.elapsed += deltaTime;
-        return b.elapsed < b.total;
-      });
-    }
-    // Spawn logic: brief windows producing 1-2 bursts
-    this.lightningSpawnCooldown -= deltaTime;
-    if (this.lightningSpawnCooldown <= 0) {
-      // Much less frequent spawns; arcs last ~3.5s total
-      const spawnNow = Math.random() < 0.25;
-      if (spawnNow && this.lightningBursts.length < 4) {
-        this.spawnLightningBurst();
-        // Next window in 1.2..2.4s
-        this.lightningSpawnCooldown = 1.2 + Math.random() * 1.2;
-      } else {
-        this.lightningSpawnCooldown = 0.4 + Math.random() * 0.6;
+    if (this.enableCoreLightning) {
+      // Update existing bursts lifetimes
+      if (this.lightningBursts.length) {
+        this.lightningBursts = this.lightningBursts.filter(b => {
+          b.elapsed += deltaTime;
+          return b.elapsed < b.total;
+        });
       }
+      // Spawn logic: brief windows producing 1-2 bursts
+      this.lightningSpawnCooldown -= deltaTime;
+      if (this.lightningSpawnCooldown <= 0) {
+        // Much less frequent spawns; arcs last ~3.5s total
+        const spawnNow = Math.random() < 0.25;
+        if (spawnNow && this.lightningBursts.length < 4) {
+          this.spawnLightningBurst();
+          // Next window in 1.2..2.4s
+          this.lightningSpawnCooldown = 1.2 + Math.random() * 1.2;
+        } else {
+          this.lightningSpawnCooldown = 0.4 + Math.random() * 0.6;
+        }
+      }
+    } else {
+      // Ensure nothing lingers if disabled
+      if (this.lightningBursts.length) this.lightningBursts.length = 0;
     }
   }
 
@@ -529,8 +540,10 @@ export class EarthSplitPlanet extends Planet {
       if (prevProg2) gl.useProgram(prevProg2 as any);
     }
 
-    // Lightning sparks over core surface (additive glow quads)
-    this.renderCoreLightning(gl as unknown as WebGL2RenderingContext, shaderManager, viewMatrix, projectionMatrix);
+    // Lightning sparks over core surface disabled (kept for reference behind flag)
+    if (this.enableCoreLightning) {
+      this.renderCoreLightning(gl as unknown as WebGL2RenderingContext, shaderManager, viewMatrix, projectionMatrix);
+    }
     // Procedural storm shell around the core (procedural veins)
     this.renderStormShell(gl as unknown as WebGL2RenderingContext, shaderManager, viewMatrix, projectionMatrix);
   }
@@ -743,13 +756,17 @@ export class EarthSplitPlanet extends Planet {
       for (let i = 0; i < count; i++) {
         const t = Math.random() * 2 * Math.PI;
         const mul = rangeMin + Math.random() * (rangeMax - rangeMin);
+        // Reduce radial jitter a bit to keep the belt tighter
         const r = R * mul * (1 + (Math.random() - 0.5) * jitter);
         const x = Math.cos(t) * r;
         const z = Math.sin(t) * r;
         // Dispersión vertical entre hemisferios: más grueso cerca, delgado lejos
         const sep = separation;
         const maxHalf = sep * 0.5; // límite natural entre hemisferios
-        const amp = Math.min(maxHalf, sep * thicknessFactor) * (0.6 + Math.random() * 0.4);
+        // Mantener los mega-asteroides lejos de intersecar semiesferas: limitar banda vertical
+        const safetyMargin = Math.min(12, maxHalf * 0.08); // margen en unidades mundo
+        const baseAmp = Math.max(0, Math.min(maxHalf - safetyMargin, sep * thicknessFactor));
+        const amp = baseAmp * (0.55 + Math.random() * 0.35); // menos dispersión vertical
         const yOffset = (Math.random() < 0.5 ? -1 : 1) * (Math.random() * amp);
         const pos: Vector3 = { x: initialPos.x + x, y: initialPos.y + yOffset, z: initialPos.z + z };
         // Slightly smaller base sizes for large counts; MegaAsteroid constructor multiplies x5
@@ -758,12 +775,12 @@ export class EarthSplitPlanet extends Planet {
       }
     };
 
-    // Dense inner belt hugging the cut
-    addBelt(nNear, 0.9, 1.15, 0.10, 'near', 0.45);
+    // Dense inner belt hugging the cut (menos disperso)
+    addBelt(nNear, 0.9, 1.15, 0.06, 'near', 0.30);
     // Medium belt hinting ejection
-    addBelt(nMid, 1.4, 1.9, 0.20, 'mid', 0.25);
+    addBelt(nMid, 1.4, 1.9, 0.12, 'mid', 0.18);
     // Far scattered ejecta
-    addBelt(nFar, 2.1, 2.8, 0.35, 'far', 0.10);
+    addBelt(nFar, 2.1, 2.8, 0.20, 'far', 0.08);
     return { planet, debris };
   }
 }

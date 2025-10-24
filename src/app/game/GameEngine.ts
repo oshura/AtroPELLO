@@ -1309,7 +1309,8 @@ export class GameEngine {
           y: 0,
           z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
         };
-  const created = EarthSplitPlanet.createWithDebris(`planet-earth`, 'azul_marino', radius, pos, 500, 320);
+  // Bring hemispheres 75u closer each (reduce gap by 150u): 300 → 150
+  const created = EarthSplitPlanet.createWithDebris(`planet-earth`, 'azul_marino', radius, pos, 150, 320);
   planetObj = created.planet;
   planetObj.customName = 'Earth';
         planetObj.probabilityOfLifePct = 100;
