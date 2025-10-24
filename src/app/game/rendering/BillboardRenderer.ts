@@ -28,7 +28,7 @@ export class BillboardRenderer {
       void main(){\n        v_uv = a_uv;\n        gl_Position = u_proj * u_view * vec4(a_pos, 1.0);\n      }`;
     const fsSrc = `#version 300 es\nprecision mediump float;\n
       in vec2 v_uv;\nout vec4 frag;\nuniform sampler2D u_tex;\nuniform vec4 u_tint;\n
-      void main(){\n        vec4 tex = texture(u_tex, v_uv);\n        frag = tex * u_tint;\n      }`;
+      void main(){\n        vec4 tex = texture(u_tex, v_uv);\n        // Descartar fragmentos casi transparentes para evitar halos y depth punch-through visual\n        if (tex.a * u_tint.a < 0.01) { discard; }\n        frag = tex * u_tint;\n      }`;
     const vs = gl.createShader(gl.VERTEX_SHADER)!; gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
     const fs = gl.createShader(gl.FRAGMENT_SHADER)!; gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
     const prog = gl.createProgram()!; gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
@@ -81,14 +81,16 @@ export class BillboardRenderer {
     const ctx = cnv.getContext('2d')!;
     ctx.clearRect(0,0,size,size);
     const cx = size/2, cy = size/2, r = size*0.46;
-    // soft edge circle with slight limb darkening
-    const grad = ctx.createRadialGradient(cx, cy, r*0.2, cx, cy, r);
+    // Soft edge circle with slight limb darkening and alpha falloff at the rim
+    const grad = ctx.createRadialGradient(cx, cy, r*0.15, cx, cy, r*1.02);
     // convert hex to rgb
     const rgb = this.hexToRgb(hex) || { r: 200, g: 200, b: 200 };
     const c1 = `rgba(${rgb.r},${rgb.g},${rgb.b},1)`;
-    const c2 = `rgba(${Math.round(rgb.r*0.6)},${Math.round(rgb.g*0.6)},${Math.round(rgb.b*0.6)},1)`;
-    grad.addColorStop(0, c1);
-    grad.addColorStop(1, c2);
+    const cMid = `rgba(${Math.round(rgb.r*0.75)},${Math.round(rgb.g*0.75)},${Math.round(rgb.b*0.75)},0.95)`;
+    const cEdge = `rgba(${Math.round(rgb.r*0.6)},${Math.round(rgb.g*0.6)},${Math.round(rgb.b*0.6)},0.0)`;
+    grad.addColorStop(0.0, c1);
+    grad.addColorStop(0.85, cMid);
+    grad.addColorStop(1.0, cEdge);
     ctx.fillStyle = grad;
     ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
     return this.uploadCanvasTexture(cnv);
@@ -124,7 +126,7 @@ export class BillboardRenderer {
       const s = 1 + Math.random()*1.5;
       ctx.beginPath(); ctx.arc(x,y,s,0,Math.PI*2); ctx.fill();
     }
-    // emphasize a few mega-asteroids as larger bright points
+  // emphasize a few mega-asteroids as larger bright points
     for (let i=0;i<6;i++){
       const t = Math.random()*Math.PI*2;
       const rr = r*1.25 + (Math.random()-0.5)*r*0.045; // tighter mega-asteroids
@@ -141,6 +143,15 @@ export class BillboardRenderer {
       ctx.fillStyle = 'rgba(255,255,255,0.95)';
       ctx.beginPath(); ctx.arc(x,y,s,0,Math.PI*2); ctx.fill();
     }
+    ctx.restore();
+    // Apply a soft circular alpha mask so the sprite has a transparent contour
+    ctx.save();
+    ctx.globalCompositeOperation = 'destination-in';
+    const mask = ctx.createRadialGradient(cx, cy, r*0.85, cx, cy, r*1.02);
+    mask.addColorStop(0.0, 'rgba(255,255,255,1)');
+    mask.addColorStop(1.0, 'rgba(255,255,255,0)');
+    ctx.fillStyle = mask;
+    ctx.fillRect(0,0,size,size);
     ctx.restore();
     return this.uploadCanvasTexture(cnv);
   }
@@ -204,9 +215,11 @@ export class BillboardRenderer {
     // Render
     const wasBlend = gl.isEnabled(gl.BLEND);
     gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthMask(true);
+  const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
+  gl.enable(gl.DEPTH_TEST);
+  // For transparent billboards, do not write depth to avoid square occlusion artifacts
+  const prevDepthMask = gl.getParameter(gl.DEPTH_WRITEMASK) as boolean;
+  gl.depthMask(false);
 
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
@@ -226,6 +239,7 @@ export class BillboardRenderer {
     gl.bindVertexArray(null);
     if (!wasBlend) gl.disable(gl.BLEND);
     if (!wasDepth) gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(prevDepthMask);
   }
 
   // No-op helper retained for potential future usage
