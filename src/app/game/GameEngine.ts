@@ -1403,14 +1403,21 @@ export class GameEngine {
       if (debris && debris.length) {
         const cosY = Math.cos(p.rotation.y || 0);
         const sinY = Math.sin(p.rotation.y || 0);
+        // Axial tilt (around Z) to incline the debris belt with the planet's axis
+        const tilt = (p as any).axialTiltRad || 0;
+        const cT = Math.cos(tilt);
+        const sT = Math.sin(tilt);
         for (const d of debris) {
-          const lx = d.local.x, lz = d.local.z;
-          // Rotar el offset local alrededor del eje Y para que roten con el planeta
-          const rx = lx * cosY - lz * sinY;
-          const rz = lx * sinY + lz * cosY;
-          d.obj.position.x = p.position.x + rx;
-          d.obj.position.y = p.position.y + d.local.y;
-          d.obj.position.z = p.position.z + rz;
+          const lx = d.local.x, ly = d.local.y, lz = d.local.z;
+          // 1) Rotación de spin alrededor de Y (espacio del planeta)
+          const rxY = lx * cosY - lz * sinY;
+          const rzY = lx * sinY + lz * cosY;
+          // 2) Aplicar inclinación axial alrededor de Z para inclinar el cinturón
+          const rxZ = cT * rxY - sT * ly;
+          const ryZ = sT * rxY + cT * ly;
+          d.obj.position.x = p.position.x + rxZ;
+          d.obj.position.y = p.position.y + ryZ;
+          d.obj.position.z = p.position.z + rzY;
           d.obj.updateModelMatrix();
           if (d.obj.boundingSphere) d.obj.boundingSphere.center = { ...d.obj.position } as any;
         }

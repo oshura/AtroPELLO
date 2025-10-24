@@ -28,6 +28,9 @@ export class Planet extends GameObject implements ITargetable {
   public orbitAngle: number = 0;    // theta
   public orbitOrientation: number = 0; // rotation of ellipse in XZ
   public orbitAngularSpeed: number = 0.00002; // rad/sec
+  // Axial tilt (radians): applied as a fixed pre-rotation so the spin axis is inclined
+  // Default ~23.44° like Earth, applied to all planets (can be set to 0 for specific types if desired)
+  public axialTiltRad: number = (23.44 * Math.PI) / 180;
 
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
     super(id, initialPos, { x: 0, y: 0, z: 0 }, { x: radius, y: radius, z: radius });
@@ -45,6 +48,27 @@ export class Planet extends GameObject implements ITargetable {
   public getDisplayName(): string { return this.customName ?? `Planet ${this.baseColorName}`; }
   public getTargetType(): TargetType { return TargetType.PLANET; }
   public isActive(): boolean { return this.active; }
+
+  /**
+   * Override: include axial tilt before applying dynamic rotations (X→Y→Z).
+   * This keeps the spin axis inclined by axialTiltRad relative to world Y.
+   */
+  public override updateModelMatrix(): void {
+    // Reset
+    this.identityMatrix(this.modelMatrix);
+    // Translate to world position
+    this.translate(this.modelMatrix, this.position.x, this.position.y, this.position.z);
+    // Apply fixed axial tilt around Z so axis leans toward +X (Z choice is arbitrary but consistent)
+    if (this.axialTiltRad) {
+      this.rotateZ(this.modelMatrix, this.axialTiltRad);
+    }
+    // Apply intrinsic rotations in stable order
+    this.rotateX(this.modelMatrix, this.rotation.x);
+    this.rotateY(this.modelMatrix, this.rotation.y);
+    this.rotateZ(this.modelMatrix, this.rotation.z);
+    // Scale
+    this.scaleMatrix(this.modelMatrix, this.scale.x, this.scale.y, this.scale.z);
+  }
 
   protected initGeometry(): void {
     // Generate a unit sphere (radius 1) with lat/long, we will scale with this.scale
