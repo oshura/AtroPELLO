@@ -423,8 +423,24 @@ export class GameEngine {
         this.spaceship.position.x = shipPos.x;
         this.spaceship.position.y = shipPos.y;
         this.spaceship.position.z = shipPos.z;
-        // Orientar la nave hacia la Tierra
-        this.spaceship.lookAt({ x: earth.position.x, y: earth.position.y, z: earth.position.z });
+        // Orientar la nave 90° respecto a la dirección hacia la Tierra (no mirar directamente)
+        const fx = earth.position.x - shipPos.x;
+        const fy = earth.position.y - shipPos.y;
+        const fz = earth.position.z - shipPos.z;
+        const fl = Math.max(1e-6, Math.hypot(fx, fy, fz));
+        // up mundial
+        const ux = 0, uy = 1, uz = 0;
+        // right = normalize(up × fwd)
+        const rx = uy * fz - uz * fy;
+        const ry = uz * fx - ux * fz;
+        const rz = ux * fy - uy * fx;
+        const rl = Math.max(1e-6, Math.hypot(rx, ry, rz));
+        const perpTarget = {
+          x: shipPos.x + rx / rl,
+          y: shipPos.y + ry / rl,
+          z: shipPos.z + rz / rl,
+        };
+        this.spaceship.lookAt(perpTarget);
         this.spaceship.updateModelMatrix();
       } catch {}
     } else {
