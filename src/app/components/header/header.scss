@@ -43,6 +43,22 @@
   gap: 12px;
 }
 
+.header-center {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 200px;
+  pointer-events: none; // purely decorative
+}
+
+.pearl-title {
+  max-width: 100%;
+  height: auto;
+  opacity: 0.95;
+  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.25));
+}
+
 .nav-button {
   padding: 8px 16px;
   border-radius: 6px;
