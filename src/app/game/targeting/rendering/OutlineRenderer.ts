@@ -617,7 +617,8 @@ export class OutlineRenderer {
       const planetClass = String(anyT.planetType || '').toLowerCase();
       const isGiantPlanet = isPlanet && planetClass === 'giant';
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
-  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : this.typeToLabel(target.getTargetType?.());
+  const isRinged = (String((target as any)?.planetType || '').toLowerCase() === 'ringed');
+  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : (isRinged ? 'Ringed' : this.typeToLabel(target.getTargetType?.()));
       // Distance label should be relative to the provided origin (e.g., ship center)
       const dOx = target.position.x - originPos.x;
       const dOy = target.position.y - originPos.y;
@@ -854,7 +855,8 @@ export class OutlineRenderer {
       if (!scr || scr.w <= 0) continue; // detrás de cámara
       // Crear/actualizar textura de label
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
-  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : this.typeToLabel(target.getTargetType?.());
+  const isRinged2 = (String((target as any)?.planetType || '').toLowerCase() === 'ringed');
+  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : (isRinged2 ? 'Ringed' : this.typeToLabel(target.getTargetType?.()));
       // Distancia para etiqueta: respecto al origen compartido (p.ej. centro de la nave)
       const anyT: any = target as any;
       let rEdge = 0;

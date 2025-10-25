@@ -23,9 +23,10 @@ import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
-import { Planet, PlanetColorName } from './Planet';
+import { Planet, PlanetColorName, PlanetType } from './Planet';
 import { GaseousPlanet } from './GaseousPlanet';
 import { GiantPlanet } from './GiantPlanet';
+import { RingedPlanet } from './RingedPlanet';
 import { Sun } from './Sun';
 import { EarthSplitPlanet } from './EarthSplitPlanet';
 import { MegaAsteroid } from './MegaAsteroid';
@@ -862,7 +863,8 @@ export class GameEngine {
   const voidMass = (selected as any).voidMassUnits ?? 0;
   // Mostrar etiqueta explícita para SuperAsteroid en el HUD
   const isSuper = (selected instanceof SuperAsteroid);
-  const typeLabel = isSuper ? 'SuperAsteroid' : this.typeToLabel(selType);
+  const isRinged = ((selected as any)?.planetType === PlanetType.Ringed);
+  const typeLabel = isSuper ? 'SuperAsteroid' : (isRinged ? 'Ringed' : this.typeToLabel(selType));
       // Include planet-specific hints when selected is a planet
       const planetHints = (selType === TargetType.PLANET)
         ? {
@@ -1276,7 +1278,8 @@ export class GameEngine {
             const base = (this as any)._targetDetailsCache?.[tgt.id] || this.getFallbackDetails(tgt as ITargetable);
             const tt = (tgt as ITargetable).getTargetType?.();
             const isSuper = (tgt as any)?.constructor?.name === 'SuperAsteroid';
-            const typeLabel = isSuper ? 'SuperAsteroid' : this.typeToLabel(tt);
+            const isRinged = ((tgt as any)?.planetType === PlanetType.Ringed);
+            const typeLabel = isSuper ? 'SuperAsteroid' : (isRinged ? 'Ringed' : this.typeToLabel(tt));
             const planetHints = (tt === TargetType.PLANET) ? {
               planetType: (tgt as any).planetType || (base as any)?.planetType || (tgt as any).baseColorName,
               probabilityOfLifePct: (tgt as any).probabilityOfLifePct ?? (base as any)?.probabilityOfLifePct ?? 0,
@@ -1345,10 +1348,17 @@ export class GameEngine {
       });
     }
 
-    // Índices especiales
-    const earthIdx = 2; // tercera órbita (0-based)
-    const giantIdx = 6; // lejos
-    const gaseousIdx = 8; // muy exterior
+  // Índices fijos por encargo (0-based):
+  // 0: Mercurio, 1: Venus, 2: Tierra, 3: Marte, 4: Júpiter (Giant), 5: Saturn (Ringed), 6: Urano (Gaseous), 7: Neptuno, 8: Plutón
+  const mercuryIdx = 0;
+  const venusIdx = 1;
+  const earthIdx = 2; // Tierra
+  const marsIdx = 3;
+  const jupiterIdx = 4;
+  const saturnIdx = 5;
+  const uranusIdx = 6;
+  const neptuneIdx = 7;
+  const plutoIdx = 8;
 
     // Paleta rotativa
     const colors: PlanetColorName[] = ['verde','azul_hielo','marron','gris','azul_marino','rojo_carmesi','violeta_oscuro','azul_hielo','marron'];
@@ -1360,10 +1370,34 @@ export class GameEngine {
 
       // Tipo y radio
       const color = colors[i % colors.length];
-      let radius: number;
-      let planetObj: Planet;
+  let radius: number;
+  let planetObj: Planet;
 
-      if (i === earthIdx) {
+      if (i === mercuryIdx) {
+        // Mercurio: rojo carmesí, tamaño ~ 0.5 Tierra
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        radius = 200; // mitad de 400 (Tierra)
+        planetObj = new Planet(`planet-mercury`, 'rojo_carmesi', radius, pos);
+        planetObj.customName = 'Mercurio';
+      } else if (i === venusIdx) {
+        // Venus: tono cálido/marrón
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        radius = 360; // un poco menor que Tierra
+        planetObj = new Planet(`planet-venus`, 'marron', radius, pos);
+        planetObj.customName = 'Venus';
+      } else if (i === earthIdx) {
         // Tierra en 3ª órbita con planeta dividido y anillo de mega-asteroides
         radius = 400; // tamaño medio estable (radio)
         // Calcular posición inicial sobre su elipse
@@ -1386,7 +1420,20 @@ export class GameEngine {
           arr.push({ obj: m, local });
         }
         this.planetDebris.set('planet-earth', arr);
-  } else if (i === giantIdx) {
+      } else if (i === marsIdx) {
+        // Marte: rojizo/marrón, algo menor
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        radius = 300;
+        planetObj = new Planet(`planet-mars`, 'marron', radius, pos);
+        planetObj.customName = 'Marte';
+      } else if (i === jupiterIdx) {
+        // Júpiter (Giant) en 5ª órbita, nombre fijo
         // Gigante con órbita 15% mayor (min y max efectivos)
         a = Math.round(aBase * 1.15);
         b = Math.round(bBase * 1.15);
@@ -1399,9 +1446,10 @@ export class GameEngine {
         };
         // Radio base más grande, GiantPlanet multiplica x10 internamente
         radius = 300 + Math.random() * 200; // 300..500 (antes de x10)
-  planetObj = new GiantPlanet(`planet-giant`, 'marron', radius, pos);
-  } else if (i === gaseousIdx) {
-        // Gaseoso
+        planetObj = new GiantPlanet(`planet-jupiter`, 'marron', radius, pos);
+        planetObj.customName = 'Júpiter';
+      } else if (i === saturnIdx) {
+        // Saturn (Ringed) en 6ª órbita, con anillo de mega-asteroides
         const cx = Math.cos(angle0) * a;
         const cz = Math.sin(angle0) * b;
         const pos = {
@@ -1409,8 +1457,50 @@ export class GameEngine {
           y: 0,
           z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
         };
-        radius = 350 + Math.random() * 250; // 350..600
-  planetObj = new GaseousPlanet(`planet-gaseous`, 'violeta_oscuro', radius, pos);
+        // Tamaño entre planetoide y giant, más cerca de giant
+        radius = 1800; // significativamente mayor que planetoide, menor que giant
+        planetObj = new RingedPlanet(`planet-saturn`, 'gris', radius, pos);
+        planetObj.customName = 'Saturn';
+  // Generar y registrar cinturón de mega-asteroides similar al de la Tierra
+  // Para Saturn, comprimimos la dispersión radial y el grosor vertical del anillo
+  const saturnDebris = this.createDebrisBeltForPlanet(planetObj, 280, { spreadScale: 0.45, yScale: 0.7 });
+        this.planetDebris.set(planetObj.id, saturnDebris);
+      } else if (i === uranusIdx) {
+        // Urano: gaseoso, tono azul hielo
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        radius = 1200;
+        planetObj = new GaseousPlanet(`planet-uranus`, 'azul_hielo', radius, pos);
+        planetObj.customName = 'Urano';
+      } else if (i === neptuneIdx) {
+        // Neptuno: azul marino profundo (no necesariamente gaseoso aquí)
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        radius = 1000;
+        planetObj = new Planet(`planet-neptune`, 'azul_marino', radius, pos);
+        planetObj.customName = 'Neptuno';
+      } else if (i === plutoIdx) {
+        // Plutón: pequeño, frío, gris
+        const cx = Math.cos(angle0) * a;
+        const cz = Math.sin(angle0) * b;
+        const pos = {
+          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
+          y: 0,
+          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+        };
+        radius = 80;
+        planetObj = new Planet(`planet-pluto`, 'gris', radius, pos);
+        planetObj.customName = 'Plutón';
       } else {
         // Planetoide genérico
         const cx = Math.cos(angle0) * a;
@@ -1423,6 +1513,7 @@ export class GameEngine {
         const diameter = 200 + Math.random() * 800; // 200..1000 → radio 100..500
         radius = diameter * 0.5;
         planetObj = new Planet(`planet-${i}`, color, radius, pos);
+        // Names for generic ones will be assigned by generator below
       }
 
       // Configuración de órbita común
@@ -1488,6 +1579,49 @@ export class GameEngine {
         }
       }
     }
+  }
+
+  /**
+   * Create a debris belt of MegaAsteroids around a planet, similar to Earth's but without hemisphere gap logic.
+   * Returns an array of { obj, local } entries for planetDebris.
+   */
+  private createDebrisBeltForPlanet(
+    planet: Planet,
+    totalCount: number,
+    options?: { spreadScale?: number; yScale?: number }
+  ): Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }> {
+    const arr: Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }> = [];
+    const R = Math.max(1, planet.scale.x);
+    // Escalas opcionales: spreadScale comprime el rango radial (rMax-rMin) y la aleatoriedad; yScale comprime el grosor vertical
+    const spreadScale = Math.max(0.05, Math.min(1.0, options?.spreadScale ?? 1.0));
+    const yScale = Math.max(0.05, Math.min(1.0, options?.yScale ?? 1.0));
+    // Distribute in three belts: near, mid, far
+    const nNear = Math.max(0, Math.round(totalCount * 0.55));
+    const nMid  = Math.max(0, Math.round(totalCount * 0.30));
+    const nFar  = Math.max(0, Math.max(0, totalCount - nNear - nMid));
+    const addBelt = (count: number, rMinMul: number, rMaxMul: number, jitter: number, yAmpMul: number, label: string) => {
+      for (let i = 0; i < count; i++) {
+        const t = Math.random() * Math.PI * 2;
+        // Comprimir el rango radial según spreadScale para anillos menos dispersos
+        const effectiveMax = rMinMul + (rMaxMul - rMinMul) * spreadScale;
+        const mul = rMinMul + Math.random() * Math.max(0.0001, (effectiveMax - rMinMul));
+        const r = R * mul * (1 + (Math.random() - 0.5) * (jitter * spreadScale));
+        const x = Math.cos(t) * r;
+        const z = Math.sin(t) * r;
+        // Thin vertical thickness with slight jitter; will be tilted by planet.axialTiltRad in update
+        const amp = (R * 0.02) * (yAmpMul * yScale);
+        const yOffset = (Math.random() < 0.5 ? -1 : 1) * (Math.random() * amp);
+        const pos = { x: planet.position.x + x, y: planet.position.y + yOffset, z: planet.position.z + z };
+        const size = 0.6 * (0.7 + Math.random() * 0.6);
+        const obj = new MegaAsteroid(`${planet.id}-mega-${label}-${i}`, pos, size);
+        const local = { x: pos.x - planet.position.x, y: pos.y - planet.position.y, z: pos.z - planet.position.z };
+        arr.push({ obj, local });
+      }
+    };
+    addBelt(nNear, 1.6, 2.1, 0.06, 0.35, 'near');
+    addBelt(nMid,  2.2, 2.9, 0.10, 0.22, 'mid');
+    addBelt(nFar,  3.0, 3.8, 0.14, 0.12, 'far');
+    return arr;
   }
 
   /** Renderiza planetas con LOD de shading para evitar artefactos por distancia:
