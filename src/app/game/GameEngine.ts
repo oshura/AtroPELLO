@@ -308,24 +308,51 @@ export class GameEngine {
       const ctr = earth.orbitCenter;
       const phiEarth = earth.orbitAngle;
 
-      // Utilidades para la elipse en XZ
-      const rot = (x: number, z: number) => ({
-        x: x * Math.cos(orient) - z * Math.sin(orient),
-        z: x * Math.sin(orient) + z * Math.cos(orient)
-      });
+      // Utilidades para la elipse en el PLANO ORBITAL 3D de la Tierra
+      // Base del plano: normal N y ejes en el plano U0 (semieje mayor) y V0 = N×U0 (semieje menor sin orientación)
+      const N = (() => {
+        const n = earth.orbitNormal;
+        const l = Math.hypot(n.x, n.y, n.z) || 1;
+        return { x: n.x / l, y: n.y / l, z: n.z / l };
+      })();
+      const U0 = (() => {
+        // Asegurar que U0 esté en el plano (ortogonal a N)
+        const u = earth.orbitU;
+        const dot = u.x * N.x + u.y * N.y + u.z * N.z;
+        const ux = u.x - dot * N.x;
+        const uy = u.y - dot * N.y;
+        const uz = u.z - dot * N.z;
+        const l = Math.hypot(ux, uy, uz) || 1;
+        return { x: ux / l, y: uy / l, z: uz / l };
+      })();
+      const V0 = (() => {
+        // V0 = normalize(N × U0)
+        const vx = N.y * U0.z - N.z * U0.y;
+        const vy = N.z * U0.x - N.x * U0.z;
+        const vz = N.x * U0.y - N.y * U0.x;
+        const l = Math.hypot(vx, vy, vz) || 1;
+        return { x: vx / l, y: vy / l, z: vz / l };
+      })();
+      // Aplicar orientación en el plano: U = U0*cos(o) + V0*sin(o), V = -U0*sin(o) + V0*cos(o)
+      const co = Math.cos(orient), so = Math.sin(orient);
+      const U = { x: U0.x * co + V0.x * so, y: U0.y * co + V0.y * so, z: U0.z * co + V0.z * so };
+      const V = { x: -U0.x * so + V0.x * co, y: -U0.y * so + V0.y * co, z: -U0.z * so + V0.z * co };
       const posAt = (phi: number) => {
-        const cx = Math.cos(phi) * a;
-        const cz = Math.sin(phi) * b;
-        const r = rot(cx, cz);
-        return { x: ctr.x + r.x, y: 0, z: ctr.z + r.z };
+        const c = Math.cos(phi), s = Math.sin(phi);
+        return {
+          x: ctr.x + U.x * (a * c) + V.x * (b * s),
+          y: ctr.y + U.y * (a * c) + V.y * (b * s),
+          z: ctr.z + U.z * (a * c) + V.z * (b * s)
+        };
       };
       const tanAt = (phi: number) => {
-        // d/dphi antes de rotación
-        const dx = -a * Math.sin(phi);
-        const dz = b * Math.cos(phi);
-        const r = rot(dx, dz);
-        const len = Math.hypot(r.x, r.z) || 1;
-        return { x: r.x / len, y: 0, z: r.z / len };
+        // d/dphi de la elipse en el plano: (-a*sinφ)U + (b*cosφ)V (normalizado)
+        const c = Math.cos(phi), s = Math.sin(phi);
+        let tx = U.x * (-a * s) + V.x * (b * c);
+        let ty = U.y * (-a * s) + V.y * (b * c);
+        let tz = U.z * (-a * s) + V.z * (b * c);
+        const tl = Math.hypot(tx, ty, tz) || 1;
+        return { x: tx / tl, y: ty / tl, z: tz / tl };
       };
       const speedAt = (phi: number) => Math.hypot(a * Math.sin(phi), b * Math.cos(phi));
       const phiBehindBy = (ds: number) => {
@@ -383,8 +410,12 @@ export class GameEngine {
           const cGlobal = cStart + c;
           const phi = phiCols[cGlobal];
           const base = posAt(phi);
-          const t = tanAt(phi); // sentido de movimiento de Earth
-          const n = { x: -t.z, y: 0, z: t.x }; // normal lateral en el plano XZ
+          const t = tanAt(phi); // sentido de movimiento de Earth (tangente en el plano orbital)
+          // Normal lateral en el plano orbital: s = normalize(N × t)
+          let sx = N.y * t.z - N.z * t.y;
+          let sy = N.z * t.x - N.x * t.z;
+          let sz = N.x * t.y - N.y * t.x;
+          { const sl = Math.hypot(sx, sy, sz) || 1; sx /= sl; sy /= sl; sz /= sl; }
           // Abanico GLOBAL: poco abierto cerca de la Tierra (cGlobal≈0) y más abierto lejos (cGlobal≈maxCols-1)
           const gFrac = (maxCols > 1) ? (cGlobal / (maxCols - 1)) : 0;
           const spread = 1 + FAN_FACTOR * gFrac;
@@ -394,9 +425,9 @@ export class GameEngine {
           const jAlong = (Math.random() * 2 - 1) * JITTER_ALONG;
           const jY = (Math.random() * 2 - 1) * JITTER_Y;
           let center = {
-            x: base.x + n.x * (lateralBase + jLat) + t.x * jAlong,
-            y: jY,
-            z: base.z + n.z * (lateralBase + jLat) + t.z * jAlong
+            x: base.x + sx * (lateralBase + jLat) + t.x * jAlong + N.x * jY,
+            y: base.y + sy * (lateralBase + jLat) + t.y * jAlong + N.y * jY,
+            z: base.z + sz * (lateralBase + jLat) + t.z * jAlong + N.z * jY
           };
           // Caos omnidireccional: desplazar el origen en una dirección aleatoria 3D
           const chaosR = CHAOS_BASE + CHAOS_FAR * gFrac;
@@ -430,16 +461,20 @@ export class GameEngine {
         const phiEnd = phiCols[cEnd];
         const endPos = posAt(phiEnd);
         const tEnd = tanAt(phiEnd);
-        const nEnd = { x: -tEnd.z, y: 0, z: tEnd.x };
+        // Lateral en el plano orbital para posicionar la nave
+        let sx = N.y * tEnd.z - N.z * tEnd.y;
+        let sy = N.z * tEnd.x - N.x * tEnd.z;
+        let sz = N.x * tEnd.y - N.y * tEnd.x;
+        { const sl = Math.hypot(sx, sy, sz) || 1; sx /= sl; sy /= sl; sz /= sl; }
         // Fila central con longitud máxima (primera coincidencia)
         const rCenter = rowsSpec.findIndex(v => v === maxCols);
         // Usar apertura máxima del abanico en el extremo lejano
         const spread = 1 + FAN_FACTOR * 1;
         const lateralBase = baseRowOffsets[(rCenter >= 0 ? rCenter : 2)] * spread;
         const shipPos = {
-          x: endPos.x + nEnd.x * (lateralBase + 150),
-          y: 0,
-          z: endPos.z + nEnd.z * (lateralBase + 150)
+          x: endPos.x + sx * (lateralBase + 150),
+          y: endPos.y + sy * (lateralBase + 150),
+          z: endPos.z + sz * (lateralBase + 150)
         };
         this.spaceship.position.x = shipPos.x;
         this.spaceship.position.y = shipPos.y;
@@ -1230,7 +1265,7 @@ export class GameEngine {
       if (this.primarySun) {
         this.mapIdToTarget.set('center', this.primarySun as unknown as ITargetable);
       }
-      const planets = this.planets.map(p => {
+  const planets = this.planets.map(p => {
         // Prefer Planet.getDisplayName() which already returns customName if present
         const label = (p.getDisplayName?.() || (p as any).customName || p.id);
         this.mapIdToTarget.set(p.id, p as unknown as ITargetable);
@@ -1240,6 +1275,9 @@ export class GameEngine {
           pos: { x: p.position.x, y: p.position.y, z: p.position.z },
           orbit: (p.semiMajor && p.semiMajor > 0)
             ? { center: { x: p.orbitCenter.x, y: p.orbitCenter.y, z: p.orbitCenter.z }, a: p.semiMajor, b: p.semiMinor, orient: p.orbitOrientation }
+            : undefined,
+          orbit3d: (p.semiMajor && p.semiMajor > 0)
+            ? { center: { x: p.orbitCenter.x, y: p.orbitCenter.y, z: p.orbitCenter.z }, a: p.semiMajor, b: p.semiMinor, u: { x: p.orbitU.x, y: p.orbitU.y, z: p.orbitU.z }, n: { x: p.orbitNormal.x, y: p.orbitNormal.y, z: p.orbitNormal.z }, orient: p.orbitOrientation }
             : undefined
         };
       });
@@ -1363,46 +1401,66 @@ export class GameEngine {
       let a = aBase;
       let b = bBase;
 
+      // Plano orbital ÚNICO por planeta (distinto para cada uno, pasando por el origen)
+      const deg = (v: number) => v * Math.PI / 180;
+      // Conjunto de inclinaciones con buena separación visual
+      const inclinationsDegUnique = [-20, -12, -7, -3, 0, 3, 7, 12, 20];
+      // Longitudes del nodo ascendente (Ω) variadas
+      const nodesDeg = [48.3, 76.7, 5.0, 49.6, 100.5, 113.7, 74.0, 131.8, 110.3];
+      const inc = deg(inclinationsDegUnique[Math.min(i, inclinationsDegUnique.length - 1)]);
+      const Omega = deg(nodesDeg[Math.min(i, nodesDeg.length - 1)]);
+      // Normal n = rotar (0,1,0) por inc alrededor de eje en XZ con ángulo Omega (Rodrigues)
+      const axis = { x: Math.cos(Omega), y: 0, z: Math.sin(Omega) };
+      const n0 = { x: 0, y: 1, z: 0 };
+      const c = Math.cos(inc), s = Math.sin(inc);
+      const dot_an = axis.x*n0.x + axis.y*n0.y + axis.z*n0.z; // = 0
+      const cross_an = { x: axis.y*n0.z - axis.z*n0.y, y: axis.z*n0.x - axis.x*n0.z, z: axis.x*n0.y - axis.y*n0.x };
+      const n = this.normalize({
+        x: n0.x * c + cross_an.x * s + axis.x * dot_an * (1 - c),
+        y: n0.y * c + cross_an.y * s + axis.y * dot_an * (1 - c),
+        z: n0.z * c + cross_an.z * s + axis.z * dot_an * (1 - c),
+      });
+      // u0 = proyección de X al plano (fallback a Z si degenera)
+      const ref = { x: 1, y: 0, z: 0 };
+      const dotRN = ref.x*n.x + ref.y*n.y + ref.z*n.z;
+      let u0 = { x: ref.x - dotRN*n.x, y: ref.y - dotRN*n.y, z: ref.z - dotRN*n.z };
+      if (Math.hypot(u0.x, u0.y, u0.z) < 1e-6) u0 = { x: 0, y: 0, z: 1 };
+      u0 = this.normalize(u0);
+      // v0 = n × u0
+      let v0 = { x: n.y*u0.z - n.z*u0.y, y: n.z*u0.x - n.x*u0.z, z: n.x*u0.y - n.y*u0.x };
+      v0 = this.normalize(v0);
+      // Aplicar orientación en el plano (compatibilidad con orbitOrientation)
+      const co = Math.cos(orient), so = Math.sin(orient);
+      const uR = { x: u0.x*co + v0.x*so, y: u0.y*co + v0.y*so, z: u0.z*co + v0.z*so };
+      const vR = { x: -u0.x*so + v0.x*co, y: -u0.y*so + v0.y*co, z: -u0.z*so + v0.z*co };
+      const ct = Math.cos(angle0), st = Math.sin(angle0);
+      const pos = {
+        x: center.x + uR.x * (a * ct) + vR.x * (b * st),
+        y: center.y + uR.y * (a * ct) + vR.y * (b * st),
+        z: center.z + uR.z * (a * ct) + vR.z * (b * st),
+      };
+
       // Tipo y radio
       const color = colors[i % colors.length];
-  let radius: number;
-  let planetObj: Planet;
+      let radius: number;
+      let planetObj: Planet;
 
       if (i === mercuryIdx) {
   // Mercurio: rojo carmesí, tamaño ~ 0.5 Tierra (clasificado como Dwarf)
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
-        const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
-        };
+        // pos precomputada en su plano orbital
         radius = 200; // mitad de 400 (Tierra)
   planetObj = new DwarfPlanet(`planet-mercury`, 'rojo_carmesi', radius, pos);
         planetObj.customName = 'Mercurio';
       } else if (i === venusIdx) {
         // Venus: tono cálido/marrón
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
-        const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
-        };
+        // pos precomputada en su plano orbital
         radius = 360; // un poco menor que Tierra
         planetObj = new Planet(`planet-venus`, 'marron', radius, pos);
         planetObj.customName = 'Venus';
       } else if (i === earthIdx) {
         // Tierra en 3ª órbita con planeta dividido y anillo de mega-asteroides
         radius = 400; // tamaño medio estable (radio)
-        // Calcular posición inicial sobre su elipse
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
-        const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
-        };
+        // pos precomputada en su plano orbital
   // Bring hemispheres 75u closer each (reduce gap by 150u): 300 → 150
   const created = EarthSplitPlanet.createWithDebris(`planet-earth`, 'azul_marino', radius, pos, 150, 320);
   planetObj = created.planet;
@@ -1417,13 +1475,7 @@ export class GameEngine {
         this.planetDebris.set('planet-earth', arr);
       } else if (i === marsIdx) {
         // Marte: rojizo/marrón, algo menor
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
-        const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
-        };
+        // pos precomputada en su plano orbital
         radius = 300;
         planetObj = new Planet(`planet-mars`, 'marron', radius, pos);
         planetObj.customName = 'Marte';
@@ -1432,12 +1484,12 @@ export class GameEngine {
         // Gigante con órbita 15% mayor (min y max efectivos)
         a = Math.round(aBase * 1.15);
         b = Math.round(bBase * 1.15);
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
+        // Recalcular pos con nuevos a/b manteniendo mismo plano/orientación
+        const ctJ = Math.cos(angle0), stJ = Math.sin(angle0);
         const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
+          x: center.x + uR.x * (a * ctJ) + vR.x * (b * stJ),
+          y: center.y + uR.y * (a * ctJ) + vR.y * (b * stJ),
+          z: center.z + uR.z * (a * ctJ) + vR.z * (b * stJ),
         };
         // Radio base más grande, GiantPlanet multiplica x10 internamente
         radius = 300 + Math.random() * 200; // 300..500 (antes de x10)
@@ -1445,13 +1497,7 @@ export class GameEngine {
         planetObj.customName = 'Júpiter';
       } else if (i === saturnIdx) {
         // Saturn (Ringed) en 6ª órbita, con anillo de mega-asteroides
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
-        const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
-        };
+        // pos precomputada en su plano orbital
         // Tamaño entre planetoide y giant, más cerca de giant
         radius = 1800; // significativamente mayor que planetoide, menor que giant
         planetObj = new RingedPlanet(`planet-saturn`, 'gris', radius, pos);
@@ -1462,49 +1508,25 @@ export class GameEngine {
         this.planetDebris.set(planetObj.id, saturnDebris);
       } else if (i === uranusIdx) {
         // Urano: gaseoso, tono azul hielo
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
-        const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
-        };
+        // pos precomputada en su plano orbital
         radius = 1200;
         planetObj = new GaseousPlanet(`planet-uranus`, 'azul_hielo', radius, pos);
         planetObj.customName = 'Urano';
       } else if (i === neptuneIdx) {
         // Neptuno: azul marino profundo (no necesariamente gaseoso aquí)
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
-        const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
-        };
+        // pos precomputada en su plano orbital
         radius = 1000;
         planetObj = new Planet(`planet-neptune`, 'azul_marino', radius, pos);
         planetObj.customName = 'Neptuno';
       } else if (i === plutoIdx) {
   // Plutón: pequeño, frío, gris (clasificado como Protoplanet)
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
-        const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
-        };
+        // pos precomputada en su plano orbital
         radius = 80;
   planetObj = new Protoplanet(`planet-pluto`, 'gris', radius, pos);
         planetObj.customName = 'Plutón';
       } else {
         // Planetoide genérico
-        const cx = Math.cos(angle0) * a;
-        const cz = Math.sin(angle0) * b;
-        const pos = {
-          x: center.x + (cx * Math.cos(orient) - cz * Math.sin(orient)),
-          y: 0,
-          z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
-        };
+        // pos precomputada en su plano orbital
         const diameter = 200 + Math.random() * 800; // 200..1000 → radio 100..500
         radius = diameter * 0.5;
         planetObj = new Planet(`planet-${i}`, color, radius, pos);
@@ -1517,10 +1539,13 @@ export class GameEngine {
       planetObj.semiMinor = b;
       planetObj.orbitOrientation = orient;
       planetObj.orbitAngle = angle0;
+      // Guardar plano orbital ya calculado
+      planetObj.orbitNormal = n;
+      planetObj.orbitU = u0;
       // Velocidad angular orbital ~ a^{-3/2} (heurística kepler)
       planetObj.orbitAngularSpeed = 0.00003 * Math.pow(50000 / a, 1.5);
       // Rotación propia: 1 vuelta/300s
-      planetObj.angularVelocity.y = (Math.PI * 2) / 300;
+  planetObj.angularVelocity.y = (Math.PI * 2) / 300;
 
   // Assign canonical catalog-like name at construction only if not already named
   try {
@@ -1539,14 +1564,37 @@ export class GameEngine {
       // Mantener ángulo en rango
       if (p.orbitAngle > Math.PI * 2) p.orbitAngle -= Math.PI * 2;
       if (p.orbitAngle < 0) p.orbitAngle += Math.PI * 2;
-      const cx = Math.cos(p.orbitAngle) * p.semiMajor;
-      const cz = Math.sin(p.orbitAngle) * p.semiMinor;
-      // Rotar el punto de la elipse por la orientación
-      const x = cx * Math.cos(p.orbitOrientation) - cz * Math.sin(p.orbitOrientation);
-      const z = cx * Math.sin(p.orbitOrientation) + cz * Math.cos(p.orbitOrientation);
-      p.position.x = p.orbitCenter.x + x;
-      p.position.y = 0;
-      p.position.z = p.orbitCenter.z + z;
+      // Elipse en el plano local: r = uR * (a cos t) + vR * (b sin t)
+      // 1) Asegurar base ortonormal del plano
+      const n0 = this.normalize({ x: p.orbitNormal.x, y: p.orbitNormal.y, z: p.orbitNormal.z });
+      // Proyectar orbitU al plano y normalizar; fallback si degenerado
+      const dotUN = (p.orbitU.x * n0.x + p.orbitU.y * n0.y + p.orbitU.z * n0.z);
+      let u0 = { x: p.orbitU.x - dotUN * n0.x, y: p.orbitU.y - dotUN * n0.y, z: p.orbitU.z - dotUN * n0.z };
+      const lenU0 = Math.hypot(u0.x, u0.y, u0.z);
+      if (lenU0 < 1e-6) {
+        // Elegir un vector arbitrario no paralelo a n0
+        const w = Math.abs(n0.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+        // u0 = normalize(w - (w·n) n)
+        const dotWN = (w.x*n0.x + w.y*n0.y + w.z*n0.z);
+        u0 = { x: w.x - dotWN*n0.x, y: w.y - dotWN*n0.y, z: w.z - dotWN*n0.z };
+      }
+      u0 = this.normalize(u0);
+      // v = n × u
+      let v0 = { x: n0.y*u0.z - n0.z*u0.y, y: n0.z*u0.x - n0.x*u0.z, z: n0.x*u0.y - n0.y*u0.x };
+      v0 = this.normalize(v0);
+      // 2) Aplicar rotación en el plano por orbitOrientation (mantener compatibilidad)
+      const co = Math.cos(p.orbitOrientation || 0);
+      const so = Math.sin(p.orbitOrientation || 0);
+      const uR = { x: u0.x*co + v0.x*so, y: u0.y*co + v0.y*so, z: u0.z*co + v0.z*so };
+      const vR = { x: -u0.x*so + v0.x*co, y: -u0.y*so + v0.y*co, z: -u0.z*so + v0.z*co };
+      // 3) Posición global
+      const ct = Math.cos(p.orbitAngle), st = Math.sin(p.orbitAngle);
+      const rx = uR.x * (p.semiMajor * ct) + vR.x * (p.semiMinor * st);
+      const ry = uR.y * (p.semiMajor * ct) + vR.y * (p.semiMinor * st);
+      const rz = uR.z * (p.semiMajor * ct) + vR.z * (p.semiMinor * st);
+      p.position.x = p.orbitCenter.x + rx;
+      p.position.y = p.orbitCenter.y + ry;
+      p.position.z = p.orbitCenter.z + rz;
   // Integrar rotación propia con dt y actualizar matrices
   p.update(dt);
       // Mover debris asociados (si existen), manteniendo su offset local y rotándolos con la Tierra

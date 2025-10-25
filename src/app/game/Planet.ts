@@ -28,6 +28,10 @@ export class Planet extends GameObject implements ITargetable {
   public orbitAngle: number = 0;    // theta
   public orbitOrientation: number = 0; // rotation of ellipse in XZ
   public orbitAngularSpeed: number = 0.00002; // rad/sec
+  // Generalized orbit plane: unit normal and in-plane major-axis direction (u)
+  // Default keeps previous behavior: plane normal = +Y (XZ plane) and u along +X
+  public orbitNormal: Vector3 = { x: 0, y: 1, z: 0 };
+  public orbitU: Vector3 = { x: 1, y: 0, z: 0 };
   // Axial tilt (radians): applied as a fixed pre-rotation so the spin axis is inclined
   // Default ~23.44° like Earth, applied to all planets (can be set to 0 for specific types if desired)
   public axialTiltRad: number = (23.44 * Math.PI) / 180;

@@ -164,7 +164,13 @@ export class SolarSystemPanel {
    */
   public updateMap(data: {
     center: Vector3;
-    planets: Array<{ id: string; pos: Vector3; label?: string; orbit?: { center: Vector3; a: number; b: number; orient: number } }>;
+    planets: Array<{
+      id: string;
+      pos: Vector3;
+      label?: string;
+      orbit?: { center: Vector3; a: number; b: number; orient: number };
+      orbit3d?: { center: Vector3; a: number; b: number; u: Vector3; n: Vector3; orient: number };
+    }>;
     clusters: Array<{ id: string; center: Vector3; label?: string }>; // always included regardless of gameplay culling
     debris: Array<{ id: string; pos: Vector3; label?: string }>; // e.g., Earth mega-asteroids
     ship?: { pos: Vector3; label?: string };
@@ -180,6 +186,16 @@ export class SolarSystemPanel {
     const planetColor = '#68a0ff';
     const megaColor = '#e88d3a'; // shared for debris and clusters
     const shipColor = '#32d296';
+
+  // Local vector math helpers (for orbit projection)
+  const len = (v: Vector3) => Math.hypot(v.x, v.y, v.z);
+  const norm = (v: Vector3) => { const L = len(v) || 1; return { x: v.x/L, y: v.y/L, z: v.z/L }; };
+  const dot = (a: Vector3, b: Vector3) => a.x*b.x + a.y*b.y + a.z*b.z;
+  const sub = (a: Vector3, b: Vector3) => ({ x: a.x-b.x, y: a.y-b.y, z: a.z-b.z });
+  const addV = (a: Vector3, b: Vector3) => ({ x: a.x+b.x, y: a.y+b.y, z: a.z+b.z });
+  const scaleV = (v: Vector3, s: number) => ({ x: v.x*s, y: v.y*s, z: v.z*s });
+  const cross = (a: Vector3, b: Vector3) => ({ x: a.y*b.z - a.z*b.y, y: a.z*b.x - a.x*b.z, z: a.x*b.y - a.y*b.x });
+  const projectToPlane = (v: Vector3, n: Vector3) => { const d = dot(v, n); return { x: v.x - d*n.x, y: v.y - d*n.y, z: v.z - d*n.z }; };
 
     // 1) Compute max radial distance in XZ plane from center
     let maxR = 1;
@@ -206,24 +222,48 @@ export class SolarSystemPanel {
     c.strokeStyle = 'rgba(160,180,220,0.55)';
     c.lineWidth = 1;
     for (const p of data.planets) {
-      if (!p.orbit) continue;
-      const oc = p.orbit.center;
-      const a = p.orbit.a; const b = p.orbit.b; const ang = p.orbit.orient;
-      // Sample ellipse with 256 points
-      c.beginPath();
-      const cosA = Math.cos(ang), sinA = Math.sin(ang);
-      for (let i = 0; i <= 256; i++) {
-        const t = (i / 256) * Math.PI * 2;
-        const ex = Math.cos(t) * a;
-        const ez = Math.sin(t) * b;
-        // Rotate by orient and translate
-        const rx = ex * cosA - ez * sinA; const rz = ex * sinA + ez * cosA;
-        const worldX = oc.x + rx; const worldZ = oc.z + rz;
-        const px = cx + (worldX - data.center.x) * s + this.tx;
-        const py = cy - (worldZ - data.center.z) * s + this.ty;
-        if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+      const segs = 256;
+      if (p.orbit3d) {
+        const oc = p.orbit3d.center; const a = p.orbit3d.a; const b = p.orbit3d.b; const ang = p.orbit3d.orient || 0;
+        // Build in-plane basis (u,v) and rotate by orient
+        const n0 = norm(p.orbit3d.n);
+        let u0 = projectToPlane(p.orbit3d.u, n0);
+        if (len(u0) < 1e-6) u0 = projectToPlane({ x: 1, y: 0, z: 0 }, n0);
+        u0 = norm(u0);
+        let v0 = cross(n0, u0); v0 = norm(v0);
+        const co = Math.cos(ang), so = Math.sin(ang);
+        const uR = addV(scaleV(u0, co), scaleV(v0, so));
+        const vR = addV(scaleV(u0, -so), scaleV(v0, co));
+        c.beginPath();
+        for (let i = 0; i <= segs; i++) {
+          const t = (i / segs) * Math.PI * 2;
+          const ct = Math.cos(t), st = Math.sin(t);
+          const wx = oc.x + uR.x * (a * ct) + vR.x * (b * st);
+          const wz = oc.z + uR.z * (a * ct) + vR.z * (b * st);
+          const px = cx + (wx - data.center.x) * s + this.tx;
+          const py = cy - (wz - data.center.z) * s + this.ty;
+          if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+        }
+        c.stroke();
+      } else if (p.orbit) {
+        const oc = p.orbit.center;
+        const a = p.orbit.a; const b = p.orbit.b; const ang = p.orbit.orient;
+        // Sample ellipse with 256 points
+        c.beginPath();
+        const cosA = Math.cos(ang), sinA = Math.sin(ang);
+        for (let i = 0; i <= segs; i++) {
+          const t = (i / segs) * Math.PI * 2;
+          const ex = Math.cos(t) * a;
+          const ez = Math.sin(t) * b;
+          // Rotate by orient and translate
+          const rx = ex * cosA - ez * sinA; const rz = ex * sinA + ez * cosA;
+          const worldX = oc.x + rx; const worldZ = oc.z + rz;
+          const px = cx + (worldX - data.center.x) * s + this.tx;
+          const py = cy - (worldZ - data.center.z) * s + this.ty;
+          if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+        }
+        c.stroke();
       }
-      c.stroke();
     }
 
     // 4) Draw objects and accumulate interactive items with screen positions
