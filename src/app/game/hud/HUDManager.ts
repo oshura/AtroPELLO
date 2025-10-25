@@ -96,11 +96,16 @@ export class HUDManager {
     roll: number;
     altitude: number;
     speed: number;
+    maxSpeed?: number;
     position?: { x: number; y: number; z: number };
     voidEnergy?: { current: number; max: number; pct: number };
     weapons?: any[];
   }): void {
     // Actualizar elementos individuales
+    if (typeof gameData.maxSpeed === 'number' && !Number.isNaN(gameData.maxSpeed)) {
+      this.velocityBarLeft.setMaxVelocity(gameData.maxSpeed);
+      this.velocityBarRight.setMaxVelocity(gameData.maxSpeed);
+    }
     this.velocityBarLeft.update(gameData.velocity);
     this.velocityBarRight.update(gameData.velocity);
     

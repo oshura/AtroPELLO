@@ -1396,10 +1396,25 @@ export class GameEngine {
     // Paleta rotativa
     const colors: PlanetColorName[] = ['verde','azul_hielo','marron','gris','azul_marino','rojo_carmesi','violeta_oscuro','azul_hielo','marron'];
 
+    // Rastrea el borde exterior (a) de la órbita previa para garantizar separación mínima
+    let lastOuterA = 0;
     for (let i = 0; i < count; i++) {
       const { a: aBase, b: bBase, orient, angle0 } = baseOrbits[i];
       let a = aBase;
       let b = bBase;
+
+      // Enforce >= 10,000u separation between consecutive concentric ellipses
+      // For ellipses centered at 'center', radial range is [b, a]; ensure b_i >= a_{i-1} + 10000
+      const spacingMin = 10000;
+      if (i > 0) {
+        const S = b / Math.max(1, a); // S = b/a = sqrt(1 - e^2)
+        const requiredInner = lastOuterA + spacingMin;
+        const requiredA = Math.ceil(requiredInner / Math.max(1e-6, S));
+        if (a < requiredA) {
+          a = requiredA;
+          b = Math.round(a * S);
+        }
+      }
 
       // Plano orbital ÚNICO por planeta (distinto para cada uno, pasando por el origen)
       const deg = (v: number) => v * Math.PI / 180;
@@ -1554,6 +1569,8 @@ export class GameEngine {
     }
   } catch {}
   this.planets.push(planetObj);
+  // Actualizar separación: el siguiente anillo debe respetar b_next >= lastOuterA + spacing
+  lastOuterA = a;
     }
   }
 
@@ -3123,6 +3140,7 @@ export class GameEngine {
       roll: this.spaceship.rotation.z * (180 / Math.PI),
       altitude: this.spaceship.position.y,
       speed: this.spaceship.getSpeedPercentage() * 2, // Escalar para mejor visualización
+      maxSpeed: this.spaceship.maxSpeed,
       voidEnergy: {
         current: this.spaceship.voidEnergyCurrent,
         max: this.spaceship.voidEnergyMax,

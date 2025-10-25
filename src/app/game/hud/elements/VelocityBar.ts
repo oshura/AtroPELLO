@@ -6,7 +6,7 @@
 export class VelocityBar {
   private side: 'left' | 'right';
   private velocity: number = 0;
-  private maxVelocity: number = 5; // Velocidad 5 = barra llena
+  private maxVelocity: number = 8; // Valor por defecto; puede ajustarse dinámicamente
   private externalHeight: number | null = null;
   
   constructor(side: 'left' | 'right') {
@@ -15,6 +15,16 @@ export class VelocityBar {
 
   public update(velocity: number): void {
     this.velocity = Math.max(0, Math.min(this.maxVelocity, velocity));
+  }
+
+  /**
+   * Ajusta el valor máximo representado por la barra (p. ej., maxSpeed de la nave)
+   */
+  public setMaxVelocity(max: number): void {
+    // Evitar valores no válidos; mantener al menos 1 para evitar divisiones por cero
+    this.maxVelocity = Math.max(1, max);
+    // Re-clamp de la velocidad actual por si quedó fuera de rango tras cambiar el máximo
+    this.velocity = Math.max(0, Math.min(this.maxVelocity, this.velocity));
   }
 
   public render(ctx: CanvasRenderingContext2D, position: { x: number; y: number }): void {

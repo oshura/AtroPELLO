@@ -17,7 +17,7 @@ export enum ThrusterState {
  */
 export class Spaceship extends GameObject {
   // Propiedades específicas de la nave
-  public maxSpeed: number = 5.0;
+  public maxSpeed: number = 8.0;
   public acceleration: number = 2.0;
   public deceleration: number = 2.5;
   public rotationSpeed: number = Math.PI / 2.5; // 72 grados por segundo (180 grados en 2.5 segundos)
