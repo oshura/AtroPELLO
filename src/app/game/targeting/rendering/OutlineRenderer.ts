@@ -617,8 +617,9 @@ export class OutlineRenderer {
       const planetClass = String(anyT.planetType || '').toLowerCase();
       const isGiantPlanet = isPlanet && planetClass === 'giant';
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
-  const isRinged = (String((target as any)?.planetType || '').toLowerCase() === 'ringed');
-  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : (isRinged ? 'Ringed' : this.typeToLabel(target.getTargetType?.()));
+  const pTypeStr = String((target as any)?.planetType || '').toLowerCase();
+  const special = pTypeStr === 'ringed' ? 'Ringed' : (pTypeStr === 'dwarf' ? 'Dwarf' : (pTypeStr === 'protoplanet' ? 'Protoplanet' : null));
+  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : (special ?? this.typeToLabel(target.getTargetType?.()));
       // Distance label should be relative to the provided origin (e.g., ship center)
       const dOx = target.position.x - originPos.x;
       const dOy = target.position.y - originPos.y;
@@ -855,8 +856,9 @@ export class OutlineRenderer {
       if (!scr || scr.w <= 0) continue; // detrás de cámara
       // Crear/actualizar textura de label
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
-  const isRinged2 = (String((target as any)?.planetType || '').toLowerCase() === 'ringed');
-  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : (isRinged2 ? 'Ringed' : this.typeToLabel(target.getTargetType?.()));
+  const pTypeStr2 = String((target as any)?.planetType || '').toLowerCase();
+  const special2 = pTypeStr2 === 'ringed' ? 'Ringed' : (pTypeStr2 === 'dwarf' ? 'Dwarf' : (pTypeStr2 === 'protoplanet' ? 'Protoplanet' : null));
+  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : (special2 ?? this.typeToLabel(target.getTargetType?.()));
       // Distancia para etiqueta: respecto al origen compartido (p.ej. centro de la nave)
       const anyT: any = target as any;
       let rEdge = 0;

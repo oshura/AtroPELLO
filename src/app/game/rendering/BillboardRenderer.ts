@@ -74,6 +74,15 @@ export class BillboardRenderer {
     return tex;
   }
 
+  /** Create or get a cached elliptical ring (annulus) texture for distant ring visuals */
+  public getRingTexture(key: string = 'ring-default'): WebGLTexture {
+    const existing = this.textures.get(key);
+    if (existing) return existing;
+    const tex = this.createRingTexture();
+    this.textures.set(key, tex);
+    return tex;
+  }
+
   private createCircleTexture(hex: string): WebGLTexture {
     const gl = this.gl;
     const size = 128;
@@ -153,6 +162,83 @@ export class BillboardRenderer {
     ctx.fillStyle = mask;
     ctx.fillRect(0,0,size,size);
     ctx.restore();
+    return this.uploadCanvasTexture(cnv);
+  }
+
+  private createRingTexture(): WebGLTexture {
+    const size = 256; // larger for cleaner edges
+    const cnv = document.createElement('canvas'); cnv.width = size; cnv.height = size;
+    const ctx = cnv.getContext('2d')!;
+    ctx.clearRect(0,0,size,size);
+    const cx = size/2, cy = size/2;
+    // Ellipse scale to suggest tilt
+    const ellipseYScale = 0.58;
+    const outerR = size * 0.47;
+    const innerR = size * 0.30;
+    // Base ring color palette (subtle beige/gray)
+    const bands = [
+      { w: 1.00, color: 'rgba(210,200,180,0.75)' },
+      { w: 0.92, color: 'rgba(220,210,190,0.85)' },
+      { w: 0.84, color: 'rgba(205,195,175,0.90)' },
+      { w: 0.76, color: 'rgba(225,215,195,0.80)' },
+      { w: 0.68, color: 'rgba(200,190,170,0.92)' },
+      { w: 0.60, color: 'rgba(215,205,185,0.85)' }
+    ];
+    // Draw outer soft fade
+    ctx.save();
+    ctx.translate(cx, cy); ctx.scale(1, ellipseYScale);
+    const gradOuter = ctx.createRadialGradient(0, 0, outerR*0.92, 0, 0, outerR*1.02);
+    gradOuter.addColorStop(0, 'rgba(255,255,255,0.0)');
+    gradOuter.addColorStop(1, 'rgba(255,255,255,0.0)');
+    // Background remains transparent; we'll paint bands below
+    ctx.restore();
+    // Paint banded ring from outside to inside
+    ctx.save();
+    ctx.translate(cx, cy); ctx.scale(1, ellipseYScale);
+    for (let i = 0; i < bands.length; i++) {
+      const t0 = i / bands.length;
+      const t1 = (i+1) / bands.length;
+      const r0 = outerR - (outerR - innerR) * t0;
+      const r1 = outerR - (outerR - innerR) * t1;
+      ctx.fillStyle = bands[i].color;
+      // Outer disk slice
+      ctx.beginPath();
+      ctx.ellipse(0, 0, r0, r0, 0, 0, Math.PI*2);
+      ctx.ellipse(0, 0, r1, r1, 0, 0, Math.PI*2);
+      ctx.fill('evenodd');
+    }
+    // Soft edges: feather outer and inner boundaries
+    const feather = 8;
+    for (let k = 0; k < feather; k++) {
+      const a = (feather - k) / feather * 0.08;
+      ctx.fillStyle = `rgba(255,255,255,${a})`;
+      // Outer feather (expand by k)
+      ctx.beginPath();
+      ctx.ellipse(0, 0, outerR + k, outerR + k, 0, 0, Math.PI*2);
+      ctx.ellipse(0, 0, outerR, outerR, 0, 0, Math.PI*2);
+      ctx.fill('evenodd');
+      // Inner feather (shrink by k)
+      ctx.beginPath();
+      ctx.ellipse(0, 0, innerR - k, innerR - k, 0, 0, Math.PI*2);
+      ctx.ellipse(0, 0, innerR, innerR, 0, 0, Math.PI*2);
+      ctx.fill('evenodd');
+    }
+    ctx.restore();
+    // Add a slight noise grain to break perfect uniformity
+    ctx.save();
+    const noiseAlpha = 0.06;
+    const img = ctx.getImageData(0,0,size,size);
+    const d = img.data;
+    for (let i=0; i<d.length; i+=4) {
+      const n = (Math.random()*2 - 1) * 18; // +/- 18
+      d[i] = Math.min(255, Math.max(0, d[i] + n));
+      d[i+1] = Math.min(255, Math.max(0, d[i+1] + n));
+      d[i+2] = Math.min(255, Math.max(0, d[i+2] + n));
+      // alpha stays as computed by band fills
+    }
+    ctx.putImageData(img, 0, 0);
+    ctx.restore();
+    // Convert to WebGL texture
     return this.uploadCanvasTexture(cnv);
   }
 

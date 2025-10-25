@@ -23,7 +23,7 @@ import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
-import { Planet, PlanetColorName, PlanetType } from './Planet';
+import { Planet, PlanetColorName, PlanetType, DwarfPlanet, Protoplanet } from './Planet';
 import { GaseousPlanet } from './GaseousPlanet';
 import { GiantPlanet } from './GiantPlanet';
 import { RingedPlanet } from './RingedPlanet';
@@ -751,34 +751,27 @@ export class GameEngine {
       availableTargets = availableTargets.filter(t => !farClusterIds.has(t.id) && !farMemberIds.has(t.id));
     }
   } catch {}
-  // Filtro: mega-asteroides de la Tierra no seleccionables hasta estar "cerca"
+  // Filtro: mega-asteroides de ciertos anillos (Tierra, Saturno) no seleccionables hasta estar "cerca"
   // Cerca = nave a < 20,000u de cada megaasteroide; en distancias medias se dibujan, pero no aparecen como target
   try {
-    const earthDebris = this.planetDebris.get('planet-earth');
-    if (earthDebris && earthDebris.length) {
-      const NEAR_RANGE = 20000;
-      const allowedNear = new Set<string>();
-      for (const d of earthDebris) {
+    const NEAR_RANGE = 20000;
+    const gatedPlanetIds = ['planet-earth', 'planet-saturn'];
+    const allGated = new Set<string>();
+    const allowedNear = new Set<string>();
+    for (const pid of gatedPlanetIds) {
+      const arr = this.planetDebris.get(pid);
+      if (!arr || !arr.length) continue;
+      for (const d of arr) {
+        allGated.add(d.obj.id);
         const dx = d.obj.position.x - this.spaceship.position.x;
         const dy = d.obj.position.y - this.spaceship.position.y;
         const dz = d.obj.position.z - this.spaceship.position.z;
         const distShip = Math.hypot(dx, dy, dz);
         if (distShip < NEAR_RANGE) allowedNear.add(d.obj.id);
       }
-      if (allowedNear.size) {
-        availableTargets = availableTargets.filter(t => {
-          const type = (t as any).getTargetType ? (t as any).getTargetType() : undefined;
-          // Si es MEGA_ASTEROID de la Tierra, solo permitir si está en rango cercano
-          if (type === TargetType.MEGA_ASTEROID) {
-            return allowedNear.has(t.id);
-          }
-          return true;
-        });
-      } else {
-        // Ningún megaasteroide en rango cercano: excluir todos los megaasteroides de la Tierra del listado
-        const exIds = new Set(earthDebris.map(d => d.obj.id));
-        availableTargets = availableTargets.filter(t => !exIds.has(t.id));
-      }
+    }
+    if (allGated.size) {
+      availableTargets = availableTargets.filter(t => !allGated.has(t.id) || allowedNear.has(t.id));
     }
   } catch {}
 
@@ -863,8 +856,9 @@ export class GameEngine {
   const voidMass = (selected as any).voidMassUnits ?? 0;
   // Mostrar etiqueta explícita para SuperAsteroid en el HUD
   const isSuper = (selected instanceof SuperAsteroid);
-  const isRinged = ((selected as any)?.planetType === PlanetType.Ringed);
-  const typeLabel = isSuper ? 'SuperAsteroid' : (isRinged ? 'Ringed' : this.typeToLabel(selType));
+  const pTypeSel = String((selected as any)?.planetType || '').toLowerCase();
+  const specialSel = pTypeSel === 'ringed' ? 'Ringed' : (pTypeSel === 'dwarf' ? 'Dwarf' : (pTypeSel === 'protoplanet' ? 'Protoplanet' : null));
+  const typeLabel = isSuper ? 'SuperAsteroid' : (specialSel ?? this.typeToLabel(selType));
       // Include planet-specific hints when selected is a planet
       const planetHints = (selType === TargetType.PLANET)
         ? {
@@ -1278,8 +1272,9 @@ export class GameEngine {
             const base = (this as any)._targetDetailsCache?.[tgt.id] || this.getFallbackDetails(tgt as ITargetable);
             const tt = (tgt as ITargetable).getTargetType?.();
             const isSuper = (tgt as any)?.constructor?.name === 'SuperAsteroid';
-            const isRinged = ((tgt as any)?.planetType === PlanetType.Ringed);
-            const typeLabel = isSuper ? 'SuperAsteroid' : (isRinged ? 'Ringed' : this.typeToLabel(tt));
+            const pTypeMap = String((tgt as any)?.planetType || '').toLowerCase();
+            const specialMap = pTypeMap === 'ringed' ? 'Ringed' : (pTypeMap === 'dwarf' ? 'Dwarf' : (pTypeMap === 'protoplanet' ? 'Protoplanet' : null));
+            const typeLabel = isSuper ? 'SuperAsteroid' : (specialMap ?? this.typeToLabel(tt));
             const planetHints = (tt === TargetType.PLANET) ? {
               planetType: (tgt as any).planetType || (base as any)?.planetType || (tgt as any).baseColorName,
               probabilityOfLifePct: (tgt as any).probabilityOfLifePct ?? (base as any)?.probabilityOfLifePct ?? 0,
@@ -1374,7 +1369,7 @@ export class GameEngine {
   let planetObj: Planet;
 
       if (i === mercuryIdx) {
-        // Mercurio: rojo carmesí, tamaño ~ 0.5 Tierra
+  // Mercurio: rojo carmesí, tamaño ~ 0.5 Tierra (clasificado como Dwarf)
         const cx = Math.cos(angle0) * a;
         const cz = Math.sin(angle0) * b;
         const pos = {
@@ -1383,7 +1378,7 @@ export class GameEngine {
           z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
         };
         radius = 200; // mitad de 400 (Tierra)
-        planetObj = new Planet(`planet-mercury`, 'rojo_carmesi', radius, pos);
+  planetObj = new DwarfPlanet(`planet-mercury`, 'rojo_carmesi', radius, pos);
         planetObj.customName = 'Mercurio';
       } else if (i === venusIdx) {
         // Venus: tono cálido/marrón
@@ -1490,7 +1485,7 @@ export class GameEngine {
         planetObj = new Planet(`planet-neptune`, 'azul_marino', radius, pos);
         planetObj.customName = 'Neptuno';
       } else if (i === plutoIdx) {
-        // Plutón: pequeño, frío, gris
+  // Plutón: pequeño, frío, gris (clasificado como Protoplanet)
         const cx = Math.cos(angle0) * a;
         const cz = Math.sin(angle0) * b;
         const pos = {
@@ -1499,7 +1494,7 @@ export class GameEngine {
           z: center.z + (cx * Math.sin(orient) + cz * Math.cos(orient)),
         };
         radius = 80;
-        planetObj = new Planet(`planet-pluto`, 'gris', radius, pos);
+  planetObj = new Protoplanet(`planet-pluto`, 'gris', radius, pos);
         planetObj.customName = 'Plutón';
       } else {
         // Planetoide genérico
@@ -1637,7 +1632,7 @@ export class GameEngine {
     const fovV = 2 * Math.atan(1 / f);
     const viewportH = (this.gl.canvas as HTMLCanvasElement).height || 1;
     const SPRITE_LOD_DISTANCE = 50000; // u
-    // Guardar estado mínimo para no interferir con otros pases
+  // Guardar estado mínimo para no interferir con otros pases
     const prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
     const wasBlend = this.gl.isEnabled(this.gl.BLEND);
     // Asegurar estado de profundidad correcto para planetas
@@ -1693,6 +1688,24 @@ export class GameEngine {
         const upW = cam.up;
         const right = this.normalize({ x: fwdU.y*upW.z - fwdU.z*upW.y, y: fwdU.z*upW.x - fwdU.x*upW.z, z: fwdU.x*upW.y - fwdU.y*upW.x });
         const upB = { x: right.y*fwdU.z - right.z*fwdU.y, y: right.z*fwdU.x - right.x*fwdU.z, z: right.x*fwdU.y - right.y*fwdU.x };
+        // If planet is Ringed (e.g., Saturn), draw a static ring annulus behind the sphere.
+        const isRinged = ((p as any)?.planetType === PlanetType.Ringed || String((p as any)?.planetType||'').toLowerCase()==='ringed');
+        if (isRinged) {
+          const ringTex = this.billboardRenderer.getRingTexture('ring-saturn');
+          const ringDiameterPx = Math.min(384, diameterPx * 2.2);
+          // Render ring first (behind), then sphere on top
+          this.billboardRenderer.render(
+            p.position,
+            ringDiameterPx,
+            cam.viewMatrix,
+            cam.projectionMatrix,
+            cam.position,
+            upB,
+            right,
+            [1,1,1,0.98],
+            ringTex
+          );
+        }
         this.billboardRenderer.render(
           p.position,
           diameterPx,
@@ -1851,20 +1864,28 @@ export class GameEngine {
     if (!this.gl || !this.shaderManager) return;
     const cam = this.camera;
     const camPosArr = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
-    // Culling específico: si la cámara está a >= SPRITE LOD (~50,000u), no renderizar sus debris
+    // Culling específico: si la cámara está a >= SPRITE LOD (~50,000u), no renderizar debris de ese planeta
+    const SPRITE_LOD_DISTANCE = 50000;
     const earth = this.planets.find(p => p.id === 'planet-earth');
+    const saturn = this.planets.find(p => p.id === 'planet-saturn');
     let skipEarth = false;
+    let skipSaturn = false;
     if (earth && this.camera) {
       const dxE = earth.position.x - this.camera.position.x;
       const dyE = earth.position.y - this.camera.position.y;
       const dzE = earth.position.z - this.camera.position.z;
       const distCamToEarth = Math.hypot(dxE, dyE, dzE);
-      // Mantener debris visibles en distancia media (no-sprite) pero ocultarlos cuando ya es sprite lejano
-      const SPRITE_LOD_DISTANCE = 50000;
       skipEarth = distCamToEarth >= SPRITE_LOD_DISTANCE;
     }
+    if (saturn && this.camera) {
+      const dxS = saturn.position.x - this.camera.position.x;
+      const dyS = saturn.position.y - this.camera.position.y;
+      const dzS = saturn.position.z - this.camera.position.z;
+      const distCamToSaturn = Math.hypot(dxS, dyS, dzS);
+      skipSaturn = distCamToSaturn >= SPRITE_LOD_DISTANCE;
+    }
     for (const [pid, arr] of this.planetDebris.entries()) {
-      if (skipEarth && pid === 'planet-earth') continue;
+      if ((skipEarth && pid === 'planet-earth') || (skipSaturn && pid === 'planet-saturn')) continue;
       for (const d of arr) {
         const a = d.obj;
         const dx = a.position.x - this.spaceship.position.x;

@@ -120,3 +120,18 @@ export enum PlanetType {
   Planetoid = 'Planetoid',
   Sun = 'Sun',
 }
+
+// Convenience subclasses for specific classifications
+export class DwarfPlanet extends Planet {
+  constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
+    super(id, colorName, radius, initialPos);
+    this.planetType = PlanetType.Dwarf;
+  }
+}
+
+export class Protoplanet extends Planet {
+  constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
+    super(id, colorName, radius, initialPos);
+    this.planetType = PlanetType.Protoplanet;
+  }
+}
