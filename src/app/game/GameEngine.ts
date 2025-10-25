@@ -1586,26 +1586,40 @@ export class GameEngine {
         }
         p.render(this.gl, this.shaderManager.texturedProgram!, cam.viewMatrix, cam.projectionMatrix);
       } else if (distShip < 20000) {
-        // Medio: iluminación simple sin especular para evitar el parpadeo a distancia
-        this.shaderManager.useLitProgram();
-        this.calculateNormalMatrix(p.modelMatrix);
-        this.shaderManager.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-        this.shaderManager.setLighting(lightDir, lightColorLocal, this.ambientColor, ambientStrengthLocal);
-        // Anular especular en mid-range (reduce ruido por precisión)
-        const camPos = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
-        this.shaderManager.setSpecular(camPos, 0.0, 1.0);
-        this.shaderManager.setLitColor(new Float32Array([p.color.r, p.color.g, p.color.b]));
-        // Emissive point light from Earth's core (only for Earth)
-        if (p.id === 'planet-earth') {
+        // Medio: por defecto lit sin especular para estabilidad; EXCEPCIÓN Tierra: mantener shader texturizado
+        const isEarth = p.id === 'planet-earth' || (p as any).planetType === 'Tierra';
+        if (isEarth) {
+          // Mantener texturas visibles en semiesferas a media distancia
+          this.shaderManager.useTexturedProgram();
+          this.calculateNormalMatrix(p.modelMatrix);
+          this.shaderManager.setTexturedMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+          const base = new Float32Array([p.color.r, p.color.g, p.color.b]);
+          this.shaderManager.setTexturedLighting(lightDir, lightColorLocal, this.ambientColor, ambientStrengthLocal, base);
+          const metallicTexture = this.textureManager.getTexture('metallic');
+          const gradientTexture = this.textureManager.getTexture('gradient');
+          if (metallicTexture && gradientTexture) {
+            this.shaderManager.setTexturedTextures(metallicTexture, gradientTexture);
+          }
+          // Emisivo desde el núcleo de la Tierra
           const lp = new Float32Array([p.position.x, p.position.y, p.position.z]);
           const lc = new Float32Array([1.0, 0.25, 0.05]);
-          this.shaderManager.setPointLightLit(lp, lc, 1.5, 2000.0, true);
+          this.shaderManager.setPointLightTextured(lp, lc, 1.5, 2000.0, true);
+          p.render(this.gl, this.shaderManager.texturedProgram!, cam.viewMatrix, cam.projectionMatrix);
         } else {
+          this.shaderManager.useLitProgram();
+          this.calculateNormalMatrix(p.modelMatrix);
+          this.shaderManager.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+          this.shaderManager.setLighting(lightDir, lightColorLocal, this.ambientColor, ambientStrengthLocal);
+          // Anular especular en mid-range (reduce ruido por precisión)
+          const camPos = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
+          this.shaderManager.setSpecular(camPos, 0.0, 1.0);
+          this.shaderManager.setLitColor(new Float32Array([p.color.r, p.color.g, p.color.b]));
+          // Sin punto emisivo en el resto
           const lp = new Float32Array([0,0,0]);
           const lc = new Float32Array([0,0,0]);
           this.shaderManager.setPointLightLit(lp, lc, 0.0, 0.0, false);
+          p.render(this.gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
         }
-        p.render(this.gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
       } else {
         // Lejano: sin iluminación (flat color) para máxima estabilidad visual
         this.shaderManager.useBasicProgram();

@@ -21,7 +21,8 @@ export class AsteroidFactoryService {
     a.driftSpeed = speed;
     a.velocity = { x: direction.x * speed, y: direction.y * speed, z: direction.z * speed };
     // Rotación más lenta
-    const rotScale = opts?.rotationScale ?? 0.2;
+  // Acelerar ligeramente la rotación para que sea más perceptible en pantalla
+  const rotScale = opts?.rotationScale ?? 0.4;
     a.rotationRate = {
       x: a.rotationRate.x * rotScale,
       y: a.rotationRate.y * rotScale,
@@ -55,7 +56,8 @@ export class AsteroidFactoryService {
     sa.direction = { ...direction };
     sa.driftSpeed = speed;
     sa.velocity = { x: direction.x * speed, y: direction.y * speed, z: direction.z * speed };
-    const rotScale = opts?.rotationScale ?? 0.1; // aún más lento en super
+  // Super-asteroides: rotación también visible pero algo más lenta que los normales
+  const rotScale = opts?.rotationScale ?? 0.35; // antes 0.1
     sa.rotationRate = {
       x: sa.rotationRate.x * rotScale,
       y: sa.rotationRate.y * rotScale,
