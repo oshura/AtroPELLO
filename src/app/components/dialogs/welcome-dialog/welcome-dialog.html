@@ -1,15 +1,8 @@
-<div class="game-container">
-  <canvas #gameCanvas id="gameCanvas" class="game-canvas">
-    Tu navegador no soporta el elemento canvas requerido para este juego.
-  </canvas>
-</div>
-
-<!-- Welcome dialog: visible when not running and not paused -->
 <app-modal 
-  [isVisible]="gameState !== 'running' && gameState !== 'paused'" 
+  [isVisible]="isVisible" 
   [title]="'Bienvenido a The Old & Only One'" 
   [closeOnBackdrop]="false"
-  (onClose)="startGame()">
+  (onClose)="onStart()">
   
   <div class="welcome-content">
     <div class="welcome-icon">
@@ -47,27 +40,8 @@
   </div>
 
   <div slot="footer">
-    <button class="start-button" (click)="startGame()">
+    <button class="start-button" (click)="onStart()">
       <span>Comenzar Aventura</span>
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-      </svg>
-    </button>
-  </div>
-</app-modal>
-
-<!-- Pause dialog: minimal content and continue button -->
-<app-modal 
-  [isVisible]="gameState === 'paused'" 
-  [title]="'PAUSA'" 
-  [closeOnBackdrop]="false"
-  (onClose)="togglePause()">
-  <div class="pause-content">
-    <p class="pause-text">El juego está en pausa.</p>
-  </div>
-  <div slot="footer">
-    <button class="start-button" (click)="togglePause()">
-      <span>Continuar</span>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>

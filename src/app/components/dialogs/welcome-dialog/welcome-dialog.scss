@@ -1,0 +1,27 @@
+.welcome-content {
+  .welcome-icon { margin-bottom: 12px; }
+  .welcome-text { margin: 8px 0 16px; }
+  .controls-info {
+    h4 { margin: 8px 0; }
+    .controls-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px 16px;
+      justify-items: start;
+    }
+    .controls-note { margin-top: 10px; opacity: 0.8; }
+  }
+}
+
+.start-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(90deg, #4caf50, #81c784);
+  border: none;
+  color: #0b1a11;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}

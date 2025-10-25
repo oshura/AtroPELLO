@@ -1,0 +1,14 @@
+.resume-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(90deg, #ffd54f, #ffb300);
+  border: none;
+  color: #3a2a00;
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.pause-text { opacity: 0.9; }

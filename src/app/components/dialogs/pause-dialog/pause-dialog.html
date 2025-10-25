@@ -1,0 +1,16 @@
+<app-modal 
+  [isVisible]="isVisible" 
+  [title]="'PAUSA'" 
+  [closeOnBackdrop]="false"
+  (onClose)="onResume()">
+  
+  <div class="pause-content">
+    <p class="pause-text">El juego está en pausa.</p>
+  </div>
+
+  <div slot="footer">
+    <button class="resume-button" (click)="onResume()">
+      <span>Continuar</span>
+    </button>
+  </div>
+</app-modal>

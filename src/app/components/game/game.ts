@@ -152,9 +152,21 @@ export class Game implements AfterViewInit, OnDestroy {
     if (event.key === ' ' || event.key === 'Space') {
       if (this.gameState === GameState.READY || this.gameState === GameState.STOPPED) {
         this.startGame();
+      } else if (this.gameState === GameState.PAUSED) {
+        // Space resumes from pause to mirror welcome behavior
+        this.togglePause();
       }
       event.preventDefault();
       return;
+    }
+
+    // Allow Enter to resume when paused (parity with primary action button)
+    if (event.key === 'Enter') {
+      if (this.gameState === GameState.PAUSED) {
+        this.togglePause();
+        event.preventDefault();
+        return;
+      }
     }
 
     if (event.key === 'F1') {
