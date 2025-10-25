@@ -1264,7 +1264,36 @@ export class GameEngine {
         // Allow selecting the player's ship as an ally from the map
         this.mapIdToTarget.set('ship', this.spaceship as unknown as ITargetable);
       }
-      this.systemPanel.updateMap({ center, planets, clusters, debris, ship, marginPx: 48 });
+      // Prepare details for active item (selected or hovered)
+      let details: Record<string, any> | undefined = undefined;
+      try {
+        const activeId = (this.systemPanel as any).getSelectedId?.() || (this.systemPanel as any).getHoveredId?.() || null;
+        if (activeId) {
+          const tgt = this.mapIdToTarget.get(activeId);
+          if (tgt) {
+            // Ensure details are fetched (async); use cached or fallback immediately
+            this.fetchAndCacheTargetDetails(tgt as ITargetable);
+            const base = (this as any)._targetDetailsCache?.[tgt.id] || this.getFallbackDetails(tgt as ITargetable);
+            const tt = (tgt as ITargetable).getTargetType?.();
+            const isSuper = (tgt as any)?.constructor?.name === 'SuperAsteroid';
+            const typeLabel = isSuper ? 'SuperAsteroid' : this.typeToLabel(tt);
+            const planetHints = (tt === TargetType.PLANET) ? {
+              planetType: (tgt as any).planetType || (base as any)?.planetType || (tgt as any).baseColorName,
+              probabilityOfLifePct: (tgt as any).probabilityOfLifePct ?? (base as any)?.probabilityOfLifePct ?? 0,
+              volumeMu:
+                (tgt as any).volumeMu
+                ?? (base as any)?.volumeMu
+                ?? (typeof (base as any)?.volumeGu === 'number'
+                      ? Number(((base as any).volumeGu * 1000).toFixed(2))
+                      : undefined),
+            } : {};
+            const voidMass = (tgt as any).voidMassUnits ?? 0;
+            details = { ...(base || {}), ...planetHints, type: typeLabel, voidMassUnits: voidMass } as any;
+          }
+        }
+      } catch {}
+
+      this.systemPanel.updateMap({ center, planets, clusters, debris, ship, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
       console.warn('SolarSystemPanel render failed', e);
@@ -2483,6 +2512,18 @@ export class GameEngine {
         this.systemPanel.setEnabled(next);
         if (next) {
           try { this.systemPanel.resetView(); } catch {}
+          // Preselect current target in the map when opening
+          try {
+            const current = this.reticleManager?.getCurrentTarget?.();
+            if (current) {
+              const selId = this.resolveMapIdForTarget(current);
+              if (selId) {
+                try { this.systemPanel.setSelectedId(selId); } catch {}
+              }
+            } else {
+              try { this.systemPanel.setSelectedId(null); } catch {}
+            }
+          } catch {}
         }
       }
       try { this.updateMapClickBinding(); } catch {}
@@ -3102,6 +3143,34 @@ export class GameEngine {
       }
       try { this.systemPanel.setSelectedId(null); } catch {}
       try { this.systemPanel.setHoveredId(null); } catch {}
+    }
+  }
+
+  /** Map ID resolver for a given world target: returns the map item id to select/highlight */
+  private resolveMapIdForTarget(target: ITargetable): string | null {
+    try {
+      // Primary Sun maps to 'center'
+      if (this.primarySun && (target as any).id === (this.primarySun as any).id) return 'center';
+      // Planets map to their own id
+      const ttype = target.getTargetType?.();
+      if (ttype === TargetType.PLANET) return target.id;
+      // Earth debris: individual mega-asteroids are present as items by their id
+      for (const arr of this.planetDebris.values()) {
+        if (arr.find(d => d.obj.id === target.id)) return target.id;
+      }
+      // Clusters: map member or proxy to the cluster id
+      try {
+        for (const c of this.asteroidClusterService.getClusters()) {
+          if (c.proxy && c.proxy.id === (target as any).id) return c.id;
+          if (c.objects.find(o => o.id === (target as any).id)) return c.id;
+        }
+      } catch {}
+      // Ship (ally)
+      if (this.spaceship && (target as any).id === (this.spaceship as any).id) return 'ship';
+      // Fallback: direct id (may not exist as an item, safe no-op)
+      return (target as any).id || null;
+    } catch {
+      return null;
     }
   }
 }

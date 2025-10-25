@@ -53,6 +53,8 @@ export class SolarSystemPanel {
   public isEnabled(): boolean { return this.enabled; }
   public setSelectedId(id: string | null) { this.selectedId = id; }
   public setHoveredId(id: string | null) { this.hoveredId = id; }
+  public getSelectedId(): string | null { return this.selectedId; }
+  public getHoveredId(): string | null { return this.hoveredId; }
   public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
     // Convert to canvas pixel coords (texture covers full viewport)
     const x = ((clientX - rect.left) / Math.max(1, rect.width)) * viewportW;
@@ -167,6 +169,8 @@ export class SolarSystemPanel {
     debris: Array<{ id: string; pos: Vector3; label?: string }>; // e.g., Earth mega-asteroids
     ship?: { pos: Vector3; label?: string };
     marginPx?: number;
+    // Optional: details to display for the active (selected or hovered) item
+    details?: Record<string, any>;
   }): void {
     const c = this.ctx;
     const W = this.canvas.width, H = this.canvas.height;
@@ -295,7 +299,7 @@ export class SolarSystemPanel {
     c.lineWidth = 2; c.strokeRect(1, 1, W - 2, H - 2);
     c.restore();
 
-    // 6) Info panel (Tipo Nombre ------- distancia) for hovered or selected item
+    // 6) Info panel (Tipo Nombre ------- distancia) + optional details (from HUD TargetPanel)
     {
       const active = (this.selectedId && this.items.find(i => i.id === this.selectedId))
         || (this.hoveredId && this.items.find(i => i.id === this.hoveredId))
@@ -317,9 +321,43 @@ export class SolarSystemPanel {
           }
         })();
 
+        // Build details lines similar to HUD TargetPanel
+        const d = data.details || {};
+        const detailLines: string[] = [];
+        const prettyKey = (k: string) => k.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
+        const prettyVal = (v: any) => (typeof v === 'number') ? (Number.isFinite(v) ? v.toFixed(2) : String(v)) : (Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v)));
+        const pushDetail = (text: string) => { if (text && detailLines.length < 12) detailLines.push(text); };
+        const albedo = d['albedo']; if (typeof albedo === 'number') pushDetail(`Albedo(Refl.): ${Math.max(0, Math.min(100, Math.round(albedo * 100)))}%`);
+        const hpPct = ((): number | null => {
+          if (typeof d['healthPct'] === 'number') return Math.max(0, Math.min(100, Math.round(d['healthPct'])));
+          const hc = typeof d['healthCurrent'] === 'number' ? d['healthCurrent'] as number : NaN;
+          const hm = typeof d['healthMax'] === 'number' ? d['healthMax'] as number : NaN;
+          if (Number.isFinite(hc) && Number.isFinite(hm) && hm > 0) return Math.max(0, Math.min(100, Math.round((hc / hm) * 100)));
+          return null;
+        })();
+        if (hpPct !== null) pushDetail(`Salud: ${hpPct}%`);
+        // Volume: prefer volumeMu, fallback volumeGu→Mu
+        const volMu = ((): number | null => {
+          if (typeof d['volumeMu'] === 'number' && isFinite(d['volumeMu'])) return d['volumeMu'];
+          if (typeof d['volumeGu'] === 'number' && isFinite(d['volumeGu'])) return Number((d['volumeGu'] * 1000).toFixed(2));
+          return null;
+        })();
+        if (volMu !== null) pushDetail(`Volume: ${volMu.toFixed(2)} Mu³`);
+        const voidMass = d['voidMassUnits']; if (typeof voidMass === 'number' && isFinite(voidMass)) pushDetail(`Void mass: ${Math.max(0, Math.round(voidMass))}u`);
+        const pol = d['probabilityOfLifePct']; if (typeof pol === 'number') pushDetail(`Probability of Life: ${Math.max(0, Math.min(100, Math.round(pol)))}%`);
+        // Generic remaining keys (skip internal ones and already shown)
+        for (const [k, v] of Object.entries(d)) {
+          const lk = k.toLowerCase();
+          if (lk === 'albedo' || lk === 'healthpct' || lk === 'healthcurrent' || lk === 'healthmax' || lk === 'volumemu' || lk === 'volumegu' || lk === 'voidmassunits' || lk === 'probabilityoflifepct' || lk === 'previewstatus' || lk === 'type' || lk === 'name') continue;
+          pushDetail(`${prettyKey(k)}: ${prettyVal(v)}`);
+        }
+
+        // Layout for info box: grow height to include details
         const leftPad = 12; const bottomPad = 12;
-        const boxW = Math.min(W - 24, 420);
-        const boxH = 40;
+        const boxW = Math.min(W - 24, 500);
+        const lineH = 16;
+        const extraH = detailLines.length ? (8 + detailLines.length * lineH) : 0;
+        const boxH = 40 + extraH;
         const bx = leftPad;
         const by = H - bottomPad - boxH;
         c.save();
@@ -343,7 +381,7 @@ export class SolarSystemPanel {
         c.fill();
         c.stroke();
 
-        // Texts
+        // Header row (type + name ------- distance)
         c.fillStyle = 'rgba(255,255,255,0.95)';
         c.textAlign = 'left';
         c.textBaseline = 'middle';
@@ -352,7 +390,19 @@ export class SolarSystemPanel {
         const name = active.label;
         const distText = ship ? `${dist.toFixed(0)} u` : '';
         const text = `${typeStr} ${name}${dash}${distText}`;
-        c.fillText(text, bx + 12, by + boxH / 2);
+        const headerY = by + 20; // top area for header
+        c.fillText(text, bx + 12, headerY);
+
+        // Details block under header
+        if (detailLines.length) {
+          c.textBaseline = 'top';
+          let yLine = headerY + 12;
+          for (const ln of detailLines) {
+            if (yLine > by + boxH - 10) break;
+            c.fillText(ln, bx + 12, yLine);
+            yLine += lineH;
+          }
+        }
         c.restore();
       }
     }
