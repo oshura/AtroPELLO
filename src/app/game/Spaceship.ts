@@ -491,7 +491,8 @@ export class Spaceship extends GameObject {
     // A velocidad máxima, queremos que el thruster sea 5% más grande que el tubo exterior
     const baseRadius = 0.15;
     const tubeOuterRadius = 0.1625;
-    const maxRadius = tubeOuterRadius * 1.05; // 5% más grande que el tubo
+  // Reducir ligeramente el máximo para que crezca "un pixelillo o dos" menos
+  const maxRadius = tubeOuterRadius * 1.03; // antes 1.05 → ahora ~3% más grande que el tubo
     
     // Calcular el factor de escala: de 1.0 (velocidad 0) a maxRadius/baseRadius (velocidad máxima)
     const maxScaleFactor = maxRadius / baseRadius;

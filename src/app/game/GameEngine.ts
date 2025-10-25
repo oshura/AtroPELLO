@@ -107,6 +107,8 @@ export class GameEngine {
     wings?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
     thruster?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
   } = {};
+  // Record the last applied dynamic scale for the thruster to refresh geometry when it changes
+  private lastThrusterScale: number = -1;
 
   constructor(
     private webglService: WebGLService,
@@ -2212,6 +2214,25 @@ export class GameEngine {
     // Ensure VAO + buffers
     this.ensureShipModuleVAO('thruster', thrusterGeometry);
 
+    // Si el factor de escala del thruster ha cambiado, actualizar los buffers con nueva geometría
+    const currentScale = this.spaceship.thrusterScaleFactor;
+    if (this.shipBuffers['thruster'] && Math.abs(currentScale - this.lastThrusterScale) > 0.005) {
+      const geom = this.spaceship.createThrusterGeometry();
+      const normals = this.computeNormals(geom.vertices, geom.indices);
+      // Re-subir datos a los buffers existentes
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers['thruster']!.v);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, geom.vertices, this.gl.STATIC_DRAW);
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers['thruster']!.n);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, normals, this.gl.STATIC_DRAW);
+      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.shipBuffers['thruster']!.i);
+      this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, geom.indices, this.gl.STATIC_DRAW);
+      this.shipBuffers['thruster']!.indexCount = geom.indices.length;
+      this.lastThrusterScale = currentScale;
+    } else if (!this.shipBuffers['thruster']) {
+      // Primera creación: registrar el scale actual
+      this.lastThrusterScale = currentScale;
+    }
+
     // Configurar matriz de transformación
     this.spaceship.updateModelMatrix();
     this.calculateNormalMatrix(this.spaceship.modelMatrix);
@@ -2223,39 +2244,46 @@ export class GameEngine {
       this.normalMatrix
     );
 
-    // Color dinámico del thruster basado en el estado del motor
-    let red: number, green: number, blue: number;
-    const intensity = this.spaceship.thrusterIntensity;
-    
+    // Color dinámico del thruster basado en velocidad: rojo (0) → naranja (medio) → amarillo (máx)
+    const speedRatio = Math.max(0, Math.min(1, this.spaceship.currentSpeed / Math.max(1e-6, this.spaceship.maxSpeed)));
+    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
+    const mix = (c0: [number,number,number], c1: [number,number,number], t: number): [number,number,number] => [
+      lerp(c0[0], c1[0], t),
+      lerp(c0[1], c1[1], t),
+      lerp(c0[2], c1[2], t)
+    ];
+    // Escalera/gradiente: rojo → naranja → amarillo
+    const RED: [number,number,number] = [1.0, 0.15, 0.05];
+    const ORANGE: [number,number,number] = [1.0, 0.6, 0.0];
+    const YELLOW: [number,number,number] = [1.0, 0.95, 0.2];
+
+    let color: [number,number,number] = RED;
+    if (speedRatio <= 0.5) {
+      color = mix(RED, ORANGE, speedRatio / 0.5);
+    } else {
+      color = mix(ORANGE, YELLOW, (speedRatio - 0.5) / 0.5);
+    }
+    // Ajuste de brillo para simular emisivo leve según actividad
+    let brightness = 1.0;
     switch (this.spaceship.thrusterState) {
       case ThrusterState.IDLE:
-        // Rojo suave - motor apagado
-        red = 0.8; green = 0.2; blue = 0.1;
+        brightness = 0.9;
         break;
-        
-      case ThrusterState.ACCELERATING:
-        // Amarillo/naranja súper brillante emisivo - acelerando
-        red = 2.5; 
-        green = 1.8 + (intensity * 0.7); // De 1.8 a 2.5 (amarillo emisivo)
-        blue = 0.2;
-        break;
-        
       case ThrusterState.BRAKING:
-        // Rojo súper intenso emisivo - frenando  
-        red = 3.0;
-        green = 0.3;
-        blue = 0.1;
+        // Frenando: rojo más intenso independientemente de la velocidad
+        color = [1.2, 0.2, 0.08];
+        brightness = 1.8;
         break;
-        
+      case ThrusterState.ACCELERATING:
       case ThrusterState.CRUISING:
-        // Azul plasma emisivo - manteniendo velocidad
-        red = 0.3;
-        green = 0.8;
-        blue = 2.5 + (intensity * 0.5); // Azul plasma súper brillante
+        brightness = 1.0 + speedRatio * 1.1; // hasta ~2.1 en máximo
         break;
     }
-    
-  this.shaderManager.setLitColor(new Float32Array([red, green, blue]));
+    const red = color[0] * brightness;
+    const green = color[1] * brightness;
+    const blue = color[2] * brightness;
+
+    this.shaderManager.setLitColor(new Float32Array([red, green, blue]));
   // Especular alto para tobera brillante
   this.shaderManager.setSpecular(new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]), 0.4, 64.0);
 

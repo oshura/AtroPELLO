@@ -242,21 +242,27 @@ export class ParticleEffectsService {
   }
 
   /**
-   * Obtiene el color del propulsor - amarillo intenso como solicitado
+   * Color del propulsor en gradiente: rojo (reposo) → naranja (medio) → amarillo (máximo)
    */
   private getThrusterColor(intensity: number, randomFactor: number): { r: number; g: number; b: number } {
-    // Colores amarillos intensos: naranja-amarillo -> amarillo brillante -> blanco-amarillo
-    const baseColor = { r: 1.0, g: 0.8, b: 0.2 };    // Amarillo-naranja intenso
-    const brightColor = { r: 1.0, g: 1.0, b: 0.4 };  // Amarillo brillante
-    
-    // Interpolar entre base y brillante basado en intensidad con variación aleatoria
-    const t = Math.min(1.0, intensity * 0.8 + randomFactor * 0.4);
-    
-    return {
-      r: baseColor.r + (brightColor.r - baseColor.r) * t,
-      g: baseColor.g + (brightColor.g - baseColor.g) * t,
-      b: baseColor.b + (brightColor.b - baseColor.b) * t
-    };
+    // intensity ≈ proxy de velocidad/actividad [0..1]
+    const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, v));
+    const t = clamp(intensity, 0, 1);
+    const lerp = (a: number, b: number, u: number) => a + (b - a) * u;
+    const mix = (c0: [number,number,number], c1: [number,number,number], u: number): [number,number,number] => [
+      lerp(c0[0], c1[0], u),
+      lerp(c0[1], c1[1], u),
+      lerp(c0[2], c1[2], u)
+    ];
+    const RED: [number,number,number] = [1.0, 0.15, 0.05];
+    const ORANGE: [number,number,number] = [1.0, 0.6, 0.0];
+    const YELLOW: [number,number,number] = [1.0, 0.95, 0.2];
+    let c: [number,number,number];
+    if (t <= 0.5) c = mix(RED, ORANGE, t / 0.5);
+    else c = mix(ORANGE, YELLOW, (t - 0.5) / 0.5);
+    // Variación leve para evitar uniformidad total
+    const jitter = 0.06 * (randomFactor - 0.5);
+    return { r: clamp(c[0] + jitter, 0, 1), g: clamp(c[1] + jitter, 0, 1), b: clamp(c[2] + jitter, 0, 1) };
   }
 
   /**
