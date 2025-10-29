@@ -137,10 +137,10 @@ this.renderReticleSystem();      // 2D UI overlay
 3. **Click** sobre asteroide para ver **PULSE outline** 
 4. **Verificar efectos:** Animación temporal, colores, transiciones
 
-## **Performance:**
+## **Rendimiento (observaciones prácticas):**
 
-- **Bundle size:** ~362 kB (incremento mínimo)
-- **Render time:** <1ms para outlines por frame
-- **Memory usage:** ~2MB para framebuffer 1024x768
+- Impacto de bundle: moderado y acotado al módulo de rendering; no se incluyen dependencias pesadas adicionales.
+- Coste por frame: bajo; el post-proceso se ejecuta a resolución de canvas con kernel compacto.
+- Memoria: uso proporcional a la resolución del framebuffer; por ejemplo, a 1024x768 el consumo de color/depth es pequeño y asumible.
 
 El sistema está completamente operativo y listo para la Fase 5! 🚀

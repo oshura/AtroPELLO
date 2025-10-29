@@ -23,6 +23,7 @@ import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
+import { LandingOverlay } from './hud/LandingOverlay';
 import { Planet, PlanetColorName, PlanetType, DwarfPlanet, Protoplanet } from './Planet';
 import { GaseousPlanet } from './GaseousPlanet';
 import { GiantPlanet } from './GiantPlanet';
@@ -55,6 +56,7 @@ export class GameEngine {
   private targetPreview!: TargetPreviewRenderer;
   private systemPanel: SolarSystemPanel | null = null;
   private overlayRenderer: ScreenOverlayRenderer | null = null;
+  private landingOverlay: LandingOverlay | null = null;
   private domCanvas: HTMLCanvasElement | null = null;
   private mapIdToTarget: Map<string, ITargetable> = new Map();
   
@@ -66,6 +68,11 @@ export class GameEngine {
   private primarySun: Sun | null = null;
   // Debris asociados a un planeta (e.g., anillo de mega-asteroides de la Tierra dividida)
   private planetDebris: Map<string, Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }>> = new Map();
+
+  // Landing minigame state
+  private _prevSurfaceDistance: Map<string, number> = new Map();
+  private _landingTargetId: string | null = null;
+  private _isInsidePlanetId: string | null = null;
   
   // Configuración del mundo
   private readonly WORLD_SIZE = 50;
@@ -196,6 +203,21 @@ export class GameEngine {
       this.billboardRenderer = new BillboardRenderer(this.gl);
   // Overlay renderer for robust full-screen fades and image flashes
   this.overlayRenderer = new ScreenOverlayRenderer(this.gl);
+  // Background full-view HUD layer for landing windows
+  try {
+    const c: HTMLCanvasElement = (this.webglService.getContext() as any).canvas as HTMLCanvasElement;
+    this.landingOverlay = new LandingOverlay(this.gl, c?.width || 1024, c?.height || 768);
+  } catch (e) {
+    console.warn('⚠️ LandingOverlay could not be initialized:', e);
+    this.landingOverlay = null;
+  }
+      // Fullscreen landing overlay (background HUD)
+      try {
+        this.landingOverlay = new LandingOverlay(this.gl, canvas.width, canvas.height);
+      } catch (e) {
+        console.warn('LandingOverlay initialization failed:', e);
+        this.landingOverlay = null;
+      }
 
       // Inicializar sistema de retícula con renderizado (FASE 2)
       const reticleInit = await this.reticleManager.initialize(this.camera, this.shaderManager);
@@ -923,6 +945,206 @@ export class GameEngine {
 
     // Detectar colisiones
     this.checkCollisions();
+
+    // Landing windows and entry validation (HUD-only)
+    try {
+      this.updateLandingSystem(deltaTime);
+    } catch (e) {
+      console.warn('⚠️ Landing system update error:', e);
+    }
+  }
+
+  /**
+   * Update landing windows visualization and handle entry checks.
+   * Two windows: current trajectory impact and ideal window 30° ahead along tangent.
+   * Activate only when ship is within 250u of the planet surface.
+   */
+  private updateLandingSystem(deltaTime: number): void {
+    if (!this.spaceship || !this.hudManager) return;
+    // Pick target planet via forward ray intersection (nearest hit)
+    const shipPos = this.spaceship.position;
+    const fwd = this.normalize({ ...this.spaceship.forwardDirection });
+    let best: { p: Planet; t: number; hit: { x: number; y: number; z: number } } | null = null;
+    for (const obj of this.planets) {
+      const p = obj as Planet;
+      if (!p || (p as any).planetType === 'Sun') continue;
+      const hit = this.raySphere(shipPos, fwd, p.position, p.scale.x);
+      if (hit && hit.t > 0) {
+        if (!best || hit.t < best.t) best = { p, t: hit.t, hit: hit.point };
+      }
+    }
+
+    if (!best) {
+      try { this.landingOverlay?.setWindows(null); } catch {}
+      this._landingTargetId = null;
+    } else {
+      const planet = best.p;
+      this._landingTargetId = planet.id;
+      // Gate activation by distance to surface
+      const Rgate = Math.max(1, planet.scale.x);
+      const dCenterGate = Math.hypot(
+        this.spaceship.position.x - planet.position.x,
+        this.spaceship.position.y - planet.position.y,
+        this.spaceship.position.z - planet.position.z
+      );
+      const surfDistGate = dCenterGate - Rgate;
+      if (surfDistGate > 250) {
+        try { this.landingOverlay?.setWindows(null); } catch {}
+        this._landingTargetId = null;
+        return;
+      }
+
+      // Compute window quads
+      const R = Math.max(1, planet.scale.x);
+      const center = planet.position;
+      const impact = best.hit;
+      const n = this.normalize({ x: impact.x - center.x, y: impact.y - center.y, z: impact.z - center.z });
+      const fwdProj = this.normalize(this.projectOntoPlane(fwd, n));
+      const t1 = fwdProj;
+      let t2 = this.normalize({ x: n.y * t1.z - n.z * t1.y, y: n.z * t1.x - n.x * t1.z, z: n.x * t1.y - n.y * t1.x });
+      if (!isFinite(t2.x) || !isFinite(t2.y) || !isFinite(t2.z) || Math.hypot(t2.x, t2.y, t2.z) < 1e-6) {
+        t2 = this.normalize(this.projectOntoPlane({ x: 0, y: 1, z: 0 }, n));
+      }
+      const theta = 30 * Math.PI / 180;
+      const nIdeal = this.normalize({ x: n.x * Math.cos(theta) + t1.x * Math.sin(theta), y: n.y * Math.cos(theta) + t1.y * Math.sin(theta), z: n.z * Math.cos(theta) + t1.z * Math.sin(theta) });
+      const ideal = { x: center.x + nIdeal.x * R, y: center.y + nIdeal.y * R, z: center.z + nIdeal.z * R };
+  // Smaller windows; landing larger than impact
+  const sideLanding = Math.max(60, Math.min(R * 0.03, 320));
+  const sideImpact = Math.max(40, Math.min(sideLanding * 0.7, 220));
+  const halfLanding = sideLanding / 2;
+  const halfImpact = sideImpact / 2;
+      const toCorner = (C: { x: number; y: number; z: number }, ux: number, uy: number) => ({
+        x: C.x + t1.x * ux + t2.x * uy,
+        y: C.y + t1.y * ux + t2.y * uy,
+        z: C.z + t1.z * ux + t2.z * uy,
+      });
+      const currentQuadW = [
+        toCorner(impact, -halfImpact, -halfImpact),
+        toCorner(impact, +halfImpact, -halfImpact),
+        toCorner(impact, +halfImpact, +halfImpact),
+        toCorner(impact, -halfImpact, +halfImpact)
+      ];
+      const idealQuadW = [
+        toCorner(ideal, -halfLanding, -halfLanding),
+        toCorner(ideal, +halfLanding, -halfLanding),
+        toCorner(ideal, +halfLanding, +halfLanding),
+        toCorner(ideal, -halfLanding, +halfLanding)
+      ];
+      const currentQuadNDC = currentQuadW.map(p => this.worldToNDC(p));
+      const idealQuadNDC = idealQuadW.map(p => this.worldToNDC(p));
+      const relSpeed = Math.hypot(this.spaceship.velocity.x, this.spaceship.velocity.y, this.spaceship.velocity.z);
+      const idealColor = relSpeed > 5 ? 'rgba(255,0,0,0.95)' : 'rgba(0,255,0,0.95)';
+      try {
+        this.landingOverlay?.setWindows({
+          current: { pointsNDC: currentQuadNDC, color: 'rgba(255,255,0,0.9)' },
+          ideal: { pointsNDC: idealQuadNDC, color: idealColor }
+        });
+      } catch {}
+    }
+
+    // Entry mechanic: detect crossing into planet and validate against ideal window and speed
+    for (const obj of this.planets) {
+      const p = obj as Planet;
+      if (!p || (p as any).planetType === 'Sun') continue;
+      const R = Math.max(1, p.scale.x);
+      const dCenter = Math.hypot(this.spaceship.position.x - p.position.x, this.spaceship.position.y - p.position.y, this.spaceship.position.z - p.position.z);
+      const surfDist = dCenter - R; // positive outside
+      const prev = this._prevSurfaceDistance.get(p.id) ?? Infinity;
+      if (prev > 0 && surfDist <= 0) {
+        const matchesTarget = (this._landingTargetId && this._landingTargetId === p.id);
+        let ok = false;
+        if (matchesTarget) {
+          const fwd = this.normalize({ ...this.spaceship.forwardDirection });
+          const hit = this.raySphere(this.spaceship.position, fwd, p.position, R);
+          if (hit) {
+            const impact = hit.point;
+            const n = this.normalize({ x: impact.x - p.position.x, y: impact.y - p.position.y, z: impact.z - p.position.z });
+            const t1 = this.normalize(this.projectOntoPlane(fwd, n));
+            let t2 = this.normalize({ x: n.y * t1.z - n.z * t1.y, y: n.z * t1.x - n.x * t1.z, z: n.x * t1.y - n.y * t1.x });
+            if (!isFinite(t2.x) || !isFinite(t2.y) || !isFinite(t2.z) || Math.hypot(t2.x, t2.y, t2.z) < 1e-6) {
+              t2 = this.normalize(this.projectOntoPlane({ x: 0, y: 1, z: 0 }, n));
+            }
+            const theta = 30 * Math.PI / 180;
+            const nIdeal = this.normalize({ x: n.x * Math.cos(theta) + t1.x * Math.sin(theta), y: n.y * Math.cos(theta) + t1.y * Math.sin(theta), z: n.z * Math.cos(theta) + t1.z * Math.sin(theta) });
+            const ideal = { x: p.position.x + nIdeal.x * R, y: p.position.y + nIdeal.y * R, z: p.position.z + nIdeal.z * R };
+            // Use landing window size for validation
+            const sideLanding = Math.max(60, Math.min(R * 0.03, 320));
+            const half = sideLanding / 2;
+            const nAtShip = this.normalize({ x: this.spaceship.position.x - p.position.x, y: this.spaceship.position.y - p.position.y, z: this.spaceship.position.z - p.position.z });
+            const entryProj = { x: p.position.x + nAtShip.x * R, y: p.position.y + nAtShip.y * R, z: p.position.z + nAtShip.z * R };
+            // Project offset at ideal center into tangent basis
+            const t1Ideal = this.normalize(this.projectOntoPlane(t1, nIdeal));
+            let t2Ideal = this.normalize({ x: nIdeal.y * t1Ideal.z - nIdeal.z * t1Ideal.y, y: nIdeal.z * t1Ideal.x - nIdeal.x * t1Ideal.z, z: nIdeal.x * t1Ideal.y - nIdeal.y * t1Ideal.x });
+            if (!isFinite(t2Ideal.x) || !isFinite(t2Ideal.y) || !isFinite(t2Ideal.z) || Math.hypot(t2Ideal.x, t2Ideal.y, t2Ideal.z) < 1e-6) {
+              t2Ideal = this.normalize(this.projectOntoPlane({ x: 0, y: 1, z: 0 }, nIdeal));
+            }
+            const off = { x: entryProj.x - ideal.x, y: entryProj.y - ideal.y, z: entryProj.z - ideal.z };
+            const u = off.x * t1Ideal.x + off.y * t1Ideal.y + off.z * t1Ideal.z;
+            const v = off.x * t2Ideal.x + off.y * t2Ideal.y + off.z * t2Ideal.z;
+            const inside = Math.abs(u) <= half && Math.abs(v) <= half;
+            const relSpeed = Math.hypot(this.spaceship.velocity.x, this.spaceship.velocity.y, this.spaceship.velocity.z);
+            ok = inside && relSpeed <= 5;
+          }
+        }
+        if (ok) {
+          this._isInsidePlanetId = p.id;
+          console.log(`🛬 Landing entry succeeded on ${p.customName || p.id}`);
+        } else {
+          console.log(`💥 Crash on ${p.customName || p.id} - restarting`);
+          this.resetAfterCrash();
+        }
+      }
+      this._prevSurfaceDistance.set(p.id, surfDist);
+    }
+  }
+
+  // --- Helpers for landing system ---
+  private raySphere(ro: { x: number; y: number; z: number }, rd: { x: number; y: number; z: number }, center: { x: number; y: number; z: number }, radius: number): { t: number; point: { x: number; y: number; z: number } } | null {
+    const ox = ro.x - center.x, oy = ro.y - center.y, oz = ro.z - center.z;
+    const b = ox * rd.x + oy * rd.y + oz * rd.z;
+    const c = ox * ox + oy * oy + oz * oz - radius * radius;
+    const disc = b * b - c;
+    if (disc < 0) return null;
+    const sqrt = Math.sqrt(disc);
+    let t = -b - sqrt;
+    if (t <= 1e-6) t = -b + sqrt;
+    if (t <= 1e-6) return null;
+    return { t, point: { x: ro.x + rd.x * t, y: ro.y + rd.y * t, z: ro.z + rd.z * t } };
+  }
+
+  private projectOntoPlane(v: { x: number; y: number; z: number }, n: { x: number; y: number; z: number }) {
+    const dot = v.x * n.x + v.y * n.y + v.z * n.z;
+    return { x: v.x - dot * n.x, y: v.y - dot * n.y, z: v.z - dot * n.z };
+  }
+
+  private worldToNDC(p: { x: number; y: number; z: number }): { x: number; y: number } {
+    const v = new Float32Array([p.x, p.y, p.z, 1]);
+    const view = this.camera.viewMatrix as unknown as Float32Array;
+    const proj = this.camera.projectionMatrix as unknown as Float32Array;
+    const vx = view[0] * v[0] + view[4] * v[1] + view[8]  * v[2] + view[12] * v[3];
+    const vy = view[1] * v[0] + view[5] * v[1] + view[9]  * v[2] + view[13] * v[3];
+    const vz = view[2] * v[0] + view[6] * v[1] + view[10] * v[2] + view[14] * v[3];
+    const vw = view[3] * v[0] + view[7] * v[1] + view[11] * v[2] + view[15] * v[3];
+    const cx = proj[0] * vx + proj[4] * vy + proj[8]  * vz + proj[12] * vw;
+    const cy = proj[1] * vx + proj[5] * vy + proj[9]  * vz + proj[13] * vw;
+    const cw = proj[3] * vx + proj[7] * vy + proj[11] * vz + proj[15] * vw;
+    const invW = cw !== 0 ? 1 / cw : 1;
+    return { x: cx * invW, y: cy * invW };
+  }
+
+  private resetAfterCrash(): void {
+    // Simple respawn near the sun and clear state
+    try { this.randomizeStartNearSun(5000); } catch {}
+    if (this.spaceship) {
+      this.spaceship.velocity = { x: 0, y: 0, z: 0 } as any;
+      this.spaceship.currentSpeed = 0;
+      this.spaceship.targetSpeed = 0;
+    }
+    this._isInsidePlanetId = null;
+    this._landingTargetId = null;
+    this._prevSurfaceDistance.clear();
+    try { this.hudManager?.setLandingWindows(null); } catch {}
+    try { this.landingOverlay?.setWindows(null); } catch {}
   }
 
   private async fetchAndCacheTargetDetails(target: ITargetable) {
@@ -1335,6 +1557,14 @@ export class GameEngine {
       console.warn('SolarSystemPanel render failed', e);
     }
   } else {
+    // Draw background landing overlay behind the cockpit HUD (full camera view)
+    try {
+      if (this.overlayRenderer && this.landingOverlay && this.gl) {
+        const c = this.gl.canvas as HTMLCanvasElement;
+        this.landingOverlay.resize(c.width, c.height);
+        this.landingOverlay.render(this.overlayRenderer);
+      }
+    } catch {}
     // Renderizar HUD al final para que quede por encima de objetos y outlines
     this.renderHUDPlane();
   }

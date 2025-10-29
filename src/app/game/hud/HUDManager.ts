@@ -31,6 +31,18 @@ export class HUDManager {
   private hudGeometry: { vertices: Float32Array; indices: Uint16Array } | null = null;
   private vertexBuffer: WebGLBuffer | null = null;
   private indexBuffer: WebGLBuffer | null = null;
+  // Landing windows overlay (projected to NDC -> canvas)
+  private landingWindows: {
+    current?: { pointsNDC: Array<{ x: number; y: number }>; color: string };
+    ideal?: { pointsNDC: Array<{ x: number; y: number }>; color: string };
+  } | null = null;
+
+  public setLandingWindows(windows: {
+    current?: { pointsNDC: Array<{ x: number; y: number }>; color: string };
+    ideal?: { pointsNDC: Array<{ x: number; y: number }>; color: string };
+  } | null): void {
+    this.landingWindows = windows;
+  }
   
   constructor(gl: WebGL2RenderingContext) {
     console.log('🎯 HUDManager constructor iniciado');
@@ -499,6 +511,38 @@ export class HUDManager {
       ctx.fillText(labelText, 0, 0);
       ctx.restore();
       ctx.restore();
+    }
+
+    // === LANDING WINDOWS OVERLAY (projected NDC -> canvas) ===
+    if (this.landingWindows) {
+      const drawQuad = (ptsNDC: Array<{ x: number; y: number }>, color: string, lineWidth = 2) => {
+        if (!ptsNDC || ptsNDC.length < 4) return;
+        const toCanvas = (p: { x: number; y: number }) => ({
+          x: (p.x * 0.5 + 0.5) * canvas.width,
+          y: (1 - (p.y * 0.5 + 0.5)) * canvas.height
+        });
+        const c0 = toCanvas(ptsNDC[0]);
+        const c1 = toCanvas(ptsNDC[1]);
+        const c2 = toCanvas(ptsNDC[2]);
+        const c3 = toCanvas(ptsNDC[3]);
+        ctx.save();
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.moveTo(c0.x, c0.y);
+        ctx.lineTo(c1.x, c1.y);
+        ctx.lineTo(c2.x, c2.y);
+        ctx.lineTo(c3.x, c3.y);
+        ctx.closePath();
+        ctx.stroke();
+        ctx.restore();
+      };
+      if (this.landingWindows.current) {
+        drawQuad(this.landingWindows.current.pointsNDC, this.landingWindows.current.color, 2);
+      }
+      if (this.landingWindows.ideal) {
+        drawQuad(this.landingWindows.ideal.pointsNDC, this.landingWindows.ideal.color, 3);
+      }
     }
 
     // === WEAPONS PANEL (top-left, mirrored size/height) ===
