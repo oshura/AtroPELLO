@@ -45,15 +45,21 @@ export class ReticleManager {
   
   private isInitialized: boolean = false;
   private lastUpdateTime: number = 0;
-  // Throttle para detección (ms)
-  private detectIntervalMs: number = 50; // ~20Hz detección de mouse-target
+  // Throttle para detección adaptativo según FPS
+  private detectIntervalMs: number = 16; // ~60Hz base, se ajustará dinámicamente
   private lastDetectTime: number = 0;
+  private frameTimings: number[] = []; // Historial de deltaTime para calcular FPS promedio
   
   // Tracking de velocidad del mouse para retícula dinámica
   private lastMousePosition: ScreenPosition = { x: 0, y: 0 };
   private mouseVelocity: number = 0;
   private reticleOpenness: number = 0.5; // 0=cerrado, 1=abierto
   private velocitySmoothing: number = 0.9; // Suavizado de velocidad
+  
+  // Estabilización de targeting para FPS altos
+  private lastStableTarget: ITargetable | null = null;
+  private targetStabilityFrames: number = 0;
+  private readonly TARGET_STABILITY_THRESHOLD = 3; // Frames para confirmar cambio de target
 
   // Debug snapshot storage
   private lastHit: RaycastHit | null = null;
@@ -197,6 +203,9 @@ export class ReticleManager {
     // }
 
     this.lastUpdateTime = currentTime;
+    
+    // Actualizar historial de frame timings para FPS adaptativo
+    this.updateFrameTimings(deltaTime);
 
     // Actualizar targets disponibles
     this.targetDetector.updateAvailableTargets(availableTargets);
@@ -210,33 +219,21 @@ export class ReticleManager {
     // Actualizar posición de la retícula (sigue al mouse por defecto)
     this.updateReticlePosition();
 
-    // Detectar target bajo el cursor
-  // Quiet
-    this.updateTargetDetection();
-
-    // Actualizar máquina de estados
-    this.updateStateMachine();
-
-    // Actualizar sistema de highlighting
-    this.targetHighlighter.update(deltaTime);
-
-    // Actualizar outline renderer
-    this.outlineRenderer.update(deltaTime);
-
-    // Click-to-select: si hay click pendiente, seleccionar hovered si existe
+    // ========================================
+    // TARGETING SYSTEM DISABLED FOR REFACTORING
+    // Solo mantenemos retícula dinámica y consumimos clicks para evitar errores
+    // ========================================
+    
+    // Consumir clicks para que no se acumulen (pero no hacer nada)
     if (this.inputHandler.consumeClick()) {
-      const hovered = this.state.hoveredTarget;
-      if (hovered) {
-        this.events.onTargetSelected(hovered);
-      }
+      console.log('🎯 Click detectado - targeting system disabled during refactoring');
     }
-
-    // Si el target seleccionado desaparece, limpiar selección
-    if (this.state.currentTarget) {
-      const stillExists = availableTargets.some(t => t.id === this.state.currentTarget!.id && t.isActive());
-      if (!stillExists) {
-        this.events.onTargetSelected(null);
-      }
+    
+    // Limpiar targets existentes si los hay
+    if (this.state.currentTarget || this.state.hoveredTarget) {
+      this.state.currentTarget = null;
+      this.state.hoveredTarget = null;
+      console.log('🧹 Targets limpiados - sistema deshabilitado');
     }
 
     // HUD hover info is handled by HUDManager texture, not here.
@@ -260,18 +257,19 @@ export class ReticleManager {
       deltaTime
     );
 
-    // Renderizar highlights de targets
-    this.targetHighlighter.render();
+    // Sistema de highlights deshabilitado durante refactoring
+    // this.targetHighlighter.render();
   }
 
   /**
    * Renderiza outlines de targets (debe llamarse desde el GameEngine)
+   * [DISABLED] - No renderiza outlines durante refactoring
    */
   public renderOutlines(viewMatrix: mat4, projectionMatrix: mat4, targets: ITargetable[]): void {
     if (!this.isInitialized) return;
     
-    // Renderizar outlines avanzados
-    this.outlineRenderer.renderOutlines(viewMatrix, projectionMatrix, targets);
+    // Sistema deshabilitado - no renderizar outlines
+    // this.outlineRenderer.renderOutlines(viewMatrix, projectionMatrix, targets);
 
     // Cache combined viewProjection and viewport for worker snapshot
     try {
@@ -328,8 +326,9 @@ export class ReticleManager {
    */
   private updateTargetDetection(): void {
     const now = performance.now();
-    // Throttle detección para aliviar carga con muchos targets
-    if (now - this.lastDetectTime < this.detectIntervalMs) {
+    // Throttle adaptativo: ajustar según FPS actual para mantener responsividad
+    const adaptiveThrottle = this.calculateAdaptiveThrottle();
+    if (now - this.lastDetectTime < adaptiveThrottle) {
       return;
     }
     this.lastDetectTime = now;
@@ -346,17 +345,17 @@ export class ReticleManager {
     const sizeT = Math.max(0, Math.min(1, (reticleSize - MIN_SIZE) / (MAX_SIZE - MIN_SIZE))); // 0..1
 
     // Rango del radio base (en píxeles): grande cuando sizeT=0, pequeño cuando sizeT=1
-    const MIN_R = 20;  // radio mínimo cuando la retícula está grande
-    const MAX_R = 160; // radio máximo cuando la retícula está pequeña / quieta
+    const MIN_R = 35;  // radio mínimo cuando la retícula está grande (aumentado significativamente de 25)
+    const MAX_R = 220; // radio máximo cuando la retícula está pequeña / quieta (aumentado de 180)
     const baseRadius = MAX_R - (MAX_R - MIN_R) * sizeT; // inverse lerp
 
     // Factor por velocidad del mouse: más boost cuanto más quieto
     const vNorm = Math.min(1, this.mouseVelocity / 600); // 0..1 (ver normalización en updateMouseVelocity)
-    const velFactor = 1.3 - 0.5 * vNorm; // 1.3 en reposo → 0.8 a velocidad alta
+    const velFactor = 1.6 - 0.3 * vNorm; // 1.6 en reposo → 1.3 a velocidad alta (MUY tolerante)
 
-  // Reducir ligeramente el radio resultante (≈2/3 del valor actual)
-  const SCALE = 2 / 3;
-  const detectionRadius = Math.max(16, Math.min(160, baseRadius * velFactor * SCALE));
+  // Escala aumentada significativamente para objetos lejanos
+  const SCALE = 1.0; // Aumentado de 0.85 a 1.0 para máxima tolerancia
+  const detectionRadius = Math.max(30, Math.min(220, baseRadius * velFactor * SCALE));
     this.lastDetectionRadiusPx = detectionRadius;
   // Try worker-assisted shortlist first
   const hit = this.detectWithWorkerFallback(detectionRadius);
@@ -379,15 +378,18 @@ export class ReticleManager {
     
     const newHoveredTarget = hit?.target || null;
     
+    // Sistema de estabilización para evitar flickering a FPS altos
+    const stabilizedTarget = this.stabilizeTargetSelection(newHoveredTarget);
+    
     // Debug FORZADO para verificar detección
     // Reduced debug noise
     
-    // Verificar cambio en hover
-    if (newHoveredTarget !== this.state.hoveredTarget) {
+    // Verificar cambio en hover usando target estabilizado
+    if (stabilizedTarget !== this.state.hoveredTarget) {
       // Importante: NO mutar state.hoveredTarget aquí. Dejamos que el handler lo actualice,
       // así puede comparar correctamente contra el valor previo y disparar efectos (outline/highlight).
       // Quiet hover change spam
-      this.events.onTargetHovered(newHoveredTarget);
+      this.events.onTargetHovered(stabilizedTarget);
     }
   }
 
@@ -469,6 +471,78 @@ export class ReticleManager {
   }
 
   /**
+   * Actualiza el historial de frame timings para calcular FPS promedio
+   */
+  private updateFrameTimings(deltaTime: number): void {
+    // Mantener los últimos 30 frames para calcular FPS estable
+    this.frameTimings.push(deltaTime);
+    if (this.frameTimings.length > 30) {
+      this.frameTimings.shift();
+    }
+  }
+
+  /**
+   * Calcula el throttle adaptativo basado en FPS actual
+   */
+  private calculateAdaptiveThrottle(): number {
+    if (this.frameTimings.length < 5) {
+      return this.detectIntervalMs; // Usar default hasta tener suficientes muestras
+    }
+    
+    // Calcular FPS promedio de los últimos frames
+    const avgDeltaTime = this.frameTimings.reduce((sum, dt) => sum + dt, 0) / this.frameTimings.length;
+    const currentFPS = avgDeltaTime > 0 ? 1000 / avgDeltaTime : 60;
+    
+    // Throttle adaptativo: más detecciones por segundo a FPS más altos
+    // - A 60+ FPS: detectar cada frame (0ms throttle)
+    // - A 30-60 FPS: detectar cada 16ms (~60Hz)
+    // - A 15-30 FPS: detectar cada 33ms (~30Hz) 
+    // - Menos de 15 FPS: detectar cada 50ms (~20Hz)
+    
+    if (currentFPS >= 55) {
+      return 0; // Sin throttle a FPS altos - detectar cada frame
+    } else if (currentFPS >= 35) {
+      return 16; // ~60Hz
+    } else if (currentFPS >= 20) {
+      return 33; // ~30Hz
+    } else {
+      return 50; // ~20Hz para FPS muy bajos
+    }
+  }
+
+  /**
+   * Estabiliza la selección de targets para evitar flickering a FPS altos
+   */
+  private stabilizeTargetSelection(candidateTarget: ITargetable | null): ITargetable | null {
+    // Si no hay candidato, resetear estabilidad
+    if (!candidateTarget) {
+      this.lastStableTarget = null;
+      this.targetStabilityFrames = 0;
+      return null;
+    }
+    
+    // Si es el mismo target que antes, mantenerlo
+    if (candidateTarget === this.lastStableTarget) {
+      this.targetStabilityFrames = Math.min(this.targetStabilityFrames + 1, this.TARGET_STABILITY_THRESHOLD + 5);
+      return candidateTarget;
+    }
+    
+    // Si es un target diferente, verificar estabilidad
+    if (candidateTarget !== this.lastStableTarget) {
+      this.targetStabilityFrames = 0;
+      this.lastStableTarget = candidateTarget;
+    }
+    
+    // Solo cambiar después de algunos frames consecutivos
+    if (this.targetStabilityFrames >= this.TARGET_STABILITY_THRESHOLD) {
+      return candidateTarget;
+    }
+    
+    // Mantener el target anterior hasta que se estabilice
+    return this.state.hoveredTarget;
+  }
+
+  /**
    * Calcula la velocidad del mouse para retícula dinámica
    */
   private updateMouseVelocity(deltaTime: number): void {
@@ -506,10 +580,18 @@ export class ReticleManager {
     // Guardar posición para próximo frame
     this.lastMousePosition = { ...currentPos };
     
-    // Debug ocasional
-    if (Math.random() < 0.01) { // 1% de chance por frame
-      console.log('🏃 Mouse velocity:', Math.round(this.mouseVelocity), 
-                  'Openness:', Math.round(this.reticleOpenness * 100) + '%');
+    // Debug ocasional con info de FPS y targeting
+    if (Math.random() < 0.005) { // 0.5% de chance por frame para reducir spam
+      const currentFPS = this.frameTimings.length > 0 ? 
+        Math.round(1000 / (this.frameTimings.reduce((sum, dt) => sum + dt, 0) / this.frameTimings.length)) : 0;
+      const throttle = this.calculateAdaptiveThrottle();
+      console.log('� Targeting Status:', {
+        FPS: currentFPS,
+        throttle: throttle + 'ms',
+        mouseVelocity: Math.round(this.mouseVelocity),
+        reticleOpenness: Math.round(this.reticleOpenness * 100) + '%',
+        stabilityFrames: this.targetStabilityFrames
+      });
     }
   }
 
@@ -749,23 +831,27 @@ export class ReticleManager {
 
   /**
    * Selecciona un target específico
+   * [DISABLED] - No hace nada durante refactoring
    */
   public selectTarget(target: ITargetable | null): void {
-    this.events.onTargetSelected(target);
+    console.log('🎯 selectTarget llamado pero sistema deshabilitado:', target?.getDisplayName());
+    // Sistema deshabilitado
   }
 
   /**
    * Obtiene el target actualmente seleccionado
+   * [DISABLED] - Siempre devuelve null durante refactoring
    */
   public getCurrentTarget(): ITargetable | null {
-    return this.state.currentTarget;
+    return null; // Sistema deshabilitado
   }
 
   /**
    * Obtiene el target bajo el cursor
+   * [DISABLED] - Siempre devuelve null durante refactoring
    */
   public getHoveredTarget(): ITargetable | null {
-    return this.state.hoveredTarget;
+    return null; // Sistema deshabilitado
   }
 
   /**

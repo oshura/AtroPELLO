@@ -4,6 +4,7 @@ import { GameEngine } from '../../game/GameEngine';
 import { WebGLService } from '../webgl.service';
 import { ParticleEffectsService } from '../particle-effects.service';
 import { ReticleManager } from '../../game/targeting';
+import { AdaptiveTargetingIntegrator } from '../../game/targeting/v2/AdaptiveTargetingIntegrator';
 import { TargetCatalogService } from '../../game/services/target-catalog.service';
 import { TargetDetailService } from '../../game/services/target-detail.service';
 import { AsteroidClusterService } from '../../game/services/game/asteroid-cluster.service';
@@ -89,12 +90,14 @@ export class GameInitializer {
     const targetCatalog = this.injector.get(TargetCatalogService);
     const targetDetails = this.injector.get(TargetDetailService);
     const asteroidClusterService = this.injector.get(AsteroidClusterService);
-  const relationService = this.injector.get(RelationService);
-  const animationManager = this.injector.get(AnimationManagerService);
+    const relationService = this.injector.get(RelationService);
+    const animationManager = this.injector.get(AnimationManagerService);
+    const adaptiveTargeting = this.injector.get(AdaptiveTargetingIntegrator);
     this.gameEngine = new GameEngine(
       this.webglService,
       this.particleEffectsService,
       reticleManager,
+      adaptiveTargeting,
       targetCatalog,
       targetDetails,
       asteroidClusterService,

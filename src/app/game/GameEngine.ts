@@ -11,6 +11,7 @@ import { HUDManager } from './hud/HUDManager';
 import { SuperAsteroid } from './SuperAsteroid';
 import { ClusterObject } from './Cluster';
 import { ReticleManager } from './targeting';
+import { AdaptiveTargetingIntegrator } from './targeting/v2/AdaptiveTargetingIntegrator';
 import { AsteroidClusterService } from './services/game/asteroid-cluster.service';
 import { TargetCatalogService } from './services/target-catalog.service';
 import { AnimationManagerService } from './services/animations/animation-manager.service';
@@ -50,6 +51,7 @@ export class GameEngine {
   private particleEffects!: ParticleEffectsService;
   private hudManager!: HUDManager;
   private reticleManager!: ReticleManager;
+  private adaptiveTargeting!: AdaptiveTargetingIntegrator;
   private asteroidClusterService!: AsteroidClusterService;
   private targetCatalog!: TargetCatalogService;
   private targetDetails!: TargetDetailService;
@@ -122,6 +124,7 @@ export class GameEngine {
     private webglService: WebGLService,
     private particleEffectsService: ParticleEffectsService,
     private reticleManagerService: ReticleManager,
+    private adaptiveTargetingService: AdaptiveTargetingIntegrator,
     private targetCatalogService: TargetCatalogService,
     private targetDetailService: TargetDetailService,
     asteroidClusterService: AsteroidClusterService,
@@ -129,6 +132,7 @@ export class GameEngine {
     private animationManager: AnimationManagerService
   ) {
     this.reticleManager = this.reticleManagerService;
+    this.adaptiveTargeting = this.adaptiveTargetingService;
     this.targetCatalog = this.targetCatalogService;
     this.targetDetails = this.targetDetailService;
     this.targetPreview = new TargetPreviewRenderer(256, 192);
@@ -227,6 +231,14 @@ export class GameEngine {
       }
       console.log('🎯 ReticleManager inicializado con visual system');
 
+      // Inicializar nuevo sistema de targeting adaptativo
+      const adaptiveInit = await this.adaptiveTargeting.initialize(this.camera, this.shaderManager);
+      if (!adaptiveInit) {
+        console.error('❌ Error inicializando sistema de targeting adaptativo');
+        return false;
+      }
+      console.log('🎯 AdaptiveTargetingIntegrator inicializado');
+
       // Crear objetos del juego
       this.createGameObjects();
 
@@ -234,6 +246,14 @@ export class GameEngine {
       if (this.reticleManager && this.spaceship) {
         this.reticleManager.setDistanceOriginProvider(() => ({ ...this.spaceship.position }));
       }
+      
+      // Configure adaptive targeting distance origin
+      if (this.adaptiveTargeting && this.spaceship) {
+        this.adaptiveTargeting.setDistanceOriginProvider(() => ({ ...this.spaceship.position }));
+      }
+
+      // Setup mouse click handling for adaptive targeting
+      this.setupAdaptiveTargetingEvents(canvasRef);
 
   // Registro de targets se realiza al crear los clusters (initializeAllBuffers)
 
@@ -740,7 +760,7 @@ export class GameEngine {
     this.targetCatalog.register(TargetType.CLUSTER, clusters);
 
     // Transferencia estable de selección: solo si el clúster propietario del target actual cambia de LOD
-    const current = this.reticleManager.getCurrentTarget();
+    const current = this.adaptiveTargeting.getCurrentTarget();
     if (current) {
       const currentType = current.getTargetType();
       // Caso A: seleccionado es un miembro (asteroide/super) y su clúster colapsa a proxy
@@ -834,7 +854,7 @@ export class GameEngine {
 
   // Asegurar que el target actualmente seleccionado no se pierda por filtros de distancia
   try {
-    const currentSel = this.reticleManager.getCurrentTarget?.();
+    const currentSel = this.adaptiveTargeting.getCurrentTarget?.();
     if (currentSel && !availableTargets.some(t => t.id === currentSel.id)) {
       availableTargets = [currentSel, ...availableTargets];
     }
@@ -849,25 +869,37 @@ export class GameEngine {
       });
     }
     
-    // DEBUG CRÍTICO - Verificar llamada
-    if (performance.now() % 2000 < 50) { // Cada 2 segundos aprox
-      console.log('🚀 GameEngine→ReticleManager.update():', {
+    // DEBUG CRÍTICO - Verificar llamada (increased frequency for testing)
+    if (performance.now() % 5000 < 50) { // Cada 5 segundos aprox para testing
+      console.log('🚀 GameEngine→AdaptiveTargeting.update():', {
         deltaTime: Math.round(deltaTime * 1000) + 'ms',
-  asteroids: this.targetCatalog.getByType(TargetType.ASTEROID).length,
+        asteroids: this.targetCatalog.getByType(TargetType.ASTEROID).length,
         targets: availableTargets.length,
         firstTarget: availableTargets[0]?.getDisplayName() || 'none',
+        adaptiveTargeting: !!this.adaptiveTargeting,
         reticleManager: !!this.reticleManager
       });
     }
     
+    // Update ReticleManager first to get mouse position
     this.reticleManager.update(deltaTime, availableTargets);
+    
+    // Get mouse position from ReticleManager
+    const mousePos = this.reticleManager.getDebugSnapshot().mouse;
+    
+    // Update adaptive targeting system (performs detection and maintains mouse velocity)
+    if (this.adaptiveTargeting) {
+      this.adaptiveTargeting.update(deltaTime, availableTargets, mousePos);
+    } else {
+      console.warn('⚠️ AdaptiveTargeting not initialized yet');
+    }
 
   // Update target preview animation regardless of selection
   this.targetPreview.update(deltaTime);
 
-  // Drive HUD Target Panel from hovered/selected targets
-    const hovered = this.reticleManager.getHoveredTarget();
-    const selected = this.reticleManager.getCurrentTarget() || hovered;
+  // Drive HUD Target Panel from hovered/selected targets using adaptive system
+    const hovered = this.adaptiveTargeting.getHoveredTarget();
+    const selected = this.adaptiveTargeting.getCurrentTarget() || hovered;
     // Backfill planet-specific runtime props if selected
     if (selected && selected.getTargetType && selected.getTargetType() === TargetType.PLANET) {
       const p: any = selected as any;
@@ -2989,7 +3021,7 @@ export class GameEngine {
     }
     // Lanzar VoidJump con tecla 'y' si hay target (seleccionado u hovered)
     if (key.toLowerCase() === 'y') {
-      const target = this.reticleManager?.getCurrentTarget?.() || this.reticleManager?.getHoveredTarget?.();
+      const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
       if (target) {
         // Limitar el salto sólo si el target está a más de 4000u de la nave
         const c = (() => {
@@ -3383,7 +3415,7 @@ export class GameEngine {
 
     // Sincronizar el target actual del sistema de retícula con el HUD
     try {
-      const currentTarget = this.reticleManager?.getCurrentTarget ? this.reticleManager.getCurrentTarget() : null;
+      const currentTarget = this.adaptiveTargeting?.getCurrentTarget ? this.adaptiveTargeting.getCurrentTarget() : null;
       if (this.hudManager?.setTarget) {
         this.hudManager.setTarget(currentTarget);
       }
@@ -3518,8 +3550,8 @@ export class GameEngine {
               return;
             }
             const target = this.mapIdToTarget.get(id);
-            if (target && this.reticleManager) {
-              try { this.reticleManager.selectTarget(target); } catch {}
+            if (target && this.adaptiveTargeting) {
+              try { this.adaptiveTargeting.selectTarget(target); } catch {}
               try { this.systemPanel!.setSelectedId(id); } catch {}
             }
           }
@@ -3595,6 +3627,23 @@ export class GameEngine {
       try { this.systemPanel.setSelectedId(null); } catch {}
       try { this.systemPanel.setHoveredId(null); } catch {}
     }
+  }
+
+  /**
+   * Configura eventos del mouse para el sistema de targeting adaptativo
+   */
+  private setupAdaptiveTargetingEvents(canvasRef: any): void {
+    const canvas = canvasRef as HTMLCanvasElement;
+    if (!canvas) return;
+
+    // Setup click handler for adaptive targeting
+    const handleClick = (event: MouseEvent) => {
+      if (!this.adaptiveTargeting) return;
+      this.adaptiveTargeting.handleClick();
+    };
+
+    canvas.addEventListener('click', handleClick);
+    console.log('🎯 AdaptiveTargeting mouse events configured');
   }
 
   /** Map ID resolver for a given world target: returns the map item id to select/highlight */

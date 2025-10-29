@@ -127,14 +127,27 @@ export class InputHandler {
     if (!this.canvas) return;
 
     const rect = this.canvas.getBoundingClientRect();
+    const rawX = event.clientX - rect.left;
+    const rawY = event.clientY - rect.top;
+    
+    // CRÍTICO: Asegurar consistencia con TargetDetector dimensions
+    // Usar las mismas dimensiones que usa getCanvasCssDimensions en TargetDetector
+    const canvasWidth = this.canvas.clientWidth || this.canvas.width || rect.width;
+    const canvasHeight = this.canvas.clientHeight || this.canvas.height || rect.height;
+    
+    // Clampar coordenadas dentro de los límites del canvas para evitar desplazamientos
     this.mousePosition = {
-      x: event.clientX - rect.left,
-      y: event.clientY - rect.top
+      x: Math.max(0, Math.min(canvasWidth, rawX)),
+      y: Math.max(0, Math.min(canvasHeight, rawY))
     };
 
-    // Debug temporal: Log ocasional para verificar eventos
-    if (Math.random() < 0.016) { // ~1 vez por segundo a 60fps
-      console.log('🖱️ Mouse move event:', this.mousePosition);
+    // Debug temporal: Log ocasional para verificar eventos y consistencia
+    if (Math.random() < 0.01) { // Reducido para menos spam
+      console.log('🖱️ Mouse coords:', {
+        raw: { x: Math.round(rawX), y: Math.round(rawY) },
+        clamped: { x: Math.round(this.mousePosition.x), y: Math.round(this.mousePosition.y) },
+        canvasSize: { w: Math.round(canvasWidth), h: Math.round(canvasHeight) }
+      });
     }
   }
 

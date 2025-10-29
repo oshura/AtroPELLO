@@ -29,14 +29,14 @@ export class TargetDetector implements ITargetDetector {
   private debugLogs: boolean = false;
   
   // === Constantes de tolerancia adaptativa (configurables) ===
-  private readonly TOL_NEAR_MAX_PX = 30;   // tolerancia máxima cerca
-  private readonly TOL_FAR_MIN_PX = 3;     // tolerancia mínima al alejarse
-  private readonly TOL_FAR_REF_U = 150;    // distancia (u) a la que se alcanza FAR_MIN_PX
-  private readonly TOL_NEAR_REF_U = 7;     // distancia (u) a la que se espera NEAR_MAX para tamaño base
-  private readonly TOL_MIN_ABS_PX = 1;     // mínimo absoluto
+  private readonly TOL_NEAR_MAX_PX = 45;   // tolerancia máxima cerca (aumentada significativamente)
+  private readonly TOL_FAR_MIN_PX = 8;     // tolerancia mínima al alejarse (DUPLICADA del 4 anterior)
+  private readonly TOL_FAR_REF_U = 300;    // distancia (u) a la que se alcanza FAR_MIN_PX (DUPLICADA para decay más lento)
+  private readonly TOL_NEAR_REF_U = 15;    // distancia (u) a la que se espera NEAR_MAX (DUPLICADA)
+  private readonly TOL_MIN_ABS_PX = 6;     // mínimo absoluto (TRIPLICADO de 2 a 6 pixels - CRÍTICO)
   private readonly DEFAULT_TARGET_RADIUS = 10; // radio por defecto si el target no expone radius
   // Ganancia por tamaño unificada para todos los tipos (comportamiento igual entre asteroid y super_asteroid)
-  private readonly TOL_SIZE_GAIN_UNIFIED = 0.8;
+  private readonly TOL_SIZE_GAIN_UNIFIED = 1.4; // Aumentada de 1.0 a 1.4 para mayor tolerancia
   
   constructor(private webglService: WebGLService) {
     this.config = {
@@ -143,12 +143,41 @@ export class TargetDetector implements ITargetDetector {
         const dy = screenPos.y - targetScreenPos.y;
         const pixelDistance = Math.sqrt(dx * dx + dy * dy);
 
-        // Calcular tolerancia adaptativa en píxeles según tamaño y distancia
-        const adaptiveTol = this.getAdaptiveTolerancePx(target, detectionRadiusPx);
+        // Calcular tolerancia adaptativa base según tamaño y distancia
+        const baseTolerance = this.getAdaptiveTolerancePx(target, detectionRadiusPx);
+        
+        // Compensación por distorsión de proyección (efecto "ojo de pez") - solo para objetos lejanos
+        const worldDistance = this.getWorldDistance(target.position);
+        let edgeDistortion = 1.0;
+        
+        // Solo aplicar compensación por distorsión a objetos realmente lejanos (>150u)
+        if (worldDistance > 150) {
+          const dims = this.getCanvasCssDimensions();
+          const centerX = dims.width * 0.5;
+          const centerY = dims.height * 0.5;
+          const distFromCenter = Math.sqrt((targetScreenPos.x - centerX) ** 2 + (targetScreenPos.y - centerY) ** 2);
+          const maxDistFromCenter = Math.sqrt(centerX ** 2 + centerY ** 2);
+          
+          // Compensación más suave: 1.0x en centro, hasta 1.4x en bordes (reducido de 1.8x)
+          const distortionFactor = Math.min(0.4, (distFromCenter / maxDistFromCenter) * 0.4);
+          edgeDistortion = 1.0 + distortionFactor;
+        }
+        
+        const adaptiveTol = baseTolerance * edgeDistortion;
         
         // quiet distance/tolerance debug
         
-  // Si está dentro de la tolerancia adaptativa, considerar hit
+  // Debug crítico para objetos muy lejanos
+        if (pixelDistance < 50 && adaptiveTol < 10 && Math.random() < 0.05) {
+          console.log('🔍 Objeto cercano pero tolerancia baja:', {
+            type: (target as any).getTargetType?.(),
+            distance: Math.round(this.getWorldDistance(target.position)),
+            pixelDistance: Math.round(pixelDistance),
+            tolerance: Math.round(adaptiveTol)
+          });
+        }
+        
+        // Si está dentro de la tolerancia adaptativa, considerar hit
   if (pixelDistance < adaptiveTol) {
           const worldDistance = this.getWorldDistance(target.position);
           
@@ -240,29 +269,74 @@ export class TargetDetector implements ITargetDetector {
     const sizeBoost = 1 + this.TOL_SIZE_GAIN_UNIFIED * Math.max(0, sizeRatio - 1);
     pixelRadius *= sizeBoost;
 
-  // 3) Factores específicos por tipo (mega_asteroid, super_asteroid, planet, giant planet):
+  // 3) Factores específicos por tipo (mega_asteroid, super_asteroid, cluster, planet, giant planet):
     const tType = typeof anyT.getTargetType === 'function' ? String(anyT.getTargetType()) : '';
   const isMega = tType === 'mega_asteroid';
     const isSuper = tType === 'super_asteroid';
+    const isCluster = tType === 'cluster';
+    const isAsteroid = tType === 'asteroid';
     const isPlanet = tType === 'planet';
     const isGiantPlanet = isPlanet && anyT.planetType === 'Giant';
 
     // Per-type parameters
-    let nearMaxPx = this.TOL_NEAR_MAX_PX; // default 30px
-    let farMinPx = this.TOL_FAR_MIN_PX;   // default 3px
+    let nearMaxPx = this.TOL_NEAR_MAX_PX; // default 45px
+    let farMinPx = this.TOL_FAR_MIN_PX;   // default 8px
     let nearRefU = this.TOL_NEAR_REF_U * sizeRatio; // default scaled by size
-    let farRefU = this.TOL_FAR_REF_U;     // default 150u
+    let farRefU = this.TOL_FAR_REF_U;     // default 300u
     let typeTolBoost = 1.0;               // multiplicative boost
     let dynCapBoost = 1.0;                // dynamic cap boost
     let maxParamBoost = 1.0;              // cap relative to caller param
     let additivePxCushion = 0;            // additive pixels
 
     if (isMega || isSuper) {
-      typeTolBoost = 2.0;
-      dynCapBoost = 1.8;
-      maxParamBoost = 2.0;
-      additivePxCushion = 12;
-      farRefU = this.TOL_FAR_REF_U * 2.2; // slower decay
+      // Mega y super asteroids: MUY generosos para objetos lejanos
+      nearMaxPx = 60;       // Aumentado de default
+      farMinPx = 15;        // MUCHO más generoso que los 8px default
+      typeTolBoost = 3.0;   // Aumentado de 2.0 a 3.0
+      dynCapBoost = 2.5;    // Aumentado de 1.8 a 2.5
+      maxParamBoost = 3.0;  // Aumentado de 2.0 a 3.0
+      additivePxCushion = 20; // Aumentado de 12 a 20
+      farRefU = this.TOL_FAR_REF_U * 4.0; // Decay MUY lento (4x en lugar de 2.2x)
+    } else if (isCluster) {
+      // Clusters: también muy generosos
+      nearMaxPx = 55;
+      farMinPx = 12;
+      typeTolBoost = 2.5;
+      dynCapBoost = 2.2;
+      maxParamBoost = 2.5;
+      additivePxCushion = 15;
+      farRefU = this.TOL_FAR_REF_U * 3.0; // Decay lento
+    } else if (isAsteroid) {
+      // Asteroids normales: ajuste más fino para distancias medias
+      // Tolerancia que decae más rápido en distancias medias pero se mantiene en lejanas
+      const distanceCategory = distance < 100 ? 'near' : distance < 300 ? 'medium' : 'far';
+      
+      if (distanceCategory === 'near') {
+        nearMaxPx = 40;       // Reducido de 50 para objetos cercanos
+        farMinPx = 8;         // Reducido de 10
+        typeTolBoost = 1.5;   // Reducido de 2.0
+        dynCapBoost = 1.6;    // Reducido de 2.0
+        maxParamBoost = 1.8;  // Reducido de 2.0  
+        additivePxCushion = 5; // Reducido de 10
+        farRefU = this.TOL_FAR_REF_U * 1.8;
+      } else if (distanceCategory === 'medium') {
+        nearMaxPx = 35;       // Aún más reducido para media distancia
+        farMinPx = 6;
+        typeTolBoost = 1.3;   // Menos boost
+        dynCapBoost = 1.4;
+        maxParamBoost = 1.6;
+        additivePxCushion = 3; // Muy poco cushion
+        farRefU = this.TOL_FAR_REF_U * 2.0;
+      } else {
+        // Far: mantener generoso para objetos lejanos
+        nearMaxPx = 45;
+        farMinPx = 10;
+        typeTolBoost = 2.0;
+        dynCapBoost = 2.0;
+        maxParamBoost = 2.0;
+        additivePxCushion = 8;
+        farRefU = this.TOL_FAR_REF_U * 2.5;
+      }
     } else if (isGiantPlanet) {
       // Giant planets: very slow decay. Keep 30px near; at 74.4ku still ~10px.
       nearMaxPx = 30;
@@ -299,7 +373,23 @@ export class TargetDetector implements ITargetDetector {
 
     // 7) Capear por techo dinámico y por el radio pasado por el caller (aumentado por tipo)
     const capped = Math.min(desired, typeDynamicMax, maxTolParamPx * maxParamBoost);
-    return Math.max(this.TOL_MIN_ABS_PX, capped);
+    const finalTolerance = Math.max(this.TOL_MIN_ABS_PX, capped);
+    
+    // Debug ocasional para objetos lejanos problemáticos
+    if (distance > 100 && (isMega || isSuper || isCluster || isAsteroid) && Math.random() < 0.01) {
+      console.log('🎯 Tolerancia lejana:', {
+        type: tType,
+        distance: Math.round(distance),
+        radiusWorld: Math.round(radiusWorld),
+        pixelRadius: Math.round(pixelRadius),
+        baseline: Math.round(baseline),
+        finalTolerance: Math.round(finalTolerance),
+        farMinPx,
+        TOL_MIN_ABS_PX: this.TOL_MIN_ABS_PX
+      });
+    }
+    
+    return finalTolerance;
   }
 
   /**
@@ -463,20 +553,38 @@ export class TargetDetector implements ITargetDetector {
     const v = vec4.fromValues(worldPos.x, worldPos.y, worldPos.z, 1.0);
     vec4.transformMat4(v, v, vp);
     
-    // Verificar que está delante de la cámara
-    if (v[3] <= 0) return null;
-    // Verificar que está dentro del rango de clip en Z (evita usar posiciones más allá del far/near)
-    const ndcZ = v[2] / v[3];
-    if (ndcZ < -1.0 || ndcZ > 1.0) return null;
-
-    // Dividir por w y mapear a coordenadas de pantalla (CSS px)
+    // Verificar que está delante de la cámara con mayor precisión
+    if (v[3] <= 1e-6) return null; // Evitar división por números muy pequeños
+    
+    // Dividir por w para obtener NDC
     const ndcX = v[0] / v[3];
     const ndcY = v[1] / v[3];
+    const ndcZ = v[2] / v[3];
+    
+    // Verificar que está dentro del rango de clip en Z con tolerancia
+    if (ndcZ < -1.1 || ndcZ > 1.1) return null; // Tolerancia aumentada para objetos lejanos
+    
+    // Mapear a coordenadas de pantalla con mayor precisión
     const dims = this.getCanvasCssDimensions();
     const screenX = (ndcX + 1.0) * dims.width * 0.5;
     const screenY = (1.0 - ndcY) * dims.height * 0.5;
 
-    return { x: screenX, y: screenY };
+    // CRÍTICO: Clampar coordenadas dentro del canvas para evitar desplazamientos
+    const clampedX = Math.max(0, Math.min(dims.width, screenX));
+    const clampedY = Math.max(0, Math.min(dims.height, screenY));
+    
+    // Debug para objetos lejanos con proyección problemática
+    const distance = this.getWorldDistance(worldPos);
+    if (distance > 200 && (Math.abs(screenX - clampedX) > 1 || Math.abs(screenY - clampedY) > 1) && Math.random() < 0.05) {
+      console.log('🎯 Proyección lejana clampada:', {
+        distance: Math.round(distance),
+        original: { x: Math.round(screenX), y: Math.round(screenY) },
+        clamped: { x: Math.round(clampedX), y: Math.round(clampedY) },
+        ndc: { x: ndcX.toFixed(3), y: ndcY.toFixed(3), z: ndcZ.toFixed(3) }
+      });
+    }
+
+    return { x: clampedX, y: clampedY };
   }
 
   /**
