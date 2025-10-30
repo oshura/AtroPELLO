@@ -1003,11 +1003,12 @@ export class GameEngine {
   const baseDetails = (this as any)._targetDetailsCache?.[selected.id] || this.getFallbackDetails(selected);
   // Añadir propiedades visibles comunes: masa del vacío del objeto si existe
   const voidMass = (selected as any).voidMassUnits ?? 0;
-  // Mostrar etiqueta explícita para SuperAsteroid en el HUD
-  const isSuper = (selected instanceof SuperAsteroid);
+  // Mostrar etiqueta explícita según tipo concreto: MegaAsteroid sobreescribe SuperAsteroid
+  const isMega = ((selected as any)?.constructor?.name === 'MegaAsteroid') || (selType === TargetType.MEGA_ASTEROID);
+  const isSuper = !isMega && (selected instanceof SuperAsteroid);
   const pTypeSel = String((selected as any)?.planetType || '').toLowerCase();
   const specialSel = pTypeSel === 'ringed' ? 'Ringed' : (pTypeSel === 'dwarf' ? 'Dwarf' : (pTypeSel === 'protoplanet' ? 'Protoplanet' : null));
-  const typeLabel = isSuper ? 'SuperAsteroid' : (specialSel ?? this.typeToLabel(selType));
+  const typeLabel = isMega ? 'MegaAsteroid' : (isSuper ? 'SuperAsteroid' : (specialSel ?? this.typeToLabel(selType)));
       // Include planet-specific hints when selected is a planet
       const planetHints = (selType === TargetType.PLANET)
         ? {
@@ -1343,6 +1344,7 @@ export class GameEngine {
       case TargetType.SUPER_ASTEROID: return 'SuperAsteroid';
       case TargetType.ASTEROID: return 'Asteroid';
       case TargetType.SPACESHIP: return 'Spaceship';
+      case TargetType.SUN: return 'Sun';
       case TargetType.PLANET: return 'Planet';
       case TargetType.PORTAL: return 'Portal';
       case TargetType.WAYPOINT: return 'Waypoint';
@@ -1626,10 +1628,11 @@ export class GameEngine {
             this.fetchAndCacheTargetDetails(tgt as ITargetable);
             const base = (this as any)._targetDetailsCache?.[tgt.id] || this.getFallbackDetails(tgt as ITargetable);
             const tt = (tgt as ITargetable).getTargetType?.();
-            const isSuper = (tgt as any)?.constructor?.name === 'SuperAsteroid';
+            const isMega = ((tgt as any)?.constructor?.name === 'MegaAsteroid') || ((tt as any) === TargetType.MEGA_ASTEROID);
+            const isSuper = !isMega && ((tgt as any)?.constructor?.name === 'SuperAsteroid');
             const pTypeMap = String((tgt as any)?.planetType || '').toLowerCase();
             const specialMap = pTypeMap === 'ringed' ? 'Ringed' : (pTypeMap === 'dwarf' ? 'Dwarf' : (pTypeMap === 'protoplanet' ? 'Protoplanet' : null));
-            const typeLabel = isSuper ? 'SuperAsteroid' : (specialMap ?? this.typeToLabel(tt));
+            const typeLabel = isMega ? 'MegaAsteroid' : (isSuper ? 'SuperAsteroid' : (specialMap ?? this.typeToLabel(tt)));
             const planetHints = (tt === TargetType.PLANET) ? {
               planetType: (tgt as any).planetType || (base as any)?.planetType || (tgt as any).baseColorName,
               probabilityOfLifePct: (tgt as any).probabilityOfLifePct ?? (base as any)?.probabilityOfLifePct ?? 0,

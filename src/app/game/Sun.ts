@@ -1,4 +1,5 @@
 import { Planet, PlanetColorName, PlanetType } from './Planet';
+import { TargetType } from './types/targeting.types';
 import { Vector3 } from '../types/game.types';
 
 /**
@@ -18,12 +19,19 @@ export class Sun extends Planet {
     this.customName = 'Sol';
     // Make the core more yellow
     (this as any).color = { r: 1.0, g: 0.92, b: 0.55, a: 1.0 };
+    // Also mark object type as SUN for systems that read objectType directly
+    (this as any).objectType = TargetType.SUN;
   }
 
   /** Render the bright core using basic color (self-lit) */
   public override render(gl: WebGLRenderingContext, program: WebGLProgram, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
     // Use base/parent render path (GameEngine chooses program), but ensure color is bright
     super.render(gl, program, viewMatrix, projectionMatrix);
+  }
+
+  // Classify Sun separately from generic PLANET for targeting/HUD
+  public override getTargetType(): TargetType {
+    return TargetType.SUN;
   }
 
   /** Additive billboard glow drawn after the main planet pass */

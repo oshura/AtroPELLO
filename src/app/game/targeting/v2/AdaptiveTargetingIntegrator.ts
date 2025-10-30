@@ -441,6 +441,7 @@ export class AdaptiveTargetingIntegrator {
     switch (tt) {
       case 'spaceship': return 0;
       case 'portal': return 1;
+      case 'sun': return 2; // treat like planet
       case 'planet': return 2;
       case 'cluster': return 3;
       case 'super_asteroid': return 4;

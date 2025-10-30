@@ -31,6 +31,7 @@ export enum TargetType {
   CLUSTER = 'cluster',
   SPACESHIP = 'spaceship', 
   PLANET = 'planet',
+  SUN = 'sun',
   PORTAL = 'portal',
   WAYPOINT = 'waypoint',
   UNKNOWN = 'unknown'
