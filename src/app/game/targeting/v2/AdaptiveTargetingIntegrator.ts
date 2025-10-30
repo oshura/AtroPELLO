@@ -30,6 +30,14 @@ export class AdaptiveTargetingIntegrator {
   
   // Reticle visibility
   private reticleVisible = true;
+
+  // STEP 4: Cycling state cache
+  private cycleCandidates: TargetDisplayInfo[] = [];
+  private cycleIndex = -1;
+  private cycleAnchorMouse: { x: number; y: number } | null = null;
+  private cycleAnchorTime = 0;
+  private cycleReuseMs = 750; // reuse candidate list within this time window
+  private cycleMoveTolerancePx = 6; // mouse move threshold to invalidate cache
   
   constructor(adaptiveSystem: AdaptiveTargetingSystem) {
     this.adaptiveSystem = adaptiveSystem;
@@ -317,5 +325,105 @@ export class AdaptiveTargetingIntegrator {
     this.reticleOpenness += (targetOpenness - this.reticleOpenness) * deltaTime * 5.0;
     
     this.lastMousePosition = { ...currentPos };
+  }
+
+  // ===================================
+  // STEP 4: Selection cycling and prioritization
+  // ===================================
+
+  /** Cycle through targets under the cursor (Tab/Shift+Tab) with priority and stable ordering */
+  public cycleTarget(direction: 1 | -1 = 1): void {
+    if (!this.isInitialized) return;
+
+    const now = performance.now();
+    const reuse = this.canReuseCycleCandidates(now, this.mousePosition);
+    if (!reuse) {
+      this.cycleCandidates = this.buildCycleCandidates(this.mousePosition);
+      this.cycleIndex = -1;
+      this.cycleAnchorMouse = { ...this.mousePosition };
+      this.cycleAnchorTime = now;
+    }
+
+    if (this.cycleCandidates.length === 0) {
+      // As fallback, rebuild (should include all on-screen)
+      this.cycleCandidates = this.buildCycleCandidates(this.mousePosition);
+      if (this.cycleCandidates.length === 0) return;
+      this.cycleIndex = -1;
+    }
+
+    // If current selected is among candidates, start from it
+    const selected = this.adaptiveSystem.getCurrentSelected();
+    if (selected) {
+      const idx = this.cycleCandidates.findIndex(c => c.target.id === selected.target.id);
+      if (idx >= 0) this.cycleIndex = idx;
+    }
+
+    // Move index
+    this.cycleIndex = (this.cycleIndex + direction + this.cycleCandidates.length) % this.cycleCandidates.length;
+    const next = this.cycleCandidates[this.cycleIndex];
+    this.adaptiveSystem.selectTarget(next.target);
+    if (Math.random() < 0.2) {
+      console.log(`🔁 Cycle ${direction > 0 ? 'next' : 'prev'} ->`, next.name, `[${next.category.name}]`, `${Math.round(next.distanceToCenter)}u`);
+    }
+  }
+
+  private canReuseCycleCandidates(now: number, mouse: { x: number; y: number }): boolean {
+    if (!this.cycleAnchorMouse) return false;
+    if (now - this.cycleAnchorTime > this.cycleReuseMs) return false;
+    const dx = mouse.x - this.cycleAnchorMouse.x;
+    const dy = mouse.y - this.cycleAnchorMouse.y;
+    return (dx * dx + dy * dy) <= (this.cycleMoveTolerancePx * this.cycleMoveTolerancePx);
+  }
+
+  private buildCycleCandidates(mouse: { x: number; y: number }): TargetDisplayInfo[] {
+    const byCategory = this.getTargetsByCategory();
+    const all: TargetDisplayInfo[] = [];
+    for (const list of byCategory.values()) {
+      for (const info of list) {
+        if (!info.screenPosition) continue; // only on-screen
+        all.push(info);
+      }
+    }
+    // Sort by priority then pixel distance with slight bias to currently hovered
+    const hovered = this.adaptiveSystem.getCurrentHovered();
+    const priorityOf = (t: TargetDisplayInfo) => this.getTypePriority(t.type);
+    all.sort((a, b) => {
+      const pa = priorityOf(a) - priorityOf(b);
+      if (pa !== 0) return pa;
+      const da = this.pixelDist(mouse, a);
+      const db = this.pixelDist(mouse, b);
+      if (da !== db) return da - db;
+      // Tie-breaker: favor hovered
+      if (hovered) {
+        if (a.target.id === hovered.target.id) return -1;
+        if (b.target.id === hovered.target.id) return 1;
+      }
+      // Stable by id
+      return a.target.id.localeCompare(b.target.id);
+    });
+    // Limit generously to allow largos recorridos but keep performance bounded
+    return all.slice(0, 256);
+  }
+
+  private pixelDist(mouse: { x: number; y: number }, info: TargetDisplayInfo): number {
+    if (!info.screenPosition) return Number.POSITIVE_INFINITY;
+    const dx = mouse.x - info.screenPosition.x;
+    const dy = mouse.y - info.screenPosition.y;
+    return Math.hypot(dx, dy);
+  }
+
+  private getTypePriority(tt: string): number {
+    // Lower number = higher priority
+    switch (tt) {
+      case 'spaceship': return 0;
+      case 'portal': return 1;
+      case 'planet': return 2;
+      case 'cluster': return 3;
+      case 'super_asteroid': return 4;
+      case 'mega_asteroid': return 5;
+      case 'asteroid': return 6;
+      case 'waypoint': return 7;
+      default: return 8;
+    }
   }
 }

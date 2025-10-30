@@ -24,7 +24,7 @@ export class GameInputHandler {
    * Inicializa el estado de las teclas
    */
   private initializeKeyState(): void {
-    const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', 'y', 'm', '+', '=', '-', '_', 'shift', 'control', 'escape', '0', '7', '8', '9'];
+    const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', 'y', 't', 'm', '+', '=', '-', '_', 'shift', 'control', 'escape', '0', '7', '8', '9'];
     gameKeys.forEach(key => {
       this.keyState[key.toLowerCase()] = false;
     });
@@ -68,6 +68,13 @@ export class GameInputHandler {
     
     // Log para debug de controles
     console.log('🎮 Key pressed:', event.key, '(mapped to:', key, ')');
+
+    // STEP 4: Cycle targets with T / Shift+T
+    if (key === 't') {
+      try { (this.gameEngine as any).cycleSelection?.(event.shiftKey === true); } catch {}
+      event.preventDefault();
+      return true;
+    }
     
     // Manejar teclas especiales: reenviar 'escape' al motor para cerrar mapas/menus
     if (key === 'escape') {
@@ -172,8 +179,7 @@ export class GameInputHandler {
    * Verifica si alguna tecla de velocidad está presionada
    */
   hasSpeedInput(): boolean {
-    return this.keyState['shift'] || this.keyState['control'] ||
-           this.keyState['+'] || this.keyState['='] ||
+    return this.keyState['+'] || this.keyState['='] ||
            this.keyState['-'] || this.keyState['_'];
   }
 

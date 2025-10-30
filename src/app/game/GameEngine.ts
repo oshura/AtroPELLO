@@ -3065,6 +3065,16 @@ export class GameEngine {
     }
   }
 
+  /** STEP 4: Cycle selection with Tab / Shift+Tab (reverse) */
+  public cycleSelection(reverse: boolean = false): void {
+    try {
+      const dir = reverse ? -1 : 1;
+      (this.adaptiveTargeting as any).cycleTarget?.(dir);
+    } catch (e) {
+      console.warn('Cycle selection failed:', e);
+    }
+  }
+
   /**
    * Maneja el zoom de la cámara
    */
@@ -3122,12 +3132,6 @@ export class GameEngine {
         break;
       case '-':
       case '_':
-        this.spaceship.controls.speedDown = pressed;
-        break;
-      case 'shift': // Mantener shift como alternativa
-        this.spaceship.controls.speedUp = pressed;
-        break;
-      case 'control': // Mantener control como alternativa
         this.spaceship.controls.speedDown = pressed;
         break;
     }

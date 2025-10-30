@@ -148,7 +148,10 @@ export class ReticleManager {
   // Inicializar componentes
   this.targetDetector.initialize(camera);
   this.inputHandler.initialize(canvas, this.events);
-  // Propagar configuración de input (incluye cycleNextKey 't') al handler
+  // Desactivar teclas de ciclo y Escape-deselect del ReticleManager para evitar conflictos con el nuevo sistema
+  this.config.input.cycleNextKey = undefined as any;
+  this.config.input.cyclePrevWithShift = false;
+  this.config.input.keyboardKey = undefined as any; // no usar Escape para deseleccionar
   this.inputHandler.updateConfig(this.config.input);
         this.targetHighlighter.initialize(shaderManager);
         
