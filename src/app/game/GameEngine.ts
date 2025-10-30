@@ -60,6 +60,8 @@ export class GameEngine {
   private systemPanel: SolarSystemPanel | null = null;
   private overlayRenderer: ScreenOverlayRenderer | null = null;
   private targetOutline2D: TargetOutline2DRenderer | null = null;
+  // Runtime toggle to enable/disable the 2D outliner overlay for performance testing
+  private outlinerEnabled: boolean = true;
   private landingOverlay: LandingOverlay | null = null;
   private domCanvas: HTMLCanvasElement | null = null;
   private mapIdToTarget: Map<string, ITargetable> = new Map();
@@ -199,6 +201,8 @@ export class GameEngine {
           console.warn('⚠️ TargetOutline2DRenderer no pudo inicializarse');
           this.targetOutline2D = null;
         }
+        // Throttle texture uploads to stabilize intensity and reduce cost
+        try { (this.targetOutline2D as any).setMinUploadInterval?.(100); } catch {}
       } catch (e) {
         console.warn('⚠️ Error inicializando TargetOutline2DRenderer:', e);
         this.targetOutline2D = null;
@@ -276,6 +280,15 @@ export class GameEngine {
       this.runIntegrationTests();
 
       console.log('GameEngine inicializado correctamente');
+      // Expose a simple console hook to toggle the 2D outliner at runtime for FPS testing
+      try {
+        const w = (globalThis as any);
+        w.Debug = w.Debug || {};
+        w.Debug.setOutlinerEnabled = (v: boolean) => {
+          this.outlinerEnabled = !!v;
+          console.log('🟢 Outliner enabled =', this.outlinerEnabled);
+        };
+      } catch {}
       return true;
 
     } catch (error) {
@@ -3559,6 +3572,7 @@ export class GameEngine {
 
   /** STEP 5: Render del nuevo outliner 2D (si hay seleccionado o hovered) */
   private renderTargetOutline2D(): void {
+    if (!this.outlinerEnabled) return; // disabled for performance testing
     if (!this.targetOutline2D || !this.adaptiveTargeting) return;
     try {
       const selected = this.adaptiveTargeting.getCurrentTarget?.();

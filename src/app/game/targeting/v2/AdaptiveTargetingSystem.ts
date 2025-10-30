@@ -379,12 +379,9 @@ export class AdaptiveTargetingSystem {
 
   private getTargetDetails(target: ITargetable, category: DistanceCategory): TargetDisplayInfo['details'] {
     const details: TargetDisplayInfo['details'] = {};
-    
-    // Health info for close targets
-    if (category.name === 'immediate' || category.name === 'close') {
-      if (target.healthCurrent !== undefined && target.healthMax !== undefined) {
-        details.health = { current: target.healthCurrent, max: target.healthMax };
-      }
+    // Health info for ALL targets (health is a base property in GameObject)
+    if (target.healthCurrent !== undefined && target.healthMax !== undefined) {
+      details.health = { current: target.healthCurrent, max: target.healthMax };
     }
     
     // Size info

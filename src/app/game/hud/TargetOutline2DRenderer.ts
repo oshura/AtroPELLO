@@ -2,8 +2,8 @@ import { Injectable } from '@angular/core';
 import { WebGLService } from '../../services/webgl.service';
 
 interface OutlineRenderData {
-  x: number; // screen px
-  y: number; // screen px
+  x: number; // screen px (framebuffer pixels)
+  y: number; // screen px (framebuffer pixels)
   name: string;
   typeLabel: string;
   distanceEdge: number; // units to edge
@@ -13,11 +13,11 @@ interface OutlineRenderData {
 
 @Injectable({ providedIn: 'root' })
 export class TargetOutline2DRenderer {
-  private gl: WebGL2RenderingContext | null = null;
-
+  private gl: WebGL2RenderingContext | WebGLRenderingContext | null = null;
+  
   // GL resources
   private program: WebGLProgram | null = null;
-  private vao: WebGLVertexArrayObject | null = null;
+  private vao: WebGLVertexArrayObject | WebGLVertexArrayObjectOES | null = null;
   private vbo: WebGLBuffer | null = null;
 
   // Uniforms
@@ -29,10 +29,14 @@ export class TargetOutline2DRenderer {
   // Texture from offscreen 2D canvas
   private canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private texture: WebGLTexture | null = null;
-  private lastKey: string = '';
+  // per-content texture cache to allow rendering multiple markers without conflicts
+  private cache = new Map<string, { texture: WebGLTexture; lastUpload: number }>();
+  private maxCacheSize = 16;
 
-  // Fixed pixel size of the marker
+  // Redraw throttling
+  private minUploadIntervalMs = 80; // optional per-key throttle if we ever re-upload same key
+
+  // Fixed pixel size of the marker texture
   private readonly texWidth = 220;
   private readonly texHeight = 90;
 
@@ -45,40 +49,73 @@ export class TargetOutline2DRenderer {
     this.ctx = ctx;
   }
 
+  public setMinUploadInterval(ms: number) {
+    this.minUploadIntervalMs = Math.max(0, Math.floor(ms));
+  }
+
   public initialize(): boolean {
-    this.gl = this.webgl.getContext() as WebGL2RenderingContext;
+    const ctx = this.webgl.getContext() as any;
+    this.gl = (ctx && 'bindVertexArray' in ctx)
+      ? (ctx as WebGL2RenderingContext)
+      : (ctx as WebGLRenderingContext);
     if (!this.gl) return false;
 
-    const vsSource = `#version 300 es\n
-    precision highp float;\n
-    layout(location=0) in vec2 a_pos; // quad corners in px around origin (-0.5..+0.5 scaled)\n
-    uniform vec2 u_screenSize;\n
-    uniform vec2 u_translate; // px center on screen\n
-    uniform vec2 u_size; // px size of quad (w,h)\n
-    out vec2 v_uv;\n
-    void main(){\n
-      vec2 halfSize = 0.5 * u_size;\n
-      vec2 posPx = u_translate + a_pos * u_size;\n
-      // px -> NDC\n
-      vec2 ndc = vec2(\n        (posPx.x / u_screenSize.x) * 2.0 - 1.0,\n
-        1.0 - (posPx.y / u_screenSize.y) * 2.0\n
-      );\n
-      gl_Position = vec4(ndc, 0.0, 1.0);\n
-      // map a_pos from [-0.5,0.5] to [0,1]\n
-      v_uv = a_pos + 0.5;\n
-    }`;
+    // Build shaders/program
+    const isWebGL2 = 'bindVertexArray' in this.gl; // reliable check
+    const vsSource = (isWebGL2 ? '#version 300 es\n' : '') + (
+      isWebGL2
+        ? `precision highp float;
+           layout(location=0) in vec2 a_pos;
+           uniform vec2 u_screenSize;
+           uniform vec2 u_translate;
+           uniform vec2 u_size;
+           out vec2 v_uv;
+           void main(){
+             vec2 posPx = u_translate + a_pos * u_size;
+             vec2 ndc = vec2(
+               (posPx.x / u_screenSize.x) * 2.0 - 1.0,
+               1.0 - (posPx.y / u_screenSize.y) * 2.0
+             );
+             gl_Position = vec4(ndc, 0.0, 1.0);
+             v_uv = a_pos + 0.5;
+           }`
+        : `precision highp float;
+           attribute vec2 a_pos;
+           uniform vec2 u_screenSize;
+           uniform vec2 u_translate;
+           uniform vec2 u_size;
+           varying vec2 v_uv;
+           void main(){
+             vec2 posPx = u_translate + a_pos * u_size;
+             vec2 ndc = vec2(
+               (posPx.x / u_screenSize.x) * 2.0 - 1.0,
+               1.0 - (posPx.y / u_screenSize.y) * 2.0
+             );
+             gl_Position = vec4(ndc, 0.0, 1.0);
+             v_uv = a_pos + 0.5;
+           }`
+    );
 
-    const fsSource = `#version 300 es\n
-    precision highp float;\n
-    in vec2 v_uv;\n
-    uniform sampler2D u_sampler;\n
-    out vec4 outColor;\n
-    void main(){\n
-      vec4 c = texture(u_sampler, v_uv);\n
-      outColor = c;\n
-    }`;
+    const fsSource = (isWebGL2 ? '#version 300 es\n' : '') + (
+      isWebGL2
+        ? `precision highp float;
+           in vec2 v_uv;
+           uniform sampler2D u_sampler;
+           out vec4 outColor;
+           void main(){
+             vec4 c = texture(u_sampler, v_uv);
+             outColor = c;
+           }`
+        : `precision highp float;
+           varying vec2 v_uv;
+           uniform sampler2D u_sampler;
+           void main(){
+             vec4 c = texture2D(u_sampler, v_uv);
+             gl_FragColor = c;
+           }`
+    );
 
-    const prog = this.createProgram(vsSource, fsSource);
+    const prog = this.createProgram(vsSource, fsSource, !!isWebGL2);
     if (!prog) return false;
     this.program = prog;
 
@@ -90,35 +127,37 @@ export class TargetOutline2DRenderer {
       -0.5,  0.5,
     ]);
 
-    const gl = this.gl;
-    this.vao = gl.createVertexArray();
+    const gl = this.gl as any;
+    // VAO (compat for WebGL1 with OES_vertex_array_object)
+    const vaoExt = !('bindVertexArray' in gl) ? gl.getExtension('OES_vertex_array_object') : null;
+    this.vao = ('createVertexArray' in gl)
+      ? gl.createVertexArray()
+      : (vaoExt ? vaoExt.createVertexArrayOES() : null);
+    if (this.vao) {
+      if ('bindVertexArray' in gl) gl.bindVertexArray(this.vao);
+      else vaoExt.bindVertexArrayOES(this.vao);
+    }
     this.vbo = gl.createBuffer();
-    gl.bindVertexArray(this.vao);
     gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
     gl.bufferData(gl.ARRAY_BUFFER, verts, gl.STATIC_DRAW);
-    gl.enableVertexAttribArray(0);
-    gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 8, 0);
-    gl.bindVertexArray(null);
+    const loc = 0;
+    gl.enableVertexAttribArray(loc);
+    gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 8, 0);
+    if (this.vao) {
+      if ('bindVertexArray' in gl) gl.bindVertexArray(null);
+      else (vaoExt as any).bindVertexArrayOES(null);
+    }
 
     this.uScreenSize = gl.getUniformLocation(this.program, 'u_screenSize');
     this.uTranslate = gl.getUniformLocation(this.program, 'u_translate');
     this.uSize = gl.getUniformLocation(this.program, 'u_size');
     this.uSampler = gl.getUniformLocation(this.program, 'u_sampler');
 
-    // Prepare texture
-    this.texture = gl.createTexture();
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-    gl.bindTexture(gl.TEXTURE_2D, null);
-
     return true;
   }
 
-  private createProgram(vsSrc: string, fsSrc: string): WebGLProgram | null {
-    const gl = this.gl!;
+  private createProgram(vsSrc: string, fsSrc: string, isWebGL2: boolean): WebGLProgram | null {
+    const gl = this.gl! as any;
     const vs = gl.createShader(gl.VERTEX_SHADER)!;
     gl.shaderSource(vs, vsSrc);
     gl.compileShader(vs);
@@ -136,6 +175,9 @@ export class TargetOutline2DRenderer {
     const p = gl.createProgram()!;
     gl.attachShader(p, vs);
     gl.attachShader(p, fs);
+    if (isWebGL2) {
+      gl.bindAttribLocation(p, 0, 'a_pos');
+    }
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
       console.error('Program link error', gl.getProgramInfoLog(p));
@@ -151,19 +193,19 @@ export class TargetOutline2DRenderer {
     const W = this.texWidth, H = this.texHeight;
     ctx.clearRect(0, 0, W, H);
 
-    // Background: fully transparent; design anchored at texture center
+    // Background: transparent; design anchored at texture center
     const accent = data.color || '#60a5fa';
     const cx = W / 2;
     const cy = H / 2;
 
-    // Helper: unit formatting (u -> ku if >= 1000u)
+    // Unit formatting (u -> ku if >= 1000u)
     const formatDist = (val: number) => {
       const v = Math.max(0, val);
       if (v >= 1000) return `${(v / 1000).toFixed(1)}ku`;
       return `${Math.round(v)}u`;
     };
 
-    // Outer subtle ring
+    // Outer ring
     ctx.save();
     ctx.strokeStyle = accent;
     ctx.lineWidth = 2.0;
@@ -171,7 +213,7 @@ export class TargetOutline2DRenderer {
     ctx.arc(cx, cy, 22, 0, Math.PI * 2);
     ctx.stroke();
 
-    // Corner chevrons around the ring (integrated outline)
+    // Corner chevrons
     ctx.lineWidth = 1.5;
     const r = 30; const len = 8;
     const drawChevron = (ang: number) => {
@@ -188,90 +230,143 @@ export class TargetOutline2DRenderer {
     drawChevron(Math.PI);
     drawChevron(-Math.PI * 0.5);
 
-    // Center dot
-    ctx.fillStyle = accent;
-    ctx.beginPath(); ctx.arc(cx, cy, 2.25, 0, Math.PI * 2); ctx.fill();
+  // Center dot removed by request
 
-    // Integrated micro text
+    // Texts: type/name above; health left bottom; distance right bottom
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
 
-    // Type (bold, above ring) in accent color
+    // Name at the top (position where type used to be)
     ctx.fillStyle = accent;
-    ctx.font = 'bold 11px Segoe UI, Roboto, Arial'; // Keep the same font style
-  ctx.fillText(String(data.typeLabel || '').toUpperCase(), cx, cy - 38);
-
-    // Name (slightly larger) also in accent color
-    ctx.fillStyle = accent;
-      ctx.font = '600 12px Segoe UI, Roboto, Arial'; // Keep the same font style
-    const name = String(data.name || '');
-    const maxW = 160;
-    let rendered = name;
-    if (ctx.measureText(rendered).width > maxW) {
-      while (rendered.length > 3 && ctx.measureText(rendered + '…').width > maxW) {
-        rendered = rendered.slice(0, -1);
+    ctx.font = '600 12px Segoe UI, Roboto, Arial';
+    const topName = String(data.name || '');
+    const maxWTop = 160;
+    let renderedTop = topName;
+    if (ctx.measureText(renderedTop).width > maxWTop) {
+      while (renderedTop.length > 3 && ctx.measureText(renderedTop + '…').width > maxWTop) {
+        renderedTop = renderedTop.slice(0, -1);
       }
-      rendered += '…';
+      renderedTop += '…';
     }
-      ctx.fillText(rendered, cx, cy - 22); // Adjusted position
+    ctx.fillText(renderedTop, cx, cy - 38);
 
-    // Bottom labels: health left, distance right; both in accent color
+    // Previous name line removed (now used by type at bottom center)
+
+    // Bottom labels (same font size as name)
     ctx.fillStyle = accent;
-      ctx.font = '600 12px Segoe UI, Roboto, Arial'; // Made bottom labels same size as name
-    // Health bottom-left
-    const hp = typeof data.healthPct === 'number' && isFinite(data.healthPct) ? Math.max(0, Math.min(100, Math.round(data.healthPct))) : null;
-    ctx.textAlign = 'right';
-    if (hp !== null) {
-      ctx.fillText(`${hp}%`, cx - 28, cy + 26);
-    }
-    // Distance bottom-right
-    ctx.textAlign = 'left';
+    ctx.font = '600 12px Segoe UI, Roboto, Arial';
+    const hp = (typeof data.healthPct === 'number' && isFinite(data.healthPct))
+      ? Math.max(0, Math.min(100, Math.round(data.healthPct)))
+      : null;
+  ctx.textAlign = 'right';
+    if (hp !== null) ctx.fillText(`${hp}%`, cx - 28, cy + 26);
+  ctx.textAlign = 'left';
+    // Quantize distance label to reduce redraw churn
     ctx.fillText(`${formatDist(data.distanceEdge)}`, cx + 28, cy + 26);
+
+  // Type at bottom center (lowered slightly more)
+  ctx.textAlign = 'center';
+  ctx.font = 'bold 11px Segoe UI, Roboto, Arial';
+  ctx.fillText(String(data.typeLabel || '').toUpperCase(), cx, cy + 38);
+
     ctx.restore();
   }
 
-  private uploadTexture(): void {
-    const gl = this.gl!;
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
+  private uploadTextureFor(texture: WebGLTexture): void {
+    const gl: any = this.gl!;
+    gl.bindTexture(gl.TEXTURE_2D, texture);
+    // Use premultiplied alpha for consistent blending
     gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
-  public render(anchorX: number, anchorY: number, data: OutlineRenderData): void {
-    if (!this.gl || !this.program || !this.vao) return;
+  // Create a coarse key to avoid unnecessary texture rebuilds
+  private makeKey(data: OutlineRenderData): string {
+    const distBucket = Math.round((data.distanceEdge || 0) / 25); // 25u buckets
+    const hpBucket = (data.healthPct == null) ? -1 : Math.round((data.healthPct as number) / 5); // 5% buckets
+    return `${data.name}|${data.typeLabel}|${distBucket}|${hpBucket}|${data.color}`;
+  }
 
-    // Rebuild texture only when needed
-  const key = `${data.name}|${data.typeLabel}|${Math.round(data.distanceEdge/5)}|${data.color}|${Math.round((data.healthPct ?? -1))}`;
-    if (key !== this.lastKey) {
+  public render(anchorX: number, anchorY: number, data: OutlineRenderData): void {
+    if (!this.gl || !this.program) return;
+
+    const now = performance.now();
+    const key = this.makeKey(data);
+    let entry = this.cache.get(key);
+    if (!entry) {
+      // Create texture for this content key
+      const gl: any = this.gl;
+      const tex = gl.createTexture();
+      gl.bindTexture(gl.TEXTURE_2D, tex);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
       this.drawToCanvas(data);
-      this.uploadTexture();
-      this.lastKey = key;
+      this.uploadTextureFor(tex);
+      entry = { texture: tex, lastUpload: now };
+      this.cache.set(key, entry);
+      // prune simple LRU if needed
+      if (this.cache.size > this.maxCacheSize) {
+        const iter = this.cache.keys();
+        const first = iter.next();
+        if (!first.done) {
+          const firstKey = first.value as string;
+          const old = this.cache.get(firstKey);
+          try { if (old) (this.gl as any).deleteTexture(old.texture); } catch {}
+          this.cache.delete(firstKey);
+        }
+      }
+    } else {
+      // If we ever wanted to refresh same key (e.g., style drift), respect per-key throttle
+      if (now - entry.lastUpload >= this.minUploadIntervalMs) {
+        this.drawToCanvas(data);
+        this.uploadTextureFor(entry.texture);
+        entry.lastUpload = now;
+      }
     }
 
-    const gl = this.gl;
+    const gl: any = this.gl;
     gl.useProgram(this.program);
-    gl.bindVertexArray(this.vao);
 
-    // Blending to overlay
+    // Blending to overlay (constant state reduces flicker)
     gl.enable(gl.BLEND);
     gl.blendFuncSeparate(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA, gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
 
+    // Set uniforms
     const canvasEl = gl.canvas as HTMLCanvasElement;
     const screenW = canvasEl.width;
     const screenH = canvasEl.height;
 
     gl.uniform2f(this.uScreenSize, screenW, screenH);
-    gl.uniform2f(this.uTranslate, anchorX, anchorY);
+  // Snap to integer pixels to reduce subpixel filter jitter and overdraw
+  gl.uniform2f(this.uTranslate, Math.round(anchorX), Math.round(anchorY));
     gl.uniform2f(this.uSize, this.texWidth, this.texHeight);
 
-    gl.activeTexture(gl.TEXTURE0);
-    gl.bindTexture(gl.TEXTURE_2D, this.texture);
     gl.uniform1i(this.uSampler, 0);
 
+    // Bind VAO/VBO and draw
+    const vaoExt = !('bindVertexArray' in gl) ? gl.getExtension('OES_vertex_array_object') : null;
+    if (this.vao) {
+      if ('bindVertexArray' in gl) gl.bindVertexArray(this.vao);
+      else vaoExt.bindVertexArrayOES(this.vao);
+    } else {
+      // WebGL1 without VAO extension fallback
+      const loc = 0;
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.vbo);
+      gl.enableVertexAttribArray(loc);
+      gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 8, 0);
+    }
+    // bind the right texture for this key
+    gl.activeTexture(gl.TEXTURE0);
+    gl.bindTexture(gl.TEXTURE_2D, entry.texture);
     gl.drawArrays(gl.TRIANGLE_FAN, 0, 4);
 
-    gl.bindVertexArray(null);
-    gl.disable(gl.BLEND);
+    // Unbind
+    if (this.vao) {
+      if ('bindVertexArray' in gl) gl.bindVertexArray(null);
+      else (vaoExt as any).bindVertexArrayOES(null);
+    }
   }
 }
