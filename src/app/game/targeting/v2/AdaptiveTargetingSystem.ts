@@ -196,6 +196,13 @@ export class AdaptiveTargetingSystem {
     // 4. Update current state
     this.currentHovered = hoveredTarget;
     
+    // 4.5 Keep selected target display info fresh every frame (screen pos, distances, category)
+    if (this.currentSelected) {
+      const selTarget = this.currentSelected.target;
+      // Rebuild full display info to avoid freezing projection/values
+      this.currentSelected = this.createTargetDisplayInfo(selTarget);
+    }
+
     // 5. Get nearby targets for UI
     const nearbyTargets = this.getNearbyTargets(categorizedTargets);
 
@@ -253,7 +260,8 @@ export class AdaptiveTargetingSystem {
   }
 
   private createTargetDisplayInfo(target: ITargetable): TargetDisplayInfo {
-    const distanceToCenter = this.getWorldDistance(target.position);
+    const anchor = this.getTargetAnchorPosition(target);
+    const distanceToCenter = this.getWorldDistance(anchor);
     const distanceToEdge = this.getDistanceToEdge(target, distanceToCenter);
     const category = this.getCategoryForDistance(distanceToCenter);
     const relation = this.relationService.getRelation(target);
@@ -270,7 +278,7 @@ export class AdaptiveTargetingSystem {
       displaySize: this.calculateDisplaySize(target, category, distanceToCenter),
       accentColor: this.getAccentColor(relation),
       showDetails: category.name !== 'extreme',
-      screenPosition: this.worldToScreen(target.position)
+      screenPosition: this.worldToScreen(anchor)
     };
   }
 
@@ -431,7 +439,8 @@ export class AdaptiveTargetingSystem {
 
   private updateScreenPositions(targets: TargetDisplayInfo[]): void {
     for (const target of targets) {
-      target.screenPosition = this.worldToScreen(target.target.position);
+      const anchor = this.getTargetAnchorPosition(target.target);
+      target.screenPosition = this.worldToScreen(anchor);
     }
   }
 
@@ -479,6 +488,16 @@ export class AdaptiveTargetingSystem {
       x: Math.max(0, Math.min(dims.width, screenX)),
       y: Math.max(0, Math.min(dims.height, screenY))
     };
+  }
+
+  /** Prefer the center of the bounding sphere when available to anchor UI to the perceived object center */
+  private getTargetAnchorPosition(target: ITargetable): { x: number; y: number; z: number } {
+    const anyT = target as any;
+    const c = anyT?.boundingSphere?.center;
+    if (c && typeof c.x === 'number' && typeof c.y === 'number' && typeof c.z === 'number') {
+      return { x: Number(c.x), y: Number(c.y), z: Number(c.z) };
+    }
+    return target.position;
   }
 
   private getCanvasDimensions(): { width: number; height: number } {

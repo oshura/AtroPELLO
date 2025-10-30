@@ -25,6 +25,7 @@ import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
 import { LandingOverlay } from './hud/LandingOverlay';
+import { TargetOutline2DRenderer } from './hud/TargetOutline2DRenderer';
 import { Planet, PlanetColorName, PlanetType, DwarfPlanet, Protoplanet } from './Planet';
 import { GaseousPlanet } from './GaseousPlanet';
 import { GiantPlanet } from './GiantPlanet';
@@ -58,6 +59,7 @@ export class GameEngine {
   private targetPreview!: TargetPreviewRenderer;
   private systemPanel: SolarSystemPanel | null = null;
   private overlayRenderer: ScreenOverlayRenderer | null = null;
+  private targetOutline2D: TargetOutline2DRenderer | null = null;
   private landingOverlay: LandingOverlay | null = null;
   private domCanvas: HTMLCanvasElement | null = null;
   private mapIdToTarget: Map<string, ITargetable> = new Map();
@@ -188,6 +190,19 @@ export class GameEngine {
       // Inicializar sistema HUD con texturas dinámicas (FASE 3)
       this.hudManager = new HUDManager(this.gl);
       console.log('🎯 HUDManager inicializado con Canvas 2D → WebGL');
+
+      // Inicializar renderer 2D de outline/placa de target (STEP 5)
+      try {
+        this.targetOutline2D = new TargetOutline2DRenderer(this.webglService as any);
+        const ok = this.targetOutline2D.initialize();
+        if (!ok) {
+          console.warn('⚠️ TargetOutline2DRenderer no pudo inicializarse');
+          this.targetOutline2D = null;
+        }
+      } catch (e) {
+        console.warn('⚠️ Error inicializando TargetOutline2DRenderer:', e);
+        this.targetOutline2D = null;
+      }
 
   // Inicializar panel de mapa del sistema (overlay top-down, opaco)
   this.systemPanel = new SolarSystemPanel(this.gl, 1024, 1024);
@@ -1518,6 +1533,9 @@ export class GameEngine {
 
   // Renderizar outlines avanzados (FASE 4) sobre la escena
   this.renderOutlineSystem();
+
+  // STEP 5: Renderizar nuevo outliner 2D bajo HUD y Mapa
+  this.renderTargetOutline2D();
 
   // Render overlays de animaciones (fade) sobre outlines
   this.animationManager.render(this);
@@ -3537,6 +3555,76 @@ export class GameEngine {
       this.camera.projectionMatrix,
       availableTargets
     );
+  }
+
+  /** STEP 5: Render del nuevo outliner 2D (si hay seleccionado o hovered) */
+  private renderTargetOutline2D(): void {
+    if (!this.targetOutline2D || !this.adaptiveTargeting) return;
+    try {
+      const selected = this.adaptiveTargeting.getCurrentTarget?.();
+      const hovered = this.adaptiveTargeting.getHoveredTarget?.();
+      if (!selected && !hovered) return;
+
+      const dpr = (this.webglService.getState().devicePixelRatio || 1);
+
+      // Helper: build render data from TargetDisplayInfo and optionally dim the color
+      const toRGBA = (hex: string, alpha: number): string => {
+        const h = hex.replace('#','');
+        const bigint = parseInt(h.length === 3
+          ? (h[0]+h[0]+h[1]+h[1]+h[2]+h[2])
+          : h, 16);
+        const r = (bigint >> 16) & 255;
+        const g = (bigint >> 8) & 255;
+        const b = bigint & 255;
+        return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, alpha)).toFixed(3)})`;
+      };
+      const buildData = (t: any) => {
+        const info = this.adaptiveTargeting!.getTargetDisplayInfo?.(t);
+        if (!info || !info.screenPosition) return null;
+        const typeLabel = ((): string => {
+          try { return String(info.type || t.getTargetType?.() || 'unknown'); } catch { return 'unknown'; }
+        })();
+        const healthPct = (() => {
+          try {
+            const h = info.details?.health;
+            if (h && typeof h.current === 'number' && typeof h.max === 'number' && h.max > 0) {
+              return (h.current / h.max) * 100;
+            }
+          } catch {}
+          return undefined;
+        })();
+        return {
+          x: info.screenPosition.x * dpr,
+          y: info.screenPosition.y * dpr,
+          name: info.name || (t.getDisplayName?.() || t.id),
+          typeLabel,
+          distanceEdge: info.distanceToEdge ?? 0,
+          color: info.accentColor || '#60a5fa',
+          healthPct
+        } as any;
+      };
+
+      // Render hovered (dim) if present and different from selected
+      if (hovered && (!selected || hovered.id !== selected.id)) {
+        const hData = buildData(hovered);
+        if (hData) {
+          // Dim alpha for hover outline (subtle)
+          hData.color = toRGBA(hData.color, 0.6);
+          this.targetOutline2D.render(hData.x, hData.y, hData);
+        }
+      }
+
+      // Render selected (intense) on top
+      if (selected) {
+        const sData = buildData(selected);
+        if (sData) {
+          // Keep full intensity for selected
+          this.targetOutline2D.render(sData.x, sData.y, sData);
+        }
+      }
+    } catch (e) {
+      // No romper frame por errores visuales
+    }
   }
 
   /** Attach or detach click binding based on panel enabled state */
