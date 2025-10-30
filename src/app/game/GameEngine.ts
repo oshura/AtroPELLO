@@ -201,8 +201,8 @@ export class GameEngine {
           console.warn('⚠️ TargetOutline2DRenderer no pudo inicializarse');
           this.targetOutline2D = null;
         }
-        // Throttle texture uploads to stabilize intensity and reduce cost
-        try { (this.targetOutline2D as any).setMinUploadInterval?.(100); } catch {}
+  // Increase redraw rate for smoother motion (~8Hz)
+  try { (this.targetOutline2D as any).setMinUploadInterval?.(120); } catch {}
       } catch (e) {
         console.warn('⚠️ Error inicializando TargetOutline2DRenderer:', e);
         this.targetOutline2D = null;
@@ -287,6 +287,14 @@ export class GameEngine {
         w.Debug.setOutlinerEnabled = (v: boolean) => {
           this.outlinerEnabled = !!v;
           console.log('🟢 Outliner enabled =', this.outlinerEnabled);
+        };
+        w.Debug.setOutlinerUpdateMs = (ms: number) => {
+          try {
+            (this.targetOutline2D as any)?.setMinUploadInterval?.(ms);
+            console.log('🟢 Outliner update min interval set to', ms, 'ms');
+          } catch (e) {
+            console.warn('No se pudo ajustar el intervalo del outliner:', e);
+          }
         };
       } catch {}
       return true;
@@ -3618,13 +3626,15 @@ export class GameEngine {
         } as any;
       };
 
-      // Render hovered (dim) if present and different from selected
+      // Render hovered (slightly brighter than before) if present and different from selected
       if (hovered && (!selected || hovered.id !== selected.id)) {
         const hData = buildData(hovered);
         if (hData) {
-          // Dim alpha for hover outline (subtle)
-          hData.color = toRGBA(hData.color, 0.6);
-          this.targetOutline2D.render(hData.x, hData.y, hData);
+          // Use full color and control perceived brightness via intensity + thickness
+          hData.color = toRGBA(hData.color, 1.0);
+          (hData as any).intensity = 0.85; // was ~0.6; brighter hover
+          (hData as any).thickness = 1.1;   // slightly thicker
+          this.targetOutline2D.render('hover', hData.x, hData.y, hData);
         }
       }
 
@@ -3632,8 +3642,11 @@ export class GameEngine {
       if (selected) {
         const sData = buildData(selected);
         if (sData) {
-          // Keep full intensity for selected
-          this.targetOutline2D.render(sData.x, sData.y, sData);
+          // Slightly bolder selected
+          sData.color = toRGBA(sData.color, 1.0);
+          (sData as any).intensity = 1.0; // fully opaque
+          (sData as any).thickness = 1.2; // subtle emphasis
+          this.targetOutline2D.render('selected', sData.x, sData.y, sData);
         }
       }
     } catch (e) {

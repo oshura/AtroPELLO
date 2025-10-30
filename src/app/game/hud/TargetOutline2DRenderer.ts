@@ -9,6 +9,9 @@ interface OutlineRenderData {
   distanceEdge: number; // units to edge
   color: string; // css hex or rgba
   healthPct?: number; // 0-100 if available
+  // Optional visual tuning per overlay
+  intensity?: number; // 0..1 global alpha multiplier (default 1)
+  thickness?: number; // line thickness multiplier (default 1)
 }
 
 @Injectable({ providedIn: 'root' })
@@ -34,7 +37,10 @@ export class TargetOutline2DRenderer {
   private maxCacheSize = 16;
 
   // Redraw throttling
-  private minUploadIntervalMs = 80; // optional per-key throttle if we ever re-upload same key
+  // Global minimum interval between any canvas->texture uploads per channel (e.g., 'hover', 'selected').
+  private minUploadIntervalMs = 80;
+  private lastGlobalUploadMsByChannel = new Map<string, number>();
+  private lastRenderedKeyByChannel = new Map<string, string>();
 
   // Fixed pixel size of the marker texture
   private readonly texWidth = 220;
@@ -198,6 +204,12 @@ export class TargetOutline2DRenderer {
     const cx = W / 2;
     const cy = H / 2;
 
+    // Global alpha and line thickness tweaks for hover/selected distinctions
+    const intensity = Math.max(0, Math.min(1, (data as any).intensity ?? 1));
+    const thickness = Math.max(0.5, Math.min(2.0, (data as any).thickness ?? 1));
+    ctx.save();
+    ctx.globalAlpha = intensity;
+
     // Unit formatting (u -> ku if >= 1000u)
     const formatDist = (val: number) => {
       const v = Math.max(0, val);
@@ -206,15 +218,14 @@ export class TargetOutline2DRenderer {
     };
 
     // Outer ring
-    ctx.save();
     ctx.strokeStyle = accent;
-    ctx.lineWidth = 2.0;
+    ctx.lineWidth = 2.0 * thickness;
     ctx.beginPath();
     ctx.arc(cx, cy, 22, 0, Math.PI * 2);
     ctx.stroke();
 
     // Corner chevrons
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 1.5 * thickness;
     const r = 30; const len = 8;
     const drawChevron = (ang: number) => {
       const sx = cx + Math.cos(ang) * r;
@@ -285,46 +296,79 @@ export class TargetOutline2DRenderer {
   private makeKey(data: OutlineRenderData): string {
     const distBucket = Math.round((data.distanceEdge || 0) / 25); // 25u buckets
     const hpBucket = (data.healthPct == null) ? -1 : Math.round((data.healthPct as number) / 5); // 5% buckets
-    return `${data.name}|${data.typeLabel}|${distBucket}|${hpBucket}|${data.color}`;
+    const intBucket = Math.round(Math.max(0, Math.min(1, (data as any).intensity ?? 1)) * 10);
+    const thickBucket = Math.round(Math.max(0.5, Math.min(2.0, (data as any).thickness ?? 1)) * 10);
+    return `${data.name}|${data.typeLabel}|${distBucket}|${hpBucket}|${data.color}|i${intBucket}|t${thickBucket}`;
   }
 
-  public render(anchorX: number, anchorY: number, data: OutlineRenderData): void {
+  public render(channel: string, anchorX: number, anchorY: number, data: OutlineRenderData): void {
     if (!this.gl || !this.program) return;
 
     const now = performance.now();
+    const ch = channel || 'default';
     const key = this.makeKey(data);
     let entry = this.cache.get(key);
     if (!entry) {
-      // Create texture for this content key
-      const gl: any = this.gl;
-      const tex = gl.createTexture();
-      gl.bindTexture(gl.TEXTURE_2D, tex);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-      gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
-      this.drawToCanvas(data);
-      this.uploadTextureFor(tex);
-      entry = { texture: tex, lastUpload: now };
-      this.cache.set(key, entry);
-      // prune simple LRU if needed
-      if (this.cache.size > this.maxCacheSize) {
-        const iter = this.cache.keys();
-        const first = iter.next();
-        if (!first.done) {
-          const firstKey = first.value as string;
-          const old = this.cache.get(firstKey);
-          try { if (old) (this.gl as any).deleteTexture(old.texture); } catch {}
-          this.cache.delete(firstKey);
+      // Per-channel throttle: avoid creating/uploading a new texture more often than minUploadIntervalMs
+      const lastUp = this.lastGlobalUploadMsByChannel.get(ch) || 0;
+      const lastKey = this.lastRenderedKeyByChannel.get(ch) || null;
+      if (now - lastUp >= this.minUploadIntervalMs || lastKey === null) {
+        const gl: any = this.gl;
+        const tex = gl.createTexture();
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        this.drawToCanvas(data);
+        this.uploadTextureFor(tex);
+        entry = { texture: tex, lastUpload: now };
+        this.cache.set(key, entry);
+        this.lastGlobalUploadMsByChannel.set(ch, now);
+        this.lastRenderedKeyByChannel.set(ch, key);
+        // prune simple LRU if needed
+        if (this.cache.size > this.maxCacheSize) {
+          const iter = this.cache.keys();
+          const first = iter.next();
+          if (!first.done) {
+            const firstKey = first.value as string;
+            const old = this.cache.get(firstKey);
+            try { if (old) (this.gl as any).deleteTexture(old.texture); } catch {}
+            this.cache.delete(firstKey);
+          }
+        }
+      } else {
+        // Too soon to build a new texture; fallback to last rendered key for THIS CHANNEL
+        if (lastKey) {
+          entry = this.cache.get(lastKey)!;
+        }
+        // If still missing (first draw for this channel), allow creation to avoid nothing being drawn
+        if (!entry) {
+          const gl: any = this.gl;
+          const tex = gl.createTexture();
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          this.drawToCanvas(data);
+          this.uploadTextureFor(tex);
+          entry = { texture: tex, lastUpload: now };
+          this.cache.set(key, entry);
+          this.lastGlobalUploadMsByChannel.set(ch, now);
+          this.lastRenderedKeyByChannel.set(ch, key);
         }
       }
     } else {
-      // If we ever wanted to refresh same key (e.g., style drift), respect per-key throttle
-      if (now - entry.lastUpload >= this.minUploadIntervalMs) {
+      // Same content key: only refresh the texture at most every minUploadIntervalMs
+      const lastUp = this.lastGlobalUploadMsByChannel.get(ch) || 0;
+      if (now - entry.lastUpload >= this.minUploadIntervalMs && now - lastUp >= this.minUploadIntervalMs) {
         this.drawToCanvas(data);
         this.uploadTextureFor(entry.texture);
         entry.lastUpload = now;
+        this.lastGlobalUploadMsByChannel.set(ch, now);
       }
+      this.lastRenderedKeyByChannel.set(ch, key);
     }
 
     const gl: any = this.gl;
