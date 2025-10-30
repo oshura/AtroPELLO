@@ -10,7 +10,7 @@ import { ITargetable } from '../../types/targeting.types';
 import { Camera } from '../../Camera';
 import { ShaderManager } from '../../ShaderManager';
 import { mat4 } from 'gl-matrix';
-import { AdaptiveTargetingSystem, TargetDisplayInfo } from './AdaptiveTargetingSystem';
+import { AdaptiveTargetingSystem, TargetDisplayInfo, DistanceCategory } from './AdaptiveTargetingSystem';
 import { ReticleSystemState, ScreenPosition } from '../types/reticle.types';
 
 @Injectable({
@@ -282,6 +282,15 @@ export class AdaptiveTargetingIntegrator {
 
   public getTargetsByCategory(): Map<string, TargetDisplayInfo[]> {
     return this.adaptiveSystem.getTargetsByCategory();
+  }
+
+  // STEP 3: Runtime tuning passthrough
+  public getCategoryConfig(): DistanceCategory[] {
+    return this.adaptiveSystem.getCategoryConfig();
+  }
+
+  public setCategoryConfig(name: DistanceCategory['name'], partial: Partial<DistanceCategory>): void {
+    this.adaptiveSystem.setCategoryConfig(name, partial);
   }
 
   // ===================================

@@ -24,6 +24,8 @@ export interface DistanceCategory {
   uiScale: number;
   tolerancePx: number;
   updateFrequency: number;
+  // Optional hysteresis factor (0-0.5) to avoid flicker around thresholds
+  hysteresisRatio?: number;
 }
 
 export interface TargetDisplayInfo {
@@ -70,7 +72,8 @@ const DISTANCE_CATEGORIES: DistanceCategory[] = [
     detectionMethod: 'pixel-perfect', 
     uiScale: 2.0, 
     tolerancePx: 8,
-    updateFrequency: 60 
+    updateFrequency: 60,
+    hysteresisRatio: 0.08
   },
   { 
     name: 'close', 
@@ -79,7 +82,8 @@ const DISTANCE_CATEGORIES: DistanceCategory[] = [
     detectionMethod: 'bounding-sphere', 
     uiScale: 1.5, 
     tolerancePx: 12,
-    updateFrequency: 30 
+    updateFrequency: 30,
+    hysteresisRatio: 0.08
   },
   { 
     name: 'medium', 
@@ -88,7 +92,8 @@ const DISTANCE_CATEGORIES: DistanceCategory[] = [
     detectionMethod: 'screen-space', 
     uiScale: 1.0, 
     tolerancePx: 16,
-    updateFrequency: 20 
+    updateFrequency: 20,
+    hysteresisRatio: 0.1
   },
   { 
     name: 'far', 
@@ -97,7 +102,8 @@ const DISTANCE_CATEGORIES: DistanceCategory[] = [
     detectionMethod: 'screen-space', 
     uiScale: 0.8, 
     tolerancePx: 24,
-    updateFrequency: 10 
+    updateFrequency: 10,
+    hysteresisRatio: 0.12
   },
   { 
     name: 'extreme', 
@@ -106,7 +112,8 @@ const DISTANCE_CATEGORIES: DistanceCategory[] = [
     detectionMethod: 'culled-list', 
     uiScale: 0.6, 
     tolerancePx: 32,
-    updateFrequency: 5 
+    updateFrequency: 5,
+    hysteresisRatio: 0.15
   }
 ];
 
@@ -144,6 +151,16 @@ export class AdaptiveTargetingSystem {
     this.camera = camera;
     this.canvas = this.webglService.getCanvas() || null;
     console.log('🎯 AdaptiveTargetingSystem v2 initialized');
+    // Expose minimal dev hooks for tuning in STEP 3
+    try {
+      const w = (globalThis as any);
+      w.Targeting = w.Targeting || {};
+      w.Targeting.getCategories = () => DISTANCE_CATEGORIES.map(c => ({ ...c }));
+      w.Targeting.setCategory = (name: DistanceCategory['name'], partial: Partial<DistanceCategory>) => {
+        this.setCategoryConfig(name, partial);
+        return w.Targeting.getCategories();
+      };
+    } catch {}
   }
 
   public setDistanceOriginProvider(fn: (() => { x: number; y: number; z: number }) | null): void {
@@ -167,6 +184,8 @@ export class AdaptiveTargetingSystem {
     
     // 1. Categorize targets by distance
     const categorizedTargets = this.categorizeTargetsByDistance();
+    // Persist for public access (STEP 2 stats / integrator)
+    this.targetsByCategory = categorizedTargets;
     
     // 2. Update each category based on its update frequency
     this.updateCategorizedTargets(categorizedTargets, now);
@@ -256,8 +275,13 @@ export class AdaptiveTargetingSystem {
   }
 
   private getCategoryForDistance(distance: number): DistanceCategory {
+    // Apply soft hysteresis by expanding bands slightly; categories are ordered from near to far
     for (const category of DISTANCE_CATEGORIES) {
-      if (distance >= category.minDistance && distance < category.maxDistance) {
+      const ratio = category.hysteresisRatio ?? 0;
+      const range = category.maxDistance - category.minDistance;
+      const min = Math.max(0, category.minDistance - range * ratio);
+      const max = category.maxDistance + range * ratio;
+      if (distance >= min && distance < max) {
         return category;
       }
     }
@@ -478,5 +502,24 @@ export class AdaptiveTargetingSystem {
 
   public getTargetsByCategory(): Map<string, TargetDisplayInfo[]> {
     return this.targetsByCategory;
+  }
+
+  // ===================================
+  // RUNTIME CONFIG (STEP 3)
+  // ===================================
+
+  /** Returns a snapshot of current distance categories */
+  public getCategoryConfig(): DistanceCategory[] {
+    return DISTANCE_CATEGORIES.map(c => ({ ...c }));
+  }
+
+  /** Update one category by name with partial overrides (min/max/tolerance/uiScale/updateFrequency/hysteresisRatio) */
+  public setCategoryConfig(name: DistanceCategory['name'], partial: Partial<DistanceCategory>): void {
+    const idx = DISTANCE_CATEGORIES.findIndex(c => c.name === name);
+    if (idx === -1) return;
+    const current = DISTANCE_CATEGORIES[idx];
+    DISTANCE_CATEGORIES[idx] = { ...current, ...partial, name: current.name };
+    // Reset last-update timers so changes take effect consistently
+    this.lastUpdateByCategory.delete(name);
   }
 }
