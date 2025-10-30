@@ -3633,8 +3633,15 @@ export class GameEngine {
    * Configura eventos del mouse para el sistema de targeting adaptativo
    */
   private setupAdaptiveTargetingEvents(canvasRef: any): void {
-    const canvas = canvasRef as HTMLCanvasElement;
-    if (!canvas) return;
+    // Obtener canvas desde WebGLService que ya está inicializado
+    const canvas = this.webglService.getCanvas();
+    
+    if (!canvas) {
+      console.warn('⚠️ No se pudo obtener canvas desde WebGLService para eventos de targeting');
+      return;
+    }
+
+    console.log('✅ Canvas obtenido desde WebGLService para targeting events');
 
     // Setup click handler for adaptive targeting
     const handleClick = (event: MouseEvent) => {
@@ -3643,7 +3650,7 @@ export class GameEngine {
     };
 
     canvas.addEventListener('click', handleClick);
-    console.log('🎯 AdaptiveTargeting mouse events configured');
+    console.log('🎯 AdaptiveTargeting mouse events configured successfully');
   }
 
   /** Map ID resolver for a given world target: returns the map item id to select/highlight */

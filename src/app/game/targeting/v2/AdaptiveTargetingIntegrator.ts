@@ -112,11 +112,55 @@ export class AdaptiveTargetingIntegrator {
     const hoveredInfo = this.adaptiveSystem.getCurrentHovered();
     if (hoveredInfo) {
       this.adaptiveSystem.selectTarget(hoveredInfo.target);
-      console.log('🎯 Target selected:', hoveredInfo.name);
+      console.log('🎯 Target selected:', hoveredInfo.name, `[${hoveredInfo.category}]`, `${Math.round(hoveredInfo.distanceToCenter)}u`);
     } else {
       this.adaptiveSystem.selectTarget(null);
       console.log('🎯 Target deselected');
     }
+  }
+
+  // ===================================
+  // TESTING METHODS (STEP 2)
+  // ===================================
+
+  /**
+   * STEP 2 Testing: Muestra estadísticas de detección por categoría
+   */
+  public showDetectionStats(): void {
+    if (!this.isInitialized) {
+      console.log('❌ Sistema no inicializado');
+      return;
+    }
+
+    const categories = this.adaptiveSystem.getTargetsByCategory();
+    console.log('📊 DETECTION STATS - STEP 2 Testing:');
+    
+    for (const [category, targets] of categories) {
+      const distances = targets.map(t => Math.round(t.distanceToCenter));
+      const avgDist = distances.length > 0 ? Math.round(distances.reduce((a, b) => a + b, 0) / distances.length) : 0;
+      
+      console.log(`📏 ${category.toUpperCase()}: ${targets.length} targets, avg: ${avgDist}u, range: ${Math.min(...distances)}-${Math.max(...distances)}u`);
+      
+      // Mostrar algunos ejemplos
+      targets.slice(0, 3).forEach(t => {
+        console.log(`  - ${t.name}: ${Math.round(t.distanceToCenter)}u (edge: ${Math.round(t.distanceToEdge)}u)`);
+      });
+    }
+  }
+
+  /**
+   * STEP 2 Testing: Verifica detección en diferentes rangos
+   */
+  public testDetectionRanges(): void {
+    console.log('🧪 TESTING Detection Ranges - STEP 2:');
+    this.showDetectionStats();
+    
+    const hovered = this.adaptiveSystem.getCurrentHovered();
+    const selected = this.adaptiveSystem.getCurrentSelected();
+    
+    console.log('🎯 Current State:');
+    console.log('  Hovered:', hovered ? `${hovered.name} [${hovered.category}] ${Math.round(hovered.distanceToCenter)}u` : 'none');
+    console.log('  Selected:', selected ? `${selected.name} [${selected.category}] ${Math.round(selected.distanceToCenter)}u` : 'none');
   }
 
   // ===================================
