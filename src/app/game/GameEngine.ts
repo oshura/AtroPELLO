@@ -296,6 +296,17 @@ export class GameEngine {
             console.warn('No se pudo ajustar el intervalo del outliner:', e);
           }
         };
+        // Targeting runtime tweaks
+        w.Debug.Targeting = w.Debug.Targeting || {};
+        w.Debug.Targeting.useRaycastHover = (v: boolean) => {
+          try { (this.adaptiveTargeting as any)?.setUseRaycastHover?.(!!v); console.log('🟢 useRaycastHover =', !!v); } catch {}
+        };
+        w.Debug.Targeting.dominantGate = (v: boolean) => {
+          try { (this.adaptiveTargeting as any)?.setDominantGateEnabled?.(!!v); console.log('🟢 dominantGateEnabled =', !!v); } catch {}
+        };
+        w.Debug.Targeting.setDominantFraction = (f: number) => {
+          try { (this.adaptiveTargeting as any)?.setDominantRadiusFraction?.(Number(f)); console.log('🟢 dominantRadiusFraction =', f); } catch {}
+        };
       } catch {}
       return true;
 
