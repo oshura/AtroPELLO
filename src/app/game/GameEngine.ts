@@ -900,6 +900,19 @@ export class GameEngine {
   // Drive HUD Target Panel from hovered/selected targets using adaptive system
     const hovered = this.adaptiveTargeting.getHoveredTarget();
     const selected = this.adaptiveTargeting.getCurrentTarget() || hovered;
+
+    // Sync selection to SolarSystemPanel (Map) when it is open
+    try {
+      if (this.systemPanel && this.systemPanel.isEnabled()) {
+        const currentSelected = this.adaptiveTargeting.getCurrentTarget?.();
+        const currentSelectedMapId = currentSelected ? this.resolveMapIdForTarget(currentSelected) : null;
+        const panelSelectedId = (this.systemPanel as any).getSelectedId?.() || null;
+        // Only update the map if the selection actually changed
+        if ((currentSelectedMapId || null) !== (panelSelectedId || null)) {
+          try { this.systemPanel.setSelectedId(currentSelectedMapId); } catch {}
+        }
+      }
+    } catch {}
     // Backfill planet-specific runtime props if selected
     if (selected && selected.getTargetType && selected.getTargetType() === TargetType.PLANET) {
       const p: any = selected as any;
@@ -2994,14 +3007,12 @@ export class GameEngine {
         this.systemPanel.setEnabled(next);
         if (next) {
           try { this.systemPanel.resetView(); } catch {}
-          // Preselect current target in the map when opening
+          // Preselect current target in the map when opening (prefer adaptive selection)
           try {
-            const current = this.reticleManager?.getCurrentTarget?.();
+            const current = this.adaptiveTargeting?.getCurrentTarget?.() || this.reticleManager?.getCurrentTarget?.();
             if (current) {
               const selId = this.resolveMapIdForTarget(current);
-              if (selId) {
-                try { this.systemPanel.setSelectedId(selId); } catch {}
-              }
+              try { this.systemPanel.setSelectedId(selId); } catch {}
             } else {
               try { this.systemPanel.setSelectedId(null); } catch {}
             }
