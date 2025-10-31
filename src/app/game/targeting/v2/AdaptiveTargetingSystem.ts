@@ -133,6 +133,10 @@ export class AdaptiveTargetingSystem {
   // Current state
   private currentHovered: TargetDisplayInfo | null = null;
   private currentSelected: TargetDisplayInfo | null = null;
+  // Sticky hover to avoid flicker on borderline detections
+  private stickyHover: { info: TargetDisplayInfo; lastSeenTs: number } | null = null;
+  private hoverHoldMs: number = 180; // keep last hover up to this time if cursor stable
+  private lastMousePos: { x: number; y: number } | null = null;
   
   // Performance tracking
   private lastUpdateByCategory = new Map<string, number>();
@@ -140,6 +144,9 @@ export class AdaptiveTargetingSystem {
   private useRaycastHover: boolean = true; // enable precise hover using ray→sphere
   private dominantRadiusGateEnabled: boolean = true; // gate giant targets when they dominate screen
   private dominantRadiusFraction: number = 0.35; // fraction of min(screenW,screenH)
+  // Hysteresis to avoid dominant gate flapping
+  private dominantGateState = new Map<string, boolean>();
+  private dominantGateReleaseFactor = 0.9; // ungate when below 90% of threshold
   private targetsByCategory = new Map<string, TargetDisplayInfo[]>();
   
   constructor(
@@ -185,6 +192,7 @@ export class AdaptiveTargetingSystem {
     }
 
     const now = performance.now();
+    this.lastMousePos = { x: mousePos.x, y: mousePos.y };
     
     // 1. Categorize targets by distance
     const categorizedTargets = this.categorizeTargetsByDistance();
@@ -195,7 +203,9 @@ export class AdaptiveTargetingSystem {
     this.updateCategorizedTargets(categorizedTargets, now);
     
     // 3. Detect hover target using appropriate method for each category
-  const hoveredTarget = this.detectHoverTarget(mousePos, categorizedTargets);
+  let hoveredTarget = this.detectHoverTarget(mousePos, categorizedTargets);
+    // Sticky hover: if hover briefly drops or flips due to jitter, hold the previous target for a short window
+    hoveredTarget = this.applyStickyHover(hoveredTarget, now, mousePos);
     
     // 4. Update current state
     this.currentHovered = hoveredTarget;
@@ -383,6 +393,8 @@ export class AdaptiveTargetingSystem {
     const ray = this.screenToRay(mousePos);
     if (!ray) return null;
     let best: { info: TargetDisplayInfo; t: number } | null = null;
+    // Fallback by pixel distance if no precise ray hit within tolerance
+    let bestByPixel: { info: TargetDisplayInfo; d: number } | null = null;
     for (const targets of categorizedTargets.values()) {
       for (const info of targets) {
         if (!info.screenPosition) continue; // must be on-screen
@@ -395,10 +407,20 @@ export class AdaptiveTargetingSystem {
         const t = this.raySphere(ray.origin, ray.dir, center, radius);
         if (t !== null && t > 0) {
           if (!best || t < best.t) best = { info, t };
+        } else {
+          // Pixel distance fallback within category tolerance
+          const category = info.category;
+          const dx = mousePos.x - info.screenPosition.x;
+          const dy = mousePos.y - info.screenPosition.y;
+          const d = Math.hypot(dx, dy);
+          const tolerance = category.tolerancePx * category.uiScale * 1.1; // small cushion
+          if (d <= tolerance) {
+            if (!bestByPixel || d < bestByPixel.d) bestByPixel = { info, d };
+          }
         }
       }
     }
-    return best?.info || null;
+    return best?.info || bestByPixel?.info || null;
   }
 
   private screenToRay(mouse: { x: number; y: number }): { origin: { x: number; y: number; z: number }; dir: { x: number; y: number; z: number } } | null {
@@ -449,7 +471,19 @@ export class AdaptiveTargetingSystem {
     const rp = this.getProjectedRadiusPx(info.target);
     const dims = this.getCanvasDimensions();
     const minDim = Math.min(dims.width, dims.height) || 1;
-    return rp >= this.dominantRadiusFraction * minDim;
+    const up = this.dominantRadiusFraction * minDim;
+    const down = this.dominantRadiusFraction * this.dominantGateReleaseFactor * minDim;
+    // identify target id key
+    const key = (info.target as any)?.id ?? info.name;
+    const wasGated = this.dominantGateState.get(key) || false;
+    let nowGated = wasGated;
+    if (wasGated) {
+      if (rp < down) nowGated = false; // release only when comfortably below
+    } else {
+      if (rp >= up) nowGated = true; // engage when above upper threshold
+    }
+    if (nowGated !== wasGated) this.dominantGateState.set(key, nowGated);
+    return nowGated;
   }
 
   public getProjectedRadiusPx(target: ITargetable): number {
@@ -571,9 +605,9 @@ export class AdaptiveTargetingSystem {
   const ndcX = v[0] / v[3];
   const ndcY = v[1] / v[3];
     const ndcZ = v[2] / v[3];
-  // Require within clip volume with small margin
-  if (ndcZ < -1.1 || ndcZ > 1.1) return null;
-  const margin = 1.02; // allow tiny overflow for numerical stability
+  // Require within clip volume with small margin (relaxed slightly to avoid flapping at edges)
+  if (ndcZ < -1.2 || ndcZ > 1.2) return null;
+  const margin = 1.06; // allow tiny overflow for numerical stability
   if (ndcX < -margin || ndcX > margin || ndcY < -margin || ndcY > margin) return null;
     
     const dims = this.getCanvasDimensions();
@@ -581,6 +615,37 @@ export class AdaptiveTargetingSystem {
     const screenY = (1.0 - ndcY) * dims.height * 0.5;
     
     return { x: screenX, y: screenY };
+  }
+
+  // ===================================
+  // STICKY HOVER HELPERS
+  // ===================================
+
+  private applyStickyHover(candidate: TargetDisplayInfo | null, now: number, mousePos: { x: number; y: number }): TargetDisplayInfo | null {
+    const prev = this.stickyHover?.info || null;
+    const prevSeen = this.stickyHover?.lastSeenTs || 0;
+    // If we have a strong candidate, update sticky and return it
+    if (candidate) {
+      this.stickyHover = { info: candidate, lastSeenTs: now };
+      return candidate;
+    }
+    // No candidate: if previous hover exists and is still near the cursor, hold it for a short time
+    if (prev && (now - prevSeen) <= this.hoverHoldMs && prev.screenPosition) {
+      const dx = mousePos.x - prev.screenPosition.x;
+      const dy = mousePos.y - prev.screenPosition.y;
+      const d = Math.hypot(dx, dy);
+      const tol = prev.category.tolerancePx * prev.category.uiScale * 1.25; // generous hold window
+      if (d <= tol) {
+        // keep previous and refresh last seen time to avoid rapid drop
+        this.stickyHover = { info: prev, lastSeenTs: now };
+        return prev;
+      }
+    }
+    // Otherwise clear
+    if (this.stickyHover && (now - prevSeen) > this.hoverHoldMs) {
+      this.stickyHover = null;
+    }
+    return null;
   }
 
   /** Prefer the center of the bounding sphere when available to anchor UI to the perceived object center */

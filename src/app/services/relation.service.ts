@@ -15,6 +15,7 @@ export class RelationService {
       case TargetType.MEGA_ASTEROID:
       case TargetType.SUPER_ASTEROID:
       case TargetType.CLUSTER:
+      case TargetType.SUN:
       case TargetType.PLANET:
         return 'neutral';
       // TODO: extend with PORTAL, WAYPOINT, NPC factions, etc.
