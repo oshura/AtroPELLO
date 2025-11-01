@@ -169,21 +169,24 @@ export class GrimoirePanel {
     c.shadowColor = 'rgba(0,0,0,0.4)';
     c.shadowBlur = 40;
     c.shadowOffsetX = 0; c.shadowOffsetY = 18;
-    // Hard cover
-    const pad = Math.round(Math.min(W,H) * 0.06);
+  // Hard cover (make book visually narrower by increasing horizontal padding)
+  const basePad = Math.min(W, H) * 0.06;
+  const padX = Math.round(basePad * 2.5); // even wider left/right margins (narrower book)
+  const padY = Math.round(basePad * 1.0); // keep top/bottom similar
     c.fillStyle = '#2b2018';
-    this.roundRect(c, pad, pad, W-2*pad, H-2*pad, 18);
+  this.roundRect(c, padX, padY, W-2*padX, H-2*padY, 18);
     c.fill();
     c.restore();
     // Inner pages area
-    const innerPad = pad + Math.round(Math.min(W,H) * 0.02);
-    const pageW = (W - 2*innerPad);
-    const pageH = (H - 2*innerPad);
+  const innerPadX = padX + Math.round(Math.min(W,H) * 0.02);
+  const innerPadY = padY + Math.round(Math.min(W,H) * 0.02);
+  const pageW = (W - 2*innerPadX);
+  const pageH = (H - 2*innerPadY);
     // Draw two pages
     const seamX = Math.floor(W/2);
-  const left = { x: innerPad, y: innerPad, w: seamX - innerPad, h: pageH };
-  // Ajuste: la página derecha debe terminar en (W - innerPad), simétrica a la izquierda
-  const right = { x: seamX, y: innerPad, w: (W - innerPad) - seamX, h: pageH };
+  const left = { x: innerPadX, y: innerPadY, w: seamX - innerPadX, h: pageH };
+  // Ajuste: la página derecha debe terminar en (W - innerPadX), simétrica a la izquierda
+  const right = { x: seamX, y: innerPadY, w: (W - innerPadX) - seamX, h: pageH };
     const pageFill = (x: number, y: number, w: number, h: number) => {
       const pg = c.createLinearGradient(x, y, x+w, y);
       pg.addColorStop(0, '#f0e3bf');
@@ -201,11 +204,11 @@ export class GrimoirePanel {
     seamGrad.addColorStop(0, 'rgba(0,0,0,0.15)');
     seamGrad.addColorStop(0.5, 'rgba(0,0,0,0.02)');
     seamGrad.addColorStop(1, 'rgba(0,0,0,0.15)');
-    c.fillStyle = seamGrad; c.fillRect(seamX-16, innerPad, 32, pageH);
+  c.fillStyle = seamGrad; c.fillRect(seamX-16, innerPadY, 32, pageH);
     // Page wrinkles faint
     c.globalAlpha = 0.15; c.strokeStyle = 'rgba(100,80,60,0.5)';
     for (let i=0;i<8;i++) {
-      const y = innerPad + (i+1)*(pageH/9) + (Math.random()-0.5)*6;
+  const y = innerPadY + (i+1)*(pageH/9) + (Math.random()-0.5)*6;
       c.beginPath();
       c.moveTo(left.x+12, y);
       for (let x = left.x+12; x < right.x+right.w-12; x+= 24) {
@@ -310,6 +313,9 @@ export class GrimoirePanel {
   private drawPentacle(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
     c.save();
     c.translate(x,y);
+  // Make the pentacle taller without changing panel dimensions
+  const tall = 1.75; // ~25% taller
+    c.scale(1, tall);
     // Pulse factors
     const s = 1 + 0.06 * Math.sin(this.t * 2.2); // scale pulse
     const glow = 0.25 + 0.25 * (0.5 + 0.5 * Math.sin(this.t * 3.1)); // alpha pulse
