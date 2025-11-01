@@ -135,7 +135,7 @@ export class AdaptiveTargetingSystem {
   private currentSelected: TargetDisplayInfo | null = null;
   // Sticky hover to avoid flicker on borderline detections
   private stickyHover: { info: TargetDisplayInfo; lastSeenTs: number } | null = null;
-  private hoverHoldMs: number = 180; // keep last hover up to this time if cursor stable
+  private hoverHoldMs: number = 120; // keep last hover briefly if still within tolerance
   private lastMousePos: { x: number; y: number } | null = null;
   
   // Performance tracking
@@ -630,21 +630,22 @@ export class AdaptiveTargetingSystem {
       return candidate;
     }
     // No candidate: if previous hover exists and is still near the cursor, hold it for a short time
-    if (prev && (now - prevSeen) <= this.hoverHoldMs && prev.screenPosition) {
+    if (prev && prev.screenPosition) {
       const dx = mousePos.x - prev.screenPosition.x;
       const dy = mousePos.y - prev.screenPosition.y;
       const d = Math.hypot(dx, dy);
-      const tol = prev.category.tolerancePx * prev.category.uiScale * 1.25; // generous hold window
-      if (d <= tol) {
-        // keep previous and refresh last seen time to avoid rapid drop
+      const tol = prev.category.tolerancePx * prev.category.uiScale * 1.15; // only hold if truly within tolerance
+      if ((now - prevSeen) <= this.hoverHoldMs && d <= tol) {
+        // still very close to where the previous hover was: treat as jitter and hold
         this.stickyHover = { info: prev, lastSeenTs: now };
         return prev;
       }
-    }
-    // Otherwise clear
-    if (this.stickyHover && (now - prevSeen) > this.hoverHoldMs) {
+      // Out of tolerance: drop immediately (no lingering)
       this.stickyHover = null;
+      return null;
     }
+    // No previous or no position: clear and return null
+    this.stickyHover = null;
     return null;
   }
 

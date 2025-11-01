@@ -752,35 +752,39 @@ export class EarthSplitPlanet extends Planet {
     const nMid  = Math.max(0, Math.round(debrisCount * 0.25));
     const nFar  = Math.max(0, debrisCount - nNear - nMid);
 
-    const addBelt = (count: number, rangeMin: number, rangeMax: number, jitter: number, label: string, thicknessFactor: number) => {
+    const addBelt = (count: number, rangeMin: number, rangeMax: number, radialJitter: number, label: string, thicknessFactor: number, angleJitterFactor: number = 0.4) => {
+      // Stratified angular distribution to avoid clumps (even spacing with small jitter)
+      const offset = Math.random() * 2 * Math.PI;
+      const step = (2 * Math.PI) / Math.max(1, count);
       for (let i = 0; i < count; i++) {
-        const t = Math.random() * 2 * Math.PI;
+        const jitterA = (Math.random() - 0.5) * step * angleJitterFactor;
+        const t = offset + (i + 0.5) * step + jitterA;
         const mul = rangeMin + Math.random() * (rangeMax - rangeMin);
-        // Reduce radial jitter a bit to keep the belt tighter
-        const r = R * mul * (1 + (Math.random() - 0.5) * jitter);
+        // Increase radial jitter a bit to widen spacing
+        const r = R * mul * (1 + (Math.random() - 0.5) * radialJitter);
         const x = Math.cos(t) * r;
         const z = Math.sin(t) * r;
-        // Dispersión vertical entre hemisferios: más grueso cerca, delgado lejos
+        // Dispersión vertical entre hemisferios: más grueso cerca, delgado lejos (amplitud aumentada)
         const sep = separation;
         const maxHalf = sep * 0.5; // límite natural entre hemisferios
         // Mantener los mega-asteroides lejos de intersecar semiesferas: limitar banda vertical
         const safetyMargin = Math.min(12, maxHalf * 0.08); // margen en unidades mundo
         const baseAmp = Math.max(0, Math.min(maxHalf - safetyMargin, sep * thicknessFactor));
-        const amp = baseAmp * (0.55 + Math.random() * 0.35); // menos dispersión vertical
+        const amp = baseAmp * (0.65 + Math.random() * 0.5);
         const yOffset = (Math.random() < 0.5 ? -1 : 1) * (Math.random() * amp);
         const pos: Vector3 = { x: initialPos.x + x, y: initialPos.y + yOffset, z: initialPos.z + z };
-        // Slightly smaller base sizes for large counts; MegaAsteroid constructor multiplies x5
+        // Slightly smaller base sizes for large counts; MegaAsteroid constructor multiplies size drastically
         const size = 0.6 * (0.7 + Math.random() * 0.6);
         debris.push(new MegaAsteroid(`${id}-mega-${label}-${i}`, pos, size));
       }
     };
 
-    // Dense inner belt hugging the cut (menos disperso)
-    addBelt(nNear, 0.9, 1.15, 0.06, 'near', 0.30);
-    // Medium belt hinting ejection
-    addBelt(nMid, 1.4, 1.9, 0.12, 'mid', 0.18);
-    // Far scattered ejecta
-    addBelt(nFar, 2.1, 2.8, 0.20, 'far', 0.08);
+  // Dense inner belt hugging the cut (más disperso que antes, pero aún cercano)
+  addBelt(nNear, 0.95, 1.25, 0.12, 'near', 0.45, 0.35);
+  // Medium belt hinting ejection (expandido)
+  addBelt(nMid, 1.5, 2.1, 0.20, 'mid', 0.30, 0.4);
+  // Far scattered ejecta (más amplio)
+  addBelt(nFar, 2.2, 3.2, 0.30, 'far', 0.20, 0.45);
     return { planet, debris };
   }
 }
