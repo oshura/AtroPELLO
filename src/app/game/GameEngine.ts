@@ -21,6 +21,7 @@ import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test
 import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { SolarSystemPanel } from './hud/SolarSystemPanel';
+import { GrimoirePanel } from './hud/GrimoirePanel';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
@@ -58,6 +59,7 @@ export class GameEngine {
   private targetDetails!: TargetDetailService;
   private targetPreview!: TargetPreviewRenderer;
   private systemPanel: SolarSystemPanel | null = null;
+  private grimoirePanel: GrimoirePanel | null = null;
   private overlayRenderer: ScreenOverlayRenderer | null = null;
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   // Runtime toggle to enable/disable the 2D outliner overlay for performance testing
@@ -211,6 +213,14 @@ export class GameEngine {
   // Inicializar panel de mapa del sistema (overlay top-down, opaco)
   this.systemPanel = new SolarSystemPanel(this.gl, 1024, 1024);
   this.systemPanel.setEnabled(false); // desactivado por defecto
+  // Initialize Grimoire panel (ancient book overlay)
+  try {
+    this.grimoirePanel = new GrimoirePanel(this.gl, 1024, 1024);
+    this.grimoirePanel.setEnabled(false);
+  } catch (e) {
+    console.warn('⚠️ GrimoirePanel initialization failed:', e);
+    this.grimoirePanel = null;
+  }
 
   // Crear cámara
   const canvas = canvasRef.nativeElement;
@@ -306,6 +316,24 @@ export class GameEngine {
         };
         w.Debug.Targeting.setDominantFraction = (f: number) => {
           try { (this.adaptiveTargeting as any)?.setDominantRadiusFraction?.(Number(f)); console.log('🟢 dominantRadiusFraction =', f); } catch {}
+        };
+        // Panels: Map and Grimoire (ancient book)
+        w.Debug.Panels = w.Debug.Panels || {};
+        w.Debug.Panels.setMapEnabled = (v: boolean) => {
+          try { this.systemPanel?.setEnabled(!!v); } catch {}
+          if (v) { try { this.grimoirePanel?.setEnabled(false); } catch {} }
+          this.updateMapClickBinding();
+          this.updateGrimoirePointerBinding();
+          this.updateCanvasCursor();
+          console.log('🗺️ Map panel enabled =', !!v);
+        };
+        w.Debug.Panels.setGrimoireEnabled = (v: boolean) => {
+          try { this.grimoirePanel?.setEnabled(!!v); } catch {}
+          if (v) { try { this.systemPanel?.setEnabled(false); } catch {} }
+          this.updateMapClickBinding();
+          this.updateGrimoirePointerBinding();
+          this.updateCanvasCursor();
+          console.log('📖 Grimoire panel enabled =', !!v);
         };
       } catch {}
       return true;
@@ -1574,7 +1602,7 @@ export class GameEngine {
   // Render overlays de animaciones (fade) sobre outlines
   this.animationManager.render(this);
 
-  // Renderizar overlay de mapa del sistema si está activado (opaco, reemplaza HUD)
+  // Renderizar overlay de mapa del sistema o el grimorio si están activados (opacos, reemplazan HUD)
   if (this.systemPanel && this.systemPanel.isEnabled()) {
     try {
       const center = this.primarySun ? { ...this.primarySun.position } : { x: 0, y: 0, z: 0 } as any;
@@ -1653,6 +1681,14 @@ export class GameEngine {
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
       console.warn('SolarSystemPanel render failed', e);
+    }
+  } else if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
+    try {
+      // Update and render the grimoire; delta not tracked here, content is quasi-static
+      this.grimoirePanel.update(0);
+      this.grimoirePanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
+    } catch (e) {
+      console.warn('GrimoirePanel render failed', e);
     }
   } else {
     // Draw background landing overlay behind the cockpit HUD (full camera view)
@@ -3058,6 +3094,10 @@ export class GameEngine {
       if (this.systemPanel) {
         const next = !this.systemPanel.isEnabled();
         this.systemPanel.setEnabled(next);
+        // Ensure mutual exclusivity with Grimoire
+        if (next && this.grimoirePanel) {
+          try { this.grimoirePanel.setEnabled(false); } catch {}
+        }
         if (next) {
           try { this.systemPanel.resetView(); } catch {}
           // Preselect current target in the map when opening (prefer adaptive selection)
@@ -3073,6 +3113,23 @@ export class GameEngine {
         }
       }
       try { this.updateMapClickBinding(); } catch {}
+      try { this.updateGrimoirePointerBinding(); } catch {}
+      try { this.updateCanvasCursor(); } catch {}
+      return;
+    }
+    // Toggle Grimoire (ancient book) with 'L'
+    if (key.toLowerCase() === 'l') {
+      if (this.grimoirePanel) {
+        const next = !this.grimoirePanel.isEnabled();
+        this.grimoirePanel.setEnabled(next);
+        // Ensure map is closed when grimoire opens
+        if (next && this.systemPanel) {
+          try { this.systemPanel.setEnabled(false); } catch {}
+        }
+      }
+      try { this.updateMapClickBinding(); } catch {}
+      try { this.updateGrimoirePointerBinding(); } catch {}
+      try { this.updateCanvasCursor(); } catch {}
       return;
     }
     // Escape: cerrar mapa si está activo
@@ -3080,6 +3137,13 @@ export class GameEngine {
       if (this.systemPanel && this.systemPanel.isEnabled()) {
         this.systemPanel.setEnabled(false);
         try { this.updateMapClickBinding(); } catch {}
+        try { this.updateCanvasCursor(); } catch {}
+        return;
+      }
+      if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
+        this.grimoirePanel.setEnabled(false);
+        try { this.updateGrimoirePointerBinding(); } catch {}
+        try { this.updateCanvasCursor(); } catch {}
         return;
       }
     }
@@ -3771,6 +3835,45 @@ export class GameEngine {
       try { this.systemPanel.setSelectedId(null); } catch {}
       try { this.systemPanel.setHoveredId(null); } catch {}
     }
+  }
+
+  /** Attach/detach pointer tracking for GrimoirePanel (cursor only) */
+  private updateGrimoirePointerBinding(): void {
+    if (!this.domCanvas || !this.grimoirePanel) return;
+    const el = this.domCanvas;
+    const moveHandler = (this as any)._grimoireMoveHandler as ((e: MouseEvent) => void) | undefined;
+    const enabled = this.grimoirePanel.isEnabled();
+    if (enabled) {
+      if (!moveHandler) {
+        const mh = (e: MouseEvent) => {
+          if (!this.grimoirePanel || !this.grimoirePanel.isEnabled() || !this.gl) return;
+          const rect = el.getBoundingClientRect();
+          try { this.grimoirePanel!.setCursorFromViewport(
+            e.clientX,
+            e.clientY,
+            rect,
+            (this.gl!.canvas as HTMLCanvasElement).width,
+            (this.gl!.canvas as HTMLCanvasElement).height
+          ); } catch {}
+        };
+        (this as any)._grimoireMoveHandler = mh;
+        el.addEventListener('mousemove', mh);
+      }
+    } else {
+      if (moveHandler) {
+        el.removeEventListener('mousemove', moveHandler);
+        (this as any)._grimoireMoveHandler = undefined;
+      }
+    }
+  }
+
+  /** Hide OS cursor when Grimoire is enabled; restore otherwise */
+  private updateCanvasCursor(): void {
+    try {
+      if (!this.domCanvas) return;
+      const gOn = !!(this.grimoirePanel && this.grimoirePanel.isEnabled());
+      this.domCanvas.style.cursor = gOn ? 'none' : '';
+    } catch {}
   }
 
   /**
