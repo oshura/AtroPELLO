@@ -58,12 +58,24 @@ Implementación:
 - Afinar validación de velocidad (opcional)
   - Si se desea, medir la componente tangencial relativa a la ventana en lugar de la magnitud completa.
 
+## Grimorio y Hechizos
+
+- Documentación dedicada: ver `documentacion/Grimorio_y_Hechizos.md`.
+- Estado actual:
+  - Grimorio a pantalla completa con tooltips diegéticos (volteo en página derecha), selección única sin glow duplicado ni cintas.
+  - Flujo de casteo estandarizado para tecla rápida “h”: cámara 0 → pre‑cast 2s con bloqueo de controles → placeholder → efecto.
+  - Hechizos:
+    - Rito Doble de Tiempo: duplica `maxSpeed`/aceleración/freno durante 120s; contador MM:SS carmesí centrado en brújula; restauración y clamp al expirar; recasteo refresca.
+    - Salto al Vacío: requiere objetivo válido y consume 50u de energía del vacío; aborta con placeholder si no hay recursos o condiciones.
+  - Recursos: Energía del Vacío `max=100`, `actual=100` al inicio.
+
 ## Verificación de documentación existente
 
 - `documentacion/DebugOverlay.md`: Correcto respecto al toggle con F1 y al servicio de overlay. Mantener.
 - `documentacion/Dialog.md`: Alineado con el componente modal actual y su uso. Mantener.
 - `documentacion/Layout.md`: Coherente con la estructura de componentes (header/main/footer) y el enfoque Flexbox. Mantener.
 - `documentacion/OutlineShaders.md`: Describe fielmente la Fase 4 (OutlineRenderer, dos pasadas, tipos y pipeline). Se han suavizado las cifras de rendimiento en este repo para evitar métricas no verificadas.
+- `documentacion/Grimorio_y_Hechizos.md`: NUEVO. Añadido para centralizar la documentación del libro del grimorio y los hechizos (flujo de casteo, HUD/Brújula y recursos). Coherente con el estado actual del código.
 
 ## Referencias rápidas
 
