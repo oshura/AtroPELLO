@@ -3169,11 +3169,12 @@ export class GameEngine {
         return;
       }
     }
-    // Fase 2: lanzar hechizo desde el Grimorio con 'h'
+    // Fase 2: lanzar hechizo con 'h' (desde el grimorio o recordando el seleccionado)
     if (key.toLowerCase() === 'h') {
-      // Sólo actúa si el grimorio está abierto
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
-        const spell = (this.grimoirePanel as any).getHoveredSpellType?.() as 'speed' | 'longjump' | null;
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|null;
+        const hovered = (this.grimoirePanel as any).getHoveredSpellType?.() as 'speed'|'longjump'|null;
+        const spell = selected || hovered;
         if (!spell) {
           // Nada seleccionado: no hacer nada
           return;
@@ -3215,7 +3216,36 @@ export class GameEngine {
         }, 2000);
         return;
       }
-      // Si el grimorio no está abierto, no hacer nada especial por ahora
+      // Si el grimorio no está abierto: usar el hechizo seleccionado persistente (si existe)
+      if (this.grimoirePanel) {
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|null;
+        if (!selected) return;
+        const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
+        // Cambiar cámara y ejecutar tras 2s, igual que cuando se castea desde el grimorio
+        this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+        setTimeout(() => {
+          if (selected === 'longjump') {
+            if (target) {
+              const anyT: any = target as any;
+              const center = anyT.boundingSphere?.center ? { ...anyT.boundingSphere.center } : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : { x: 0, y: 0, z: 0 });
+              const dx = center.x - this.spaceship.position.x;
+              const dy = center.y - this.spaceship.position.y;
+              const dz = center.z - this.spaceship.position.z;
+              const dist = Math.hypot(dx, dy, dz);
+              if (dist > 4000) {
+                this.animationManager.startVoidJump(this, target);
+              } else {
+                console.info('[VoidJump] Target demasiado cerca (<4000u). Dist:', Math.round(dist));
+              }
+            } else {
+              this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
+            }
+          } else if (selected === 'speed') {
+            this.showPlaceholderText('ANIMATION NUMBER 1.', 2000);
+          }
+        }, 2000);
+        return;
+      }
       return;
     }
   }
@@ -3943,6 +3973,7 @@ export class GameEngine {
     if (!this.domCanvas || !this.grimoirePanel) return;
     const el = this.domCanvas;
     const moveHandler = (this as any)._grimoireMoveHandler as ((e: MouseEvent) => void) | undefined;
+    const clickHandler = (this as any)._grimoireClickHandler as ((e: MouseEvent) => void) | undefined;
     const enabled = this.grimoirePanel.isEnabled();
     if (enabled) {
       if (!moveHandler) {
@@ -3960,10 +3991,35 @@ export class GameEngine {
         (this as any)._grimoireMoveHandler = mh;
         el.addEventListener('mousemove', mh);
       }
+      if (!clickHandler) {
+        const ch = (e: MouseEvent) => {
+          if (!this.grimoirePanel || !this.grimoirePanel.isEnabled()) return;
+          // Prefer UI: set selected spell from hover
+          const t = (this.grimoirePanel as any).getHoveredSpellType?.() as 'speed'|'longjump'|null;
+          if (t) {
+            try { (this.grimoirePanel as any).setSelectedSpellType?.(t); } catch {}
+          }
+          // Swallow click so it doesn't affect 3D
+          try {
+            e.preventDefault();
+            e.stopPropagation();
+            (e as any).cancelBubble = true;
+            if ((e as any).stopImmediatePropagation) (e as any).stopImmediatePropagation();
+          } catch {}
+        };
+        (this as any)._grimoireClickHandler = ch;
+        // Use capture to ensure the grimoire click runs before other canvas listeners (e.g., adaptive targeting)
+        el.addEventListener('click', ch, { capture: true });
+      }
     } else {
       if (moveHandler) {
         el.removeEventListener('mousemove', moveHandler);
         (this as any)._grimoireMoveHandler = undefined;
+      }
+      if (clickHandler) {
+        // Must pass the same capture flag used during addEventListener to successfully remove
+        el.removeEventListener('click', clickHandler, { capture: true as any });
+        (this as any)._grimoireClickHandler = undefined;
       }
     }
   }

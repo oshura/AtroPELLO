@@ -29,12 +29,23 @@ export class GrimoirePanel {
   // Static layout data (seeded RNG)
   private rng!: () => number;
   private speckles: Array<{ x: number; y: number; r: number; color: string }> = [];
-  private iconPlacements: Array<{ type: 'speed'| 'longjump'| 'eye'|'star'|'tentacle'; x: number; y: number; s: number; r: number }> = [];
+  private iconPlacements: Array<{ type: string; x: number; y: number; s: number; r: number }> = [];
   private handwritingLines: Array<Array<{ x: number; y: number }>> = [];
   // Handwriting as segmented "words": each line is an array of word-polylines
   private handwritingSegments: Array<Array<Array<{ x: number; y: number }>>> = [];
   private pageWrinkles: Array<Array<{ x:number; y:number }>> = [];
   private hoveredIconIndex: number = -1;
+  // Spell states and selection
+  private spellStates: Record<string, 'locked'|'available'|'equipped'> = { speed: 'available', longjump: 'available' };
+  private selectedSpell: 'speed' | 'longjump' | null = null;
+  // Reading mode animation (zoom + slight tilt)
+  private animStartMs: number = performance.now();
+  private animDurMs: number = 320;
+  private animOpening: boolean = false;
+  private animProgress: number = 0; // 0..1
+  private animClosingPendingDisable: boolean = false;
+  private tScale: number = 1.0; // current scale
+  private tRot: number = 0.0;   // current rotation (radians)
 
   constructor(gl: WebGL2RenderingContext, width: number = 1024, height: number = 1024) {
     this.gl = gl;
@@ -47,7 +58,24 @@ export class GrimoirePanel {
     this.initializeStaticLayout();
   }
 
-  public setEnabled(v: boolean) { this.enabled = v; }
+  public setEnabled(v: boolean) {
+    if (v) {
+      // Start opening animation and keep enabled
+      this.enabled = true;
+      this.animOpening = true;
+      this.animStartMs = performance.now();
+      this.animClosingPendingDisable = false;
+    } else {
+      // Start closing animation; keep enabled until it finishes
+      if (this.enabled) {
+        this.animOpening = false;
+        this.animStartMs = performance.now();
+        this.animClosingPendingDisable = true;
+      } else {
+        this.enabled = false;
+      }
+    }
+  }
   public isEnabled(): boolean { return this.enabled; }
   public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
     // Convert to canvas pixel coords (texture covers full viewport)
@@ -62,6 +90,24 @@ export class GrimoirePanel {
     if (this.hoveredIconIndex < 0) return null;
     const t = this.iconPlacements[this.hoveredIconIndex]?.type;
     return (t === 'speed' || t === 'longjump') ? t : null;
+  }
+  public getSelectedSpellType(): 'speed' | 'longjump' | null { return this.selectedSpell; }
+  public setSelectedSpellType(t: 'speed'|'longjump'|null): void {
+    this.selectedSpell = t;
+    // Update states: one equipped at most
+    (['speed','longjump'] as const).forEach(k => {
+      if (!t) {
+        if (this.spellStates[k] !== 'locked') this.spellStates[k] = 'available';
+      } else if (k === t) {
+        this.spellStates[k] = 'equipped';
+      } else if (this.spellStates[k] !== 'locked') {
+        this.spellStates[k] = 'available';
+      }
+    });
+  }
+  public setSpellState(t: 'speed'|'longjump', state: 'locked'|'available'|'equipped'): void {
+    this.spellStates[t] = state;
+    if (state !== 'equipped' && this.selectedSpell === t) this.selectedSpell = null;
   }
 
   private initGLResources(): void {
@@ -117,23 +163,64 @@ export class GrimoirePanel {
     // Drive time from a monotonic clock so animation runs even if delta is 0
     const now = performance.now();
     this.t = (now - this.startTime) / 1000;
+    // Animate reading-mode transform
+    const tSince = now - this.animStartMs;
+    const raw = Math.max(0, Math.min(1, tSince / Math.max(1, this.animDurMs)));
+    const easeInOutQuad = (x:number) => x < 0.5 ? 2*x*x : 1 - Math.pow(-2*x + 2, 2)/2;
+    const p = easeInOutQuad(raw);
+    this.animProgress = this.animOpening ? p : (1 - p);
+    if (!this.animOpening && this.animClosingPendingDisable && raw >= 1) {
+      this.enabled = false;
+      this.animClosingPendingDisable = false;
+    }
+    const prog = Math.max(0, Math.min(1, this.animProgress));
+  // Up to +6% zoom
+    this.tScale = 1.0 + 0.06 * prog;
+  this.tRot = 0.0;
     const c = this.ctx; const W = this.canvas.width; const H = this.canvas.height;
     c.save();
     // Background parchment
     this.drawParchment(c, W, H);
     // Book frame and pages (static wrinkles)
+    // Apply reading transform to book/page content
+    c.save();
+  c.translate(W/2, H/2);
+  c.scale(this.tScale, this.tScale);
+  c.translate(-W/2, -H/2);
     this.drawBook(c, W, H);
     // Determine hover over icons
     this.hoveredIconIndex = -1;
     if (this.cursorPx !== null && this.cursorPy !== null) {
+      // Inverse-transform cursor for accurate hit testing
+      const inv = this.inverseTransform(this.cursorPx, this.cursorPy, W, H);
       for (let i=0;i<this.iconPlacements.length;i++) {
         const ic = this.iconPlacements[i];
-        const dx = this.cursorPx - ic.x; const dy = this.cursorPy - ic.y;
+        const dx = inv.x - ic.x; const dy = inv.y - ic.y;
         if (dx*dx + dy*dy <= (ic.r*ic.r)) { this.hoveredIconIndex = i; break; }
       }
     }
     // Page content: handwriting + icons (static), plus hover effects
     this.drawPageContent(c, W, H);
+    c.restore(); // end reading transform scope
+    // Tooltip for hovered spell (flip to the left side when hovering glyphs on the right page)
+    if (this.hoveredIconIndex >= 0) {
+      const ic = this.iconPlacements[this.hoveredIconIndex];
+      const t = ic.type;
+      if (this.cursorPx !== null && this.cursorPy !== null) {
+        const state = this.spellStates[t] ?? 'locked';
+        const Wb = this.measureTooltipWidth(t, state);
+        // Determine if hovered glyph belongs to the right page
+        const isRightPage = (
+          ic.x >= this.rightPage.x && ic.x <= (this.rightPage.x + this.rightPage.w)
+        );
+        const pad = 18;
+        let tipX = isRightPage ? (this.cursorPx - pad - Wb) : (this.cursorPx + pad);
+        // Clamp within canvas
+        tipX = Math.max(6, Math.min(this.canvas.width - Wb - 6, tipX));
+        const tipY = this.cursorPy + pad;
+        this.drawSpellTooltip(c, tipX, tipY, t, state);
+      }
+    }
     // Cursor
     if (this.cursorPx !== null && this.cursorPy !== null) {
       this.drawPentacle(c, this.cursorPx, this.cursorPy, Math.max(12, Math.min(22, Math.min(W, H) * 0.018)));
@@ -148,6 +235,16 @@ export class GrimoirePanel {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
     gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, prevFlip ? 1 : 0);
     gl.bindTexture(gl.TEXTURE_2D, null);
+  }
+
+  // Inverse of reading transform for hit tests
+  private inverseTransform(x:number, y:number, W:number, H:number): { x:number; y:number } {
+    let px = x - W/2, py = y - H/2;
+    const rx = px; const ry = py; // no rotation, zoom-only
+    const invS = 1 / Math.max(1e-6, this.tScale);
+    const sx = rx * invS;
+    const sy = ry * invS;
+    return { x: sx + W/2, y: sy + H/2 };
   }
 
   public render(viewportW: number, viewportH: number): void {
@@ -258,20 +355,52 @@ export class GrimoirePanel {
         c.stroke();
       }
     }
-    // Frames behind spell glyphs to mask handwriting beneath
+    // Frames behind all glyphs to mask handwriting beneath
     for (let i = 0; i < this.iconPlacements.length; i++) {
       const p = this.iconPlacements[i];
-      if (p.type === 'speed' || p.type === 'longjump') {
-        this.drawGlyphFrame(c, p.x, p.y, p.r);
-      }
+      const state = this.spellStates[p.type] ?? 'locked';
+      const equipped = (this.selectedSpell === p.type);
+      this.drawGlyphFrame(c, p.x, p.y, p.r, state, equipped);
     }
     // Icons (precomputed) and hover effects (on top)
     for (let i=0;i<this.iconPlacements.length;i++) {
       const p = this.iconPlacements[i];
-      if (p.type === 'speed') this.drawSpeedRune(c, p.x, p.y, p.r*0.9);
-      else if (p.type === 'longjump') this.drawLongJumpRune(c, p.x, p.y, p.r*0.9);
+  const state = this.spellStates[p.type] ?? 'locked';
+  // Remove separate equipped glow pass; neon effect is applied directly to the rune when equipped
+      const alphaBefore = c.globalAlpha;
+      if (state === 'locked') c.globalAlpha = 0.45;
+      if (p.type === 'speed') {
+        if (state === 'equipped') {
+          c.save();
+          const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
+          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
+          c.shadowBlur = 22;
+          this.drawSpeedRune(c, p.x, p.y, p.r*0.9, '#00d5ff');
+          c.restore();
+        } else {
+          this.drawSpeedRune(c, p.x, p.y, p.r*0.9);
+        }
+      }
+      else if (p.type === 'longjump') {
+        if (state === 'equipped') {
+          c.save();
+          const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
+          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
+          c.shadowBlur = 22;
+          this.drawLongJumpRune(c, p.x, p.y, p.r*0.9, '#00d5ff');
+          c.restore();
+        } else {
+          this.drawLongJumpRune(c, p.x, p.y, p.r*0.9);
+        }
+      }
       else if (p.type === 'eye') this.drawEye(c, p.x, p.y, p.r*1.0);
       else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, p.r*0.7);
+      else if (p.type === 'ignis') this.drawIgnis(c, p.x, p.y, p.r*0.85);
+      else if (p.type === 'umbra') this.drawUmbra(c, p.x, p.y, p.r*0.9);
+      else if (p.type === 'lux') this.drawLux(c, p.x, p.y, p.r*0.85);
+      else if (p.type === 'vinculum') this.drawVinculum(c, p.x, p.y, p.r*0.85);
+      else if (p.type === 'tempus') this.drawTempus(c, p.x, p.y, p.r*0.85);
+      c.globalAlpha = alphaBefore;
       // tentacle intentionally avoided (had per-frame randomness)
       if (i === this.hoveredIconIndex) {
         this.drawIconHover(c, p.x, p.y, p.r);
@@ -383,6 +512,21 @@ export class GrimoirePanel {
     const ljY = this.rightPage.y + this.rightPage.h * 0.62;
     this.iconPlacements.push({ type: 'speed', x: speedX, y: speedY, s: 1.0, r: speedR });
     this.iconPlacements.push({ type: 'longjump', x: ljX, y: ljY, s: 1.0, r: ljR });
+
+    // Add five invented, locked glyphs distributed across both pages
+    const lp = this.leftPage, rp = this.rightPage;
+    const rL = Math.min(lp.w, lp.h) * 0.095;
+    const rR = Math.min(rp.w, rp.h) * 0.085;
+    // Left page: ignis (top), umbra (middle), lux (bottom)
+    this.iconPlacements.push({ type: 'ignis', x: lp.x + lp.w*0.72, y: lp.y + lp.h*0.26, s: 1.0, r: rL });
+    this.iconPlacements.push({ type: 'umbra', x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.52, s: 1.0, r: rL*0.95 });
+    this.iconPlacements.push({ type: 'lux',   x: lp.x + lp.w*0.58, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
+    // Right page (spare spaces): vinculum (upper-left), tempus (lower-left)
+    this.iconPlacements.push({ type: 'vinculum', x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
+    this.iconPlacements.push({ type: 'tempus',   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
+
+    // Ensure new glyphs default to locked state
+    ['ignis','umbra','lux','vinculum','tempus'].forEach(t => { if (!(t in this.spellStates)) this.spellStates[t] = 'locked'; });
   }
 
   // Mulberry32 PRNG
@@ -427,10 +571,79 @@ export class GrimoirePanel {
     c.restore();
   }
 
+  // Invented glyphs (locked by default)
+  private drawIgnis(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
+    // Flame
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    c.strokeStyle = '#3b2b1f'; c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(0, -r*0.9);
+    c.bezierCurveTo(r*0.6, -r*0.6, r*0.8, -r*0.1, 0, r*0.9);
+    c.bezierCurveTo(-r*0.8, -r*0.1, -r*0.6, -r*0.6, 0, -r*0.9);
+    c.stroke();
+    // inner tongue
+    c.beginPath();
+    c.moveTo(0, -r*0.5);
+    c.bezierCurveTo(r*0.3, -r*0.2, r*0.4, 0, 0, r*0.5);
+    c.bezierCurveTo(-r*0.4, 0, -r*0.3, -r*0.2, 0, -r*0.5);
+    c.stroke();
+    c.restore();
+  }
+
+  private drawUmbra(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
+    // Crescent moon
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    c.strokeStyle = '#3b2b1f'; c.lineWidth = 2;
+    c.beginPath(); c.arc(0,0, r, -Math.PI/2, Math.PI/2, false); c.stroke();
+    c.beginPath(); c.arc(r*0.35, 0, r*0.85, -Math.PI/2, Math.PI/2, false); c.stroke();
+    c.restore();
+  }
+
+  private drawLux(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
+    // Sun with rays
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    c.strokeStyle = '#3b2b1f'; c.lineWidth = 2;
+    c.beginPath(); c.arc(0,0, r*0.6, 0, Math.PI*2); c.stroke();
+    for (let i=0;i<12;i++) {
+      const ang = i*Math.PI/6;
+      const x1 = Math.cos(ang)*r*0.7, y1 = Math.sin(ang)*r*0.7;
+      const x2 = Math.cos(ang)*r*1.0, y2 = Math.sin(ang)*r*1.0;
+      c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+    }
+    c.restore();
+  }
+
+  private drawVinculum(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
+    // Interlocked links
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    c.strokeStyle = '#3b2b1f'; c.lineWidth = 2.5; c.beginPath();
+    c.ellipse(-r*0.35, 0, r*0.35, r*0.22, 0, 0, Math.PI*2); c.stroke();
+    c.beginPath(); c.ellipse(r*0.35, 0, r*0.35, r*0.22, 0, 0, Math.PI*2); c.stroke();
+    // overlap accents
+    c.lineWidth = 4; c.beginPath();
+    c.arc(0,0, r*0.12, 0, Math.PI*2); c.stroke();
+    c.restore();
+  }
+
+  private drawTempus(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
+    // Hourglass
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    c.strokeStyle = '#3b2b1f'; c.lineWidth = 2;
+    const w = r*0.9, h = r*1.2;
+    c.beginPath();
+    c.moveTo(-w, -h); c.lineTo(w, -h);
+    c.moveTo(-w, h); c.lineTo(w, h);
+    c.moveTo(-w, -h); c.lineTo(w, h);
+    c.moveTo(w, -h); c.lineTo(-w, h);
+    c.stroke();
+    c.restore();
+  }
+
   // Long-jump rune: concentric rings with a portal sigil
-  private drawLongJumpRune(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
-    c.save(); c.translate(x,y);
-    c.strokeStyle = '#3b2b1f';
+  private drawLongJumpRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const baseColor = color ?? '#3b2b1f';
+    c.strokeStyle = baseColor;
     // Outer/inner rings
     c.lineWidth = 2;
     c.beginPath(); c.arc(0,0,r,0,Math.PI*2); c.stroke();
@@ -447,24 +660,26 @@ export class GrimoirePanel {
   }
 
   // Speed rune: circular sigil with double chevrons ("velocity")
-  private drawSpeedRune(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
-    c.save(); c.translate(x,y);
+  private drawSpeedRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const baseColor = color ?? '#3b2b1f';
     // Outer circle
-    c.strokeStyle = '#3b2b1f'; c.lineWidth = 2;
+    c.strokeStyle = baseColor; c.lineWidth = 2;
     c.beginPath(); c.arc(0,0,r,0,Math.PI*2); c.stroke();
     // Inner ring
     c.globalAlpha = 0.6; c.beginPath(); c.arc(0,0,r*0.78,0,Math.PI*2); c.stroke(); c.globalAlpha = 1;
     // Double chevrons pointing right
     const ch = (sx:number,sy:number, s:number)=>{
+      c.strokeStyle = color ? baseColor : '#2e2218';
       c.beginPath();
       c.moveTo(sx-10*s, sy-6*s); c.lineTo(sx, sy); c.lineTo(sx-10*s, sy+6*s);
       c.stroke();
     };
-    c.lineWidth = 3; c.strokeStyle = '#2e2218';
+    c.lineWidth = 3; c.strokeStyle = color ? baseColor : '#2e2218';
     ch(-r*0.25, -r*0.10, 1.0);
     ch(0, 0, 1.2);
     // Rune marks around circle (ticks)
-    c.lineWidth = 2; c.strokeStyle = '#3b2b1f';
+    c.lineWidth = 2; c.strokeStyle = baseColor;
     for (let i=0;i<6;i++) {
       const ang = i*Math.PI/3;
       const x1 = Math.cos(ang)*r*0.86, y1 = Math.sin(ang)*r*0.86;
@@ -475,7 +690,7 @@ export class GrimoirePanel {
   }
 
   private drawIconHover(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
-    c.save(); c.translate(x,y);
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
     // Golden glow
     const g = c.createRadialGradient(0,0, r*0.6, 0,0, r*1.6);
     g.addColorStop(0, `rgba(255,215,0,0.35)`);
@@ -496,11 +711,22 @@ export class GrimoirePanel {
     c.restore();
   }
 
+  private drawEquippedGlow(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
+    c.save(); c.translate(x,y);
+    const g = c.createRadialGradient(0,0, r*0.5, 0,0, r*1.25);
+    g.addColorStop(0, 'rgba(0,213,255,0.25)');
+    g.addColorStop(1, 'rgba(0,213,255,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(0,0, r*1.25, 0, Math.PI*2); c.fill();
+    c.lineWidth = 2; c.strokeStyle = 'rgba(0,213,255,0.95)';
+    c.beginPath(); c.arc(0,0, r*1.02, 0, Math.PI*2); c.stroke();
+    c.restore();
+  }
+
   // Parchment frame behind glyphs to mask handwriting and provide a clean space
-  private drawGlyphFrame(c: CanvasRenderingContext2D, cx:number, cy:number, r:number): void {
+  private drawGlyphFrame(c: CanvasRenderingContext2D, cx:number, cy:number, r:number, state: 'locked'|'available'|'equipped' = 'available', equipped: boolean = false): void {
     // Frame size relative to glyph radius
     const w = r * 2.2;
-    const h = r * 1.6;
+  const h = r * 1.6 * 2.25; // a bit taller for extra clearance (2.10 -> 2.25)
     const x = Math.round(cx - w/2);
     const y = Math.round(cy - h/2);
     c.save();
@@ -508,17 +734,106 @@ export class GrimoirePanel {
     c.shadowColor = 'rgba(0,0,0,0.25)';
     c.shadowBlur = 6;
     c.shadowOffsetX = 0; c.shadowOffsetY = 3;
-    // Fill: lighter parchment
-    c.fillStyle = '#f7f0d8';
+    // Fill: lighter parchment (locked even lighter/whiter)
+    c.fillStyle = state === 'locked' ? '#f7f4ec' : '#f7f0d8';
     this.roundRect(c, x, y, w, h, 6);
     c.fill();
     // Border
     c.shadowColor = 'transparent';
-    c.lineWidth = 2;
-    c.strokeStyle = 'rgba(60,45,35,0.55)';
+    c.lineWidth = 2.2;
+    if (state === 'locked') {
+      c.strokeStyle = 'rgba(80,80,80,0.35)';
+    } else if (equipped) {
+      c.strokeStyle = '#d4af37'; // golden
+    } else {
+      c.strokeStyle = 'rgba(60,45,35,0.55)';
+    }
     this.roundRect(c, x, y, w, h, 6);
     c.stroke();
+    // Additional inner cyan accent for equipped to reinforce selection
+    if (equipped) {
+      c.save();
+      c.globalAlpha = 0.9;
+      c.strokeStyle = '#00d5ff';
+      c.lineWidth = 1.8;
+      this.roundRect(c, x+5, y+5, w-10, h-10, 5);
+      c.stroke();
+      c.restore();
+    }
+    // Removed 'EQUIPPED' ribbon per request
     c.restore();
+  }
+
+  private drawSpellTooltip(c: CanvasRenderingContext2D, x:number, y:number, type: string, state: 'locked'|'available'|'equipped'): void {
+    let title: string;
+    let desc: string;
+    if (type === 'longjump') {
+      title = 'Void Jump';
+      desc = 'Tear the veil and traverse the void to your selected target.';
+    } else if (type === 'speed') {
+      title = 'Double Phased Time Rite';
+      desc = 'Bend the flow to stride between moments. (Effect pending)';
+    } else {
+      // Latin-ish gibberish for locked/unknown runes
+      const cap = type.charAt(0).toUpperCase() + type.slice(1);
+      title = `Sigillum ${cap}`;
+      desc = 'Verba arcana obscura; incantatio vetusta et ineffabilis.';
+    }
+    const stateText = state.toUpperCase();
+    // Bubble scaled vertically by 1.5
+    const pad = 10;
+    c.save();
+    c.translate(x, y);
+    c.scale(1, 1.5);
+    c.font = 'italic 14px serif';
+    const wTitle = c.measureText(title).width;
+    c.font = '12px serif';
+    const wDesc = Math.max(c.measureText(desc).width, c.measureText(stateText).width);
+    const Wb = Math.ceil(Math.max(wTitle, wDesc) + pad*2);
+    const Hb = 54;
+    // background
+    c.fillStyle = 'rgba(0,0,0,0.65)';
+    this.roundRect(c, 0, 0, Wb, Hb, 6);
+    c.fill();
+    // text
+    c.fillStyle = '#fff';
+    c.font = 'italic 14px serif';
+    c.fillText(title, pad, 18);
+    c.font = '12px serif';
+    c.fillStyle = 'rgba(255,255,255,0.9)';
+    c.fillText(desc, pad, 34);
+    c.fillStyle = state === 'locked' ? '#ff8888' : (state === 'equipped' ? '#ffd700' : '#a0ffa0');
+    c.fillText(stateText, pad, 50);
+    c.restore();
+  }
+
+  // Measure tooltip bubble width (matches drawSpellTooltip font sizing)
+  private measureTooltipWidth(type: string, state: 'locked'|'available'|'equipped'): number {
+    const c = this.ctx;
+    let title: string;
+    let desc: string;
+    if (type === 'longjump') {
+      title = 'Void Jump';
+      desc = 'Tear the veil and traverse the void to your selected target.';
+    } else if (type === 'speed') {
+      title = 'Double Phased Time Rite';
+      desc = 'Bend the flow to stride between moments. (Effect pending)';
+    } else {
+      const cap = type.charAt(0).toUpperCase() + type.slice(1);
+      title = `Sigillum ${cap}`;
+      desc = 'Verba arcana obscura; incantatio vetusta et ineffabilis.';
+    }
+    const pad = 10;
+    // Use same fonts as in drawSpellTooltip
+    c.save();
+    c.font = 'italic 14px serif';
+    const wTitle = c.measureText(title).width;
+    c.font = '12px serif';
+    const stateText = state.toUpperCase();
+    const wDesc = Math.max(c.measureText(desc).width, c.measureText(stateText).width);
+    const Wb = Math.ceil(Math.max(wTitle, wDesc) + pad*2);
+    c.restore();
+    return Wb;
   }
 
   private drawScribble(c: CanvasRenderingContext2D, x1:number,y1:number, x2:number,y2:number): void {
