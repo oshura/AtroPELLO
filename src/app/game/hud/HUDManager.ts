@@ -112,6 +112,8 @@ export class HUDManager {
     position?: { x: number; y: number; z: number };
     voidEnergy?: { current: number; max: number; pct: number };
     weapons?: any[];
+    // Optional: remaining seconds for active speed rite (Double Phased Time Rite)
+    speedRiteRemainingSec?: number | null;
   }): void {
     // Actualizar elementos individuales
     if (typeof gameData.maxSpeed === 'number' && !Number.isNaN(gameData.maxSpeed)) {
@@ -126,7 +128,9 @@ export class HUDManager {
     if (gameData.position) {
       targetInfo = this.targetingSystem.getTargetInfo(gameData.position);
     }
-    this.compass.update(gameData.heading, targetInfo);
+  this.compass.update(gameData.heading, targetInfo);
+  // Timed spell countdown overlay routed to compass
+  this.compass.setCountdown(gameData.speedRiteRemainingSec ?? null);
     
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
     this.speedometer.update(gameData.speed);

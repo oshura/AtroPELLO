@@ -9,12 +9,23 @@ export class Compass {
   private heading: number = 0;
   private radius: number = 80; // Triplicado de tamaño
   private targetInfo: TargetInfo | null = null;
+  // Optional countdown overlay in seconds (e.g., timed spell)
+  private countdownSec: number | null = null;
   
   constructor() {}
 
   public update(heading: number, targetInfo?: TargetInfo | null): void {
     this.heading = ((heading % 360) + 360) % 360;
     this.targetInfo = targetInfo || null;
+  }
+
+  // Timed spell/UI overlay setter
+  public setCountdown(secondsRemaining: number | null | undefined): void {
+    if (secondsRemaining === null || secondsRemaining === undefined || !isFinite(secondsRemaining) || secondsRemaining <= 0) {
+      this.countdownSec = null;
+    } else {
+      this.countdownSec = secondsRemaining;
+    }
   }
 
   public render(ctx: CanvasRenderingContext2D, position: { x: number; y: number }): void {
@@ -26,6 +37,10 @@ export class Compass {
     // Mostrar solo información del target si existe; si no, no marcar nada
     if (this.targetInfo) {
       this.drawTargetNeedle(ctx);
+    }
+    // Draw optional countdown overlay inside the ring, top-center with margin
+    if (this.countdownSec && this.countdownSec > 0) {
+      this.drawCountdown(ctx, this.countdownSec);
     }
     
     ctx.restore();
@@ -167,6 +182,7 @@ export class Compass {
       headingNormalized: Math.round(this.heading),
       radius: this.radius,
       hasTarget: !!this.targetInfo,
+      countdown: this.countdownSec,
       targetInfo: this.targetInfo ? {
         targetId: this.targetInfo.target.id,
         distance: Math.round(this.targetInfo.distance * 100) / 100,
@@ -174,5 +190,37 @@ export class Compass {
         elevation: Math.round(this.targetInfo.elevation)
       } : null
     };
+  }
+
+  // Helpers
+  private drawCountdown(ctx: CanvasRenderingContext2D, secondsRemaining: number): void {
+    // Clamp and format as MM:SS
+    const sec = Math.max(0, Math.floor(secondsRemaining));
+    const mm = Math.floor(sec / 60);
+    const ss = sec % 60;
+    const text = `${mm.toString().padStart(2,'0')}:${ss.toString().padStart(2,'0')}`;
+
+  // Position centered vertically inside the ring
+  const y = 0;
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    // Blood-crimson color with subtle glow
+    const color = '#a00010';
+    ctx.fillStyle = color;
+    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+    // Slight vertical stretch for a digital feel without widening
+    ctx.translate(0, y);
+    ctx.scale(1, 1.2);
+    ctx.font = '28px monospace';
+    // Outer shadow/glow
+    ctx.shadowColor = color;
+    ctx.shadowBlur = 10;
+    // Draw text with subtle outline for readability
+    ctx.fillText(text, 0, 0);
+    ctx.shadowBlur = 0;
+    ctx.lineWidth = 2;
+    ctx.strokeText(text, 0, 0);
+    ctx.restore();
   }
 }

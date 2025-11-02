@@ -67,6 +67,25 @@ export class AnimationManagerService {
     return !!this.current && this.current.isBlockingInputs();
   }
 
+  /** Start a simple blocking placeholder animation for a fixed duration. */
+  public startBlockingDelay(durationMs: number): void {
+    if (durationMs <= 0) return;
+    // If already running something, keep it (do not override a real animation)
+    if (this.current) return;
+    let t = 0;
+    const total = Math.max(0.001, durationMs) / 1000;
+    this.current = {
+      name: 'blocking-delay',
+      start: () => {},
+      update: (_engine: GameEngine, dt: number) => {
+        t += dt;
+        return t >= total;
+      },
+      render: () => {},
+      isBlockingInputs: () => true,
+    };
+  }
+
   private createLoadingStub(): GameAnimation {
     let t = 0;
     return {

@@ -128,6 +128,12 @@ export class GameEngine {
   // Simple ephemeral text overlay (e.g., "ANIMATION NUMBER X.")
   private _placeholderOverlay: { tex: WebGLTexture; w: number; h: number; until: number } | null = null;
 
+  // Timed spell: Double Phased Time Rite (speed buff)
+  private speedRiteUntilMs: number | null = null;
+  private speedRiteOriginalMax: number | null = null;
+  private speedRiteOriginalAccel: number | null = null;
+  private speedRiteOriginalDecel: number | null = null;
+
   constructor(
     private webglService: WebGLService,
     private particleEffectsService: ParticleEffectsService,
@@ -797,6 +803,35 @@ export class GameEngine {
     }
     
     this.spaceship.update(deltaTime);
+
+    // Timed spell upkeep: expire or compute remaining time for HUD
+    let speedRiteRemainingSec: number | null = null;
+    if (this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs)) {
+      const now = performance.now();
+      if (now >= this.speedRiteUntilMs) {
+        // Expired: restore original max speed if known
+        if (this.speedRiteOriginalMax !== null) {
+          this.spaceship.maxSpeed = this.speedRiteOriginalMax;
+          // Clamp target/current to new cap to avoid overshoot visuals
+          this.spaceship.targetSpeed = Math.min(this.spaceship.targetSpeed, this.spaceship.maxSpeed);
+          this.spaceship.currentSpeed = Math.min(this.spaceship.currentSpeed, this.spaceship.maxSpeed);
+        }
+        // Restore accel/decel baselines if known
+        if (this.speedRiteOriginalAccel !== null) {
+          this.spaceship.acceleration = this.speedRiteOriginalAccel;
+        }
+        if (this.speedRiteOriginalDecel !== null) {
+          this.spaceship.deceleration = this.speedRiteOriginalDecel;
+        }
+        this.speedRiteUntilMs = null;
+        this.speedRiteOriginalMax = null;
+        this.speedRiteOriginalAccel = null;
+        this.speedRiteOriginalDecel = null;
+      } else {
+        // Use floor to avoid showing a lingering "00:01" when < 1s remains
+        speedRiteRemainingSec = Math.max(0, Math.floor((this.speedRiteUntilMs - now) / 1000));
+      }
+    }
     
   // Actualizar efectos de partículas
   this.particleEffects.updateAmbientDust(this.spaceship, deltaTime);
@@ -3185,10 +3220,20 @@ export class GameEngine {
         try { this.grimoirePanel.setEnabled(false); } catch {}
         try { this.updateGrimoirePointerBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
-        this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
-        // Esperar 2 segundos y ejecutar animación/efecto
+  // Ir a cámara 0 si no lo está ya
+  if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
+    this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+  }
+  // Bloquear controles 2s de casteo
+  this.animationManager.startBlockingDelay(2000);
+  // Esperar 2 segundos y luego disparar animación/efecto
         setTimeout(() => {
           if (spell === 'longjump') {
+            // Verificar energía del vacío antes de intentar el salto
+            if (!this.spaceship || this.spaceship.voidEnergyCurrent < 50) {
+              this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
+              return;
+            }
             if (target) {
               const center = (() => {
                 const anyT: any = target as any;
@@ -3201,17 +3246,22 @@ export class GameEngine {
               const dz = center.z - this.spaceship.position.z;
               const dist = Math.hypot(dx, dy, dz);
               if (dist > 4000) {
+                // Consumir 50u y lanzar animación de salto
+                this.spaceship.voidEnergyCurrent = Math.max(0, this.spaceship.voidEnergyCurrent - 50);
                 this.animationManager.startVoidJump(this, target);
               } else {
                 console.info('[VoidJump] Target demasiado cerca (<4000u). Dist:', Math.round(dist));
+                this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
               }
             } else {
               // Sin target válido: placeholder
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
             }
           } else if (spell === 'speed') {
-            // Placeholder por ahora
-            this.showPlaceholderText('ANIMATION NUMBER 1.', 2000);
+            // Mostrar mock de animación y aplicar buff al instante
+            this.showPlaceholderText('ANIMATION NUMBER 1.', 1200);
+            // Apply 2-minute max speed buff (Double Phased Time Rite)
+            this.applySpeedRite(120000);
           }
         }, 2000);
         return;
@@ -3222,9 +3272,18 @@ export class GameEngine {
         if (!selected) return;
         const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
         // Cambiar cámara y ejecutar tras 2s, igual que cuando se castea desde el grimorio
-        this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+  // Ir a cámara 0 si no lo está ya
+  if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
+    this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+  }
+  // Bloqueo de entrada por 2s
+  this.animationManager.startBlockingDelay(2000);
         setTimeout(() => {
           if (selected === 'longjump') {
+            if (!this.spaceship || this.spaceship.voidEnergyCurrent < 50) {
+              this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
+              return;
+            }
             if (target) {
               const anyT: any = target as any;
               const center = anyT.boundingSphere?.center ? { ...anyT.boundingSphere.center } : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : { x: 0, y: 0, z: 0 });
@@ -3233,15 +3292,18 @@ export class GameEngine {
               const dz = center.z - this.spaceship.position.z;
               const dist = Math.hypot(dx, dy, dz);
               if (dist > 4000) {
+                this.spaceship.voidEnergyCurrent = Math.max(0, this.spaceship.voidEnergyCurrent - 50);
                 this.animationManager.startVoidJump(this, target);
               } else {
                 console.info('[VoidJump] Target demasiado cerca (<4000u). Dist:', Math.round(dist));
+                this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
               }
             } else {
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
             }
           } else if (selected === 'speed') {
-            this.showPlaceholderText('ANIMATION NUMBER 1.', 2000);
+            this.showPlaceholderText('ANIMATION NUMBER 1.', 1200);
+            this.applySpeedRite(120000);
           }
         }, 2000);
         return;
@@ -3257,6 +3319,32 @@ export class GameEngine {
     if (this.spaceship && !this.animationManager.isBlockingInputs()) {
       this.updateShipControls(key, false);
     }
+  }
+
+  /** Apply the Double Phased Time Rite: doubles maxSpeed for a duration (default 2 minutes) */
+  private applySpeedRite(durationMs: number = 120000): void {
+    if (!this.spaceship) return;
+    const now = performance.now();
+    // Cache original max once (first activation)
+    if (this.speedRiteOriginalMax === null || !isFinite(this.speedRiteOriginalMax)) {
+      this.speedRiteOriginalMax = this.spaceship.maxSpeed;
+    }
+    if (this.speedRiteOriginalAccel === null || !isFinite(this.speedRiteOriginalAccel)) {
+      this.speedRiteOriginalAccel = this.spaceship.acceleration;
+    }
+    if (this.speedRiteOriginalDecel === null || !isFinite(this.speedRiteOriginalDecel)) {
+      this.speedRiteOriginalDecel = this.spaceship.deceleration;
+    }
+    // Apply doubled max speed from the original baseline
+    const base = this.speedRiteOriginalMax ?? this.spaceship.maxSpeed;
+    this.spaceship.maxSpeed = base * 2;
+    // Double accel/decel from their baselines
+    const baseA = this.speedRiteOriginalAccel ?? this.spaceship.acceleration;
+    const baseD = this.speedRiteOriginalDecel ?? this.spaceship.deceleration;
+    this.spaceship.acceleration = baseA * 2;
+    this.spaceship.deceleration = baseD * 2;
+    // Extend/refresh duration
+    this.speedRiteUntilMs = now + Math.max(0, durationMs);
   }
 
   /** Minimal full-screen text overlay helper for placeholder animations */
@@ -3673,7 +3761,10 @@ export class GameEngine {
       },
       weapons: this.spaceship.weapons,
       // Pasar posición de la nave para cálculo de bearing/elevación en brújula
-      position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }
+      position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z },
+      speedRiteRemainingSec: (this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs))
+        ? Math.max(0, Math.floor((this.speedRiteUntilMs - performance.now()) / 1000))
+        : null
     };
 
     // Sincronizar el target actual del sistema de retícula con el HUD

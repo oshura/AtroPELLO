@@ -772,7 +772,7 @@ export class GrimoirePanel {
       desc = 'Tear the veil and traverse the void to your selected target.';
     } else if (type === 'speed') {
       title = 'Double Phased Time Rite';
-      desc = 'Bend the flow to stride between moments. (Effect pending)';
+      desc = 'Double the ship\'s max speed for 2 minutes.';
     } else {
       // Latin-ish gibberish for locked/unknown runes
       const cap = type.charAt(0).toUpperCase() + type.slice(1);
@@ -817,7 +817,7 @@ export class GrimoirePanel {
       desc = 'Tear the veil and traverse the void to your selected target.';
     } else if (type === 'speed') {
       title = 'Double Phased Time Rite';
-      desc = 'Bend the flow to stride between moments. (Effect pending)';
+      desc = 'Double the ship\'s max speed for 2 minutes.';
     } else {
       const cap = type.charAt(0).toUpperCase() + type.slice(1);
       title = `Sigillum ${cap}`;
