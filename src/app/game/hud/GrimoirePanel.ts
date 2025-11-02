@@ -23,6 +23,11 @@ export class GrimoirePanel {
   // Simple internal animation time
   private t: number = 0;
   private startTime: number = performance.now();
+  // Static layout data (seeded RNG)
+  private rng!: () => number;
+  private speckles: Array<{ x: number; y: number; r: number; color: string }> = [];
+  private iconPlacements: Array<{ type: 'eye'|'star'|'tentacle'; x: number; y: number; s: number }> = [];
+  private scribbleLines: Array<Array<{ x: number; y: number }>> = [];
 
   constructor(gl: WebGL2RenderingContext, width: number = 1024, height: number = 1024) {
     this.gl = gl;
@@ -32,6 +37,7 @@ export class GrimoirePanel {
     if (!ctx) throw new Error('GrimoirePanel: 2D context not available');
     this.ctx = ctx;
     this.initGLResources();
+    this.initializeStaticLayout();
   }
 
   public setEnabled(v: boolean) { this.enabled = v; }
@@ -103,8 +109,8 @@ export class GrimoirePanel {
     this.drawParchment(c, W, H);
     // Book frame and pages
     this.drawBook(c, W, H);
-    // Occult doodles/icons
-    this.drawIcons(c, W, H);
+  // Occult doodles/icons (static layout)
+  this.drawIcons(c, W, H);
     // Cursor
     if (this.cursorPx !== null && this.cursorPy !== null) {
       this.drawPentacle(c, this.cursorPx, this.cursorPy, Math.max(12, Math.min(22, Math.min(W, H) * 0.018)));
@@ -152,13 +158,11 @@ export class GrimoirePanel {
     vg.addColorStop(0, 'rgba(0,0,0,0.0)');
     vg.addColorStop(1, 'rgba(0,0,0,0.18)');
     c.fillStyle = vg; c.fillRect(0, 0, W, H);
-    // Speckles/stains
+    // Speckles/stains (precomputed)
     c.globalAlpha = 0.045;
-    for (let i = 0; i < 800; i++) {
-      const x = Math.random()*W, y = Math.random()*H;
-      const r = 0.5 + Math.random()*2.5;
-      c.fillStyle = (i % 3 === 0) ? '#5a3e2b' : '#7f5f3f';
-      c.beginPath(); c.arc(x, y, r, 0, Math.PI*2); c.fill();
+    for (const sp of this.speckles) {
+      c.fillStyle = sp.color;
+      c.beginPath(); c.arc(sp.x, sp.y, sp.r, 0, Math.PI*2); c.fill();
     }
     c.globalAlpha = 1;
   }
@@ -221,29 +225,90 @@ export class GrimoirePanel {
   }
 
   private drawIcons(c: CanvasRenderingContext2D, W: number, H: number): void {
-    const rand = (a:number,b:number)=> a + Math.random()*(b-a);
     // Ink color
     const ink = '#3b2b1f';
     c.strokeStyle = ink; c.fillStyle = ink;
     c.lineWidth = 2;
-    // Place a few eyes, stars, tentacles on both pages
-    const placements = [
-      {x: W*0.3, y: H*0.3, s: 1.2},
-      {x: W*0.37, y: H*0.55, s: 0.9},
-      {x: W*0.7, y: H*0.34, s: 1.1},
-      {x: W*0.63, y: H*0.6, s: 0.95},
-    ];
-    for (const p of placements) {
-      // Randomly choose icon type
-      const r = Math.random();
-      if (r < 0.33) this.drawEye(c, p.x, p.y, 26*p.s);
-      else if (r < 0.66) this.drawStarSymbol(c, p.x, p.y, 18*p.s);
+    // Icons (precomputed)
+    for (const p of this.iconPlacements) {
+      if (p.type === 'eye') this.drawEye(c, p.x, p.y, 26*p.s);
+      else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, 18*p.s);
       else this.drawTentacle(c, p.x, p.y, 30*p.s);
     }
-    // Scribbles (illegible handwriting)
+    // Scribbles (precomputed polylines)
     c.strokeStyle = 'rgba(60,45,35,0.8)'; c.lineWidth = 1.4;
-    for (let i=0;i<6;i++) this.drawScribble(c, rand(W*0.18,W*0.42), rand(H*0.2,H*0.8), rand(W*0.18,W*0.42), rand(H*0.2,H*0.8));
-    for (let i=0;i<6;i++) this.drawScribble(c, rand(W*0.58,W*0.82), rand(H*0.2,H*0.8), rand(W*0.58,W*0.82), rand(H*0.2,H*0.8));
+    for (const line of this.scribbleLines) {
+      if (!line.length) continue;
+      c.beginPath(); c.moveTo(line[0].x, line[0].y);
+      for (let i=1;i<line.length;i++) c.lineTo(line[i].x, line[i].y);
+      c.stroke();
+    }
+  }
+
+  // Initialize seeded RNG and precompute all static layout content
+  private initializeStaticLayout(): void {
+    // Seeded RNG (constant for reproducibility). You can tweak seed to change layout.
+    this.rng = this.makeMulberry32(0xA11CE5);
+    const W = this.ctx.canvas.width;
+    const H = this.ctx.canvas.height;
+
+    // Speckles/stains
+    this.speckles.length = 0;
+    const speckCount = 800;
+    for (let i=0;i<speckCount;i++) {
+      const x = this.rng()*W;
+      const y = this.rng()*H;
+      const r = 0.5 + this.rng()*2.5;
+      const color = (this.rng() < 0.33) ? '#5a3e2b' : '#7f5f3f';
+      this.speckles.push({ x, y, r, color });
+    }
+
+    // Icons placements (fixed anchors, seeded type selection)
+    const anchors = [
+      {x: W*0.30, y: H*0.30, s: 1.2},
+      {x: W*0.375, y: H*0.56, s: 0.9},
+      {x: W*0.70, y: H*0.34, s: 1.1},
+      {x: W*0.625, y: H*0.62, s: 0.95},
+    ];
+    const types: Array<'eye'|'star'|'tentacle'> = ['eye','star','tentacle'];
+    this.iconPlacements = anchors.map(a => ({
+      x: a.x,
+      y: a.y,
+      s: a.s,
+      type: types[Math.floor(this.rng()*types.length)]
+    }));
+
+    // Scribbles: precompute polylines (left and right pages)
+    this.scribbleLines.length = 0;
+    const makeLine = (x1:number,y1:number,x2:number,y2:number) => {
+      const pts: Array<{x:number;y:number}> = [];
+      const steps = 22 + Math.floor(this.rng()*8);
+      for (let i=0;i<=steps;i++) {
+        const t = i/steps;
+        const nx = x1 + (x2-x1)*t + (this.rng()-0.5)*8;
+        const ny = y1 + (y2-y1)*t + (this.rng()-0.5)*6;
+        pts.push({x:nx,y:ny});
+      }
+      return pts;
+    };
+    const r = (a:number,b:number)=> a + (b-a)*this.rng();
+    for (let i=0;i<6;i++) {
+      this.scribbleLines.push(makeLine(r(W*0.18,W*0.42), r(H*0.22,H*0.80), r(W*0.18,W*0.42), r(H*0.22,H*0.80)));
+    }
+    for (let i=0;i<6;i++) {
+      this.scribbleLines.push(makeLine(r(W*0.58,W*0.82), r(H*0.22,H*0.80), r(W*0.58,W*0.82), r(H*0.22,H*0.80)));
+    }
+  }
+
+  // Mulberry32 PRNG
+  private makeMulberry32(seed: number): () => number {
+    let t = seed >>> 0;
+    return () => {
+      t += 0x6D2B79F5;
+      let r = Math.imul(t ^ (t >>> 15), 1 | t);
+      r ^= r + Math.imul(r ^ (r >>> 7), 61 | r);
+      return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+    };
   }
 
   private drawEye(c: CanvasRenderingContext2D, x:number,y:number, size:number): void {
