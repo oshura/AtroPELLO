@@ -19,6 +19,9 @@ export class GrimoirePanel {
   private enabled: boolean = false;
   private cursorPx: number | null = null;
   private cursorPy: number | null = null;
+  // Page geometry (for layout/hit-test)
+  private leftPage!: { x:number; y:number; w:number; h:number };
+  private rightPage!: { x:number; y:number; w:number; h:number };
 
   // Simple internal animation time
   private t: number = 0;
@@ -26,8 +29,12 @@ export class GrimoirePanel {
   // Static layout data (seeded RNG)
   private rng!: () => number;
   private speckles: Array<{ x: number; y: number; r: number; color: string }> = [];
-  private iconPlacements: Array<{ type: 'eye'|'star'|'tentacle'; x: number; y: number; s: number }> = [];
-  private scribbleLines: Array<Array<{ x: number; y: number }>> = [];
+  private iconPlacements: Array<{ type: 'speed'| 'longjump'| 'eye'|'star'|'tentacle'; x: number; y: number; s: number; r: number }> = [];
+  private handwritingLines: Array<Array<{ x: number; y: number }>> = [];
+  // Handwriting as segmented "words": each line is an array of word-polylines
+  private handwritingSegments: Array<Array<Array<{ x: number; y: number }>>> = [];
+  private pageWrinkles: Array<Array<{ x:number; y:number }>> = [];
+  private hoveredIconIndex: number = -1;
 
   constructor(gl: WebGL2RenderingContext, width: number = 1024, height: number = 1024) {
     this.gl = gl;
@@ -48,6 +55,13 @@ export class GrimoirePanel {
     const y = ((clientY - rect.top) / Math.max(1, rect.height)) * viewportH;
     this.cursorPx = (x / viewportW) * this.canvas.width;
     this.cursorPy = (y / viewportH) * this.canvas.height;
+  }
+
+  // Expose hovered spell type for casting
+  public getHoveredSpellType(): 'speed' | 'longjump' | null {
+    if (this.hoveredIconIndex < 0) return null;
+    const t = this.iconPlacements[this.hoveredIconIndex]?.type;
+    return (t === 'speed' || t === 'longjump') ? t : null;
   }
 
   private initGLResources(): void {
@@ -107,10 +121,19 @@ export class GrimoirePanel {
     c.save();
     // Background parchment
     this.drawParchment(c, W, H);
-    // Book frame and pages
+    // Book frame and pages (static wrinkles)
     this.drawBook(c, W, H);
-  // Occult doodles/icons (static layout)
-  this.drawIcons(c, W, H);
+    // Determine hover over icons
+    this.hoveredIconIndex = -1;
+    if (this.cursorPx !== null && this.cursorPy !== null) {
+      for (let i=0;i<this.iconPlacements.length;i++) {
+        const ic = this.iconPlacements[i];
+        const dx = this.cursorPx - ic.x; const dy = this.cursorPy - ic.y;
+        if (dx*dx + dy*dy <= (ic.r*ic.r)) { this.hoveredIconIndex = i; break; }
+      }
+    }
+    // Page content: handwriting + icons (static), plus hover effects
+    this.drawPageContent(c, W, H);
     // Cursor
     if (this.cursorPx !== null && this.cursorPy !== null) {
       this.drawPentacle(c, this.cursorPx, this.cursorPy, Math.max(12, Math.min(22, Math.min(W, H) * 0.018)));
@@ -181,16 +204,18 @@ export class GrimoirePanel {
   this.roundRect(c, padX, padY, W-2*padX, H-2*padY, 18);
     c.fill();
     c.restore();
-    // Inner pages area
-  const innerPadX = padX + Math.round(Math.min(W,H) * 0.02);
-  const innerPadY = padY + Math.round(Math.min(W,H) * 0.02);
-  const pageW = (W - 2*innerPadX);
-  const pageH = (H - 2*innerPadY);
+    // Inner pages area (must match initializeStaticLayout)
+    const innerPadX = padX + Math.round(Math.min(W,H) * 0.02);
+    const innerPadY = padY + Math.round(Math.min(W,H) * 0.02);
+    const pageW = (W - 2*innerPadX);
+    const pageH = (H - 2*innerPadY);
     // Draw two pages
     const seamX = Math.floor(W/2);
-  const left = { x: innerPadX, y: innerPadY, w: seamX - innerPadX, h: pageH };
-  // Ajuste: la página derecha debe terminar en (W - innerPadX), simétrica a la izquierda
-  const right = { x: seamX, y: innerPadY, w: (W - innerPadX) - seamX, h: pageH };
+    const left = { x: innerPadX, y: innerPadY, w: seamX - innerPadX, h: pageH };
+    // Right page ends at (W - innerPadX), symmetric to left
+    const right = { x: seamX, y: innerPadY, w: (W - innerPadX) - seamX, h: pageH };
+    // Cache page rects for other passes
+    this.leftPage = left; this.rightPage = right;
     const pageFill = (x: number, y: number, w: number, h: number) => {
       const pg = c.createLinearGradient(x, y, x+w, y);
       pg.addColorStop(0, '#f0e3bf');
@@ -209,39 +234,48 @@ export class GrimoirePanel {
     seamGrad.addColorStop(0.5, 'rgba(0,0,0,0.02)');
     seamGrad.addColorStop(1, 'rgba(0,0,0,0.15)');
   c.fillStyle = seamGrad; c.fillRect(seamX-16, innerPadY, 32, pageH);
-    // Page wrinkles faint
+    // Page wrinkles faint (precomputed)
     c.globalAlpha = 0.15; c.strokeStyle = 'rgba(100,80,60,0.5)';
-    for (let i=0;i<8;i++) {
-  const y = innerPadY + (i+1)*(pageH/9) + (Math.random()-0.5)*6;
+    for (const line of this.pageWrinkles) {
       c.beginPath();
-      c.moveTo(left.x+12, y);
-      for (let x = left.x+12; x < right.x+right.w-12; x+= 24) {
-        const yy = y + Math.sin(x*0.03 + i)*1.5 + (Math.random()-0.5)*0.6;
-        c.lineTo(x, yy);
-      }
+      c.moveTo(line[0].x, line[0].y);
+      for (let i=1;i<line.length;i++) c.lineTo(line[i].x, line[i].y);
       c.stroke();
     }
     c.globalAlpha = 1;
   }
 
-  private drawIcons(c: CanvasRenderingContext2D, W: number, H: number): void {
-    // Ink color
-    const ink = '#3b2b1f';
-    c.strokeStyle = ink; c.fillStyle = ink;
-    c.lineWidth = 2;
-    // Icons (precomputed)
-    for (const p of this.iconPlacements) {
-      if (p.type === 'eye') this.drawEye(c, p.x, p.y, 26*p.s);
-      else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, 18*p.s);
-      else this.drawTentacle(c, p.x, p.y, 30*p.s);
+  private drawPageContent(c: CanvasRenderingContext2D, W: number, H: number): void {
+    // Handwriting word segments (precomputed), draw beneath frames/icons
+    c.strokeStyle = 'rgba(60,45,35,0.85)';
+    c.lineWidth = 1.2; c.lineCap = 'round';
+    for (const lineSegs of this.handwritingSegments) {
+      for (const seg of lineSegs) {
+        if (!seg.length) continue;
+        c.beginPath();
+        c.moveTo(seg[0].x, seg[0].y);
+        for (let i = 1; i < seg.length; i++) c.lineTo(seg[i].x, seg[i].y);
+        c.stroke();
+      }
     }
-    // Scribbles (precomputed polylines)
-    c.strokeStyle = 'rgba(60,45,35,0.8)'; c.lineWidth = 1.4;
-    for (const line of this.scribbleLines) {
-      if (!line.length) continue;
-      c.beginPath(); c.moveTo(line[0].x, line[0].y);
-      for (let i=1;i<line.length;i++) c.lineTo(line[i].x, line[i].y);
-      c.stroke();
+    // Frames behind spell glyphs to mask handwriting beneath
+    for (let i = 0; i < this.iconPlacements.length; i++) {
+      const p = this.iconPlacements[i];
+      if (p.type === 'speed' || p.type === 'longjump') {
+        this.drawGlyphFrame(c, p.x, p.y, p.r);
+      }
+    }
+    // Icons (precomputed) and hover effects (on top)
+    for (let i=0;i<this.iconPlacements.length;i++) {
+      const p = this.iconPlacements[i];
+      if (p.type === 'speed') this.drawSpeedRune(c, p.x, p.y, p.r*0.9);
+      else if (p.type === 'longjump') this.drawLongJumpRune(c, p.x, p.y, p.r*0.9);
+      else if (p.type === 'eye') this.drawEye(c, p.x, p.y, p.r*1.0);
+      else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, p.r*0.7);
+      // tentacle intentionally avoided (had per-frame randomness)
+      if (i === this.hoveredIconIndex) {
+        this.drawIconHover(c, p.x, p.y, p.r);
+      }
     }
   }
 
@@ -263,41 +297,92 @@ export class GrimoirePanel {
       this.speckles.push({ x, y, r, color });
     }
 
-    // Icons placements (fixed anchors, seeded type selection)
-    const anchors = [
-      {x: W*0.30, y: H*0.30, s: 1.2},
-      {x: W*0.375, y: H*0.56, s: 0.9},
-      {x: W*0.70, y: H*0.34, s: 1.1},
-      {x: W*0.625, y: H*0.62, s: 0.95},
-    ];
-    const types: Array<'eye'|'star'|'tentacle'> = ['eye','star','tentacle'];
-    this.iconPlacements = anchors.map(a => ({
-      x: a.x,
-      y: a.y,
-      s: a.s,
-      type: types[Math.floor(this.rng()*types.length)]
-    }));
+    // Compute page rects exactly like drawBook
+    const basePad = Math.min(W, H) * 0.06;
+    const padX = Math.round(basePad * 2.5);
+    const padY = Math.round(basePad * 1.0);
+    const innerPadX = padX + Math.round(Math.min(W,H) * 0.02);
+    const innerPadY = padY + Math.round(Math.min(W,H) * 0.02);
+    const pageW = (W - 2*innerPadX);
+    const pageH = (H - 2*innerPadY);
+    const seamX = Math.floor(W/2);
+    this.leftPage = { x: innerPadX, y: innerPadY, w: seamX - innerPadX, h: pageH };
+    this.rightPage = { x: seamX, y: innerPadY, w: (W - innerPadX) - seamX, h: pageH };
 
-    // Scribbles: precompute polylines (left and right pages)
-    this.scribbleLines.length = 0;
-    const makeLine = (x1:number,y1:number,x2:number,y2:number) => {
+    // Page wrinkles precomputed (8 subtle lines across spread)
+    this.pageWrinkles = [];
+    for (let i=0;i<8;i++) {
+      const y = innerPadY + (i+1)*(pageH/9) + (this.rng()-0.5)*6;
       const pts: Array<{x:number;y:number}> = [];
-      const steps = 22 + Math.floor(this.rng()*8);
-      for (let i=0;i<=steps;i++) {
-        const t = i/steps;
-        const nx = x1 + (x2-x1)*t + (this.rng()-0.5)*8;
-        const ny = y1 + (y2-y1)*t + (this.rng()-0.5)*6;
-        pts.push({x:nx,y:ny});
+      for (let x = this.leftPage.x+12; x < this.rightPage.x+this.rightPage.w-12; x+= 24) {
+        const yy = y + Math.sin(x*0.03 + i)*1.5 + (this.rng()-0.5)*0.6;
+        pts.push({x, y: yy});
+      }
+      this.pageWrinkles.push(pts);
+    }
+
+    // Handwriting lines: segmented words per line (22 per page), with slant and jitter
+    this.handwritingSegments = [];
+    const buildWordPolyline = (x1:number, x2:number, y:number, slant:number, amp:number): Array<{x:number;y:number}> => {
+      const pts: Array<{x:number;y:number}> = [];
+      const len = Math.max(2, x2 - x1);
+      const steps = Math.max(10, Math.floor(len / 10));
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const x = x1 + (x2 - x1) * t;
+        // base: slight upward slant; add wavy micro-jitter
+        const yOff = (x - x1) * slant + Math.sin(t * 10 + y * 0.003) * amp + (this.rng() - 0.5) * (amp * 0.3);
+        pts.push({ x, y: y + yOff });
       }
       return pts;
     };
-    const r = (a:number,b:number)=> a + (b-a)*this.rng();
-    for (let i=0;i<6;i++) {
-      this.scribbleLines.push(makeLine(r(W*0.18,W*0.42), r(H*0.22,H*0.80), r(W*0.18,W*0.42), r(H*0.22,H*0.80)));
-    }
-    for (let i=0;i<6;i++) {
-      this.scribbleLines.push(makeLine(r(W*0.58,W*0.82), r(H*0.22,H*0.80), r(W*0.58,W*0.82), r(H*0.22,H*0.80)));
-    }
+    const buildPageLinesWords = (page:{x:number;y:number;w:number;h:number}) => {
+      const marginX = 18; const marginY = 20;
+      const usableW = page.w - marginX*2;
+      const usableH = page.h - marginY*2;
+      const lines = 22; // ≥ 20
+      const lineGap = usableH / (lines+1);
+      for (let i=0;i<lines;i++) {
+        const baselineY = page.y + marginY + (i+1)*lineGap + (this.rng()-0.5)*0.8;
+        // Small slant per line (handwriting lean)
+        const slant = (this.rng()-0.5) * 0.02; // px per px, tiny
+        const amp = 1.6 + this.rng()*0.8;      // wave amplitude
+        // Word distribution across the line width
+        const xStart = page.x + marginX;
+        const xEnd = xStart + usableW;
+        let x = xStart;
+        const lineSegs: Array<Array<{x:number;y:number}>> = [];
+        while (x < xEnd) {
+          // Word length and gap in pixels
+          const wordLen = 20 + this.rng()*80;   // 20..100px
+          const gap = 6 + this.rng()*18;       // 6..24px
+          const x2 = Math.min(x + wordLen, xEnd);
+          // Optionally skip tiny last word
+          if (x2 - x >= 10) {
+            // Slight per-word slant/amp variation
+            const wSlant = slant + (this.rng()-0.5) * 0.006;
+            const wAmp = amp * (0.85 + this.rng()*0.3);
+            lineSegs.push(buildWordPolyline(x, x2, baselineY, wSlant, wAmp));
+          }
+          x = x2 + gap;
+        }
+        this.handwritingSegments.push(lineSegs);
+      }
+    };
+    buildPageLinesWords(this.leftPage);
+    buildPageLinesWords(this.rightPage);
+
+    // Icons: 'speed' and 'longjump' on right page, fixed placements
+    this.iconPlacements = [];
+    const baseR = Math.min(this.rightPage.w, this.rightPage.h);
+    const speedR = baseR * 0.10;
+    const ljR = baseR * 0.095;
+    const speedX = this.rightPage.x + this.rightPage.w * 0.72;
+    const speedY = this.rightPage.y + this.rightPage.h * 0.30;
+    const ljX = this.rightPage.x + this.rightPage.w * 0.60;
+    const ljY = this.rightPage.y + this.rightPage.h * 0.62;
+    this.iconPlacements.push({ type: 'speed', x: speedX, y: speedY, s: 1.0, r: speedR });
+    this.iconPlacements.push({ type: 'longjump', x: ljX, y: ljY, s: 1.0, r: ljR });
   }
 
   // Mulberry32 PRNG
@@ -342,24 +427,97 @@ export class GrimoirePanel {
     c.restore();
   }
 
-  private drawTentacle(c: CanvasRenderingContext2D, x:number,y:number, len:number): void {
+  // Long-jump rune: concentric rings with a portal sigil
+  private drawLongJumpRune(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
     c.save(); c.translate(x,y);
-    c.beginPath();
-    c.moveTo(0,0);
-    const waves = 3 + Math.floor(Math.random()*3);
-    for (let i=1;i<=waves;i++) {
-      const t = i/waves; const dx = len*t; const amp = 12*(1-t);
-      const ctlx = dx - len/(waves*2);
-      const ctly = (i%2===0? -1:1)*amp;
-      c.quadraticCurveTo(ctlx, ctly, dx, Math.sin(i)*amp*0.3);
+    c.strokeStyle = '#3b2b1f';
+    // Outer/inner rings
+    c.lineWidth = 2;
+    c.beginPath(); c.arc(0,0,r,0,Math.PI*2); c.stroke();
+    c.globalAlpha = 0.75; c.beginPath(); c.arc(0,0,r*0.82,0,Math.PI*2); c.stroke(); c.globalAlpha = 1;
+    // Portal glyph: three arcs opening clockwise
+    const arc = (R:number, a0:number, a1:number) => { c.beginPath(); c.arc(0,0,R,a0,a1,false); c.stroke(); };
+    c.lineWidth = 3;
+    arc(r*0.55, -Math.PI*0.15, Math.PI*0.35);
+    arc(r*0.68, -Math.PI*0.10, Math.PI*0.40);
+    arc(r*0.40, -Math.PI*0.20, Math.PI*0.30);
+    // Small center mark
+    c.lineWidth = 2; c.beginPath(); c.arc(0,0, r*0.06, 0, Math.PI*2); c.stroke();
+    c.restore();
+  }
+
+  // Speed rune: circular sigil with double chevrons ("velocity")
+  private drawSpeedRune(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
+    c.save(); c.translate(x,y);
+    // Outer circle
+    c.strokeStyle = '#3b2b1f'; c.lineWidth = 2;
+    c.beginPath(); c.arc(0,0,r,0,Math.PI*2); c.stroke();
+    // Inner ring
+    c.globalAlpha = 0.6; c.beginPath(); c.arc(0,0,r*0.78,0,Math.PI*2); c.stroke(); c.globalAlpha = 1;
+    // Double chevrons pointing right
+    const ch = (sx:number,sy:number, s:number)=>{
+      c.beginPath();
+      c.moveTo(sx-10*s, sy-6*s); c.lineTo(sx, sy); c.lineTo(sx-10*s, sy+6*s);
+      c.stroke();
+    };
+    c.lineWidth = 3; c.strokeStyle = '#2e2218';
+    ch(-r*0.25, -r*0.10, 1.0);
+    ch(0, 0, 1.2);
+    // Rune marks around circle (ticks)
+    c.lineWidth = 2; c.strokeStyle = '#3b2b1f';
+    for (let i=0;i<6;i++) {
+      const ang = i*Math.PI/3;
+      const x1 = Math.cos(ang)*r*0.86, y1 = Math.sin(ang)*r*0.86;
+      const x2 = Math.cos(ang)*r*0.98, y2 = Math.sin(ang)*r*0.98;
+      c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
     }
+    c.restore();
+  }
+
+  private drawIconHover(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
+    c.save(); c.translate(x,y);
+    // Golden glow
+    const g = c.createRadialGradient(0,0, r*0.6, 0,0, r*1.6);
+    g.addColorStop(0, `rgba(255,215,0,0.35)`);
+    g.addColorStop(1, `rgba(255,215,0,0)`);
+    c.fillStyle = g; c.beginPath(); c.arc(0,0, r*1.5, 0, Math.PI*2); c.fill();
+    // Gold ring
+    c.lineWidth = 3; c.strokeStyle = '#ffd700';
+    c.beginPath(); c.arc(0,0, r*1.05, 0, Math.PI*2); c.stroke();
+    // Subtle sparkles orbiting
+    const sparkCount = 10; const t = this.t;
+    for (let i=0;i<sparkCount;i++) {
+      const ang = (i/sparkCount)*Math.PI*2 + t*0.9;
+      const rr = r*1.2 + Math.sin(t*1.7 + i)*4;
+      const sx = Math.cos(ang)*rr; const sy = Math.sin(ang)*rr;
+      c.fillStyle = 'rgba(255,230,120,0.85)';
+      c.beginPath(); c.arc(sx, sy, 2.2, 0, Math.PI*2); c.fill();
+    }
+    c.restore();
+  }
+
+  // Parchment frame behind glyphs to mask handwriting and provide a clean space
+  private drawGlyphFrame(c: CanvasRenderingContext2D, cx:number, cy:number, r:number): void {
+    // Frame size relative to glyph radius
+    const w = r * 2.2;
+    const h = r * 1.6;
+    const x = Math.round(cx - w/2);
+    const y = Math.round(cy - h/2);
+    c.save();
+    // Shadow to lift the frame slightly
+    c.shadowColor = 'rgba(0,0,0,0.25)';
+    c.shadowBlur = 6;
+    c.shadowOffsetX = 0; c.shadowOffsetY = 3;
+    // Fill: lighter parchment
+    c.fillStyle = '#f7f0d8';
+    this.roundRect(c, x, y, w, h, 6);
+    c.fill();
+    // Border
+    c.shadowColor = 'transparent';
+    c.lineWidth = 2;
+    c.strokeStyle = 'rgba(60,45,35,0.55)';
+    this.roundRect(c, x, y, w, h, 6);
     c.stroke();
-    // suckers
-    c.fillStyle = 'rgba(60,45,35,0.7)';
-    for (let i=0;i<8;i++) {
-      const t = i/8; const px = len*t; const py = Math.sin(t*waves*Math.PI)*6;
-      c.beginPath(); c.arc(px, py, 2.2*(1-t*0.6), 0, Math.PI*2); c.fill();
-    }
     c.restore();
   }
 

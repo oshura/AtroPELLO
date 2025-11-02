@@ -125,6 +125,8 @@ export class GameEngine {
   } = {};
   // Record the last applied dynamic scale for the thruster to refresh geometry when it changes
   private lastThrusterScale: number = -1;
+  // Simple ephemeral text overlay (e.g., "ANIMATION NUMBER X.")
+  private _placeholderOverlay: { tex: WebGLTexture; w: number; h: number; until: number } | null = null;
 
   constructor(
     private webglService: WebGLService,
@@ -1702,6 +1704,26 @@ export class GameEngine {
     // Renderizar HUD al final para que quede por encima de objetos y outlines
     this.renderHUDPlane();
   }
+
+  // Render ephemeral placeholder text overlay if active
+  try {
+    if (this.overlayRenderer && this._placeholderOverlay) {
+      const now = performance.now();
+      if (now < this._placeholderOverlay.until) {
+        this.overlayRenderer.drawTextureCover(
+          this._placeholderOverlay.tex,
+          this._placeholderOverlay.w,
+          this._placeholderOverlay.h,
+          1.0,
+          1.0
+        );
+      } else {
+        // Cleanup expired
+        if (this.gl && this._placeholderOverlay.tex) this.gl.deleteTexture(this._placeholderOverlay.tex);
+        this._placeholderOverlay = null;
+      }
+    }
+  } catch {}
   }
 
   /** Crea 9 planetas en órbitas elípticas concéntricas en el plano XZ
@@ -3147,28 +3169,53 @@ export class GameEngine {
         return;
       }
     }
-    // Lanzar VoidJump con tecla 'y' si hay target (seleccionado u hovered)
-    if (key.toLowerCase() === 'y') {
-      const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
-      if (target) {
-        // Limitar el salto sólo si el target está a más de 4000u de la nave
-        const c = (() => {
-          const anyT: any = target as any;
-          if (anyT.boundingSphere?.center) return { ...anyT.boundingSphere.center };
-          if (anyT.position) return { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z };
-          return { x: 0, y: 0, z: 0 };
-        })();
-        const dx = c.x - this.spaceship.position.x;
-        const dy = c.y - this.spaceship.position.y;
-        const dz = c.z - this.spaceship.position.z;
-        const dist = Math.hypot(dx, dy, dz);
-        if (dist > 4000) {
-          this.animationManager.startVoidJump(this, target);
-        } else {
-          // Aviso simple para depurar por qué no entra
-          console.info('[VoidJump] Target demasiado cerca (<4000u). Dist:', Math.round(dist));
+    // Fase 2: lanzar hechizo desde el Grimorio con 'h'
+    if (key.toLowerCase() === 'h') {
+      // Sólo actúa si el grimorio está abierto
+      if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
+        const spell = (this.grimoirePanel as any).getHoveredSpellType?.() as 'speed' | 'longjump' | null;
+        if (!spell) {
+          // Nada seleccionado: no hacer nada
+          return;
         }
+        // Capturar target actual/hovered en el momento del casteo (si aplica al hechizo)
+        const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
+        // Cerrar el grimorio y volver a la escena 3D con cámara '0'
+        try { this.grimoirePanel.setEnabled(false); } catch {}
+        try { this.updateGrimoirePointerBinding(); } catch {}
+        try { this.updateCanvasCursor(); } catch {}
+        this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+        // Esperar 2 segundos y ejecutar animación/efecto
+        setTimeout(() => {
+          if (spell === 'longjump') {
+            if (target) {
+              const center = (() => {
+                const anyT: any = target as any;
+                if (anyT.boundingSphere?.center) return { ...anyT.boundingSphere.center };
+                if (anyT.position) return { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z };
+                return { x: 0, y: 0, z: 0 };
+              })();
+              const dx = center.x - this.spaceship.position.x;
+              const dy = center.y - this.spaceship.position.y;
+              const dz = center.z - this.spaceship.position.z;
+              const dist = Math.hypot(dx, dy, dz);
+              if (dist > 4000) {
+                this.animationManager.startVoidJump(this, target);
+              } else {
+                console.info('[VoidJump] Target demasiado cerca (<4000u). Dist:', Math.round(dist));
+              }
+            } else {
+              // Sin target válido: placeholder
+              this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
+            }
+          } else if (spell === 'speed') {
+            // Placeholder por ahora
+            this.showPlaceholderText('ANIMATION NUMBER 1.', 2000);
+          }
+        }, 2000);
+        return;
       }
+      // Si el grimorio no está abierto, no hacer nada especial por ahora
       return;
     }
   }
@@ -3180,6 +3227,60 @@ export class GameEngine {
     if (this.spaceship && !this.animationManager.isBlockingInputs()) {
       this.updateShipControls(key, false);
     }
+  }
+
+  /** Minimal full-screen text overlay helper for placeholder animations */
+  private showPlaceholderText(msg: string, durationMs: number = 2000): void {
+    if (!this.gl || !this.overlayRenderer) return;
+    const gl = this.gl;
+    const screen = gl.canvas as HTMLCanvasElement;
+    const W = Math.max(1, screen.width || 1024);
+    const H = Math.max(1, screen.height || 768);
+    const off = document.createElement('canvas');
+    off.width = W; off.height = H;
+    const ctx = off.getContext('2d');
+    if (!ctx) return;
+    ctx.clearRect(0, 0, W, H);
+    // Centered banner
+    const padX = Math.round(W * 0.12);
+    const bannerW = W - padX * 2;
+    const bannerH = Math.round(Math.min(200, H * 0.18));
+    const bannerX = (W - bannerW) / 2;
+    const bannerY = (H - bannerH) / 2;
+    ctx.save();
+    ctx.globalAlpha = 0.75;
+    ctx.fillStyle = '#000000';
+    ctx.fillRect(bannerX, bannerY, bannerW, bannerH);
+    ctx.restore();
+    // Text
+    ctx.fillStyle = '#FFFFFF';
+    ctx.font = `bold ${Math.round(Math.min(bannerH * 0.42, 64))}px sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = 'rgba(0,0,0,0.6)';
+    ctx.shadowBlur = 8;
+    ctx.fillText(msg, W / 2, H / 2);
+    // Upload to a GL texture
+    const tex = gl.createTexture();
+    if (!tex) return;
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    // Flip canvas Y for WebGL texture space
+    let prevFlip = 0;
+    try { prevFlip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL) as number; } catch {}
+    try { gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1); } catch {}
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, off);
+    // Restore previous flip state
+    try { gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, prevFlip ? 1 : 0); } catch {}
+    gl.bindTexture(gl.TEXTURE_2D, null);
+    // Replace any existing overlay
+    if (this._placeholderOverlay) {
+      try { this.gl.deleteTexture(this._placeholderOverlay.tex); } catch {}
+    }
+    this._placeholderOverlay = { tex, w: W, h: H, until: performance.now() + Math.max(0, durationMs) };
   }
 
   /** STEP 4: Cycle selection with Tab / Shift+Tab (reverse) */
@@ -3892,6 +3993,18 @@ export class GameEngine {
 
     // Setup click handler for adaptive targeting
     const handleClick = (event: MouseEvent) => {
+      // If an opaque panel is open, swallow the click so it doesn't affect 3D selection
+      const mapOpen = !!(this.systemPanel && this.systemPanel.isEnabled?.());
+      const grimoireOpen = !!(this.grimoirePanel && this.grimoirePanel.isEnabled?.());
+      if (mapOpen || grimoireOpen) {
+        try {
+          event.preventDefault();
+          event.stopPropagation();
+          (event as any).cancelBubble = true;
+          if ((event as any).stopImmediatePropagation) (event as any).stopImmediatePropagation();
+        } catch {}
+        return;
+      }
       if (!this.adaptiveTargeting) return;
       this.adaptiveTargeting.handleClick();
     };
