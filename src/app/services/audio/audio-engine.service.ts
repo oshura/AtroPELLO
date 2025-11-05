@@ -184,8 +184,31 @@ export class AudioEngineService {
           try { src.stop(); src.disconnect(); } catch {}
         }
       },
-      setVolume: (v: number) => { gain.gain.value = Math.max(0, Math.min(1, v)); },
-      setPlaybackRate: (r: number) => { src.playbackRate.value = Math.max(0.25, Math.min(4, r)); },
+      setVolume: (v: number) => {
+        // Smooth ramp to avoid clicks when changing volume abruptly
+        const target = Math.max(0, Math.min(1, v));
+        const ctx = this.ctx!;
+        const now = ctx.currentTime;
+        const p = gain.gain;
+        const current = p.value;
+        // Keep ramp short but enough to prevent a pop
+        const rampSec = 0.08; // 80ms
+        try { p.cancelScheduledValues(now); } catch {}
+        p.setValueAtTime(current, now);
+        p.linearRampToValueAtTime(target, now + rampSec);
+      },
+      setPlaybackRate: (r: number) => {
+        // Smooth playbackRate changes to avoid rate-stepping artifacts
+        const target = Math.max(0.25, Math.min(4, r));
+        const ctx = this.ctx!;
+        const now = ctx.currentTime;
+        const p = src.playbackRate;
+        const current = p.value;
+        const rampSec = 0.08; // 80ms
+        try { p.cancelScheduledValues(now); } catch {}
+        p.setValueAtTime(current, now);
+        p.linearRampToValueAtTime(target, now + rampSec);
+      },
       setDetune: (c: number) => { src.detune.value = c; },
       setPosition: (x: number, y: number, z: number) => {
         if (panner) { panner.positionX.value = x; panner.positionY.value = y; panner.positionZ.value = z; }
@@ -234,6 +257,9 @@ export class AudioEngineService {
   /** Start/update a continuous thruster loop: returns a pair of functions to start/stop and an update method */
   public createThrusterController(soundName: string) {
     let h: PlayingHandle | null = null;
+    // Simple transient onset state for acceleration press
+  let onset: { type: 'accel'; startT: number; durationMs: number; depth: number } | null = null;
+    const nowTime = () => (this.ctx ? this.ctx.currentTime : 0);
     return {
       start: (initialVolume = 0.0) => {
         if (!h || !h.isPlaying()) {
@@ -241,9 +267,33 @@ export class AudioEngineService {
         }
       },
       stop: (fadeOutMs = 120) => { if (h) { h.stop(fadeOutMs); h = null; } },
+      /** Trigger a short lower-pitch attack when acceleration starts. */
+      accelOnset: (speedNorm: number, opts?: { durationMs?: number; depth?: number }) => {
+        // If already at/near max speed, do not trigger onset
+        if (speedNorm >= 0.995) return;
+        const dur = Math.max(60, Math.min(600, opts?.durationMs ?? 220));
+        const depth = Math.max(0.02, Math.min(0.2, opts?.depth ?? 0.06)); // 6% below base by default
+        // Nudge onset a few ms into the future to avoid coinciding exactly with press frame
+        onset = { type: 'accel', startT: nowTime() + 0.005, durationMs: dur, depth };
+        try { this.debug.logInfo(`[Thruster] Accel onset: speed=${(speedNorm*100).toFixed(0)}% dur=${dur}ms depth=${Math.round(depth*100)}%`); } catch {}
+      },
       update: (speedNorm: number, accelNorm: number) => {
         if (!h) return;
-        const rate = 0.85 + speedNorm * 0.6 + accelNorm * 0.2; // 0.85..~1.65
+        const baseRate = 0.85 + speedNorm * 0.6 + accelNorm * 0.2; // 0.85..~1.65
+        let rate = baseRate;
+        // Apply transient onset if present
+        if (onset && onset.type === 'accel') {
+          const t = nowTime();
+          const elapsedMs = (t - onset.startT) * 1000;
+          const k = Math.max(0, Math.min(1, elapsedMs / Math.max(1, onset.durationMs)));
+          // Smooth ease-out (cubic): start lower then approach base
+          const smooth = 1 - Math.pow(1 - k, 3);
+          const factor = 1 - onset.depth * (1 - smooth); // from (1-depth) at k=0 to 1 at k=1
+          rate = baseRate * factor;
+          if (k >= 1) {
+            onset = null; // finished
+          }
+        }
         const vol = 0.1 + Math.max(speedNorm, accelNorm) * 0.6; // 0.1..0.7
         h.setPlaybackRate(rate);
         h.setVolume(Math.max(0, Math.min(1, vol)));

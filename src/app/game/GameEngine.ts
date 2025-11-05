@@ -860,6 +860,7 @@ export class GameEngine {
         const state = this.spaceship.thrusterState;
         const speed = this.spaceship.currentSpeed;
         const max = Math.max(1e-6, this.spaceship.maxSpeed);
+        const speedNorm = Math.max(0, Math.min(1, speed / max));
         // Map visual thruster states to an accel proxy [0..1]
         let accelNorm = 0.0;
         switch (state) {
@@ -868,13 +869,17 @@ export class GameEngine {
           case ThrusterState.CRUISING: accelNorm = 0.15; break;
           case ThrusterState.IDLE: default: accelNorm = 0.0; break;
         }
+        // If at/near cap, pressing '+' shouldn't create an acceleration bump: treat as cruising
+        if (speedNorm >= 0.995 && state === ThrusterState.ACCELERATING) {
+          accelNorm = 0.15;
+        }
         // Autostart/stop
         if (this.spaceship.isThrusting) {
           this.thrusterCtl.start(0.0);
         } else {
           this.thrusterCtl.stop(150);
         }
-        this.thrusterCtl.update(speed / max, accelNorm);
+        this.thrusterCtl.update(speedNorm, accelNorm);
       }
     } catch {}
 
@@ -3538,7 +3543,16 @@ export class GameEngine {
         break;
       case '+':
       case '=':
-        this.spaceship.controls.speedUp = pressed;
+        {
+          const was = this.spaceship.controls.speedUp;
+          this.spaceship.controls.speedUp = pressed;
+          // On key press edge for acceleration, trigger a short lower-pitch onset if not at max speed
+          if (pressed && !was && this.thrusterCtl) {
+            const max = Math.max(1e-6, this.spaceship.maxSpeed);
+            const speedNorm = Math.max(0, Math.min(1, this.spaceship.currentSpeed / max));
+            try { (this.thrusterCtl as any).accelOnset?.(speedNorm); } catch {}
+          }
+        }
         break;
       case '-':
       case '_':
