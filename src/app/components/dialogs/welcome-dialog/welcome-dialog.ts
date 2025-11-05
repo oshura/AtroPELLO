@@ -1,18 +1,6 @@
-import { Component, EventEmitter, Output, Input } from '@angular/core';
-import { Modal } from '../../modal/modal';
-
-@Component({
-  selector: 'app-welcome-dialog',
-  standalone: true,
-  imports: [Modal],
-  templateUrl: './welcome-dialog.html',
-  styleUrls: ['./welcome-dialog.scss']
-})
-export class WelcomeDialogComponent {
-  @Input() isVisible = false;
-  @Output() start = new EventEmitter<void>();
-
-  onStart() {
-    this.start.emit();
-  }
-}
+/**
+ * Deprecated: El diálogo de bienvenida autónomo ha sido sustituido
+ * por el modal inline definido en `components/game/game.html`.
+ * Este archivo se deja vacío a propósito para eliminar la ambigüedad.
+ */
+export {};

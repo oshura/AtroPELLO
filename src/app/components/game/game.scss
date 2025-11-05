@@ -114,15 +114,16 @@
 // Estilos para el contenido del modal de bienvenida
 .welcome-content {
   text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
   
-  .welcome-icon {
-    margin-bottom: 15px;
-  }
+  .welcome-icon { margin-bottom: 4px; align-self: center; }
   
   .welcome-text {
     font-size: 15px;
-    line-height: 1.5;
-    margin-bottom: 15px;
+    line-height: 1.4;
+    margin: 4px 0 8px;
     color: #e0e0e0;
   }
 }
@@ -140,25 +141,41 @@
   
   .controls-grid {
     display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
+    grid-template-columns: repeat(2, max-content); /* por defecto 2 columnas: ancho segun el contenido más ancho de cada columna */
+    gap: 8px 24px;                /* espacio entre columnas/filas */
     font-size: 14px;
     color: #b0b0b0;
+    justify-content: center;      /* centra el conjunto si sobra ancho */
+    align-items: start;
     
     span {
+      display: inline-flex;
+      align-items: center;
       padding: 4px 8px;
       background: rgba(255, 255, 255, 0.1);
       border-radius: 4px;
       border: 1px solid rgba(255, 255, 255, 0.2);
+      white-space: nowrap;          /* siempre una sola línea */
+      line-height: 1.2;             /* compacto y legible */
     }
+  }
+
+  /* 3 columnas si el viewport lo permite */
+  @media (min-width: 480px) {
+    .controls-grid { grid-template-columns: repeat(3, max-content); }
+  }
+
+  /* Hasta 4 columnas en desktop ancho */
+  @media (min-width: 768px) {
+    .controls-grid { grid-template-columns: repeat(4, max-content); }
   }
   
   .controls-note {
-    margin-top: 12px;
+    margin-top: 8px;
     text-align: center;
     
     small {
-      color: #888;
+      color: #9aa0a6;
       font-style: italic;
     }
   }

@@ -203,18 +203,22 @@ export class AdaptiveTargetingSystem {
     this.updateCategorizedTargets(categorizedTargets, now);
     
     // 3. Detect hover target using appropriate method for each category
-  let hoveredTarget = this.detectHoverTarget(mousePos, categorizedTargets);
+    let hoveredTarget = this.detectHoverTarget(mousePos, categorizedTargets);
     // Sticky hover: if hover briefly drops or flips due to jitter, hold the previous target for a short window
     hoveredTarget = this.applyStickyHover(hoveredTarget, now, mousePos);
     
     // 4. Update current state
     this.currentHovered = hoveredTarget;
-    
-    // 4.5 Keep selected target display info fresh every frame (screen pos, distances, category)
+
+    // 4.5 Keep selected and hovered target display info fresh every frame (screen pos, distances, category)
     if (this.currentSelected) {
       const selTarget = this.currentSelected.target;
       // Rebuild full display info to avoid freezing projection/values
       this.currentSelected = this.createTargetDisplayInfo(selTarget);
+    }
+    if (this.currentHovered) {
+      const hovTarget = this.currentHovered.target;
+      this.currentHovered = this.createTargetDisplayInfo(hovTarget);
     }
 
     // 5. Get nearby targets for UI
@@ -629,22 +633,31 @@ export class AdaptiveTargetingSystem {
       this.stickyHover = { info: candidate, lastSeenTs: now };
       return candidate;
     }
-    // No candidate: if previous hover exists and is still near the cursor, hold it for a short time
-    if (prev && prev.screenPosition) {
-      const dx = mousePos.x - prev.screenPosition.x;
-      const dy = mousePos.y - prev.screenPosition.y;
-      const d = Math.hypot(dx, dy);
-      const tol = prev.category.tolerancePx * prev.category.uiScale * 1.15; // only hold if truly within tolerance
-      if ((now - prevSeen) <= this.hoverHoldMs && d <= tol) {
-        // still very close to where the previous hover was: treat as jitter and hold
-        this.stickyHover = { info: prev, lastSeenTs: now };
-        return prev;
+    // No candidate: if previous hover exists and is still near the cursor, hold it briefly (without extending lastSeenTs)
+    if (prev) {
+      // Refresh previous info's screen position to compare accurately against current mouse and camera state
+      let prevInfo = prev;
+      try {
+        prevInfo = this.createTargetDisplayInfo(prev.target);
+      } catch {}
+
+      if (prevInfo.screenPosition) {
+        const dx = mousePos.x - prevInfo.screenPosition.x;
+        const dy = mousePos.y - prevInfo.screenPosition.y;
+        const d = Math.hypot(dx, dy);
+        const tol = prevInfo.category.tolerancePx * prevInfo.category.uiScale * 1.15; // only hold if truly within tolerance
+        const withinWindow = (now - prevSeen) <= this.hoverHoldMs;
+        if (withinWindow && d <= tol) {
+          // Hold previous hover but DO NOT refresh lastSeenTs; it will naturally expire if not re-detected
+          this.stickyHover = { info: prevInfo, lastSeenTs: prevSeen };
+          return prevInfo;
+        }
       }
-      // Out of tolerance: drop immediately (no lingering)
+      // Out of tolerance or time window: drop immediately (no lingering)
       this.stickyHover = null;
       return null;
     }
-    // No previous or no position: clear and return null
+    // No previous: clear and return null
     this.stickyHover = null;
     return null;
   }

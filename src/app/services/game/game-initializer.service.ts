@@ -10,6 +10,8 @@ import { TargetDetailService } from '../../game/services/target-detail.service';
 import { AsteroidClusterService } from '../../game/services/game/asteroid-cluster.service';
 import { RelationService } from '../relation.service';
 import { AnimationManagerService } from '../../game/services/animations/animation-manager.service';
+import { AudioEngineService } from '../audio/audio-engine.service';
+import { MusicDirectorService } from '../audio/music-director.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -93,6 +95,8 @@ export class GameInitializer {
     const relationService = this.injector.get(RelationService);
     const animationManager = this.injector.get(AnimationManagerService);
     const adaptiveTargeting = this.injector.get(AdaptiveTargetingIntegrator);
+    const audioEngine = this.injector.get(AudioEngineService);
+    const musicDirector = this.injector.get(MusicDirectorService);
     this.gameEngine = new GameEngine(
       this.webglService,
       this.particleEffectsService,
@@ -102,7 +106,9 @@ export class GameInitializer {
       targetDetails,
       asteroidClusterService,
       relationService,
-      animationManager
+      animationManager,
+      audioEngine,
+      musicDirector
     );
 
       // Inicializar motor del juego

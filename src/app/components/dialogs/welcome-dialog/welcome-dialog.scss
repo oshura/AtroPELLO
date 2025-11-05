@@ -1,15 +1,31 @@
 .welcome-content {
-  .welcome-icon { margin-bottom: 12px; }
-  .welcome-text { margin: 8px 0 16px; }
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  .welcome-icon { margin-bottom: 4px; align-self: center; }
+  .welcome-text { margin: 4px 0 8px; opacity: 0.95; }
+
   .controls-info {
-    h4 { margin: 8px 0; }
+    h4 { margin: 6px 0; }
+
     .controls-grid {
       display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 6px 16px;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 6px 12px;
       justify-items: start;
     }
-    .controls-note { margin-top: 10px; opacity: 0.8; }
+
+    // 3 columnas en anchos medianos
+    @media (min-width: 480px) {
+      .controls-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    }
+    // 4 columnas en desktop
+    @media (min-width: 768px) {
+      .controls-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+    }
+
+    .controls-note { margin-top: 8px; opacity: 0.8; }
   }
 }
 

@@ -1,0 +1,13 @@
+{
+  "sfx_thruster": "/assets/audio/sfx_thruster.wav",
+  "sfx_passby": "/assets/audio/sfx_passby.wav",
+  "ui_select": "/assets/audio/ui_select.wav",
+  "music_menu": "/assets/audio/music_menu.wav",
+  "music_explore_a": "/assets/audio/music_explore_a.wav",
+  "music_planet": "/assets/audio/music_planet.wav",
+  "music_combat": "/assets/audio/music_combat.wav",
+  "music_spell_prep": "/assets/audio/music_spell_prep.wav",
+  "music_landing": "/assets/audio/music_landing.wav",
+  "voice_narrator_sample": "/assets/audio/voice_narrator_sample.wav",
+  "sfx_spell_chant": "/assets/audio/sfx_spell_chant.wav"
+}

@@ -26,6 +26,11 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - Tipos: SOLID, GLOW, PULSE, SCAN, DANGER con opciones (grosor, intensidad, frecuencia, color RGBA).
   - Integración: `ReticleManager` gestiona add/remove/update y llama a `renderOutlines`; `ShaderManager` provee los programas necesarios (vía `OutlineShaderService`).
 
+- Audio y música (fundación)
+  - `AudioEngineService`: contexto Web Audio, buses (music/sfx/voice/ui), carga/decodificación, reproducción (one‑shot/loop), panner 3D, pose del oyente, utilidades (thruster/doppler).
+  - `MusicDirectorService`: escenas musicales con crossfades y ducking temporal.
+  - Integración: `GameEngine.enableAudio()` desbloquea audio en el primer gesto y arranca música; por frame se actualiza el oyente a partir de la cámara y el thruster se modula con el estado de la nave.
+
 ## Minijuego de aterrizaje (estado actual)
 
 Requisitos acordados:
@@ -84,6 +89,8 @@ Implementación:
 - Retícula y outlines: `src/app/game/targeting/core/ReticleManager.ts`, `src/app/game/targeting/rendering/OutlineRenderer.ts`
 - Shaders: `src/app/game/shaders/*`
 - Minijuego aterrizaje: lógica en `GameEngine.updateLandingSystem(...)`
+- Audio (arquitectura): `documentacion/Audio_Sistema_Arquitectura.md`
+- Audio (assets y formatos): `documentacion/Audio_Assets_Guia.md`
 
 ## Notas de implementación
 

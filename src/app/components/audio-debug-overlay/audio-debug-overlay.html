@@ -1,0 +1,49 @@
+<div class="audio-debug" *ngIf="(state$ | async) as s">
+  <div class="panel" [class.hidden]="!s.visible">
+    <div class="header">
+      <strong>Audio Debug</strong>
+      <span class="spacer"></span>
+      <button class="btn" (click)="hide()">×</button>
+    </div>
+    <div class="row">
+      <div>
+        <div class="label">Scene</div>
+        <div class="value">{{ s.scene || '—' }}</div>
+      </div>
+      <div>
+        <div class="label">Loaded</div>
+        <div class="value">{{ s.loaded.size }}</div>
+      </div>
+      <div>
+        <div class="label">Recent plays</div>
+        <div class="value">{{ s.plays.length }}</div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Loaded Buffers</div>
+      <div class="chips">
+        <span class="chip" *ngFor="let name of s.loadedArr; let i = index">{{ name }}</span>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Recent Plays</div>
+      <div class="list">
+        <div class="item" *ngFor="let p of s.plays">
+          <span class="mono">#{{ p.id }}</span>
+          <span class="name">{{ p.name }}</span>
+          <span class="desc">{{ p.desc }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-title">Logs</div>
+      <div class="list logs">
+        <div class="item" *ngFor="let l of s.logs">
+          <span class="tag" [class.warn]="l.level==='warn'">{{ l.level }}</span>
+          <span class="msg">{{ l.msg }}</span>
+        </div>
+      </div>
+    </div>
+    <div class="hint">Press F9 to toggle</div>
+  </div>
+</div>

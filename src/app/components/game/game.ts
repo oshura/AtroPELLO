@@ -226,6 +226,8 @@ export class Game implements AfterViewInit, OnDestroy {
       this.stateManager.setState(GameState.RUNNING);
       this.uiManager.resetGameStats();
       gameEngine.start();
+      // Unlock and start audio scene on user start gesture
+      try { (gameEngine as any).enableAudio?.(); } catch {}
       
       console.log('🎮 Game started!');
     } catch (error) {

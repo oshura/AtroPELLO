@@ -7,7 +7,8 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "serve:ssr:atropello-game": "node dist/atropello-game/server/server.mjs"
+    "serve:ssr:atropello-game": "node dist/atropello-game/server/server.mjs",
+    "gen:audio:placeholders": "powershell -ExecutionPolicy Bypass -File ./scripts/audio/generate-placeholders.ps1"
   },
   "prettier": {
     "printWidth": 100,

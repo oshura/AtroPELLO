@@ -17,9 +17,13 @@
   background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
   border-radius: 16px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  max-width: 500px;
-  width: 90%;
-  max-height: 80vh;
+  /* Flexible: crece hasta 4 columnas amplias y se adapta al viewport */
+  width: auto;
+  max-width: min(92vw, 1000px);
+  min-width: 320px;
+  max-height: 85vh;
+  display: flex;            /* permitir que body haga scroll interno */
+  flex-direction: column;
   overflow: hidden;
   animation: slideIn 0.3s ease-out;
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -48,6 +52,7 @@
   color: #e0e0e0;
   line-height: 1.6;
   text-align: center;
+  overflow: auto;          /* scroll interno si la altura no alcanza */
 }
 
 .modal-footer {

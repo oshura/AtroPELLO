@@ -1,0 +1,5 @@
+next steps in sound & music:
+Switch to “planet_approach” when nearing a planet, “combat” when engaging enemies, etc.
+Doppler cues: We can attach a createDopplerCue() to close fly-bys of asteroids/ships (< 50u) and update each frame.
+Spell/narration: Trigger a short chant loop 2s before spell cast; duck music during narration/voice lines.
+Aplazar la carga de audios “pesados”: si el manifiesto crece, podemos modificar AudioManifestService para cargar por grupos (mínimos al arranque y el resto bajo demanda).

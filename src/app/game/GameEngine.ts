@@ -1,4 +1,6 @@
 import { Injectable } from '@angular/core';
+import { AudioEngineService } from '../services/audio/audio-engine.service';
+import { MusicDirectorService } from '../services/audio/music-director.service';
 import { WebGLService } from '../services/webgl.service';
 import { ParticleEffectsService } from '../services/particle-effects.service';
 import { GameObject } from './GameObject';
@@ -67,6 +69,12 @@ export class GameEngine {
   private landingOverlay: LandingOverlay | null = null;
   private domCanvas: HTMLCanvasElement | null = null;
   private mapIdToTarget: Map<string, ITargetable> = new Map();
+  
+  // Audio
+  private audio: AudioEngineService | null = null;
+  private music: MusicDirectorService | null = null;
+  private thrusterCtl: ReturnType<AudioEngineService['createThrusterController']> | null = null;
+  private audioUnlocked: boolean = false;
   
   // Objetos del juego
   private spaceship!: Spaceship;
@@ -143,7 +151,9 @@ export class GameEngine {
     private targetDetailService: TargetDetailService,
     asteroidClusterService: AsteroidClusterService,
     private relationService: RelationService,
-    private animationManager: AnimationManagerService
+    private animationManager: AnimationManagerService,
+    audioEngine?: AudioEngineService,
+    musicDirector?: MusicDirectorService
   ) {
     this.reticleManager = this.reticleManagerService;
     this.adaptiveTargeting = this.adaptiveTargetingService;
@@ -151,6 +161,9 @@ export class GameEngine {
     this.targetDetails = this.targetDetailService;
     this.targetPreview = new TargetPreviewRenderer(256, 192);
     this.asteroidClusterService = asteroidClusterService;
+    // Optional audio wiring
+    this.audio = audioEngine || null;
+    this.music = musicDirector || null;
   }
 
   /**
@@ -396,6 +409,13 @@ export class GameEngine {
     });
     // ¡CRÍTICO! Inicializar buffers WebGL para los objetos iniciales
     this.initializeAllBuffers();
+    // Prepare audio controllers after ship exists
+    try {
+      if (this.audio) {
+        this.audio.ensureContext();
+        this.thrusterCtl = this.audio.createThrusterController('sfx_thruster');
+      }
+    } catch {}
   }
 
   // Registro de targets ahora se hace tras crear los clusters en initializeAllBuffers()
@@ -671,6 +691,27 @@ export class GameEngine {
     }
   }
 
+  /** Call this from a user gesture (Space/click) to unlock audio and start scene music */
+  public async enableAudio(): Promise<void> {
+    try {
+      if (!this.audio) return;
+      this.audio.ensureContext();
+      const ok = await this.audio.unlock();
+      this.audioUnlocked = ok;
+      if (ok && this.music) {
+        // Start exploration by default
+        await this.music.setScene('exploration', 900);
+      }
+      // Pre-start thruster loop at silence for smooth fade when first needed
+      if (ok && this.thrusterCtl) {
+        this.thrusterCtl.start(0.0);
+      }
+      console.log('🔊 Audio enabled:', ok);
+    } catch (e) {
+      console.warn('Audio enable failed', e);
+    }
+  }
+
   /**
    * Detiene el juego
    */
@@ -803,6 +844,39 @@ export class GameEngine {
     }
     
     this.spaceship.update(deltaTime);
+
+    // Update audio listener pose and ship-related continuous sounds
+    try {
+      if (this.audio && this.camera) {
+        const fwd = this.normalize({
+          x: this.camera.target.x - this.camera.position.x,
+          y: this.camera.target.y - this.camera.position.y,
+          z: this.camera.target.z - this.camera.position.z,
+        });
+        // Listener at camera
+        this.audio.setListenerPose({ ...this.camera.position }, fwd, { ...this.camera.up });
+      }
+      if (this.audioUnlocked && this.thrusterCtl && this.spaceship) {
+        const state = this.spaceship.thrusterState;
+        const speed = this.spaceship.currentSpeed;
+        const max = Math.max(1e-6, this.spaceship.maxSpeed);
+        // Map visual thruster states to an accel proxy [0..1]
+        let accelNorm = 0.0;
+        switch (state) {
+          case ThrusterState.ACCELERATING: accelNorm = 1.0; break;
+          case ThrusterState.BRAKING: accelNorm = 0.35; break;
+          case ThrusterState.CRUISING: accelNorm = 0.15; break;
+          case ThrusterState.IDLE: default: accelNorm = 0.0; break;
+        }
+        // Autostart/stop
+        if (this.spaceship.isThrusting) {
+          this.thrusterCtl.start(0.0);
+        } else {
+          this.thrusterCtl.stop(150);
+        }
+        this.thrusterCtl.update(speed / max, accelNorm);
+      }
+    } catch {}
 
     // Timed spell upkeep: expire or compute remaining time for HUD
     let speedRiteRemainingSec: number | null = null;
