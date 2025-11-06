@@ -1,14 +1,16 @@
 import { Component } from '@angular/core';
+import { AudioSettingsDialogComponent } from '../dialogs/audio-settings-dialog/audio-settings-dialog';
 
 @Component({
   selector: 'app-header',
-  imports: [],
+  imports: [AudioSettingsDialogComponent],
   templateUrl: './header.html',
   styleUrl: './header.scss'
 })
 export class Header {
+  showAudio = false;
   onOptionsClick() {
-    console.log('Opciones clicked');
+    this.showAudio = true;
   }
 
   onLoginClick() {

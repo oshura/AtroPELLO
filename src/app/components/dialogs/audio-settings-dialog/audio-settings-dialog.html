@@ -1,0 +1,44 @@
+<app-modal
+  [isVisible]="isVisible"
+  [title]="'OPCIONES AUDIO'"
+  [closeOnBackdrop]="true"
+  (onClose)="onCloseDialog()">
+
+  <div class="audio-settings">
+    <p class="hint">Ajusta los niveles de volumen. 0 es silencio. 100 es el máximo permitido. Predeterminado: 50.</p>
+
+    <div class="group">
+      <label for="musicRange">Música</label>
+      <div class="slider-row">
+        <input id="musicRange" type="range" min="0" max="100" step="1" [(ngModel)]="music" (input)="onChange()" />
+        <span class="value">{{ music }}</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <label for="sfxRange">Efectos</label>
+      <div class="slider-row">
+        <input id="sfxRange" type="range" min="0" max="100" step="1" [(ngModel)]="sfx" (input)="onChange()" />
+        <span class="value">{{ sfx }}</span>
+      </div>
+    </div>
+
+    <div class="group">
+      <label for="thrusterRange">Thruster</label>
+      <div class="slider-row">
+        <input id="thrusterRange" type="range" min="0" max="100" step="1" [(ngModel)]="thruster" (input)="onChange()" />
+        <span class="value">{{ thruster }}</span>
+      </div>
+    </div>
+
+    <div class="preview">
+      <button (click)="playTestSfx()">Probar SFX</button>
+      <button (click)="playTestThruster()">Probar Thruster</button>
+    </div>
+  </div>
+
+  <div slot="footer" class="footer-actions">
+    <button (click)="resetDefaults()">Restaurar 50%</button>
+    <button class="close-btn" (click)="onCloseDialog()">Cerrar</button>
+  </div>
+</app-modal>

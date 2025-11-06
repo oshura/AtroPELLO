@@ -1,0 +1,50 @@
+.audio-settings {
+  display: flex;
+  flex-direction: column;
+  gap: 1.2rem;
+  padding: 0.25rem 0.5rem 0.75rem;
+  font-family: system-ui, sans-serif;
+  .hint {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    margin: 0 0 0.25rem;
+  }
+  .group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    label { font-weight: 600; letter-spacing: 0.5px; }
+    .slider-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      input[type=range] {
+        flex: 1;
+        accent-color: #ff9900;
+        height: 2px;
+        background: linear-gradient(90deg,#553300,#aa6600);
+        border-radius: 4px;
+      }
+      .value {
+        width: 2.5rem;
+        text-align: right;
+        font-variant-numeric: tabular-nums;
+      }
+    }
+  }
+  .preview {
+    display: flex;
+    gap: 0.75rem;
+    button { background:#333; color:#fff; padding:0.4rem 0.8rem; border:1px solid #555; border-radius:4px; cursor:pointer; }
+    button:hover { background:#444; }
+  }
+}
+.footer-actions {
+  display:flex;
+  justify-content: flex-end;
+  gap: 0.75rem;
+  button { background:#222; color:#eee; padding:0.45rem 0.9rem; border:1px solid #444; border-radius:4px; cursor:pointer; font-size:0.85rem; }
+  button:hover { background:#2f2f2f; }
+  .close-btn { background:#550000; border-color:#772222; }
+  .close-btn:hover { background:#770000; }
+}

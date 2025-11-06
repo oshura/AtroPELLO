@@ -39,6 +39,8 @@ export class AudioEngineService {
   private buses: Record<AudioBus, GainNode> = {} as any;
   private buffers = new Map<string, AudioBuffer>();
   private nextId = 1;
+  // User-adjustable mix controls
+  private thrusterMix: number = 0.5; // 0..1 (default 50%)
 
   constructor(@Inject(PLATFORM_ID) private platformId: Object, private debug: AudioDebugService) {}
 
@@ -91,6 +93,10 @@ export class AudioEngineService {
 
   public getBus(bus: AudioBus): GainNode { this.ensureContext(); return this.buses[bus]; }
   public setBusVolume(bus: AudioBus, volume: number): void { this.getBus(bus).gain.value = Math.max(0, Math.min(1, volume)); }
+  public getBusGain(bus: AudioBus): number | null { try { return this.getBus(bus).gain.value; } catch { return null; } }
+  public setBusGain(bus: AudioBus, volume: number): void { this.setBusVolume(bus, volume); }
+  public getThrusterGain(): number { return this.thrusterMix; }
+  public setThrusterGain(v: number): void { this.thrusterMix = Math.max(0, Math.min(1, v)); }
 
   public async load(name: string, url: string): Promise<void> {
     this.ensureContext();
@@ -279,7 +285,15 @@ export class AudioEngineService {
       },
       update: (speedNorm: number, accelNorm: number) => {
         if (!h) return;
-        const baseRate = 0.85 + speedNorm * 0.6 + accelNorm * 0.2; // 0.85..~1.65
+        // Positive accel contributes to rate; negative accelNorm is a special signal for IDLE timbre
+        let baseRate = 0.85 + speedNorm * 0.6 + Math.max(0, accelNorm) * 0.2; // 0.85..~1.65
+        // Base volume from speed/positive accel
+        let baseVol = 0.1 + Math.max(speedNorm, Math.max(0, accelNorm)) * 0.4; // 0.1..0.5 (reduced max)
+        // Idle coloring: slightly lower pitch and lower volume
+        if (accelNorm < 0) {
+          baseRate = Math.max(0.5, baseRate - 0.05); // ~5% lower pitch on idle
+          baseVol = baseVol * 0.8; // slightly quieter than 0-speed baseline
+        }
         let rate = baseRate;
         // Apply transient onset if present
         if (onset && onset.type === 'accel') {
@@ -294,9 +308,10 @@ export class AudioEngineService {
             onset = null; // finished
           }
         }
-        const vol = 0.1 + Math.max(speedNorm, accelNorm) * 0.6; // 0.1..0.7
+        // Apply overall thruster user mix and clamp
+        const vol = Math.max(0, Math.min(1, baseVol * (this.thrusterMix ?? 1)));
         h.setPlaybackRate(rate);
-        h.setVolume(Math.max(0, Math.min(1, vol)));
+        h.setVolume(vol);
       }
     };
   }
@@ -308,16 +323,20 @@ export class AudioEngineService {
     bus?: AudioBus;
     cUnits?: number;         // pseudo speed-of-sound in world units/s (controls pitch shift magnitude)
     baseVolume?: number;
+    audibleRadius?: number;  // radius within which volume rolls to 0 (default 180u)
+    loop?: boolean;          // when true, keep the cue looping for continuous presence
   }) {
     const handle = this.play(params.name, {
-      loop: false,
-      volume: params.baseVolume ?? 0.5,
+      loop: !!params.loop,
+      volume: params.baseVolume ?? 0.6,
       playbackRate: 1.0,
       position: params.initialPos,
       bus: params.bus ?? 'sfx',
-      rolloff: { distanceModel: 'inverse', refDistance: 8, maxDistance: 200, rolloffFactor: 2.0 }
+      // Relaxed rolloff to keep pass-bys audible for longer
+      rolloff: { distanceModel: 'inverse', refDistance: 24, maxDistance: 600, rolloffFactor: 0.9 }
     });
     const c = params.cUnits ?? 300; // tune to game scale
+    const audibleR = Math.max(1, params.audibleRadius ?? 180);
     return {
       update: (emitterPos: {x:number;y:number;z:number}, listenerPos: {x:number;y:number;z:number}, emitterVel: {x:number;y:number;z:number}, listenerVel: {x:number;y:number;z:number}) => {
         if (!handle || !handle.isPlaying()) return;
@@ -334,12 +353,27 @@ export class AudioEngineService {
         // Simple doppler factor approximation
         const factor = (c - vr) / (c + vr);
         const rate = Math.max(0.5, Math.min(2.0, factor));
-        // Natural volume rolloff by distance
-        const vol = Math.max(0, Math.min(1, (params.baseVolume ?? 0.5) * (rLen <= 50 ? (1 - rLen / 50) : 0)));
+        // Natural volume rolloff by distance (in addition to panner), with presence floor and speed boost
+        const base = params.baseVolume ?? 0.6;
+        const distLin = rLen <= audibleR ? (1 - rLen / audibleR) : 0; // 0..1
+        const distFactor = Math.sqrt(Math.max(0, distLin)); // ease-out keeps more level until very far
+        // Relative speed magnitude (emitter-listener)
+        const rvx = emitterVel.x - listenerVel.x;
+        const rvy = emitterVel.y - listenerVel.y;
+        const rvz = emitterVel.z - listenerVel.z;
+        const vRel = Math.hypot(rvx, rvy, rvz);
+        const vNorm = Math.max(0, Math.min(1.2, vRel / (0.6 * c))); // normalize ~60% of c as strong pass
+        const speedBoost = 0.8 + 0.8 * vNorm; // 0.8..~1.76
+        const minPresence = 0.12; // -18 dB floor inside audible radius
+        let vol = base * distFactor * speedBoost;
+        // Apply presence floor scaled by distance factor to avoid jumps at the edge
+        if (distFactor > 0) vol = Math.max(minPresence * distFactor, vol);
+        vol = Math.max(0, Math.min(1, vol));
         handle.setPlaybackRate(rate);
         handle.setVolume(vol);
         handle.setPosition(emitterPos.x, emitterPos.y, emitterPos.z);
       },
+      isPlaying: () => !!handle && handle.isPlaying(),
       stop: (fadeOutMs = 100) => { if (handle) handle.stop(fadeOutMs); }
     };
   }

@@ -75,6 +75,14 @@ export class GameEngine {
   private music: MusicDirectorService | null = null;
   private thrusterCtl: ReturnType<AudioEngineService['createThrusterController']> | null = null;
   private audioUnlocked: boolean = false;
+  // Doppler cues (near fly-bys)
+  private dopplerEnabled: boolean = true;
+  private dopplerCues: Map<string, { cue: ReturnType<AudioEngineService['createDopplerCue']>; started: number }>
+    = new Map();
+  private lastObjPos: Map<string, { x: number; y: number; z: number }> = new Map();
+  private lastCamPos: { x: number; y: number; z: number } | null = null;
+  private camVel: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
+  private dopplerSkip: boolean = false; // throttle doppler updates (every other frame)
   
   // Objetos del juego
   private spaceship!: Spaceship;
@@ -855,6 +863,18 @@ export class GameEngine {
         });
         // Listener at camera
         this.audio.setListenerPose({ ...this.camera.position }, fwd, { ...this.camera.up });
+        // Estimate listener (camera) velocity
+        try {
+          if (this.lastCamPos) {
+            const dt = Math.max(1e-6, deltaTime);
+            this.camVel = {
+              x: (this.camera.position.x - this.lastCamPos.x) / dt,
+              y: (this.camera.position.y - this.lastCamPos.y) / dt,
+              z: (this.camera.position.z - this.lastCamPos.z) / dt,
+            };
+          }
+          this.lastCamPos = { ...this.camera.position };
+        } catch {}
       }
       if (this.audioUnlocked && this.thrusterCtl && this.spaceship) {
         const state = this.spaceship.thrusterState;
@@ -867,20 +887,104 @@ export class GameEngine {
           case ThrusterState.ACCELERATING: accelNorm = 1.0; break;
           case ThrusterState.BRAKING: accelNorm = 0.35; break;
           case ThrusterState.CRUISING: accelNorm = 0.15; break;
-          case ThrusterState.IDLE: default: accelNorm = 0.0; break;
+          case ThrusterState.IDLE: default: accelNorm = -0.25; break; // idle signal: slightly lower pitch/volume
         }
         // If at/near cap, pressing '+' shouldn't create an acceleration bump: treat as cruising
         if (speedNorm >= 0.995 && state === ThrusterState.ACCELERATING) {
           accelNorm = 0.15;
         }
-        // Autostart/stop
-        if (this.spaceship.isThrusting) {
-          this.thrusterCtl.start(0.0);
-        } else {
-          this.thrusterCtl.stop(150);
-        }
+        // Keep thruster loop running even at idle (very low volume & slightly lower pitch)
+        this.thrusterCtl.start(0.0);
         this.thrusterCtl.update(speedNorm, accelNorm);
       }
+
+      // Near fly-by Doppler cues for asteroids/ships (throttled every other frame)
+      try {
+        if (this.audioUnlocked && this.audio && this.dopplerEnabled && this.camera) {
+          this.dopplerSkip = !this.dopplerSkip;
+          const processThisFrame = !this.dopplerSkip; // skip every other frame to save CPU
+          if (processThisFrame) {
+            const listenerPos = { ...this.camera.position };
+            const dt = Math.max(1e-6, deltaTime);
+            const NEAR_IN = 30;  // enter radius with hysteresis (reduced for tight fly-by)
+            const FAR_OUT = 36;  // exit radius slightly larger to prevent flicker
+            const MIN_SPEED = 2; // min relative speed to trigger
+            const PREFERRED = 'sfx_passby';
+            const ALT1 = 'sfx_flyby';
+            const ALT2 = 'sfx_whoosh';
+
+            // Select closest qualifying object (with stickiness) and ensure only one active cue
+            let closestId: string | null = null;
+            let closestPos: { x:number;y:number;z:number } | null = null;
+            let closestVel: { x:number;y:number;z:number } | null = null;
+            let closestDist = Infinity;
+            // First pass: find absolute closest within NEAR_IN and above speed threshold
+            for (const c of this.asteroidClusterService.getClusters()) {
+              for (const o of c.objects) {
+                const dx = o.position.x - listenerPos.x;
+                const dy = o.position.y - listenerPos.y;
+                const dz = o.position.z - listenerPos.z;
+                const dist = Math.hypot(dx, dy, dz);
+                if (dist > NEAR_IN) continue;
+                const prev = this.lastObjPos.get(o.id) || { x: o.position.x, y: o.position.y, z: o.position.z };
+                const ev = { x: (o.position.x - prev.x) / dt, y: (o.position.y - prev.y) / dt, z: (o.position.z - prev.z) / dt };
+                const relV = { x: ev.x - this.camVel.x, y: ev.y - this.camVel.y, z: ev.z - this.camVel.z };
+                const relSpeed = Math.hypot(relV.x, relV.y, relV.z);
+                if (relSpeed < MIN_SPEED) { this.lastObjPos.set(o.id, { x: o.position.x, y: o.position.y, z: o.position.z }); continue; }
+                if (dist < closestDist) {
+                  closestDist = dist; closestId = o.id; closestPos = { x:o.position.x, y:o.position.y, z:o.position.z }; closestVel = ev;
+                }
+              }
+            }
+
+            // Stickiness: if we already have an active cue, keep it until it truly exits or a much closer object appears
+            const activeEntry = Array.from(this.dopplerCues.entries())[0]; // at most one after we enforce below
+            if (activeEntry) {
+              const [activeId, entry] = activeEntry;
+              // Locate active object to measure distance
+              let objPos: { x:number;y:number;z:number } | null = null;
+              for (const c of this.asteroidClusterService.getClusters()) {
+                const cand = c.objects.find((o: any) => o.id === activeId);
+                if (cand) { objPos = { x: cand.position.x, y: cand.position.y, z: cand.position.z }; break; }
+              }
+              if (objPos) {
+                const dx = objPos.x - listenerPos.x, dy = objPos.y - listenerPos.y, dz = objPos.z - listenerPos.z;
+                const dist = Math.hypot(dx, dy, dz);
+                // If still within FAR_OUT, prefer to keep active unless a new target is significantly closer (15%).
+                // Also: if no new candidate found, keep the active one while inside FAR_OUT (hysteresis hold).
+                if (dist <= FAR_OUT && (!closestId || closestDist > dist * 0.85)) {
+                  closestId = activeId; closestPos = objPos;
+                  const prev = this.lastObjPos.get(activeId) || objPos;
+                  closestVel = { x: (objPos.x - prev.x) / dt, y: (objPos.y - prev.y) / dt, z: (objPos.z - prev.z) / dt };
+                }
+              }
+            }
+
+            // Update existing cue (and stop any extra entries)
+            for (const [id, entry] of Array.from(this.dopplerCues.entries())) {
+              if (id !== closestId) {
+                try { entry.cue.stop(80); } catch {}
+                this.dopplerCues.delete(id);
+                continue;
+              }
+              if (!closestPos) { try { entry.cue.stop(80); } catch {}; this.dopplerCues.delete(id); continue; }
+              const prev = this.lastObjPos.get(id) || closestPos;
+              const ev = closestVel || { x: (closestPos.x - prev.x) / dt, y: (closestPos.y - prev.y) / dt, z: (closestPos.z - prev.z) / dt };
+              entry.cue.update(closestPos, listenerPos, ev, this.camVel);
+              this.lastObjPos.set(id, closestPos);
+            }
+
+            // Create cue if we have a selected target and none is active
+            if (closestId && !this.dopplerCues.has(closestId)) {
+              const SOUND_NAME = this.audio.has(PREFERRED) ? PREFERRED : (this.audio.has(ALT1) ? ALT1 : ALT2);
+              const p = closestPos!;
+              const cue = this.audio.createDopplerCue({ name: SOUND_NAME, initialPos: { x: p.x, y: p.y, z: p.z }, baseVolume: 0.75, audibleRadius: 30, cUnits: 300, bus: 'sfx', loop: true });
+              this.dopplerCues.set(closestId, { cue, started: performance.now() });
+              this.lastObjPos.set(closestId, { x: p.x, y: p.y, z: p.z });
+            }
+          }
+        }
+      } catch {}
     } catch {}
 
     // Timed spell upkeep: expire or compute remaining time for HUD

@@ -62,9 +62,10 @@
     </div>
     <div class="header-right">
       <nav class="header-nav">
-        <button class="nav-button">Opciones</button>
+  <button class="nav-button" (click)="onOptionsClick()">Opciones</button>
         <button class="nav-button primary">Iniciar Sesión</button>
       </nav>
     </div>
   </div>
 </header>
+<app-audio-settings-dialog [isVisible]="showAudio" (closed)="showAudio=false"></app-audio-settings-dialog>
