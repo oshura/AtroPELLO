@@ -10,6 +10,11 @@ export class Portal extends GameObject implements ITargetable {
   public override healthCurrent: number = 1; // no relevante
   public override healthMax: number = 1;
   public radius: number; // radio visual/base para targeting
+  public eyeDir: { x:number;y:number;z:number } = { x: 0, y: 0, z: 0 }; // comenzar centrado
+  private eyeRetargetTimer = 0; // countdown
+  private minRetarget = 1.2;
+  private maxRetarget = 2.4;
+  public manifestTime = 0; // tiempo de vida para animación shader
 
   constructor(id: string, position: Vector3, radius: number = 100) {
     super(id, position, { x: 0, y: 0, z: 0 }, { x: radius, y: radius, z: radius });
@@ -54,9 +59,26 @@ export class Portal extends GameObject implements ITargetable {
   }
 
   public override update(deltaTime: number): void {
-    // Rotación lenta para efecto visual
-    this.rotation.z += deltaTime * 0.2;
+    this.manifestTime += deltaTime;
+    // Retarget eye periodically
+    this.eyeRetargetTimer -= deltaTime;
+    if (this.eyeRetargetTimer <= 0) {
+      this.retargetEye();
+      this.eyeRetargetTimer = this.minRetarget + Math.random() * (this.maxRetarget - this.minRetarget);
+    }
+  // Sutil oscilación de rotación (lenta para que el símbolo sea legible)
+  this.rotation.z += deltaTime * 0.08;
     super.update(deltaTime);
+  }
+
+  private retargetEye(): void {
+    // Elegir dirección pseudoaleatoria en el plano
+    const ang = Math.random() * Math.PI * 2;
+    // Limitar la excentricidad para mantener el ojo cerca del centro
+    const amp = 0.6 + Math.random() * 0.3; // 0.6..0.9
+    this.eyeDir.x = Math.cos(ang) * amp;
+    this.eyeDir.y = Math.sin(ang) * amp;
+    this.eyeDir.z = 0;
   }
 
   // ITargetable implementation

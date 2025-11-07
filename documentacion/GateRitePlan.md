@@ -1,6 +1,6 @@
 # Gate Rite — Diseño y Plan de Implementación
 
-Última actualización: 2025-11-07 (tarde)
+Última actualización: 2025-11-07 (noche)
 
 Este documento define el diseño funcional y técnico del nuevo rito “Gate Rite” y su integración completa con el motor, UI/Grimorio, animaciones y el ciclo de sistemas solares.
 
@@ -30,7 +30,8 @@ Este documento define el diseño funcional y técnico del nuevo rito “Gate Rit
 6) Planet Collapse (5s): reducción a 0; eliminación real del planeta.
 7) Arcane Portal Emergence (10s total de fase):
    - Portal (objeto persistente) aparece y crece hasta tamaño planetario, con ojo central que va mirando astros.
-   - Cámara orbita hasta 45° lateral; nave se orienta al portal.
+  - Cámara orbita hasta 45° lateral; nave se orienta al portal.
+  - Símbolo arcano multi-anillos visible con glifos animados y blending aditivo.
 8) Gate Transit (3s): nave acelera a 1000u y cruza el portal.
 9) Post-Transit (2s): nave se muestra como bola de plasma; cámara fija rota para seguirla.
 10) Snapshot y System Swap: serializa `solar-system`, genera sistema nuevo, reposiciona nave y un Portal.
@@ -108,9 +109,9 @@ Generador: nombres de planetas reales/estrellas; 1–2 soles (si 2, órbitas int
 ## Seguimiento de progreso
 
 - [x] 1. Wiring inicial (anim + manager + portal + grimoire)
-- [x] 2. Zoom-Out (fase 1) — IMPLEMENTADO el zoom de cámara con easing; pendiente Wrapper
-- [ ] 3. Colapso + borrado real
-- [ ] 4. Portal + ojo + cámara órbita + orientación nave
+- [x] 2. Zoom-Out (fase 1) — Implementado: zoom logarítmico 3×; Wrapper implementado con jitter sutil
+- [ ] 3. Colapso + borrado real — Parcial: colapso ease-in-out 5× + storm-shell; eliminación real OK; pendiente partículas outward
+- [x] 4. Portal + ojo + cámara órbita + orientación nave — Implementado: símbolo arcano multi-anillos con glifos, blending aditivo; ojo centrado con iris y retarget aleatorio; cámara órbita ~270° y nave orientada
 - [ ] 5. Tránsito + plasma + cámara seguimiento
 - [ ] 6. Snapshot + generador + swap
 - [ ] 7. Pulido y QA

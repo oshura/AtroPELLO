@@ -36,6 +36,7 @@ import { RingedPlanet } from './RingedPlanet';
 import { Sun } from './Sun';
 import { EarthSplitPlanet } from './EarthSplitPlanet';
 import { MegaAsteroid } from './MegaAsteroid';
+import { Portal } from './Portal';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -89,6 +90,8 @@ export class GameEngine {
   private asteroids: Asteroid[] = [];
   private superAsteroids: SuperAsteroid[] = [];
   private planets: Planet[] = [];
+  // Persistent portals (created by Gate Rite); survive system transitions
+  private portals: Portal[] = [];
   private primarySun: Sun | null = null;
   // Debris asociados a un planeta (e.g., anillo de mega-asteroides de la Tierra dividida)
   private planetDebris: Map<string, Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }>> = new Map();
@@ -417,6 +420,11 @@ export class GameEngine {
     });
     // ¡CRÍTICO! Inicializar buffers WebGL para los objetos iniciales
     this.initializeAllBuffers();
+    // Register existing portals if any (none initially)
+    if (this.portals.length) {
+      this.portals.forEach(p => p.initBuffers(this.gl!));
+      this.targetCatalog.add(TargetType.PORTAL, this.portals[0] as any); // simple add; multiple handled later
+    }
     // Prepare audio controllers after ship exists
     try {
       if (this.audio) {
@@ -1029,6 +1037,8 @@ export class GameEngine {
 
     // Actualizar cámara con nueva posición
     this.camera.update(this.spaceship, deltaTime);
+  // Update portals (spin)
+  try { this.portals.forEach(p => p.update(deltaTime)); } catch {}
 
     // Asteroides sueltos eliminados: gestionamos solo clusters
   // Actualizar clusters: mueven su centro y sincronizan física común
@@ -1819,6 +1829,43 @@ export class GameEngine {
 
   // Renderizar planetas después de asteroides
   this.renderPlanets();
+  // Render portals
+  try {
+    if (this.portals.length) {
+      const gl = this.gl as WebGL2RenderingContext;
+      // State for blending (slight glow)
+      const prevProg = gl.getParameter(gl.CURRENT_PROGRAM);
+      const wasBlend = gl.isEnabled(gl.BLEND);
+  gl.enable(gl.BLEND);
+  // Use additive blend to intensify arcane glow
+  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+      for (const p of this.portals) {
+        if (!p.vertexBuffer || !p.indexBuffer) continue;
+        this.shaderManager.usePortalProgram();
+        this.shaderManager.setPortalMatrices(p.modelMatrix, this.camera.viewMatrix, this.camera.projectionMatrix);
+        const t = (performance.now() || 0) / 1000;
+  // Tuned palette for arcane cyan with deeper inner core
+  const outer = new Float32Array([0.25, 0.9, 1.15]);
+  const inner = new Float32Array([0.06, 0.14, 0.25]);
+  // Slightly expand ring to accommodate multi-ring shader
+  const ringInner = 0.58;
+  const ringOuter = 0.995;
+        const eyeDir = new Float32Array([p.eyeDir.x, p.eyeDir.y, p.eyeDir.z]);
+  const eyeRadius = 0.07; // Slightly smaller pupil for new iris ring
+        this.shaderManager.setPortalParams(t, outer, inner, ringInner, ringOuter, eyeDir, eyeRadius);
+        // Bind geometry
+        const aPos = (this.shaderManager as any).portalAttributes['position'];
+        gl.bindBuffer(gl.ARRAY_BUFFER, p.vertexBuffer);
+        gl.enableVertexAttribArray(aPos);
+        gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, p.indexBuffer);
+        gl.drawElements(gl.TRIANGLES, p.indices.length, gl.UNSIGNED_SHORT, 0);
+        gl.disableVertexAttribArray(aPos);
+      }
+      if (!wasBlend) gl.disable(gl.BLEND);
+      if (prevProg) gl.useProgram(prevProg as any);
+    }
+  } catch {}
 
   // Renderizar outlines avanzados (FASE 4) sobre la escena
   this.renderOutlineSystem();
@@ -2514,6 +2561,50 @@ export class GameEngine {
           }
         } catch {}
       }
+
+      // Gate Rite: storm shell overlay during collapse (if metadata present)
+      try {
+        const storm = (p as any)._gateRiteStormShell;
+        if (storm && this.shaderManager.stormShellProgram && this.gl) {
+          const gl = this.gl as WebGL2RenderingContext;
+          const prevProg = gl.getParameter(gl.CURRENT_PROGRAM);
+          const wasBlend = gl.isEnabled(gl.BLEND);
+          const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
+          const wasCull = gl.isEnabled(gl.CULL_FACE);
+          gl.enable(gl.BLEND);
+          // Additive to make veins pop without darkening
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+          gl.enable(gl.DEPTH_TEST);
+          gl.depthMask(false);
+          gl.disable(gl.CULL_FACE);
+
+          const shellScale = 1.06; // slightly larger than current (shrinking) sphere
+          this.shaderManager.useStormShellProgram();
+          this.shaderManager.setStormShellMatrices(p.modelMatrix, this.camera.viewMatrix, this.camera.projectionMatrix);
+          const base = new Float32Array([1.0, 0.38, 0.10]);
+          const vein = new Float32Array([1.0, 0.95, 0.85]);
+          this.shaderManager.setStormShellParams(storm.time || 0, storm.intensity ?? 1.0, storm.flash ?? 0.0, shellScale, base, vein);
+
+          // Bind only position attribute from planet geometry
+          const aPos = (this.shaderManager as any).stormShellAttributes['position'];
+          if (aPos !== undefined && aPos >= 0 && (p as any).vertexBuffer && (p as any).indexBuffer) {
+            gl.bindBuffer(gl.ARRAY_BUFFER, (p as any).vertexBuffer);
+            gl.enableVertexAttribArray(aPos);
+            gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, (p as any).indexBuffer);
+            gl.drawElements(gl.TRIANGLES, p.indices.length, gl.UNSIGNED_SHORT, 0);
+            gl.disableVertexAttribArray(aPos);
+          }
+
+          // Restore default depth mask and a sane blend func for subsequent passes
+          gl.depthMask(true);
+          gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+          if (!wasBlend) gl.disable(gl.BLEND);
+          if (wasDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+          if (wasCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
+          if (prevProg) gl.useProgram(prevProg as any);
+        }
+      } catch {}
     }
     // Renderizar debris asociados a planetas con LOD sencillo
     this.renderPlanetDebris();

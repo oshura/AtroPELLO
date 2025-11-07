@@ -3,6 +3,7 @@ import { Spaceship } from './Spaceship';
 
 export enum CameraMode {
   INMOVILE_EXTERNAL = 0, // Cámara externa inmóvil que rota con la nave (modo por defecto)
+  MANUAL = 1,            // Cámara controlada manualmente por animaciones/cinemáticas
   REAR_VIEW = 7,         // Cámara delante de la nave mirando hacia atrás
   COCKPIT = 8,           // Cámara interna en la cabina del piloto
   REAR_TRACKING = 9      // Cámara trasera que sigue a la nave
@@ -457,6 +458,7 @@ export class Camera {
   private rearExternalCamera: RearExternalCamera;
   private cockpitCamera: CockpitCamera;
   private cockpitInternalCamera: CockpitInternalCamera;
+  private manualCamera: ManualCamera;
   private activeCamera: BaseCamera;
 
   // Exponer propiedades de la cámara activa
@@ -471,6 +473,7 @@ export class Camera {
     this.rearExternalCamera = new RearExternalCamera(aspect);
     this.cockpitCamera = new CockpitCamera(aspect);
     this.cockpitInternalCamera = new CockpitInternalCamera(aspect);
+    this.manualCamera = new ManualCamera(aspect);
     this.activeCamera = this.cockpitCamera; // INMOVILE_EXTERNAL como modo por defecto
   }
 
@@ -492,6 +495,9 @@ export class Camera {
       case CameraMode.INMOVILE_EXTERNAL:
         this.activeCamera = this.cockpitCamera;
         break;
+      case CameraMode.MANUAL:
+        this.activeCamera = this.manualCamera;
+        break;
       case CameraMode.REAR_VIEW:
         this.activeCamera = this.rearViewCamera;
         break;
@@ -504,6 +510,29 @@ export class Camera {
     }
     
     console.log(`🎥 Cambio de cámara: ${CameraMode[previousMode]} → ${CameraMode[mode]}`);
+  }
+
+  /**
+   * Semilla la cámara manual con una transformación dada (para iniciar una cinemática sin salto de posición).
+   */
+  public seedManualTransform(pos: {x:number;y:number;z:number}, target: {x:number;y:number;z:number}, up: {x:number;y:number;z:number}) {
+    if (!this.manualCamera) return;
+    this.manualCamera.position.x = pos.x; this.manualCamera.position.y = pos.y; this.manualCamera.position.z = pos.z;
+    this.manualCamera.target.x = target.x; this.manualCamera.target.y = target.y; this.manualCamera.target.z = target.z;
+    this.manualCamera.up.x = up.x; this.manualCamera.up.y = up.y; this.manualCamera.up.z = up.z;
+    // Actualizar matrices inmediatamente
+    (this.manualCamera as any).updateViewMatrix?.();
+  }
+
+  /** Marca la cámara activa como "dirty" forzando recomputo de la viewMatrix desde position/target actuales. */
+  public markDirty(): void {
+    if (!this.activeCamera) return;
+    (this.activeCamera as any).updateViewMatrix?.();
+  }
+
+  /** Devuelve el FOV vertical actual (radianes) de la cámara activa. */
+  public getFovRadians(): number {
+    return this.activeCamera?.fov ?? (45 * Math.PI/180);
   }
 
   /**
@@ -535,6 +564,7 @@ export class Camera {
     this.rearExternalCamera.updateProjectionMatrix();
     this.cockpitCamera.updateProjectionMatrix();
     this.cockpitInternalCamera.updateProjectionMatrix();
+    this.manualCamera.updateProjectionMatrix();
   }
 
   /** Ajusta el FOV (grados) en todas las cámaras y actualiza proyección */
@@ -543,6 +573,7 @@ export class Camera {
     this.rearExternalCamera.setFovDegrees(deg);
     this.cockpitCamera.setFovDegrees(deg);
     this.cockpitInternalCamera.setFovDegrees(deg);
+    this.manualCamera.setFovDegrees(deg);
   }
 
   /** Ajusta el FOV (radianes) en todas las cámaras y actualiza proyección */
@@ -551,6 +582,7 @@ export class Camera {
     this.rearExternalCamera.setFovRadians(rad);
     this.cockpitCamera.setFovRadians(rad);
     this.cockpitInternalCamera.setFovRadians(rad);
+    this.manualCamera.setFovRadians(rad);
   }
 
   /**
@@ -561,6 +593,7 @@ export class Camera {
     this.rearExternalCamera.setAspectRatio(aspect);
     this.cockpitCamera.setAspectRatio(aspect);
     this.cockpitInternalCamera.setAspectRatio(aspect);
+    this.manualCamera.setAspectRatio(aspect);
   }
 
   /**
@@ -575,7 +608,29 @@ export class Camera {
         this.rearViewCamera.getDebugInfo() :
         this.activeCamera === this.cockpitInternalCamera ?
         this.cockpitInternalCamera.getDebugInfo() :
+        this.activeCamera === this.manualCamera ?
+        this.manualCamera.getDebugInfo() :
         this.cockpitCamera.getDebugInfo()
+    };
+  }
+}
+
+/**
+ * Cámara manual para cinemáticas/animaciones (modo 1)
+ * No modifica posición/target automáticamente; sólo actualiza la viewMatrix.
+ */
+export class ManualCamera extends BaseCamera {
+  protected updateCameraMode(_spaceship: Spaceship): void {
+    // No-op: la animación externa gestiona position/target/up
+  }
+  public getDebugInfo() {
+    return {
+      mode: 'MANUAL (1)',
+      position: { ...this.position },
+      target: { ...this.target },
+      up: { ...this.up },
+      zoomDistance: this.getZoomDistance(),
+      fov: this.fov * (180 / Math.PI)
     };
   }
 }
