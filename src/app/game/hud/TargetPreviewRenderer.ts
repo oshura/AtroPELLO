@@ -59,7 +59,8 @@ export class TargetPreviewRenderer {
       const t = target?.getTargetType?.() as TargetType | undefined;
       this.currentTargetType = (t !== undefined ? t : null);
       // Much slower wireframe rotation for planets in the HUD preview
-      this.currentAngularSpeed = (this.currentTargetType === TargetType.PLANET) ? 0.06 : 0.4;
+      const isSlowSpin = this.currentTargetType === TargetType.PLANET || this.currentTargetType === TargetType.SUN;
+      this.currentAngularSpeed = isSlowSpin ? 0.06 : 0.4;
     } catch {
       this.currentTargetType = null;
       this.currentAngularSpeed = 0.4;

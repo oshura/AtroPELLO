@@ -58,12 +58,17 @@ export class TargetPanel {
 
     // Title (type + name), distance moved to fixed badge on the right
     ctx.save();
-    ctx.font = '32px Segoe UI, Roboto, sans-serif';
-    ctx.fillStyle = color;
+  ctx.font = '32px Segoe UI, Roboto, sans-serif';
+  ctx.textBaseline = 'alphabetic';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = color;
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = 4;
     const typeStr = (details as any).type !== undefined ? String((details as any).type) : '';
     const title = typeStr ? `${typeStr}  ${this.state.name}` : `${this.state.name}`;
     // Bajar ligeramente el título
-    ctx.fillText(title, x + 14, y + 38);
+  ctx.fillText(title, x + 14, y + 38);
+  ctx.shadowBlur = 0;
     ctx.restore();
 
   // Fixed-position distance badge (top-right), right-aligned inside, fixed width
@@ -119,12 +124,28 @@ export class TargetPanel {
       ctx.save();
       ctx.globalCompositeOperation = 'source-over';
       ctx.drawImage(this.state.previewCanvas, pvX, pvY, pvW, pvH);
-      // Overlay informativo fijo
+  // Overlay informativo fijo (alineado a la izquierda junto al borde del wireframe)
+      ctx.save();
+      const footerMarginY = 4; // separación respecto al borde inferior del preview
+      const footerHeight = 24; // altura mayor para mejor legibilidad
+      const footerY = pvY + pvH - footerHeight - footerMarginY;
+      const footerX = pvX;
+      const footerW = pvW;
+      // Fondo semitransparente para contraste
   ctx.fillStyle = 'rgba(0,0,0,0.45)';
-  ctx.fillRect(pvX + 6, pvY + pvH - 22, 180, 16);
+  ctx.fillRect(footerX, footerY, footerW, footerHeight);
+  // Texto alineado a la izquierda con pequeño margen
+  ctx.font = '14px Segoe UI, Roboto, sans-serif';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
   ctx.fillStyle = 'rgba(0,255,255,0.95)';
-  ctx.font = '12px Segoe UI, Roboto, sans-serif';
-  ctx.fillText('Target acquisition OK', pvX + 10, pvY + pvH - 10);
+  ctx.shadowColor = 'rgba(0,0,0,0.7)';
+  ctx.shadowBlur = 3;
+  ctx.shadowOffsetX = 0;
+  ctx.shadowOffsetY = 1;
+  const leftPadding = 8; // pocos píxeles desde el borde del cuadrado
+  ctx.fillText('Target acquisition OK', footerX + leftPadding, footerY + footerHeight / 2);
+      ctx.restore();
       ctx.restore();
     } else {
       // Placeholder y etiqueta de debug
@@ -151,17 +172,18 @@ export class TargetPanel {
 
     ctx.save();
     // Aumentar tamaño de fuente para mejor legibilidad
-    ctx.font = '28px Segoe UI, Roboto, sans-serif';
-    // Usar textBaseline 'top' para evitar recortes inferiores
-    ctx.textBaseline = 'top';
-    ctx.textAlign = 'left';
-    ctx.fillStyle = color;
+  ctx.font = '24px Segoe UI, Roboto, sans-serif';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = color;
+  ctx.shadowColor = 'rgba(0,0,0,0.4)';
+  ctx.shadowBlur = 2;
 
     // Preparar líneas, filtrando claves internas
     // details already defined above
   // Hacer la letra más alta (no más ancha) usando escala vertical
-  const detailsScaleY = 1.2; // factor de altura
-  const lineHeight = Math.ceil(34 * detailsScaleY); // acorde con 28px y escala
+  const detailsScaleY = 1.0; // sin estirar verticalmente para evitar desplazamientos
+  const lineHeight = 28; // altura de línea más estable
     const lines: string[] = [];
     let voidMassLine: string | null = null;
     for (const [key, value] of Object.entries(details)) {
@@ -219,7 +241,6 @@ export class TargetPanel {
       // Dibujar con escala vertical sin ensanchar
       ctx.save();
       ctx.translate(infoX, yCursor);
-      ctx.scale(1, detailsScaleY);
       ctx.fillText(line, 0, 0);
       ctx.restore();
       yCursor += lineHeight;
