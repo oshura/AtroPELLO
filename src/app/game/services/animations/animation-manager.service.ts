@@ -7,6 +7,7 @@ import { GameAnimation } from './types';
 export class AnimationManagerService {
   private current: GameAnimation | null = null;
   private cachedVoidJumpCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedGateRiteCtor: ({ new(): GameAnimation }) | null = null;
   private flashImages: string[] = [
     '/assets/Athathoth.jpg',
     '/assets/GreatCthulhu.jpg',
@@ -17,6 +18,8 @@ export class AnimationManagerService {
   constructor() {
     // Preload the void-jump module to avoid first-use delay on 'y'
     this.preloadVoidJump();
+    // Preload GateRite best-effort
+    this.preloadGateRite();
   }
 
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
@@ -106,6 +109,40 @@ export class AnimationManagerService {
       } catch {
         // Best-effort; ignore
       }
+    })();
+  }
+
+  public startGateRite(engine: GameEngine, target: ITargetable): boolean {
+    if (this.current) return false;
+    if (this.cachedGateRiteCtor) {
+      const anim = new this.cachedGateRiteCtor();
+      anim.start(engine, target);
+      this.current = anim; return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./gate-rite.animation');
+        const Anim = (mod as any).GateRiteAnimation as { new(): GameAnimation };
+        this.cachedGateRiteCtor = Anim;
+        const anim = new Anim();
+        anim.start(engine, target);
+        this.current = anim;
+      } catch (e) {
+        console.error('Failed to load GateRiteAnimation', e);
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadGateRite(): void {
+    (async () => {
+      try {
+        const mod = await import('./gate-rite.animation');
+        const Anim = (mod as any).GateRiteAnimation as { new(): GameAnimation };
+        this.cachedGateRiteCtor = Anim;
+      } catch { /* ignore */ }
     })();
   }
 }

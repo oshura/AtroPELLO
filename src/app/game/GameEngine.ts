@@ -3411,8 +3411,8 @@ export class GameEngine {
     // Fase 2: lanzar hechizo con 'h' (desde el grimorio o recordando el seleccionado)
     if (key.toLowerCase() === 'h') {
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|null;
-        const hovered = (this.grimoirePanel as any).getHoveredSpellType?.() as 'speed'|'longjump'|null;
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|null;
+        const hovered = (this.grimoirePanel as any).getHoveredSpellType?.() as 'speed'|'longjump'|'gaterite'|null;
         const spell = selected || hovered;
         if (!spell) {
           // Nada seleccionado: no hacer nada
@@ -3466,22 +3466,35 @@ export class GameEngine {
             this.showPlaceholderText('ANIMATION NUMBER 1.', 1200);
             // Apply 2-minute max speed buff (Double Phased Time Rite)
             this.applySpeedRite(120000);
+          } else if (spell === 'gaterite') {
+            // Gate Rite: requiere planeta seleccionado y distancia ≤ 50u a la superficie
+            const t = target as any;
+            const isPlanet = typeof t?.getTargetType === 'function' && String(t.getTargetType?.()) === 'planet';
+            if (!isPlanet) { this.showPlaceholderText('GATE RITE REQUIERE PLANETA', 2000); return; }
+            const center = t.position as {x:number;y:number;z:number};
+            const R = Math.max(1, (t.scale?.x ?? t.radius ?? 0));
+            const dx = center.x - this.spaceship.position.x;
+            const dy = center.y - this.spaceship.position.y;
+            const dz = center.z - this.spaceship.position.z;
+            const dCenter = Math.hypot(dx, dy, dz);
+            const surf = dCenter - R;
+            if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
+            // Iniciar Gate Rite tras el pre-focus ya hecho (2s bloqueados)
+            try { this.animationManager.startGateRite(this, t); } catch (e) { console.error('GateRite start error', e); }
           }
         }, 2000);
         return;
       }
       // Si el grimorio no está abierto: usar el hechizo seleccionado persistente (si existe)
       if (this.grimoirePanel) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|null;
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|null;
         if (!selected) return;
         const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
         // Cambiar cámara y ejecutar tras 2s, igual que cuando se castea desde el grimorio
-  // Ir a cámara 0 si no lo está ya
-  if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
-    this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
-  }
-  // Bloqueo de entrada por 2s
-  this.animationManager.startBlockingDelay(2000);
+        if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
+          this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+        }
+        this.animationManager.startBlockingDelay(2000);
         setTimeout(() => {
           if (selected === 'longjump') {
             if (!this.spaceship || this.spaceship.voidEnergyCurrent < 50) {
@@ -3508,6 +3521,19 @@ export class GameEngine {
           } else if (selected === 'speed') {
             this.showPlaceholderText('ANIMATION NUMBER 1.', 1200);
             this.applySpeedRite(120000);
+          } else if (selected === 'gaterite') {
+            const t = target as any;
+            const isPlanet = typeof t?.getTargetType === 'function' && String(t.getTargetType?.()) === 'planet';
+            if (!isPlanet) { this.showPlaceholderText('GATE RITE REQUIERE PLANETA', 2000); return; }
+            const center = t.position as {x:number;y:number;z:number};
+            const R = Math.max(1, (t.scale?.x ?? t.radius ?? 0));
+            const dx = center.x - this.spaceship.position.x;
+            const dy = center.y - this.spaceship.position.y;
+            const dz = center.z - this.spaceship.position.z;
+            const dCenter = Math.hypot(dx, dy, dz);
+            const surf = dCenter - R;
+            if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
+            try { this.animationManager.startGateRite(this, t); } catch (e) { console.error('GateRite start error', e); }
           }
         }, 2000);
         return;
@@ -3515,10 +3541,6 @@ export class GameEngine {
       return;
     }
   }
-
-  /**
-   * Maneja eventos de tecla liberada
-   */
   public handleKeyUp(key: string): void {
     if (this.spaceship && !this.animationManager.isBlockingInputs()) {
       this.updateShipControls(key, false);

@@ -36,8 +36,8 @@ export class GrimoirePanel {
   private pageWrinkles: Array<Array<{ x:number; y:number }>> = [];
   private hoveredIconIndex: number = -1;
   // Spell states and selection
-  private spellStates: Record<string, 'locked'|'available'|'equipped'> = { speed: 'available', longjump: 'available' };
-  private selectedSpell: 'speed' | 'longjump' | null = null;
+  private spellStates: Record<string, 'locked'|'available'|'equipped'> = { speed: 'available', longjump: 'available', gaterite: 'available' };
+  private selectedSpell: 'speed' | 'longjump' | 'gaterite' | null = null;
   // Reading mode animation (zoom + slight tilt)
   private animStartMs: number = performance.now();
   private animDurMs: number = 320;
@@ -86,13 +86,13 @@ export class GrimoirePanel {
   }
 
   // Expose hovered spell type for casting
-  public getHoveredSpellType(): 'speed' | 'longjump' | null {
+  public getHoveredSpellType(): 'speed' | 'longjump' | 'gaterite' | null {
     if (this.hoveredIconIndex < 0) return null;
     const t = this.iconPlacements[this.hoveredIconIndex]?.type;
-    return (t === 'speed' || t === 'longjump') ? t : null;
+    return (t === 'speed' || t === 'longjump' || t === 'gaterite') ? t : null;
   }
-  public getSelectedSpellType(): 'speed' | 'longjump' | null { return this.selectedSpell; }
-  public setSelectedSpellType(t: 'speed'|'longjump'|null): void {
+  public getSelectedSpellType(): 'speed' | 'longjump' | 'gaterite' | null { return this.selectedSpell; }
+  public setSelectedSpellType(t: 'speed'|'longjump'|'gaterite'|null): void {
     // Toggle off if the same glyph is clicked again
     if (t && this.selectedSpell === t) {
       this.selectedSpell = null;
@@ -101,7 +101,7 @@ export class GrimoirePanel {
     }
     // Update states based on the current selectedSpell (not the incoming param), so deselect works properly
     const sel = this.selectedSpell;
-    (['speed','longjump'] as const).forEach(k => {
+  (['speed','longjump','gaterite'] as const).forEach(k => {
       if (!sel) {
         if (this.spellStates[k] !== 'locked') this.spellStates[k] = 'available';
       } else if (k === sel) {
@@ -111,7 +111,7 @@ export class GrimoirePanel {
       }
     });
   }
-  public setSpellState(t: 'speed'|'longjump', state: 'locked'|'available'|'equipped'): void {
+  public setSpellState(t: 'speed'|'longjump'|'gaterite', state: 'locked'|'available'|'equipped'): void {
     this.spellStates[t] = state;
     if (state !== 'equipped' && this.selectedSpell === t) this.selectedSpell = null;
   }
@@ -400,6 +400,18 @@ export class GrimoirePanel {
           this.drawLongJumpRune(c, p.x, p.y, p.r*0.9);
         }
       }
+      else if (p.type === 'gaterite') {
+        if (state === 'equipped') {
+          c.save();
+          const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 3.4));
+          c.shadowColor = `rgba(255,140,0,${pulse.toFixed(3)})`;
+          c.shadowBlur = 26;
+          this.drawGateRiteRune(c, p.x, p.y, p.r*0.9, '#ff8c00');
+          c.restore();
+        } else {
+          this.drawGateRiteRune(c, p.x, p.y, p.r*0.9);
+        }
+      }
       else if (p.type === 'eye') this.drawEye(c, p.x, p.y, p.r*1.0);
       else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, p.r*0.7);
       else if (p.type === 'ignis') this.drawIgnis(c, p.x, p.y, p.r*0.85);
@@ -505,20 +517,25 @@ export class GrimoirePanel {
         this.handwritingSegments.push(lineSegs);
       }
     };
-    buildPageLinesWords(this.leftPage);
-    buildPageLinesWords(this.rightPage);
+  buildPageLinesWords(this.leftPage);
+  buildPageLinesWords(this.rightPage);
 
-    // Icons: 'speed' and 'longjump' on right page, fixed placements
-    this.iconPlacements = [];
-    const baseR = Math.min(this.rightPage.w, this.rightPage.h);
-    const speedR = baseR * 0.10;
-    const ljR = baseR * 0.095;
-    const speedX = this.rightPage.x + this.rightPage.w * 0.72;
-    const speedY = this.rightPage.y + this.rightPage.h * 0.30;
-    const ljX = this.rightPage.x + this.rightPage.w * 0.60;
-    const ljY = this.rightPage.y + this.rightPage.h * 0.62;
-    this.iconPlacements.push({ type: 'speed', x: speedX, y: speedY, s: 1.0, r: speedR });
-    this.iconPlacements.push({ type: 'longjump', x: ljX, y: ljY, s: 1.0, r: ljR });
+  // Icons: 'speed', 'longjump' y 'gaterite' (nuevo) en la página derecha
+  this.iconPlacements = [];
+  const baseR = Math.min(this.rightPage.w, this.rightPage.h);
+  const speedR = baseR * 0.10;
+  const ljR = baseR * 0.095;
+  const grR = baseR * 0.105; // Gate Rite ligeramente mayor
+  // Reubicación para insertar Gate Rite sin solapes
+  const speedX = this.rightPage.x + this.rightPage.w * 0.72;
+  const speedY = this.rightPage.y + this.rightPage.h * 0.30;
+  const ljX = this.rightPage.x + this.rightPage.w * 0.58;
+  const ljY = this.rightPage.y + this.rightPage.h * 0.60;
+  const grX = this.rightPage.x + this.rightPage.w * 0.78;
+  const grY = this.rightPage.y + this.rightPage.h * 0.78;
+  this.iconPlacements.push({ type: 'speed', x: speedX, y: speedY, s: 1.0, r: speedR });
+  this.iconPlacements.push({ type: 'longjump', x: ljX, y: ljY, s: 1.0, r: ljR });
+  this.iconPlacements.push({ type: 'gaterite', x: grX, y: grY, s: 1.0, r: grR });
 
     // Add five invented, locked glyphs distributed across both pages
     const lp = this.leftPage, rp = this.rightPage;
@@ -696,6 +713,36 @@ export class GrimoirePanel {
     c.restore();
   }
 
+  // Gate Rite rune: triple ring + ojo + runas cardinales + radios internos
+  private drawGateRiteRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const baseColor = color ?? '#3b2b1f';
+    c.strokeStyle = baseColor; c.lineWidth = 2.2;
+    // Anillo exterior
+    c.beginPath(); c.arc(0,0,r,0,Math.PI*2); c.stroke();
+    // Anillo medio roto
+    const arc = (R:number,a0:number,a1:number)=>{ c.beginPath(); c.arc(0,0,R,a0,a1,false); c.stroke(); };
+    c.globalAlpha = 0.75; arc(r*0.82, -Math.PI*0.15, Math.PI*0.65); arc(r*0.82, Math.PI*0.85, Math.PI*1.35); c.globalAlpha = 1;
+    // Anillo interior pulsante
+    const pulse = 0.5 + 0.5 * Math.sin(this.t * 2.8);
+    c.lineWidth = 2 + pulse*1.5; c.beginPath(); c.arc(0,0,r*0.58,0,Math.PI*2); c.stroke();
+    // Marcas cardinales
+    const tick = (a:number)=>{ const x1=Math.cos(a)*r*0.90, y1=Math.sin(a)*r*0.90; const x2=Math.cos(a)*r*1.02, y2=Math.sin(a)*r*1.02; c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke(); };
+    [0,Math.PI/2,Math.PI,3*Math.PI/2].forEach(tick);
+    // Ojo central
+    c.lineWidth = 2; c.beginPath(); c.ellipse(0,0,r*0.40,r*0.24,0,0,Math.PI*2); c.stroke();
+    c.beginPath(); c.ellipse(0,0,r*0.18,r*0.18,0,0,Math.PI*2); c.stroke();
+    c.fillStyle = baseColor; c.beginPath(); c.arc(0,0,r*0.10,0,Math.PI*2); c.fill();
+    // Runas internas (spokes desplazados)
+    c.lineWidth = 1.4; c.globalAlpha = 0.85;
+    for (let i=0;i<6;i++) {
+      const a = i*Math.PI/3 + this.t*0.3;
+      const rx=Math.cos(a)*r*0.70, ry=Math.sin(a)*r*0.70;
+      c.beginPath(); c.moveTo(rx,ry); c.lineTo(rx+Math.cos(a+Math.PI/2)*4, ry+Math.sin(a+Math.PI/2)*4); c.stroke();
+    }
+    c.globalAlpha = 1; c.restore();
+  }
+
   private drawIconHover(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
     c.save(); c.translate(x,y); c.scale(1, 1.5);
     // Golden glow
@@ -780,8 +827,10 @@ export class GrimoirePanel {
     } else if (type === 'speed') {
       title = 'Double Phased Time Rite';
       desc = 'Double the ship\'s max speed for 2 minutes.';
+    } else if (type === 'gaterite') {
+      title = 'Gate Rite';
+      desc = 'Rend a planet; birth an arcane portal to a new system.';
     } else {
-      // Latin-ish gibberish for locked/unknown runes
       const cap = type.charAt(0).toUpperCase() + type.slice(1);
       title = `Sigillum ${cap}`;
       desc = 'Verba arcana obscura; incantatio vetusta et ineffabilis.';
@@ -825,6 +874,9 @@ export class GrimoirePanel {
     } else if (type === 'speed') {
       title = 'Double Phased Time Rite';
       desc = 'Double the ship\'s max speed for 2 minutes.';
+    } else if (type === 'gaterite') {
+      title = 'Gate Rite';
+      desc = 'Rend a planet; birth an arcane portal to a new system.';
     } else {
       const cap = type.charAt(0).toUpperCase() + type.slice(1);
       title = `Sigillum ${cap}`;
