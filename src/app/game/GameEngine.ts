@@ -879,8 +879,10 @@ export class GameEngine {
       if (this.audioUnlocked && this.thrusterCtl && this.spaceship) {
         const state = this.spaceship.thrusterState;
         const speed = this.spaceship.currentSpeed;
-        const max = Math.max(1e-6, this.spaceship.maxSpeed);
-        const speedNorm = Math.max(0, Math.min(1, speed / max));
+        // Use base max (pre-rite) to allow audio to continue 100%→200% during the rite
+        const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
+        const speedOverBase = Math.max(0, Math.min(2, speed / Math.max(1e-6, baseMax))); // 0..2 when rite doubles
+        const speedNorm = speedOverBase; // pass extended [0..2] to audio
         // Map visual thruster states to an accel proxy [0..1]
         let accelNorm = 0.0;
         switch (state) {
@@ -890,7 +892,10 @@ export class GameEngine {
           case ThrusterState.IDLE: default: accelNorm = -0.25; break; // idle signal: slightly lower pitch/volume
         }
         // If at/near cap, pressing '+' shouldn't create an acceleration bump: treat as cruising
-        if (speedNorm >= 0.995 && state === ThrusterState.ACCELERATING) {
+        // Treat as cruising when at cap (100% or 200% if rite active)
+        const riteActive = !!(this.speedRiteUntilMs && performance.now() < (this.speedRiteUntilMs || 0));
+        const atCap = riteActive ? (speedOverBase >= 1.995) : (speed / Math.max(1e-6, this.spaceship.maxSpeed) >= 0.995);
+        if (atCap && state === ThrusterState.ACCELERATING) {
           accelNorm = 0.15;
         }
         // Keep thruster loop running even at idle (very low volume & slightly lower pitch)
@@ -3652,9 +3657,11 @@ export class GameEngine {
           this.spaceship.controls.speedUp = pressed;
           // On key press edge for acceleration, trigger a short lower-pitch onset if not at max speed
           if (pressed && !was && this.thrusterCtl) {
-            const max = Math.max(1e-6, this.spaceship.maxSpeed);
-            const speedNorm = Math.max(0, Math.min(1, this.spaceship.currentSpeed / max));
-            try { (this.thrusterCtl as any).accelOnset?.(speedNorm); } catch {}
+            // For onset suppression, map to 0..1 relative to base max (pre-rite)
+            const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
+            const speedOverBase = Math.max(0, Math.min(2, this.spaceship.currentSpeed / Math.max(1e-6, baseMax)));
+            const norm01 = Math.max(0, Math.min(1, speedOverBase));
+            try { (this.thrusterCtl as any).accelOnset?.(norm01); } catch {}
           }
         }
         break;
@@ -3938,14 +3945,18 @@ export class GameEngine {
       this.spaceship.velocity.z ** 2
     );
 
+    const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
+    const speedPctExtended = (this.spaceship.currentSpeed / Math.max(1e-6, baseMax)) * 100; // 0..200 when rite active
+    const riteActive = !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && performance.now() < this.speedRiteUntilMs);
     const gameData = {
       velocity: velocityMagnitude,
       heading: this.spaceship.rotation.y * (180 / Math.PI), // Convertir a grados
       pitch: this.spaceship.rotation.x * (180 / Math.PI),
       roll: this.spaceship.rotation.z * (180 / Math.PI),
       altitude: this.spaceship.position.y,
-      speed: this.spaceship.getSpeedPercentage() * 2, // Escalar para mejor visualización
+  speed: Math.max(0, Math.min(200, speedPctExtended)),
       maxSpeed: this.spaceship.maxSpeed,
+      baseMaxSpeed: baseMax,
       voidEnergy: {
         current: this.spaceship.voidEnergyCurrent,
         max: this.spaceship.voidEnergyMax,
@@ -3954,9 +3965,7 @@ export class GameEngine {
       weapons: this.spaceship.weapons,
       // Pasar posición de la nave para cálculo de bearing/elevación en brújula
       position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z },
-      speedRiteRemainingSec: (this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs))
-        ? Math.max(0, Math.floor((this.speedRiteUntilMs - performance.now()) / 1000))
-        : null
+      speedRiteRemainingSec: riteActive ? Math.max(0, Math.floor((this.speedRiteUntilMs! - performance.now()) / 1000)) : null
     };
 
     // Sincronizar el target actual del sistema de retícula con el HUD

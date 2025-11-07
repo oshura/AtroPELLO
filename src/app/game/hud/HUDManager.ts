@@ -109,6 +109,7 @@ export class HUDManager {
     altitude: number;
     speed: number;
     maxSpeed?: number;
+    baseMaxSpeed?: number;
     position?: { x: number; y: number; z: number };
     voidEnergy?: { current: number; max: number; pct: number };
     weapons?: any[];
@@ -119,6 +120,10 @@ export class HUDManager {
     if (typeof gameData.maxSpeed === 'number' && !Number.isNaN(gameData.maxSpeed)) {
       this.velocityBarLeft.setMaxVelocity(gameData.maxSpeed);
       this.velocityBarRight.setMaxVelocity(gameData.maxSpeed);
+    }
+    if (typeof gameData.baseMaxSpeed === 'number' && !Number.isNaN(gameData.baseMaxSpeed)) {
+      this.velocityBarLeft.setBaseMaxVelocity(gameData.baseMaxSpeed);
+      this.velocityBarRight.setBaseMaxVelocity(gameData.baseMaxSpeed);
     }
     this.velocityBarLeft.update(gameData.velocity);
     this.velocityBarRight.update(gameData.velocity);
@@ -133,7 +138,10 @@ export class HUDManager {
   this.compass.setCountdown(gameData.speedRiteRemainingSec ?? null);
     
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
-    this.speedometer.update(gameData.speed);
+  // Determinar si el rito de velocidad está activo (hasta 200%)
+  const riteActive = !!(gameData.speedRiteRemainingSec && gameData.speedRiteRemainingSec > 0 && gameData.speed > 100);
+  this.speedometer.setRiteActive(riteActive);
+  this.speedometer.update(gameData.speed);
   this.marqueePanel.update(); // Sin parámetros, usa su lógica interna
     
     // Renderizar todos los elementos en la textura

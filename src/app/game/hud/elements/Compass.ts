@@ -205,22 +205,37 @@ export class Compass {
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    // Blood-crimson color with subtle glow
-    const color = '#a00010';
-    ctx.fillStyle = color;
-    ctx.strokeStyle = 'rgba(0,0,0,0.9)';
+  // Intensified plasma color palette with layered glow
+  const baseColor = '#ff3055'; // bright core
+  const outerGlow = '#ff99b3';
+  // Gradient fill (vertical) to add depth
+  const grad = ctx.createLinearGradient(-60, -30, -60, 30);
+  grad.addColorStop(0, outerGlow);
+  grad.addColorStop(0.35, '#ff5e7b');
+  grad.addColorStop(0.7, baseColor);
+  grad.addColorStop(1, '#ff1838');
+  ctx.fillStyle = grad;
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
     // Slight vertical stretch for a digital feel without widening
     ctx.translate(0, y);
     ctx.scale(1, 1.2);
-    ctx.font = '28px monospace';
+  ctx.font = '30px monospace';
     // Outer shadow/glow
-    ctx.shadowColor = color;
-    ctx.shadowBlur = 10;
-    // Draw text with subtle outline for readability
+    // Multi-pass glow: bright core then softer halo
+    ctx.shadowColor = baseColor;
+    ctx.shadowBlur = 14;
     ctx.fillText(text, 0, 0);
+    // Inner stroke highlight
     ctx.shadowBlur = 0;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = 1.5;
     ctx.strokeText(text, 0, 0);
+    // Soft outer halo pass
+    ctx.shadowColor = outerGlow;
+    ctx.shadowBlur = 22;
+    ctx.globalAlpha = 0.55;
+    ctx.fillText(text, 0, 0);
+    ctx.globalAlpha = 1.0;
+    ctx.shadowBlur = 0;
     ctx.restore();
   }
 }

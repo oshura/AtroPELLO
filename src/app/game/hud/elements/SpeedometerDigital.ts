@@ -4,18 +4,26 @@
  * FASE 4: Elementos HUD individuales
  */
 export class SpeedometerDigital {
-  private speed: number = 0;
-  private maxSpeed: number = 200;
+  private speed: number = 0;          // Display value (0..100 or 0..200 when rite active)
+  private maxSpeed: number = 100;     // Current max for normalization (100 normal, 200 during rite)
   private animatedSpeed: number = 0;
+  private riteActive: boolean = false;
   // Eliminamos dependencia de reloj para evitar saltos grandes en dt
   // y estabilizamos con un suavizado exponencial por frame.
   private readonly SMOOTHING_ALPHA: number = 0.15; // 0..1
   
   constructor() {}
 
-  public update(speed: number): void {
-    // Clamp a rango esperado del velocímetro
-    this.speed = Math.max(0, Math.min(this.maxSpeed, speed));
+  public setRiteActive(active: boolean): void {
+    this.riteActive = active;
+    this.maxSpeed = active ? 200 : 100;
+  }
+
+  public update(speedPercentExtended: number): void {
+    // speedPercentExtended: porcentaje sobre la velocidad base (0..100 normal, puede subir hasta 200 con rito)
+    const max = this.riteActive ? 200 : 100;
+    this.maxSpeed = max;
+    this.speed = Math.max(0, Math.min(max, speedPercentExtended));
 
     // Suavizado exponencial estable por frame (sin overshoot)
     const diff = this.speed - this.animatedSpeed;
@@ -67,7 +75,7 @@ export class SpeedometerDigital {
 
   private drawMainSpeed(ctx: CanvasRenderingContext2D): void {
     let color = '#00FF80';
-    const speedPercentage = this.animatedSpeed / this.maxSpeed;
+  const speedPercentage = this.animatedSpeed / this.maxSpeed;
     
     if (speedPercentage > 0.8) {
       color = '#FF4000';
@@ -80,7 +88,7 @@ export class SpeedometerDigital {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     
-    const speedText = Math.round(this.animatedSpeed).toString().padStart(3, '0');
+  const speedText = Math.round(this.animatedSpeed).toString().padStart(3, '0');
     ctx.fillText(speedText, 0, -5);
   }
 
@@ -93,16 +101,31 @@ export class SpeedometerDigital {
     ctx.lineWidth = 1;
     ctx.strokeRect(-barWidth/2, barY, barWidth, barHeight);
     
-  const ratio = Math.max(0, Math.min(1, this.animatedSpeed / this.maxSpeed));
-  const fillWidth = ratio * barWidth;
-    if (fillWidth > 0) {
+    // Base bar (0..100%)
+    const baseRatio = Math.max(0, Math.min(1, Math.min(this.animatedSpeed, 100) / 100));
+    const baseWidth = baseRatio * barWidth;
+    if (baseWidth > 0) {
       const gradient = ctx.createLinearGradient(-barWidth/2, 0, barWidth/2, 0);
-      gradient.addColorStop(0, '#00FF80');
-      gradient.addColorStop(0.6, '#FFFF00');
-      gradient.addColorStop(1, '#FF4000');
-      
+      gradient.addColorStop(0, '#00FF80'); // verde
+      gradient.addColorStop(0.6, '#FFFF00'); // amarillo
+      gradient.addColorStop(1, '#FF4000'); // rojo
       ctx.fillStyle = gradient;
-      ctx.fillRect(-barWidth/2, barY, fillWidth, barHeight);
+      ctx.fillRect(-barWidth/2, barY, baseWidth, barHeight);
+    }
+    // Extended overlay (100..200%) cuando riteActive: también con degradado verde→rojo para continuidad
+    if (this.riteActive && this.animatedSpeed > 100) {
+      const extraRatio = Math.min(1, (this.animatedSpeed - 100) / 100); // 0..1
+      const extraWidth = extraRatio * barWidth;
+      if (extraWidth > 0) {
+        ctx.globalAlpha = 0.85;
+        const overlayGrad = ctx.createLinearGradient(-barWidth/2, 0, barWidth/2, 0);
+        overlayGrad.addColorStop(0, '#00FF80');
+        overlayGrad.addColorStop(0.6, '#FFFF00');
+        overlayGrad.addColorStop(1, '#FF4000');
+        ctx.fillStyle = overlayGrad;
+        ctx.fillRect(-barWidth/2, barY, extraWidth, barHeight);
+        ctx.globalAlpha = 1.0;
+      }
     }
     
     ctx.strokeStyle = '#00FF8080';
@@ -125,7 +148,7 @@ export class SpeedometerDigital {
     ctx.fillText('KM/H', 0, 20);
     
     ctx.font = '6px monospace';
-    const labels = ['0', '50', '100', '150', '200'];
+  const labels = this.riteActive ? ['0', '50', '100', '150', '200'] : ['0', '25', '50', '75', '100'];
     labels.forEach((label, index) => {
       const x = -40 + (index * 20);
       ctx.fillText(label, x, 25);

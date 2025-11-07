@@ -285,10 +285,14 @@ export class AudioEngineService {
       },
       update: (speedNorm: number, accelNorm: number) => {
         if (!h) return;
+        // speedNorm can be 0..2 (extended during speed rite). Split into phases 0..1 and 1..2
+        const s = Math.max(0, Math.min(2, speedNorm));
+        const s1 = Math.min(1, s);
+        const s2 = Math.max(0, s - 1); // 0..1 for the extended band
         // Positive accel contributes to rate; negative accelNorm is a special signal for IDLE timbre
-        let baseRate = 0.85 + speedNorm * 0.6 + Math.max(0, accelNorm) * 0.2; // 0.85..~1.65
-        // Base volume from speed/positive accel
-        let baseVol = 0.1 + Math.max(speedNorm, Math.max(0, accelNorm)) * 0.4; // 0.1..0.5 (reduced max)
+        let baseRate = 0.85 + s1 * 0.6 + s2 * 0.35 + Math.max(0, accelNorm) * 0.2; // second band adds extra 0.35
+        // Base volume from speed/positive accel (second band grows slower to avoid excessive loudness)
+        let baseVol = 0.1 + Math.max(s1, Math.max(0, accelNorm)) * 0.4 + s2 * 0.15; // +0..0.15 for 100→200%
         // Idle coloring: slightly lower pitch and lower volume
         if (accelNorm < 0) {
           baseRate = Math.max(0.5, baseRate - 0.05); // ~5% lower pitch on idle
