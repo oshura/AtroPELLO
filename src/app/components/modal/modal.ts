@@ -10,11 +10,12 @@ export class Modal {
   @Input() isVisible = false;
   @Input() title = '';
   @Input() closeOnBackdrop = true;
+  @Input() closeOnEscape = true; // allow consumers to disable ESC close (e.g., while rebinding)
   @Output() onClose = new EventEmitter<void>();
 
   @HostListener('document:keydown.escape', ['$event'])
   onEscapeKey(event: Event) {
-    if (this.isVisible) {
+    if (this.isVisible && this.closeOnEscape) {
       this.close();
     }
   }

@@ -57,8 +57,9 @@ export class AudioEngineService {
     this.master = this.ctx.createGain();
     this.master.gain.value = 1.0;
     this.master.connect(this.ctx.destination);
-    this.buses.music = this.makeBus(0.8);
-    this.buses.sfx = this.makeBus(1.0);
+  // Defaults: music quieter by default (30%), sfx at unity, ui/voice near unity
+  this.buses.music = this.makeBus(0.3);
+  this.buses.sfx = this.makeBus(1.0);
     this.buses.voice = this.makeBus(1.0);
     this.buses.ui = this.makeBus(0.9);
   this.buses.ambience = this.makeBus(0.6);
@@ -98,6 +99,14 @@ export class AudioEngineService {
   public setBusVolume(bus: AudioBus, volume: number): void { this.getBus(bus).gain.value = Math.max(0, Math.min(1, volume)); }
   public getBusGain(bus: AudioBus): number | null { try { return this.getBus(bus).gain.value; } catch { return null; } }
   public setBusGain(bus: AudioBus, volume: number): void { this.setBusVolume(bus, volume); }
+  public getMasterGain(): number { this.ensureContext(); return this.master?.gain?.value ?? 1; }
+  public setMasterGain(v: number): void {
+    this.ensureContext();
+    if (!this.master) return;
+    // Allow slight headroom up to 2.0 if the user wants to boost globally
+    const clamped = Math.max(0, Math.min(2, v));
+    this.master.gain.value = clamped;
+  }
   public getThrusterGain(): number { return this.thrusterMix; }
   public setThrusterGain(v: number): void { this.thrusterMix = Math.max(0, Math.min(1, v)); }
   public getAmbienceGain(): number { return this.ambienceMix; }
@@ -105,7 +114,7 @@ export class AudioEngineService {
     this.ambienceMix = Math.max(0, Math.min(1, v));
     // Apply immediately if loop is running
     if (this.ambientHandle && this.ambientHandle.isPlaying()) {
-      this.ambientHandle.setVolume(this.computeAmbientBaseVolume() * this.ambienceMix);
+      this.ambientHandle.setVolume(this.computeAmbientBaseVolume() * this.ambientEffectiveMix());
     }
   }
 
@@ -113,6 +122,11 @@ export class AudioEngineService {
   private computeAmbientBaseVolume(): number {
     // Previously thruster idle hovered around ~0.08..0.1 before mix; choose a stable base
     return 0.1; // pre-mix; final = base * ambienceMix
+  }
+
+  private ambientEffectiveMix(): number {
+    // Remap slider 50% to previous 100% loudness by doubling; cap at 200%
+    return Math.max(0, Math.min(2, (this.ambienceMix ?? 0) * 2));
   }
 
   /** Start the always-on ambient loop once audio is unlocked */
@@ -125,12 +139,12 @@ export class AudioEngineService {
       return;
     }
     // Start loop on the ambience bus
-    const vol = this.computeAmbientBaseVolume() * this.ambienceMix;
+    const vol = this.computeAmbientBaseVolume() * this.ambientEffectiveMix();
     this.ambientHandle = this.play(name, { loop: true, volume: vol, bus: 'ambience', fadeInMs: 120 });
   }
 
   public stopAmbientLoop(fadeOutMs = 200): void {
-    if (this.ambientHandle) { try { this.ambientHandle.stop(fadeOutMs); } catch {} this.ambientHandle = null; }
+  if (this.ambientHandle) { try { this.ambientHandle.stop(fadeOutMs); } catch {} this.ambientHandle = null; }
   }
 
   public async load(name: string, url: string): Promise<void> {

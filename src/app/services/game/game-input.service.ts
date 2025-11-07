@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { KeyBindingsService } from '../key-bindings.service';
 import { GameEngine } from '../../game/GameEngine';
 
 export interface KeyState {
@@ -16,7 +17,7 @@ export class GameInputHandler {
   private gameEngine: GameEngine | null = null;
   private inputEnabled: boolean = false;
 
-  constructor() {
+  constructor(private keyBindings: KeyBindingsService) {
     this.initializeKeyState();
   }
 
@@ -63,39 +64,41 @@ export class GameInputHandler {
     if (!this.inputEnabled || !this.gameEngine) {
       return false;
     }
+    const keyRaw = event.key.toLowerCase();
+    const composite = event.shiftKey && keyRaw !== 'shift' ? 'shift+' + keyRaw : keyRaw;
+    const action = this.keyBindings.findActionForKey(composite);
+    // Debug
+    // console.log('🎮 Key pressed:', event.key, 'normalized:', composite, 'action:', action);
 
-    const key = event.key.toLowerCase();
-    
-    // Log para debug de controles
-    console.log('🎮 Key pressed:', event.key, '(mapped to:', key, ')');
-
-    // STEP 4: Cycle targets with T / Shift+T
-    if (key === 't') {
-      try { (this.gameEngine as any).cycleSelection?.(event.shiftKey === true); } catch {}
+    if (action === 'target_next') {
+      try { (this.gameEngine as any).cycleSelection?.(false); } catch {}
+      event.preventDefault(); return true;
+    }
+    if (action === 'target_prev') {
+      try { (this.gameEngine as any).cycleSelection?.(true); } catch {}
+      event.preventDefault(); return true;
+    }
+    if (action === 'clear_target') {
+      // Forward to engine using default key (escape) regardless of rebound value
+      this.gameEngine.handleKeyDown(this.keyBindings.getDefaultKey('clear_target'));
+      event.preventDefault(); return true;
+    }
+    // If the user cleared the 'clear_target' binding (now blank), still treat raw Escape as clear/close
+    if (!action && keyRaw === 'escape') {
+      this.gameEngine.handleKeyDown('escape');
+      event.preventDefault(); return true;
+    }
+    // Movement / ship / UI actions: translate rebound key to default original key so engine legacy logic works
+    if (action) {
+      const translated = this.keyBindings.getDefaultKey(action);
+      // Update key state using translated default for compatibility
+      this.keyState[translated] = true;
+      this.gameEngine.handleKeyDown(translated);
       event.preventDefault();
       return true;
     }
-    
-    // Manejar teclas especiales: reenviar 'escape' al motor para cerrar mapas/menus
-    if (key === 'escape') {
-      this.gameEngine.handleKeyDown(event.key);
-      event.preventDefault();
-      return true;
-    }
-    // Otras especiales que no se pasan al motor
-    if (this.handleSpecialKeys(key)) {
-      event.preventDefault();
-      return true;
-    }
-
-    // Actualizar estado de la tecla
-    if (key in this.keyState || ['+', '=', '-', '_', '0', '7', '8', '9'].includes(key)) {
-      this.keyState[key] = true;
-      this.gameEngine.handleKeyDown(event.key);
-      event.preventDefault();
-      return true;
-    }
-
+    // Fallback: legacy special handling
+    if (this.handleSpecialKeys(keyRaw)) { event.preventDefault(); return true; }
     return false;
   }
 
@@ -106,17 +109,20 @@ export class GameInputHandler {
     if (!this.inputEnabled || !this.gameEngine) {
       return false;
     }
-
-    const key = event.key.toLowerCase();
-
-    // Actualizar estado de la tecla
-    if (key in this.keyState || ['0', '7', '8', '9'].includes(key)) {
-      this.keyState[key] = false;
-      this.gameEngine.handleKeyUp(event.key);
-      event.preventDefault();
-      return true;
+    const keyRaw = event.key.toLowerCase();
+    const composite = event.shiftKey && keyRaw !== 'shift' ? 'shift+' + keyRaw : keyRaw;
+    const action = this.keyBindings.findActionForKey(composite);
+    if (action) {
+      const translated = this.keyBindings.getDefaultKey(action);
+      if (translated in this.keyState) this.keyState[translated] = false;
+      this.gameEngine.handleKeyUp(translated);
+      event.preventDefault(); return true;
     }
-
+    if (keyRaw in this.keyState) {
+      this.keyState[keyRaw] = false;
+      this.gameEngine.handleKeyUp(event.key);
+      event.preventDefault(); return true;
+    }
     return false;
   }
 
@@ -142,8 +148,8 @@ export class GameInputHandler {
   private handleSpecialKeys(key: string): boolean {
     switch (key) {
       case 'escape':
-        // La tecla escape se maneja externamente
-        return true;
+        // Dejar que el flujo principal lo maneje (no consumir aquí)
+        return false;
       case 'f11':
         // Fullscreen toggle podría manejarse aquí
         return false;
@@ -151,6 +157,8 @@ export class GameInputHandler {
         return false;
     }
   }
+
+  // Legacy helpers removed (handled via findActionForKey)
 
   /**
    * Obtiene el estado actual de una tecla

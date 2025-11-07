@@ -3357,6 +3357,9 @@ export class GameEngine {
               try { this.systemPanel.setSelectedId(null); } catch {}
             }
           } catch {}
+        } else {
+          // Closing map: clear selection
+          this.clearTargetSelection();
         }
       }
       try { this.updateMapClickBinding(); } catch {}
@@ -3373,26 +3376,37 @@ export class GameEngine {
         if (next && this.systemPanel) {
           try { this.systemPanel.setEnabled(false); } catch {}
         }
+        if (!next) {
+          // Closing grimoire: clear selection
+          this.clearTargetSelection();
+        }
       }
       try { this.updateMapClickBinding(); } catch {}
       try { this.updateGrimoirePointerBinding(); } catch {}
       try { this.updateCanvasCursor(); } catch {}
       return;
     }
-    // Escape: cerrar mapa si está activo
+    // Escape: cerrar mapa/grimorio si están activos; si no, limpiar target actual
     if (key.toLowerCase() === 'escape') {
       if (this.systemPanel && this.systemPanel.isEnabled()) {
         this.systemPanel.setEnabled(false);
         try { this.updateMapClickBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
+        // Esc también limpia el target al cerrar paneles
+        this.clearTargetSelection();
         return;
       }
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
         this.grimoirePanel.setEnabled(false);
         try { this.updateGrimoirePointerBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
+        // Esc también limpia el target al cerrar paneles
+        this.clearTargetSelection();
         return;
       }
+      // No panels open: treat Escape as clear-target
+      this.clearTargetSelection();
+      return;
     }
     // Fase 2: lanzar hechizo con 'h' (desde el grimorio o recordando el seleccionado)
     if (key.toLowerCase() === 'h') {
@@ -3619,9 +3633,24 @@ export class GameEngine {
    */
   public clearTargetSelection(): void {
     try {
+      // 1. Limpiar selección en el sistema principal de retícula / targeting legacy
       if (this.reticleManager && this.reticleManager.selectTarget) {
         this.reticleManager.selectTarget(null);
       }
+      // 2. Limpiar selección en el sistema adaptativo (v2) si existe
+      try { (this.adaptiveTargeting as any)?.selectTarget?.(null); } catch {}
+      // 3. Limpiar panel HUD de target y estado interno del HUD
+      if (this.hudManager) {
+        try { (this.hudManager as any).setTarget?.(null); } catch {}
+        try { this.hudManager.clearTargetPanel(); } catch {}
+      }
+      // 4. Si el mapa está abierto, limpiar también la selección visual del mapa
+      if (this.systemPanel && this.systemPanel.isEnabled()) {
+        try { (this.systemPanel as any).setSelectedId?.(null); } catch {}
+      }
+      // 5. Forzar una invalidación mínima del outliner 2D (opcional): al no renderizar en el frame siguiente desaparecerá.
+      //    Si existiera necesidad de un "flush" explícito se podría implementar un método clear(channel).
+      //    Aquí simplemente no hacemos nada más: dejar de llamar render() elimina la superposición.
     } catch {}
   }
 

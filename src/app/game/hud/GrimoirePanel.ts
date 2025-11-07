@@ -93,12 +93,18 @@ export class GrimoirePanel {
   }
   public getSelectedSpellType(): 'speed' | 'longjump' | null { return this.selectedSpell; }
   public setSelectedSpellType(t: 'speed'|'longjump'|null): void {
-    this.selectedSpell = t;
-    // Update states: one equipped at most
+    // Toggle off if the same glyph is clicked again
+    if (t && this.selectedSpell === t) {
+      this.selectedSpell = null;
+    } else {
+      this.selectedSpell = t;
+    }
+    // Update states based on the current selectedSpell (not the incoming param), so deselect works properly
+    const sel = this.selectedSpell;
     (['speed','longjump'] as const).forEach(k => {
-      if (!t) {
+      if (!sel) {
         if (this.spellStates[k] !== 'locked') this.spellStates[k] = 'available';
-      } else if (k === t) {
+      } else if (k === sel) {
         this.spellStates[k] = 'equipped';
       } else if (this.spellStates[k] !== 'locked') {
         this.spellStates[k] = 'available';
@@ -198,6 +204,7 @@ export class GrimoirePanel {
         const dx = inv.x - ic.x; const dy = inv.y - ic.y;
         if (dx*dx + dy*dy <= (ic.r*ic.r)) { this.hoveredIconIndex = i; break; }
       }
+      // If click coordinate is over page but not over any glyph and selection exists, allow external code to clear selection by calling setSelectedSpellType(null)
     }
     // Page content: handwriting + icons (static), plus hover effects
     this.drawPageContent(c, W, H);

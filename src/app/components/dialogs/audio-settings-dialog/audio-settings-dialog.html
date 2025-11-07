@@ -1,17 +1,25 @@
 <app-modal
   [isVisible]="isVisible"
-  [title]="'OPCIONES AUDIO'"
+  [title]="'OPCIONES'"
   [closeOnBackdrop]="true"
+  [closeOnEscape]="rebindingAction===null"
   (onClose)="onCloseDialog()">
 
   <div class="audio-settings">
-    <p class="hint">Ajusta los niveles de volumen. 0 es silencio. 100 es el máximo permitido. Predeterminado: 50.</p>
+    <div class="tabs">
+      <button class="tab" [class.active]="activeTab==='audio'" (click)="activeTab='audio'">Audio</button>
+      <button class="tab" [class.active]="activeTab==='controls'" (click)="activeTab='controls'">Controles</button>
+    </div>
+
+    <div class="tab-content" *ngIf="activeTab==='audio'">
+      <p class="hint">Ajusta los niveles de volumen. 0 es silencio. 100 es el máximo permitido. Predeterminado: 50.</p>
 
     <div class="group">
       <label for="musicRange">Música</label>
       <div class="slider-row">
         <input id="musicRange" type="range" min="0" max="100" step="1" [(ngModel)]="music" (input)="onChange()" />
         <span class="value">{{ music }}</span>
+  <button class="preview-btn" (click)="togglePreview('music')" [title]="isPreviewing('music') ? 'Detener' : 'Reproducir'">{{ isPreviewing('music') ? '■' : '▶' }}</button>
       </div>
     </div>
 
@@ -20,6 +28,7 @@
       <div class="slider-row">
         <input id="sfxRange" type="range" min="0" max="100" step="1" [(ngModel)]="sfx" (input)="onChange()" />
         <span class="value">{{ sfx }}</span>
+  <button class="preview-btn" (click)="togglePreview('sfx')" [title]="isPreviewing('sfx') ? 'Detener' : 'Reproducir'">{{ isPreviewing('sfx') ? '■' : '▶' }}</button>
       </div>
     </div>
 
@@ -28,6 +37,7 @@
       <div class="slider-row">
         <input id="thrusterRange" type="range" min="0" max="100" step="1" [(ngModel)]="thruster" (input)="onChange()" />
         <span class="value">{{ thruster }}</span>
+  <button class="preview-btn" (click)="togglePreview('thruster')" [title]="isPreviewing('thruster') ? 'Detener' : 'Reproducir'">{{ isPreviewing('thruster') ? '■' : '▶' }}</button>
       </div>
     </div>
 
@@ -36,18 +46,49 @@
       <div class="slider-row">
         <input id="ambienceRange" type="range" min="0" max="100" step="1" [(ngModel)]="ambience" (input)="onChange()" />
         <span class="value">{{ ambience }}</span>
+  <button class="preview-btn" (click)="togglePreview('ambience')" [title]="isPreviewing('ambience') ? 'Detener' : 'Reproducir'">{{ isPreviewing('ambience') ? '■' : '▶' }}</button>
       </div>
     </div>
 
-    <div class="preview">
-      <button (click)="playTestSfx()">Probar SFX</button>
-      <button (click)="playTestThruster()">Probar Thruster</button>
-      <button (click)="playTestAmbience()">Probar Ambiente</button>
+    <div class="group">
+      <label for="masterRange">Master</label>
+      <div class="slider-row">
+        <input id="masterRange" type="range" min="0" max="100" step="1" [(ngModel)]="master" (input)="onChange()" />
+        <span class="value">{{ master }}</span>
+      </div>
+      <small class="hint-sub">Master: 50 = normal (1.0×), 100 = boost (2.0×).</small>
+    </div>
+
+      <div class="preview" *ngIf="false"></div>
+    </div>
+
+    <div class="tab-content" *ngIf="activeTab==='controls'" (mousedown)="onControlsMouseDown($event)">
+  <p class="hint">Configura tus teclas. Haz clic en una fila y presiona la nueva tecla.</p>
+      <div class="bindings-grid">
+        <table class="bindings" *ngFor="let col of bindingColumns">
+          <tr>
+            <th>Acción</th>
+            <th>Tecla</th>
+            <th></th>
+          </tr>
+          <tr *ngFor="let b of col.items; index as i">
+            <td class="action">{{ b.action }}</td>
+            <td class="key">
+              <input class="key-input" type="text" [value]="rebindingAction=== b.action ? '' : b.key" (focus)="startRebind(b.action)" [class.rebinding]="rebindingAction=== b.action" readonly />
+            </td>
+            <td class="ops">
+              <button class="icon-btn" (click)="clearBinding(b.action)" title="Limpiar">🗑</button>
+            </td>
+          </tr>
+        </table>
+      </div>
+      <p class="rebinding-hint" *ngIf="rebindingAction!==null">Presiona una tecla… (Esc para cancelar)</p>
+      <p class="hint-sub">Conflictos se resuelven automáticamente limpiando la acción anterior.</p>
     </div>
   </div>
 
   <div slot="footer" class="footer-actions">
-    <button (click)="resetDefaults()">Restaurar 50%</button>
+    <button (click)="onResetToDefault()">Default</button>
     <button class="close-btn" (click)="onCloseDialog()">Cerrar</button>
   </div>
 </app-modal>

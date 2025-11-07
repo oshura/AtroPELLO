@@ -133,10 +133,11 @@ export class Game implements AfterViewInit, OnDestroy {
   handleKeyDown(event: KeyboardEvent): void {
     // Manejar teclas especiales del componente
     if (event.key === 'Escape') {
-      // En lugar de pausar, deseleccionar el target actual
+      // Si algún modal de opciones está visible y rebinding activo, el propio componente lo maneja; no cerrar aquí
       const gameEngine = this.gameInitializer.getGameEngine();
-      if (gameEngine && (gameEngine as any).clearTargetSelection) {
-        (gameEngine as any).clearTargetSelection();
+      if (gameEngine) {
+        // Forward Escape so GameEngine panel logic runs (map/grimoire close or target clear)
+        gameEngine.handleKeyDown('escape');
       }
       event.preventDefault();
       return;
