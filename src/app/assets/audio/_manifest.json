@@ -11,4 +11,6 @@
   "voice_narrator_sample": "/assets/audio/voice_narrator_sample.wav",
   "sfx_spell_chant": "/assets/audio/sfx_spell_chant.wav",
   "sfx_whoosh": "/assets/audio/sfx_whoosh.wav"
+  ,
+  "sfx_logdark": "/assets/audio/sfx_longdark.wav"
 }

@@ -710,6 +710,8 @@ export class GameEngine {
         // Start exploration by default
         await this.music.setScene('exploration', 900);
       }
+      // Start always-on ambience loop (logdark) once unlocked
+      try { if (ok) this.audio.startAmbientLoop('sfx_logdark'); } catch {}
       // Pre-start thruster loop at silence for smooth fade when first needed
       if (ok && this.thrusterCtl) {
         this.thrusterCtl.start(0.0);

@@ -31,9 +31,18 @@
       </div>
     </div>
 
+    <div class="group">
+      <label for="ambienceRange">Ambiente</label>
+      <div class="slider-row">
+        <input id="ambienceRange" type="range" min="0" max="100" step="1" [(ngModel)]="ambience" (input)="onChange()" />
+        <span class="value">{{ ambience }}</span>
+      </div>
+    </div>
+
     <div class="preview">
       <button (click)="playTestSfx()">Probar SFX</button>
       <button (click)="playTestThruster()">Probar Thruster</button>
+      <button (click)="playTestAmbience()">Probar Ambiente</button>
     </div>
   </div>
 

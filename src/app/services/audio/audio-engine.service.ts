@@ -2,7 +2,7 @@ import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { AudioDebugService } from './audio-debug.service';
 
-export type AudioBus = 'master' | 'music' | 'sfx' | 'voice' | 'ui';
+export type AudioBus = 'master' | 'music' | 'sfx' | 'voice' | 'ui' | 'ambience';
 
 export interface PlayOptions {
   loop?: boolean;
@@ -41,6 +41,8 @@ export class AudioEngineService {
   private nextId = 1;
   // User-adjustable mix controls
   private thrusterMix: number = 0.5; // 0..1 (default 50%)
+  private ambienceMix: number = 0.5; // 0..1 (default 50%)
+  private ambientHandle: PlayingHandle | null = null;
 
   constructor(@Inject(PLATFORM_ID) private platformId: Object, private debug: AudioDebugService) {}
 
@@ -59,6 +61,7 @@ export class AudioEngineService {
     this.buses.sfx = this.makeBus(1.0);
     this.buses.voice = this.makeBus(1.0);
     this.buses.ui = this.makeBus(0.9);
+  this.buses.ambience = this.makeBus(0.6);
     // Chain buses to master
     Object.values(this.buses).forEach(b => b.connect(this.master));
     // Safe defaults for listener (facing -Z)
@@ -97,6 +100,38 @@ export class AudioEngineService {
   public setBusGain(bus: AudioBus, volume: number): void { this.setBusVolume(bus, volume); }
   public getThrusterGain(): number { return this.thrusterMix; }
   public setThrusterGain(v: number): void { this.thrusterMix = Math.max(0, Math.min(1, v)); }
+  public getAmbienceGain(): number { return this.ambienceMix; }
+  public setAmbienceGain(v: number): void {
+    this.ambienceMix = Math.max(0, Math.min(1, v));
+    // Apply immediately if loop is running
+    if (this.ambientHandle && this.ambientHandle.isPlaying()) {
+      this.ambientHandle.setVolume(this.computeAmbientBaseVolume() * this.ambienceMix);
+    }
+  }
+
+  /** Base ambient loudness to mimic previous thruster idle presence */
+  private computeAmbientBaseVolume(): number {
+    // Previously thruster idle hovered around ~0.08..0.1 before mix; choose a stable base
+    return 0.1; // pre-mix; final = base * ambienceMix
+  }
+
+  /** Start the always-on ambient loop once audio is unlocked */
+  public startAmbientLoop(name: string = 'sfx_logdark'): void {
+    this.ensureContext();
+    if (!this.ctx) return;
+    if (this.ambientHandle && this.ambientHandle.isPlaying()) {
+      // Already running; just ensure volume reflects current mix
+      this.ambientHandle.setVolume(this.computeAmbientBaseVolume() * this.ambienceMix);
+      return;
+    }
+    // Start loop on the ambience bus
+    const vol = this.computeAmbientBaseVolume() * this.ambienceMix;
+    this.ambientHandle = this.play(name, { loop: true, volume: vol, bus: 'ambience', fadeInMs: 120 });
+  }
+
+  public stopAmbientLoop(fadeOutMs = 200): void {
+    if (this.ambientHandle) { try { this.ambientHandle.stop(fadeOutMs); } catch {} this.ambientHandle = null; }
+  }
 
   public async load(name: string, url: string): Promise<void> {
     this.ensureContext();
@@ -297,6 +332,10 @@ export class AudioEngineService {
         if (accelNorm < 0) {
           baseRate = Math.max(0.5, baseRate - 0.05); // ~5% lower pitch on idle
           baseVol = baseVol * 0.8; // slightly quieter than 0-speed baseline
+        }
+        // New requirement: thruster must be silent at 0% speed
+        if (s <= 0.0001) {
+          baseVol = 0.0;
         }
         let rate = baseRate;
         // Apply transient onset if present

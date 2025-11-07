@@ -178,8 +178,9 @@ export class ParticleEffectsService {
 
       const particle: ParticleEffect = {
         position: worldPos,
-        // Aumentar tamaño base y escala con intensidad para que se noten más grandes
-        size: 0.12 + intensity * 0.18,
+        // Tamaño ligeramente reducido en el máximo para un look menos invasivo
+        // Antes: 0.12 + intensity * 0.18 (máx ≈ 0.30). Ahora reducimos el factor de escala.
+        size: 0.12 + intensity * 0.12,
         intensity: intensity,
         color: this.getThrusterColor(intensity, Math.random()),
         life: 1.0 // Vida completa al nacer
