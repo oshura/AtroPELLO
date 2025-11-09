@@ -4,6 +4,7 @@
  */
 
 import { Injectable } from '@angular/core';
+import { LoggingService, LogCategory } from '../../../services/logging.service';
 import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
 import { ITargetable } from '../../types/targeting.types';
@@ -110,7 +111,7 @@ export class OutlineRenderer {
   // Optional distance origin provider (e.g., ship center). When not set, falls back to camera position.
   private distanceOriginProvider: (() => { x: number; y: number; z: number }) | null = null;
 
-  constructor(private webglService: WebGLService) {
+  constructor(private webglService: WebGLService, private logger: LoggingService) {
     this.setupPresetConfigs();
   }
 
@@ -131,7 +132,7 @@ export class OutlineRenderer {
       this.shaderManager = shaderManager;
 
       if (!this.gl || !this.shaderManager) {
-        console.error('❌ OutlineRenderer: WebGL context o ShaderManager no disponible');
+        this.logger.error(LogCategory.TARGETING, 'OutlineRenderer: WebGL context o ShaderManager no disponible');
         return false;
       }
 
@@ -170,11 +171,11 @@ export class OutlineRenderer {
   // Crear pipeline para billboards en el mundo (texto 2D sobre quad)
   this.setupWorldBillboardPipeline();
 
-      console.log('🟡 OutlineRenderer inicializado correctamente');
+      this.logger.info(LogCategory.TARGETING, 'OutlineRenderer inicializado correctamente');
       return true;
 
     } catch (error) {
-      console.error('❌ Error inicializando OutlineRenderer:', error);
+      this.logger.error(LogCategory.TARGETING, 'Error inicializando OutlineRenderer', error);
       return false;
     }
   }
@@ -195,7 +196,7 @@ export class OutlineRenderer {
     };
 
     this.activeOutlines.set(target.id, outlineTarget);
-    console.log(`🟡 Outline+ add id=${target.id} type=${type}`, outlineTarget.config);
+    this.logger.debug(LogCategory.TARGETING, 'Outline add', { id: target.id, type, config: outlineTarget.config });
   }
 
   /**
@@ -203,7 +204,7 @@ export class OutlineRenderer {
    */
   public removeOutline(targetId: string): void {
     if (this.activeOutlines.delete(targetId)) {
-      console.log(`🟡 Outline removido para target ${targetId}`);
+      this.logger.debug(LogCategory.TARGETING, 'Outline removed', { id: targetId });
     }
   }
 
@@ -250,7 +251,7 @@ export class OutlineRenderer {
       this.lastTargets = targets.slice();
       this.renderWorldBillboards(viewMatrix, projectionMatrix, targets);
     } catch (error) {
-      console.error('❌ Error renderizando billboards:', error);
+      this.logger.error(LogCategory.TARGETING, 'Error renderizando billboards', error);
     } finally {
       // Restaurar estado
       this.gl.viewport(originalViewport[0], originalViewport[1], originalViewport[2], originalViewport[3]);
@@ -431,7 +432,7 @@ export class OutlineRenderer {
 
     // Verificar completeness
     if (this.gl.checkFramebufferStatus(this.gl.FRAMEBUFFER) !== this.gl.FRAMEBUFFER_COMPLETE) {
-      console.error('❌ Framebuffer incompleto');
+      this.logger.error(LogCategory.TARGETING, 'Framebuffer incompleto');
     }
 
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
@@ -1140,13 +1141,13 @@ export class OutlineRenderer {
     if (!this.gl) return null;
     const vs = this.gl.createShader(this.gl.VERTEX_SHADER)!;
     this.gl.shaderSource(vs, vsSrc); this.gl.compileShader(vs);
-    if (!this.gl.getShaderParameter(vs, this.gl.COMPILE_STATUS)) { console.error(this.gl.getShaderInfoLog(vs)); return null; }
+  if (!this.gl.getShaderParameter(vs, this.gl.COMPILE_STATUS)) { this.logger.error(LogCategory.SHADERS, 'Shader VS compile failed', this.gl.getShaderInfoLog(vs)); return null; }
     const fs = this.gl.createShader(this.gl.FRAGMENT_SHADER)!;
     this.gl.shaderSource(fs, fsSrc); this.gl.compileShader(fs);
-    if (!this.gl.getShaderParameter(fs, this.gl.COMPILE_STATUS)) { console.error(this.gl.getShaderInfoLog(fs)); return null; }
+  if (!this.gl.getShaderParameter(fs, this.gl.COMPILE_STATUS)) { this.logger.error(LogCategory.SHADERS, 'Shader FS compile failed', this.gl.getShaderInfoLog(fs)); return null; }
     const prog = this.gl.createProgram()!;
     this.gl.attachShader(prog, vs); this.gl.attachShader(prog, fs); this.gl.linkProgram(prog);
-    if (!this.gl.getProgramParameter(prog, this.gl.LINK_STATUS)) { console.error(this.gl.getProgramInfoLog(prog)); return null; }
+  if (!this.gl.getProgramParameter(prog, this.gl.LINK_STATUS)) { this.logger.error(LogCategory.SHADERS, 'Program link failed', this.gl.getProgramInfoLog(prog)); return null; }
     return prog;
   }
 
@@ -1190,7 +1191,7 @@ export class OutlineRenderer {
     this.gl.drawBuffers([this.gl.COLOR_ATTACHMENT0]);
     const status = this.gl.checkFramebufferStatus(this.gl.FRAMEBUFFER);
     if (status !== this.gl.FRAMEBUFFER_COMPLETE) {
-      console.error('❌ Framebuffer incompleto tras resize:', status);
+      this.logger.error(LogCategory.TARGETING, 'Framebuffer incompleto tras resize', { status });
     }
     this.gl.bindFramebuffer(this.gl.FRAMEBUFFER, null);
   }
@@ -1340,7 +1341,7 @@ export class OutlineRenderer {
     this.gl.linkProgram(program);
 
     if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
-      console.error('❌ Error enlazando shader program:', this.gl.getProgramInfoLog(program));
+      this.logger.error(LogCategory.SHADERS, 'Error enlazando shader program', this.gl.getProgramInfoLog(program));
       return null;
     }
 
@@ -1360,7 +1361,7 @@ export class OutlineRenderer {
     this.gl.compileShader(shader);
 
     if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-      console.error('❌ Error compilando shader:', this.gl.getShaderInfoLog(shader));
+      this.logger.error(LogCategory.SHADERS, 'Error compilando shader', this.gl.getShaderInfoLog(shader));
       return null;
     }
 

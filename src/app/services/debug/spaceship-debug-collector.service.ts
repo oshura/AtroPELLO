@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { DebugOverlayService, SpaceshipDebugData } from './debug-overlay.service';
+import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 import { GameEngine } from '../../game/GameEngine';
 
 /**
@@ -19,7 +20,7 @@ export class SpaceshipDebugCollector {
     hit?: { distance?: number; radiusPx: number; screenPosition?: { x: number; y: number } | null } | null;
   };
 
-  constructor(private debugOverlay: DebugOverlayService) {}
+  constructor(private debugOverlay: DebugOverlayService, private logger: LoggingService) {}
 
   /**
    * Inicializa la recopilación de datos
@@ -44,7 +45,7 @@ export class SpaceshipDebugCollector {
       this.collectAndUpdateData();
     }, intervalMs);
 
-    console.log(`🎯 Debug data collection started at ${updateFrequency} FPS`);
+  this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Debug data collection started', { fps: updateFrequency });
   }
 
   /**
@@ -56,7 +57,7 @@ export class SpaceshipDebugCollector {
       this.updateInterval = null;
     }
     this.isActive = false;
-    console.log('⏹️ Debug data collection stopped');
+  this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Debug data collection stopped');
   }
 
   /**
@@ -76,7 +77,7 @@ export class SpaceshipDebugCollector {
         this.debugOverlay.updateData(spaceshipData);
       }
     } catch (error) {
-      console.error('Error collecting spaceship debug data:', error);
+  this.logger.log(LogLevel.ERROR, LogCategory.DEBUG, 'Error collecting spaceship debug data', error);
     }
   }
 
@@ -150,7 +151,7 @@ export class SpaceshipDebugCollector {
       const engineAny = this.gameEngine as any;
       return engineAny.spaceship || null;
     } catch (error) {
-      console.warn('Could not access spaceship from GameEngine:', error);
+  this.logger.log(LogLevel.WARN, LogCategory.DEBUG, 'Could not access spaceship from GameEngine', error);
       return null;
     }
   }
@@ -193,7 +194,7 @@ export class SpaceshipDebugCollector {
         zoomDistance: Math.round(zoomDistance * 100) / 100 // Redondear a 2 decimales
       };
     } catch (error) {
-      console.warn('Could not access camera info from GameEngine:', error);
+  this.logger.log(LogLevel.WARN, LogCategory.DEBUG, 'Could not access camera info from GameEngine', error);
       return { mode: 'Error', modeName: 'Error accessing camera', zoomDistance: 0 };
     }
   }
@@ -261,6 +262,6 @@ export class SpaceshipDebugCollector {
     this.stopDataCollection();
     this.debugOverlay.cleanup();
     this.gameEngine = null;
-    console.log('🧹 Spaceship debug collector cleaned up');
+    this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Spaceship debug collector cleaned up');
   }
 }

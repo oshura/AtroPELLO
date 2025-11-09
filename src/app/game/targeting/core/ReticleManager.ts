@@ -4,6 +4,7 @@
  */
 
 import { Injectable } from '@angular/core';
+import { LoggingService, LogCategory } from '../../../services/logging.service';
 import { 
   ReticleState, 
   ReticleSystemState, 
@@ -85,7 +86,8 @@ export class ReticleManager {
     private webglService: WebGLService,
     private debugCollector: SpaceshipDebugCollector,
     workerService: TargetingWorkerService,
-    private relationService: RelationService
+    private relationService: RelationService,
+    private logger: LoggingService
   ) {
     this.targetDetector = targetDetector;
     this.inputHandler = inputHandler;
@@ -140,7 +142,7 @@ export class ReticleManager {
       try {
         const canvas = this.webglService.getCanvas();
         if (!canvas) {
-          console.error('❌ ReticleManager: Canvas no disponible');
+          this.logger.error(LogCategory.TARGETING, 'ReticleManager: Canvas no disponible');
           resolve(false);
           return;
         }
@@ -158,7 +160,7 @@ export class ReticleManager {
         // Inicializar renderizador de retícula
         const rendererInit = this.reticleRenderer.initialize(shaderManager);
         if (!rendererInit) {
-          console.error('❌ ReticleManager: Error inicializando ReticleRenderer');
+          this.logger.error(LogCategory.TARGETING, 'ReticleManager: Error inicializando ReticleRenderer');
           resolve(false);
           return;
         }
@@ -166,7 +168,7 @@ export class ReticleManager {
         // Inicializar outline renderer
         const outlineInit = this.outlineRenderer.initialize(shaderManager);
         if (!outlineInit) {
-          console.error('❌ ReticleManager: Error inicializando OutlineRenderer');
+          this.logger.error(LogCategory.TARGETING, 'ReticleManager: Error inicializando OutlineRenderer');
           resolve(false);
           return;
         }
@@ -176,11 +178,10 @@ export class ReticleManager {
     this.workerService.init();
         this.lastUpdateTime = performance.now();
 
-        console.log('🎯 ReticleManager inicializado correctamente con renderizador');
-        console.log('🎯 Estado inicial:', this.state);
+        this.logger.info(LogCategory.TARGETING, 'ReticleManager inicializado', { state: this.state });
         resolve(true);
       } catch (error) {
-        console.error('❌ Error inicializando ReticleManager:', error);
+        this.logger.error(LogCategory.TARGETING, 'Error inicializando ReticleManager', error);
         resolve(false);
       }
     });
@@ -227,16 +228,27 @@ export class ReticleManager {
     // Solo mantenemos retícula dinámica y consumimos clicks para evitar errores
     // ========================================
     
-    // Consumir clicks para que no se acumulen (pero no hacer nada)
-    if (this.inputHandler.consumeClick()) {
-      console.log('🎯 Click detectado - targeting system disabled during refactoring');
+    // Consumir clicks solo si NO hay panel de mapa activo para evitar que el click del mapa provoque deselección.
+    // Nota: el motor principal (GameEngine) maneja selección adaptativa cuando el mapa está abierto.
+    let mapOpen = false;
+    try {
+      const w: any = (globalThis as any);
+      mapOpen = !!(w?.GameEngineInstance?.systemPanel?.isEnabled?.());
+    } catch {}
+    if (!mapOpen && this.inputHandler.consumeClick()) {
+      this.logger.debug(LogCategory.TARGETING, 'Click detectado (legacy reticle)');
     }
-    
-    // Limpiar targets existentes si los hay
-    if (this.state.currentTarget || this.state.hoveredTarget) {
-      this.state.currentTarget = null;
-      this.state.hoveredTarget = null;
-      console.log('🧹 Targets limpiados - sistema deshabilitado');
+
+    // Evitar limpiar la selección si el mapa está abierto y la selección proviene de AdaptiveTargeting.
+    if (!mapOpen) {
+      if (this.state.currentTarget || this.state.hoveredTarget) {
+        this.state.currentTarget = null;
+        this.state.hoveredTarget = null;
+        // Log reducido para no llenar consola
+        if (Math.random() < 0.05) {
+          this.logger.debug(LogCategory.TARGETING, 'Targets limpiados (legacy reticle)');
+        }
+      }
     }
 
     // HUD hover info is handled by HUDManager texture, not here.
@@ -335,7 +347,7 @@ export class ReticleManager {
       return;
     }
     this.lastDetectTime = now;
-    // console.log('🔍 updateTargetDetection() - throttled - mousePos:', this.state.mousePosition);
+  // Throttled detection; debug logging via LoggingService if needed
     // Radio de detección inversamente proporcional al tamaño de la retícula
     // Objetivo UX: cuando la retícula es pequeña (mouse quieto), el radio de acierto es grande.
     // Cuando la retícula es grande (mouse rápido), el radio se reduce.
@@ -425,7 +437,7 @@ export class ReticleManager {
         }
       }
     } catch (e) {
-      console.warn('⚠️ Worker detect failed, ignoring this cycle:', e);
+      this.logger.warn(LogCategory.TARGETING, 'Worker detect failed; ignoring cycle', e);
     }
     // If worker is ready but we didn't accept a result this cycle, avoid conflicting fallback to reduce jitter
     if (this.workerService.ready()) {
@@ -588,11 +600,11 @@ export class ReticleManager {
       const currentFPS = this.frameTimings.length > 0 ? 
         Math.round(1000 / (this.frameTimings.reduce((sum, dt) => sum + dt, 0) / this.frameTimings.length)) : 0;
       const throttle = this.calculateAdaptiveThrottle();
-      console.log('� Targeting Status:', {
+      this.logger.debug(LogCategory.TARGETING, 'Targeting status', {
         FPS: currentFPS,
-        throttle: throttle + 'ms',
+        throttleMs: throttle,
         mouseVelocity: Math.round(this.mouseVelocity),
-        reticleOpenness: Math.round(this.reticleOpenness * 100) + '%',
+        reticleOpennessPct: Math.round(this.reticleOpenness * 100),
         stabilityFrames: this.targetStabilityFrames
       });
     }
@@ -837,7 +849,7 @@ export class ReticleManager {
    * [DISABLED] - No hace nada durante refactoring
    */
   public selectTarget(target: ITargetable | null): void {
-    console.log('🎯 selectTarget llamado pero sistema deshabilitado:', target?.getDisplayName());
+    this.logger.trace(LogCategory.TARGETING, 'selectTarget (disabled)', { name: target?.getDisplayName() });
     // Sistema deshabilitado
   }
 
@@ -907,7 +919,6 @@ export class ReticleManager {
     this.inputHandler.destroy();
     this.reticleRenderer.dispose();
     this.isInitialized = false;
-    
-  // Quiet destroy logs
+    this.logger.info(LogCategory.TARGETING, 'ReticleManager destroyed');
   }
 }

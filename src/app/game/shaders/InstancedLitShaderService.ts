@@ -1,4 +1,6 @@
 import { WebGLService } from '../../services/webgl.service';
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
 
 /**
  * Service that owns the instanced-lit shader program and its locations.
@@ -26,7 +28,7 @@ export class InstancedLitShaderService {
     this.gl.attachShader(prog, fs);
     this.gl.linkProgram(prog);
     if (!this.gl.getProgramParameter(prog, this.gl.LINK_STATUS)) {
-      console.error('❌ InstancedLitShaderService link error:', this.gl.getProgramInfoLog(prog));
+      try { GameLogger.error(LogCategory.SHADERS, 'InstancedLitShaderService link error', { info: this.gl.getProgramInfoLog(prog) }); } catch {}
       this.gl.deleteProgram(prog);
       return;
     }
@@ -91,7 +93,7 @@ export class InstancedLitShaderService {
     this.gl.shaderSource(shader, source);
     this.gl.compileShader(shader);
     if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-      console.error('❌ InstancedLitShaderService compile error:', this.gl.getShaderInfoLog(shader));
+      try { GameLogger.error(LogCategory.SHADERS, 'InstancedLitShaderService compile error', { info: this.gl.getShaderInfoLog(shader) }); } catch {}
       this.gl.deleteShader(shader);
       return null;
     }

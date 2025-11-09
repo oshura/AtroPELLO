@@ -1,4 +1,6 @@
 import { Vector3 } from '../../types/game.types';
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
 
 /**
  * BillboardRenderer: renders camera-facing quads in world space with a texture.
@@ -33,7 +35,7 @@ export class BillboardRenderer {
     const fs = gl.createShader(gl.FRAGMENT_SHADER)!; gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
     const prog = gl.createProgram()!; gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      console.error('BillboardRenderer shader link error', gl.getProgramInfoLog(prog));
+      try { GameLogger.error(LogCategory.SHADERS, 'BillboardRenderer shader link error', { info: gl.getProgramInfoLog(prog) }); } catch {}
     }
     gl.deleteShader(vs); gl.deleteShader(fs);
     this.program = prog;

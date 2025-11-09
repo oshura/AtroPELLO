@@ -4,7 +4,10 @@ import { GameEngine } from '../../GameEngine';
 import { CameraMode } from '../../Camera';
 import { SolarSystemSerializer } from '../game/solar-system-serializer';
 import { SystemGeneratorService } from '../game/system-generator.service';
+import { SolarSystemService } from '../game/solar-system.service';
 import { Portal } from '../../Portal';
+import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
+import { GameLogger } from '../../utils/GameLogger';
 
 // Phases enumerated according to design doc (future phases stubbed)
 enum GateRitePhase {
@@ -97,7 +100,7 @@ export class GateRiteAnimation implements GameAnimation {
           centerSpeedFactor: c.centerSpeedFactor || 0.5,
         })) || []
       });
-    } catch (e) { console.warn('GateRite snapshot failed', e); }
+  } catch (e) { try { GameLogger.warn(LogCategory.ANIMATION, 'GateRite snapshot failed', e); } catch {} }
   }
 
   private enterCameraZoomOut(engine: GameEngine) {
@@ -290,7 +293,11 @@ export class GateRiteAnimation implements GameAnimation {
     // Create portal instance at former planet position
     try {
       const pos = (this.targetPlanet as any)?.position ? { ...(this.targetPlanet as any).position } : { x:0,y:0,z:0 };
-      const portal = new Portal('portal-gaterite', pos, 120);
+      const baseR = (this as any).collapseStartScale && isFinite((this as any).collapseStartScale)
+        ? (this as any).collapseStartScale
+        : (((this.targetPlanet as any)?.scale?.x) || 120);
+      const logger: LoggingService | undefined = (engine as any)?.logger as LoggingService | undefined;
+      const portal = new Portal('portal-gaterite', pos, Math.max(60, Number(baseR)), logger);
       this.portalInstance = portal;
       const gl = (engine as any).gl;
       if (gl && !portal.vertexBuffer) portal.initBuffers(gl);
@@ -298,7 +305,10 @@ export class GateRiteAnimation implements GameAnimation {
       const portalsArr = (engine as any)['portals'];
       if (Array.isArray(portalsArr)) portalsArr.push(portal);
       (engine as any)['targetCatalog']?.add?.(TargetType.PORTAL, portal);
-    } catch (e) { console.warn('Portal manifest failed', e); }
+      try { logger?.log(LogLevel.INFO, LogCategory.PORTAL, 'Portal manifest created', { id: portal.id, radius: portal.radius, pos }); } catch {}
+    } catch (e) {
+      try { ((engine as any)?.logger as LoggingService | undefined)?.log(LogLevel.ERROR, LogCategory.PORTAL, 'Portal manifest failed', e); } catch {}
+    }
     try { (engine as any).showPlaceholderText?.('Gate Rite: Portal', 1000); } catch {}
   }
 
@@ -309,22 +319,6 @@ export class GateRiteAnimation implements GameAnimation {
       const s = 0.1 + k * 0.9; // scale up from tiny to full
       this.portalInstance.scale.x = this.portalInstance.scale.y = this.portalInstance.scale.z = this.portalInstance.radius * s;
       (this.portalInstance as any).renderOpacity = Math.min(1, k * 1.2);
-      // Eye direction refinement: occasionally point towards a random existing target
-      try {
-        if (Math.random() < 0.02) { // light chance per frame to pick a real target instead of random angle
-          const tc = (engine as any)['targetCatalog'];
-          const all = tc?.getAllTargets?.() || [];
-          const pick = all.filter((t:any)=>t.id!==this.portalInstance!.id);
-          if (pick.length) {
-            const chosen = pick[Math.floor(Math.random()*pick.length)];
-            const dx = chosen.position.x - this.portalInstance.position.x;
-            const dy = chosen.position.y - this.portalInstance.position.y;
-            const len = Math.hypot(dx, dy) || 1;
-            this.portalInstance.eyeDir.x = dx/len;
-            this.portalInstance.eyeDir.y = dy/len;
-          }
-        }
-      } catch {}
       // Camera orbit: move camera around portal at 45° lateral and +15° pitch over full manifest duration
       try {
         const cam: any = (engine as any).camera;
@@ -391,7 +385,34 @@ export class GateRiteAnimation implements GameAnimation {
       }
     }
     if (this.transitElapsed >= this.transitDuration) {
-      // Generate new system (placeholder: just mark done and proceed)
+      // Generate and apply a new system snapshot, adding a paired destination portal
+      try {
+        const solarSvc: SolarSystemService | undefined = (engine as any)['solarSystemService'];
+        const originPortal = this.portalInstance ? {
+          id: this.portalInstance.id,
+          position: { ...this.portalInstance.position },
+          radius: this.portalInstance.radius,
+          linkedPortalId: undefined,
+          eyeState: { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
+        } : null;
+        let snapshot: any = null; // SolarSystemSnapshot
+        if (solarSvc && originPortal) {
+          snapshot = solarSvc.generateWithLinkedPortal(originPortal);
+        } else if (this.generator) {
+          snapshot = this.generator.generate(Date.now());
+        }
+        if (snapshot && (engine as any).applySolarSystemSnapshot) {
+          // If we generated with linked portal, update origin portal's link to the new portal id
+          try {
+            const dest = (snapshot.portals && snapshot.portals.length) ? snapshot.portals[snapshot.portals.length - 1] : null;
+            if (dest && this.portalInstance) {
+              this.portalInstance.linkedPortalId = dest.id;
+            }
+          } catch {}
+          (engine as any).applySolarSystemSnapshot(snapshot);
+          try { GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite transit applied new system', { id: snapshot.id }); } catch {}
+        }
+      } catch (e) { try { GameLogger.warn(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite transit apply failed', e); } catch {} }
       this.enterPlasmaBall(engine);
     }
   }

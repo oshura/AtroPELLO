@@ -3,6 +3,8 @@
  * Utiliza Canvas 2D para dibujar y WebGL para renderizar
  * FASE 3: Sistema de texturas dinámicas
  */
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
 export class HUDTexture {
   private gl: WebGL2RenderingContext;
   private canvas: HTMLCanvasElement;
@@ -19,7 +21,7 @@ export class HUDTexture {
     // Crear textura WebGL
     this.webglTexture = this.createWebGLTexture();
     
-    console.log('🎨 HUDTexture inicializada:', { width, height });
+    GameLogger.info(LogCategory.HUD, 'HUDTexture initialized', { width, height });
   }
 
   /**
@@ -59,19 +61,19 @@ export class HUDTexture {
    * Actualiza la textura WebGL con el contenido actual del canvas
    */
   public updateTexture(): void {
-    console.log('📸 Actualizando textura WebGL desde Canvas...');
+    GameLogger.trace(LogCategory.HUD, 'Updating HUDTexture from canvas');
     
     // Verificar que el canvas tiene contenido
     const ctx = this.canvas.getContext('2d')!;
     const testData = ctx.getImageData(0, 0, 1, 1);
-    console.log('🎨 Canvas pixel test:', [testData.data[0], testData.data[1], testData.data[2], testData.data[3]]);
+  if (Math.random() < 0.05) GameLogger.trace(LogCategory.HUD, 'Canvas pixel test', [testData.data[0], testData.data[1], testData.data[2], testData.data[3]]);
     
     // Enlazar textura y actualizar
     this.gl.bindTexture(this.gl.TEXTURE_2D, this.webglTexture);
     
     // Verificar que la textura está enlazada
     const boundTexture = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
-    console.log('🔗 Textura enlazada para actualización:', {
+    GameLogger.debug(LogCategory.HUD, 'Texture bound for update', {
       expected: this.webglTexture,
       actual: boundTexture,
       matches: boundTexture === this.webglTexture
@@ -95,9 +97,9 @@ export class HUDTexture {
     // Verificar errores
     const error = this.gl.getError();
     if (error !== this.gl.NO_ERROR) {
-      console.error('❌ Error al actualizar textura:', error);
+  GameLogger.error(LogCategory.TEXTURE, 'HUDTexture update error', { error });
     } else {
-      console.log('✅ Textura WebGL actualizada correctamente');
+      if (Math.random() < 0.2) GameLogger.debug(LogCategory.TEXTURE, 'HUDTexture updated');
     }
   }
 
@@ -146,7 +148,7 @@ export class HUDTexture {
       null
     );
     
-    console.log('📐 HUDTexture redimensionada:', { width, height });
+    GameLogger.info(LogCategory.TEXTURE, 'HUDTexture resized', { width, height });
   }
 
   /**

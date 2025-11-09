@@ -1,4 +1,4 @@
-import { SolarSystemSnapshot, PlanetSnapshot, SunSnapshot, ClusterSnapshot } from '../../types/solar-system.types';
+import { SolarSystemSnapshot, PlanetSnapshot, SunSnapshot, ClusterSnapshot, PlanetDebrisSnapshot } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
 
 function vec(x:number,y:number,z:number): Vector3 { return { x,y,z }; }
@@ -36,6 +36,7 @@ export class SolarSystemSerializer {
       radius?: number;
       centerSpeedFactor?: number;
     }>;
+    planetDebris?: Array<{ id: string; planetId: string; localOffset: Vector3; size?: number; type?: string }>;
   }): SolarSystemSnapshot {
     const sun: SunSnapshot = state.sun ? {
       id: state.sun.id,
@@ -73,6 +74,14 @@ export class SolarSystemSerializer {
       centerSpeedFactor: c.centerSpeedFactor,
     }));
 
-    return { id: `snapshot-${Date.now()}`, timestamp: Date.now(), sun, planets, clusters };
+    const planetDebris: PlanetDebrisSnapshot[] = (state.planetDebris || []).map(d => ({
+      id: d.id,
+      planetId: d.planetId,
+      localOffset: { ...d.localOffset },
+      size: d.size,
+      type: d.type,
+    }));
+
+    return { id: `snapshot-${Date.now()}`, timestamp: Date.now(), sun, planets, clusters, planetDebris };
   }
 }

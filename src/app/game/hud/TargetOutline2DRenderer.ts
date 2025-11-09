@@ -1,5 +1,7 @@
 import { Injectable } from '@angular/core';
 import { WebGLService } from '../../services/webgl.service';
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
 
 interface OutlineRenderData {
   x: number; // screen px (framebuffer pixels)
@@ -168,14 +170,14 @@ export class TargetOutline2DRenderer {
     gl.shaderSource(vs, vsSrc);
     gl.compileShader(vs);
     if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) {
-      console.error('VS error', gl.getShaderInfoLog(vs));
+      try { GameLogger.error(LogCategory.SHADERS, 'TargetOutline2DRenderer VS compile error', { info: gl.getShaderInfoLog(vs) }); } catch {}
       return null;
     }
     const fs = gl.createShader(gl.FRAGMENT_SHADER)!;
     gl.shaderSource(fs, fsSrc);
     gl.compileShader(fs);
     if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) {
-      console.error('FS error', gl.getShaderInfoLog(fs));
+      try { GameLogger.error(LogCategory.SHADERS, 'TargetOutline2DRenderer FS compile error', { info: gl.getShaderInfoLog(fs) }); } catch {}
       return null;
     }
     const p = gl.createProgram()!;
@@ -186,7 +188,7 @@ export class TargetOutline2DRenderer {
     }
     gl.linkProgram(p);
     if (!gl.getProgramParameter(p, gl.LINK_STATUS)) {
-      console.error('Program link error', gl.getProgramInfoLog(p));
+      try { GameLogger.error(LogCategory.SHADERS, 'TargetOutline2DRenderer program link error', { info: gl.getProgramInfoLog(p) }); } catch {}
       return null;
     }
     gl.deleteShader(vs);

@@ -12,6 +12,10 @@ import { RelationService } from '../relation.service';
 import { AnimationManagerService } from '../../game/services/animations/animation-manager.service';
 import { AudioEngineService } from '../audio/audio-engine.service';
 import { MusicDirectorService } from '../audio/music-director.service';
+import { LoggingService, LogCategory, LogLevel } from '../logging.service';
+import { SolarSystemService } from '../../game/services/game/solar-system.service';
+import { HumanSolarSystemService } from '../../game/services/game/human-solar-system.service';
+import { PortalPersistenceService } from '../../game/services/game/portal-persistence.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -48,7 +52,8 @@ export class GameInitializer {
     private webglService: WebGLService,
     private particleEffectsService: ParticleEffectsService,
     private injector: Injector,
-    @Inject(PLATFORM_ID) private platformId: Object
+    @Inject(PLATFORM_ID) private platformId: Object,
+    private logger: LoggingService
   ) {}
 
   /**
@@ -62,7 +67,7 @@ export class GameInitializer {
     try {
       // Verificar que estamos en el navegador
       if (!isPlatformBrowser(this.platformId)) {
-        console.log('⚠️ Game initialization skipped - not in browser');
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_INITIALIZATION, 'Game initialization skipped - not in browser');
         return {
           success: false,
           error: 'SSR environment - game initialization skipped'
@@ -97,6 +102,9 @@ export class GameInitializer {
     const adaptiveTargeting = this.injector.get(AdaptiveTargetingIntegrator);
     const audioEngine = this.injector.get(AudioEngineService);
     const musicDirector = this.injector.get(MusicDirectorService);
+    const solarSystemService = this.injector.get(SolarSystemService);
+  const humanSolarSystemService = this.injector.get(HumanSolarSystemService);
+  const portalPersistenceService = this.injector.get(PortalPersistenceService);
     this.gameEngine = new GameEngine(
       this.webglService,
       this.particleEffectsService,
@@ -107,6 +115,10 @@ export class GameInitializer {
       asteroidClusterService,
       relationService,
       animationManager,
+      this.logger,
+      solarSystemService,
+      humanSolarSystemService,
+      portalPersistenceService,
       audioEngine,
       musicDirector
     );
@@ -171,7 +183,7 @@ export class GameInitializer {
       this.canvas.setAttribute('tabindex', '0');
     }
 
-    console.log(`Canvas configured: ${this.canvas.width}x${this.canvas.height}`);
+    this.logger.log(LogLevel.INFO, LogCategory.RENDER, 'Canvas configured', { width: this.canvas.width, height: this.canvas.height });
   }
 
   /**
@@ -256,7 +268,7 @@ export class GameInitializer {
         gl.viewport(0, 0, displayWidth, displayHeight);
       }
 
-      console.log(`Canvas resized to: ${displayWidth}x${displayHeight}`);
+      this.logger.log(LogLevel.INFO, LogCategory.RENDER, 'Canvas resized', { width: displayWidth, height: displayHeight });
     }
   }
 

@@ -11,6 +11,7 @@ import { Camera } from '../../Camera';
 import { ShaderManager } from '../../ShaderManager';
 import { mat4 } from 'gl-matrix';
 import { AdaptiveTargetingSystem, TargetDisplayInfo, DistanceCategory } from './AdaptiveTargetingSystem';
+import { LoggingService, LogCategory } from '../../../services/logging.service';
 import { ReticleSystemState, ScreenPosition } from '../types/reticle.types';
 
 @Injectable({
@@ -39,7 +40,7 @@ export class AdaptiveTargetingIntegrator {
   private cycleReuseMs = 750; // reuse candidate list within this time window
   private cycleMoveTolerancePx = 6; // mouse move threshold to invalidate cache
   
-  constructor(adaptiveSystem: AdaptiveTargetingSystem) {
+  constructor(adaptiveSystem: AdaptiveTargetingSystem, private logger: LoggingService) {
     this.adaptiveSystem = adaptiveSystem;
   }
 
@@ -52,14 +53,14 @@ export class AdaptiveTargetingIntegrator {
       try {
         this.adaptiveSystem.initialize(camera);
         this.isInitialized = true;
-        console.log('🎯 AdaptiveTargetingIntegrator initialized successfully', {
+        this.logger.info(LogCategory.TARGETING, 'AdaptiveTargetingIntegrator initialized', {
           camera: !!camera,
           adaptiveSystem: !!this.adaptiveSystem,
-          timestamp: new Date().toLocaleTimeString()
+          timestamp: new Date().toISOString()
         });
         resolve(true);
       } catch (error) {
-        console.error('❌ Error initializing AdaptiveTargetingIntegrator:', error);
+        this.logger.error(LogCategory.TARGETING, 'Error initializing AdaptiveTargetingIntegrator', error);
         resolve(false);
       }
     });
@@ -77,17 +78,17 @@ export class AdaptiveTargetingIntegrator {
     if (!this.isInitialized) {
       // Log occasionally if not initialized
       if (Math.random() < 0.01) {
-        console.warn('⚠️ AdaptiveTargetingIntegrator.update() called but not initialized');
+        this.logger.warn(LogCategory.TARGETING, 'update() called but not initialized');
       }
       return;
     }
     
     // Debug log occasionally to verify integration
     if (Math.random() < 0.001) { // 0.1% chance
-      console.log('🔄 AdaptiveTargetingIntegrator.update() called:', {
-        deltaTime: Math.round(deltaTime * 1000) + 'ms',
+      this.logger.debug(LogCategory.TARGETING, 'update() tick', {
+        deltaTimeMs: Math.round(deltaTime * 1000),
         targets: availableTargets.length,
-        mousePos: `${Math.round(mousePos.x)},${Math.round(mousePos.y)}`
+        mousePos: { x: Math.round(mousePos.x), y: Math.round(mousePos.y) }
       });
     }
     
@@ -103,12 +104,12 @@ export class AdaptiveTargetingIntegrator {
     
     // Debug info (frequent for testing)
     if (Math.random() < 0.05) { // 5% chance for more frequent testing logs
-      console.log('🎯 Adaptive Targeting:', {
+      this.logger.debug(LogCategory.TARGETING, 'Adaptive targeting snapshot', {
         hovered: result.hoveredTarget?.name || 'none',
         selected: result.selectedTarget?.name || 'none',
         nearby: result.nearbyTargets.length,
         mouseVelocity: Math.round(this.mouseVelocity),
-        mousePos: `${Math.round(mousePos.x)},${Math.round(mousePos.y)}`,
+        mousePos: { x: Math.round(mousePos.x), y: Math.round(mousePos.y) },
         initialized: this.isInitialized
       });
     }
@@ -120,10 +121,14 @@ export class AdaptiveTargetingIntegrator {
     const hoveredInfo = this.adaptiveSystem.getCurrentHovered();
     if (hoveredInfo) {
       this.adaptiveSystem.selectTarget(hoveredInfo.target);
-      console.log('🎯 Target selected:', hoveredInfo.name, `[${hoveredInfo.category}]`, `${Math.round(hoveredInfo.distanceToCenter)}u`);
+      this.logger.info(LogCategory.TARGETING, 'Target selected', {
+        name: hoveredInfo.name,
+        category: hoveredInfo.category?.name ?? 'unknown',
+        distance: Math.round(hoveredInfo.distanceToCenter)
+      });
     } else {
       this.adaptiveSystem.selectTarget(null);
-      console.log('🎯 Target deselected');
+      this.logger.info(LogCategory.TARGETING, 'Target deselected');
     }
   }
 
@@ -136,22 +141,29 @@ export class AdaptiveTargetingIntegrator {
    */
   public showDetectionStats(): void {
     if (!this.isInitialized) {
-      console.log('❌ Sistema no inicializado');
+      this.logger.warn(LogCategory.TARGETING, 'Sistema no inicializado');
       return;
     }
 
     const categories = this.adaptiveSystem.getTargetsByCategory();
-    console.log('📊 DETECTION STATS - STEP 2 Testing:');
+    this.logger.info(LogCategory.TARGETING, 'Detection stats');
     
     for (const [category, targets] of categories) {
       const distances = targets.map(t => Math.round(t.distanceToCenter));
       const avgDist = distances.length > 0 ? Math.round(distances.reduce((a, b) => a + b, 0) / distances.length) : 0;
-      
-      console.log(`📏 ${category.toUpperCase()}: ${targets.length} targets, avg: ${avgDist}u, range: ${Math.min(...distances)}-${Math.max(...distances)}u`);
-      
-      // Mostrar algunos ejemplos
+      this.logger.debug(LogCategory.TARGETING, 'Category stats', {
+        category,
+        count: targets.length,
+        avg: avgDist,
+        min: Math.min(...distances),
+        max: Math.max(...distances)
+      });
       targets.slice(0, 3).forEach(t => {
-        console.log(`  - ${t.name}: ${Math.round(t.distanceToCenter)}u (edge: ${Math.round(t.distanceToEdge)}u)`);
+        this.logger.trace(LogCategory.TARGETING, 'Example target', {
+          name: t.name,
+          center: Math.round(t.distanceToCenter),
+          edge: Math.round(t.distanceToEdge)
+        });
       });
     }
   }
@@ -160,15 +172,15 @@ export class AdaptiveTargetingIntegrator {
    * STEP 2 Testing: Verifica detección en diferentes rangos
    */
   public testDetectionRanges(): void {
-    console.log('🧪 TESTING Detection Ranges - STEP 2:');
+    this.logger.info(LogCategory.TARGETING, 'Testing detection ranges (STEP 2)');
     this.showDetectionStats();
     
     const hovered = this.adaptiveSystem.getCurrentHovered();
     const selected = this.adaptiveSystem.getCurrentSelected();
-    
-    console.log('🎯 Current State:');
-    console.log('  Hovered:', hovered ? `${hovered.name} [${hovered.category}] ${Math.round(hovered.distanceToCenter)}u` : 'none');
-    console.log('  Selected:', selected ? `${selected.name} [${selected.category}] ${Math.round(selected.distanceToCenter)}u` : 'none');
+    this.logger.debug(LogCategory.TARGETING, 'Current state', {
+      hovered: hovered ? { name: hovered.name, category: hovered.category?.name, d: Math.round(hovered.distanceToCenter) } : null,
+      selected: selected ? { name: selected.name, category: selected.category?.name, d: Math.round(selected.distanceToCenter) } : null
+    });
   }
 
   // ===================================
@@ -184,7 +196,6 @@ export class AdaptiveTargetingIntegrator {
 
   public renderOutlines(viewMatrix: mat4, projectionMatrix: mat4, targets: ITargetable[]): void {
     // Outlines disabled during refactoring - will be re-implemented with new system
-    // console.log('🚫 Outlines disabled during adaptive targeting refactoring');
   }
 
   private renderDynamicReticle(deltaTime: number): void {
@@ -261,12 +272,12 @@ export class AdaptiveTargetingIntegrator {
 
   public updateCanvasSize(width: number, height: number): void {
     // Handle canvas resize if needed
-    console.log('🎯 Canvas resized:', { width, height });
+    this.logger.info(LogCategory.TARGETING, 'Canvas resized', { width, height });
   }
 
   public destroy(): void {
     this.isInitialized = false;
-    console.log('🎯 AdaptiveTargetingIntegrator destroyed');
+    this.logger.info(LogCategory.TARGETING, 'AdaptiveTargetingIntegrator destroyed');
   }
 
   // ===================================
@@ -374,7 +385,11 @@ export class AdaptiveTargetingIntegrator {
     const next = this.cycleCandidates[this.cycleIndex];
     this.adaptiveSystem.selectTarget(next.target);
     if (Math.random() < 0.2) {
-      console.log(`🔁 Cycle ${direction > 0 ? 'next' : 'prev'} ->`, next.name, `[${next.category.name}]`, `${Math.round(next.distanceToCenter)}u`);
+      this.logger.debug(LogCategory.TARGETING, `Cycle ${direction > 0 ? 'next' : 'prev'}`, {
+        name: next.name,
+        category: next.category.name,
+        d: Math.round(next.distanceToCenter)
+      });
     }
   }
 

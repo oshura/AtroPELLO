@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
 
 export interface WorkerSnapshot {
   vp: number[];
@@ -28,6 +29,11 @@ export class TargetingWorkerService {
   private lastResult: { data: WorkerResult; timestamp: number } | null = null;
   private isReady = false;
   private lastSnapshotVersion: number = -1;
+  private logger: LoggingService | null = null; // optional (worker may init early)
+
+  constructor(loggingService: LoggingService) {
+    this.logger = loggingService;
+  }
 
   public init(): void {
     if (this.worker || typeof Worker === 'undefined') return;
@@ -38,8 +44,9 @@ export class TargetingWorkerService {
         this.lastSnapshotVersion = evt.data.targetsVersion;
       };
       this.isReady = true;
+      this.logger?.debug(LogCategory.TARGETING, 'Worker initialized', { ready: this.isReady });
     } catch (e) {
-      console.error('❌ TargetingWorkerService: Failed to create worker', e);
+      this.logger?.error(LogCategory.TARGETING, 'Failed to create targeting worker', e);
       this.worker = null;
       this.isReady = false;
     }
@@ -68,5 +75,6 @@ export class TargetingWorkerService {
     }
     this.lastResult = null;
     this.isReady = false;
+    this.logger?.info(LogCategory.TARGETING, 'Targeting worker disposed');
   }
 }

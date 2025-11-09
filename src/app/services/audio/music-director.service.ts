@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { AudioEngineService, PlayingHandle } from './audio-engine.service';
 import { AudioManifestService } from './audio-manifest.service';
 import { AudioDebugService } from './audio-debug.service';
+import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 
 export type MusicScene = 'menu' | 'exploration' | 'planet_approach' | 'combat' | 'spell_prep' | 'landing' | 'silence';
 
@@ -21,12 +22,12 @@ export class MusicDirectorService {
     silence: []
   };
 
-  constructor(private audio: AudioEngineService, private manifest: AudioManifestService, private debug: AudioDebugService) {}
+  constructor(private audio: AudioEngineService, private manifest: AudioManifestService, private debug: AudioDebugService, private logger: LoggingService) {}
 
   /** Ensure audio context exists and is unlocked before calling */
   public async setScene(scene: MusicScene, fadeMs = 1200): Promise<void> {
     if (scene === this.current.scene) return;
-  try { console.log(`[Music] Scene -> ${scene}`); this.debug.setScene(scene); } catch {}
+    try { this.logger.log(LogLevel.INFO, LogCategory.MUSIC, 'Scene change', { scene }); this.debug.setScene(scene); } catch {}
     const tracks = this.library[scene] || [];
     // Prepare next track
     const def = tracks[0];
@@ -48,7 +49,7 @@ export class MusicDirectorService {
       // Simple linear fade-in
   const targetVol = (def?.volume ?? 0.6);
       const steps = 12; const step = fadeMs / steps; let i = 0;
-  try { console.log(`[Music] Crossfade to '${def?.name}' -> targetVol=${targetVol} over ${fadeMs}ms`); this.debug.setScene(scene, def?.name); } catch {}
+    try { this.logger.log(LogLevel.DEBUG, LogCategory.MUSIC, 'Crossfade', { to: def?.name, targetVol, fadeMs }); this.debug.setScene(scene, def?.name); } catch {}
       const fadeInterval = setInterval(() => {
         if (!nextHandle || !nextHandle.isPlaying()) { clearInterval(fadeInterval); return; }
         const t = Math.min(1, (++i) / steps);

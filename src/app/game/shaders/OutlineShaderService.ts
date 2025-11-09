@@ -1,4 +1,6 @@
 import { WebGLService } from '../../services/webgl.service';
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
 
 export class OutlineShaderService {
   private gl: WebGL2RenderingContext | null = null;
@@ -18,7 +20,7 @@ export class OutlineShaderService {
     this.gl.attachShader(prog, fs);
     this.gl.linkProgram(prog);
     if (!this.gl.getProgramParameter(prog, this.gl.LINK_STATUS)) {
-      console.error('❌ Outline post-process link error:', this.gl.getProgramInfoLog(prog));
+      try { GameLogger.error(LogCategory.SHADERS, 'Outline post-process link error', { info: this.gl.getProgramInfoLog(prog) }); } catch {}
       this.gl.deleteProgram(prog);
       return;
     }
@@ -40,7 +42,7 @@ export class OutlineShaderService {
     this.gl.shaderSource(shader, source);
     this.gl.compileShader(shader);
     if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-      console.error('❌ Outline post-process compile error:', this.gl.getShaderInfoLog(shader));
+      try { GameLogger.error(LogCategory.SHADERS, 'Outline post-process compile error', { info: this.gl.getShaderInfoLog(shader) }); } catch {}
       this.gl.deleteShader(shader);
       return null;
     }

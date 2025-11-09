@@ -11,6 +11,7 @@ import { Camera } from '../../Camera';
 import { mat4, vec4 } from 'gl-matrix';
 import { WebGLService } from '../../../services/webgl.service';
 import { RelationService, Relation } from '../../../services/relation.service';
+import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
 
 // ===================================
 // TYPES & INTERFACES
@@ -151,7 +152,8 @@ export class AdaptiveTargetingSystem {
   
   constructor(
     private webglService: WebGLService,
-    private relationService: RelationService
+    private relationService: RelationService,
+    private logging: LoggingService
   ) {}
 
   // ===================================
@@ -161,7 +163,7 @@ export class AdaptiveTargetingSystem {
   public initialize(camera: Camera): void {
     this.camera = camera;
     this.canvas = this.webglService.getCanvas() || null;
-    console.log('🎯 AdaptiveTargetingSystem v2 initialized');
+  this.logging.debug(LogCategory.TARGETING, 'AdaptiveTargetingSystem v2 initialized');
     // Expose minimal dev hooks for tuning in STEP 3
     try {
       const w = (globalThis as any);
@@ -264,13 +266,17 @@ export class AdaptiveTargetingSystem {
       
       // Debug occasional categorization (1% chance)
       if (Math.random() < 0.01) {
-        console.log('📏 Target categorized:', {
-          name: displayInfo.name,
-          category: category.name,
-          centerDist: Math.round(displayInfo.distanceToCenter),
-          edgeDist: Math.round(displayInfo.distanceToEdge),
-          tolerancePx: Math.round(category.tolerancePx)
-        });
+        this.logging.trace(
+          LogCategory.TARGETING,
+          'Target categorized',
+          {
+            name: displayInfo.name,
+            category: category.name,
+            centerDist: Math.round(displayInfo.distanceToCenter),
+            edgeDist: Math.round(displayInfo.distanceToEdge),
+            tolerancePx: Math.round(category.tolerancePx)
+          }
+        );
       }
     }
 

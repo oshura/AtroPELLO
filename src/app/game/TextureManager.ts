@@ -18,7 +18,8 @@ export class TextureManager {
     const texture = gl.createTexture();
     
     if (!texture) {
-      console.error('❌ Failed to create metallic texture');
+      // Late import to avoid circular deps
+      try { const { GameLogger } = require('./utils/GameLogger'); GameLogger.error('TEXTURE' as any, 'Failed to create metallic texture'); } catch {}
       return null;
     }
 
@@ -61,8 +62,8 @@ export class TextureManager {
     // Generar mipmaps
     gl.generateMipmap(gl.TEXTURE_2D);
 
-    this.textures.set('metallic', texture);
-    console.log('✅ Metallic texture created');
+  this.textures.set('metallic', texture);
+  try { const { GameLogger } = require('./utils/GameLogger'); GameLogger.info('TEXTURE' as any, 'Metallic texture created'); } catch {}
     
     return texture;
   }
@@ -75,7 +76,7 @@ export class TextureManager {
     const texture = gl.createTexture();
     
     if (!texture) {
-      console.error('❌ Failed to create gradient texture');
+      try { const { GameLogger } = require('./utils/GameLogger'); GameLogger.error('TEXTURE' as any, 'Failed to create gradient texture'); } catch {}
       return null;
     }
 
@@ -109,8 +110,8 @@ export class TextureManager {
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.REPEAT);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.REPEAT);
 
-    this.textures.set('gradient', texture);
-    console.log('✅ Gradient texture created');
+  this.textures.set('gradient', texture);
+  try { const { GameLogger } = require('./utils/GameLogger'); GameLogger.info('TEXTURE' as any, 'Gradient texture created'); } catch {}
     
     return texture;
   }
@@ -149,12 +150,12 @@ export class TextureManager {
       this.textures.set(name, texture);
       // Store size metadata for cover rendering
       this.textureSizes.set(name, { width: img.width, height: img.height });
-      console.log(`✅ Loaded texture '${name}' from`, url);
+  try { const { GameLogger } = require('./utils/GameLogger'); GameLogger.info('TEXTURE' as any, 'Texture loaded', { name, url }); } catch {}
       // Restore previous flip state
       try { gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, prevFlip ? 1 : 0); } catch {}
       return texture;
     } catch (e) {
-      console.warn(`⚠️ Failed to load texture '${name}' from ${url}`, e);
+  try { const { GameLogger } = require('./utils/GameLogger'); GameLogger.warn('TEXTURE' as any, 'Failed to load texture', { name, url, error: e }); } catch {}
       // Dejar placeholder blanco simple
       this.textures.set(name, texture);
       return null;

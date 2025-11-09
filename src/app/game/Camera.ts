@@ -1,5 +1,7 @@
 import { Vector3 } from '../types/game.types';
 import { Spaceship } from './Spaceship';
+import { GameLogger } from './utils/GameLogger';
+import { LogCategory } from '../services/logging.service';
 
 export enum CameraMode {
   INMOVILE_EXTERNAL = 0, // Cámara externa inmóvil que rota con la nave (modo por defecto)
@@ -509,7 +511,7 @@ export class Camera {
         break;
     }
     
-    console.log(`🎥 Cambio de cámara: ${CameraMode[previousMode]} → ${CameraMode[mode]}`);
+    GameLogger.info(LogCategory.GAME_LOOP, 'Camera mode changed', { from: CameraMode[previousMode], to: CameraMode[mode] });
   }
 
   /**

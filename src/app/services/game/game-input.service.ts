@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { KeyBindingsService } from '../key-bindings.service';
 import { GameEngine } from '../../game/GameEngine';
+import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 
 export interface KeyState {
   [key: string]: boolean;
@@ -17,7 +18,7 @@ export class GameInputHandler {
   private gameEngine: GameEngine | null = null;
   private inputEnabled: boolean = false;
 
-  constructor(private keyBindings: KeyBindingsService) {
+  constructor(private keyBindings: KeyBindingsService, private logger: LoggingService) {
     this.initializeKeyState();
   }
 
@@ -68,7 +69,10 @@ export class GameInputHandler {
     const composite = event.shiftKey && keyRaw !== 'shift' ? 'shift+' + keyRaw : keyRaw;
     const action = this.keyBindings.findActionForKey(composite);
     // Debug
-    // console.log('🎮 Key pressed:', event.key, 'normalized:', composite, 'action:', action);
+    // Debug trace at low frequency (optional)
+    if (Math.random() < 0.001) {
+      this.logger.log(LogLevel.TRACE, LogCategory.INPUT, 'Key pressed', { raw: event.key, normalized: composite, action });
+    }
 
     if (action === 'target_next') {
       try { (this.gameEngine as any).cycleSelection?.(false); } catch {}

@@ -4,6 +4,7 @@ import { ShaderManager } from '../game/ShaderManager';
 import { Spaceship } from '../game/Spaceship';
 import { Camera } from '../game/Camera';
 import { vec3, quat } from 'gl-matrix';
+import { LoggingService, LogCategory, LogLevel } from './logging.service';
 
 export interface ParticleEffect {
   position: { x: number; y: number; z: number };
@@ -48,7 +49,7 @@ export class ParticleEffectsService {
   private ambientSideY = 60;  // dispersión vertical
   private ambientBaseDrift = 0; // sin deriva base: quieto en reposo
 
-  constructor(private webglService: WebGLService) {}
+  constructor(private webglService: WebGLService, private logger: LoggingService) {}
 
   /**
    * Inicializa el servicio con contextos WebGL y shader
@@ -58,14 +59,14 @@ export class ParticleEffectsService {
     this.shaderManager = shaderManager;
     
     if (!this.gl || !this.shaderManager) {
-      console.error('❌ ParticleEffectsService: Failed to initialize - missing WebGL or ShaderManager');
+      this.logger.log(LogLevel.ERROR, LogCategory.PARTICLES, 'ParticleEffectsService: Failed to initialize - missing WebGL or ShaderManager');
       return false;
     }
 
     this.createParticleBuffers();
     // Ambient dust will be seeded on first update when we have ship pose
     this.ambientInitialized = false;
-    console.log('✅ ParticleEffectsService initialized');
+    this.logger.log(LogLevel.INFO, LogCategory.PARTICLES, 'ParticleEffectsService initialized');
     return true;
   }
 
@@ -512,6 +513,6 @@ export class ParticleEffectsService {
     this.gl = null;
     this.shaderManager = null;
     
-    console.log('🧹 ParticleEffectsService cleaned up');
+    this.logger.log(LogLevel.INFO, LogCategory.PARTICLES, 'ParticleEffectsService cleaned up');
   }
 }

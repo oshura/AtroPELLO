@@ -4,6 +4,7 @@
  */
 
 import { Injectable } from '@angular/core';
+import { LoggingService, LogCategory } from '../../../services/logging.service';
 import { 
   IReticleRenderer, 
   ReticleType, 
@@ -40,7 +41,8 @@ export class ReticleRenderer implements IReticleRenderer {
   private orthographicMatrix: Float32Array = new Float32Array(16);
 
   constructor(
-    private webglService: WebGLService
+    private webglService: WebGLService,
+    private logger: LoggingService
   ) {}
 
   /**
@@ -51,7 +53,7 @@ export class ReticleRenderer implements IReticleRenderer {
     this.shaderManager = shaderManager;
     
     if (!this.gl || !this.shaderManager) {
-      console.error('❌ ReticleRenderer: WebGL o ShaderManager no disponibles');
+      this.logger.error(LogCategory.TARGETING, 'ReticleRenderer: WebGL o ShaderManager no disponibles');
       return false;
     }
 
@@ -75,7 +77,7 @@ export class ReticleRenderer implements IReticleRenderer {
     this.createBuffers();
     this.updateOrthographicMatrix();
 
-    console.log('🎯 ReticleRenderer inicializado');
+    this.logger.info(LogCategory.TARGETING, 'ReticleRenderer inicializado');
     return true;
   }
 
@@ -84,15 +86,14 @@ export class ReticleRenderer implements IReticleRenderer {
    */
   public render(position: ScreenPosition, config: ReticleConfig, deltaTime: number): void {
     if (!this.gl || !this.shaderManager || !this.shaderManager.reticleProgram) {
-      console.error('❌ ReticleRenderer: Recursos no disponibles', {
+      this.logger.error(LogCategory.TARGETING, 'ReticleRenderer: Recursos no disponibles', {
         gl: !!this.gl,
         shaderManager: !!this.shaderManager,
         reticleProgram: !!this.shaderManager?.reticleProgram
       });
       return;
     }
-
-    console.log('🎨 ReticleRenderer.render() ejecutando en posición:', position);
+    this.logger.trace(LogCategory.TARGETING, 'ReticleRenderer.render()', { position });
 
     // Actualizar animaciones - DESHABILITADO para solo usar velocidad mouse
     // this.update(deltaTime);
@@ -383,7 +384,7 @@ export class ReticleRenderer implements IReticleRenderer {
     this.vao = this.gl.createVertexArray();
 
     if (!this.vertexBuffer || !this.indexBuffer || !this.vao) {
-      console.error('❌ Error creando buffers para retícula');
+      this.logger.error(LogCategory.TARGETING, 'Error creando buffers para retícula');
     }
   }
 

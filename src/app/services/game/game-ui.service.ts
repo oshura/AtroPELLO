@@ -3,6 +3,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { GameState } from './game-state.service';
 import { SpaceshipDebugCollector } from '../debug/spaceship-debug-collector.service';
 import { DebugStatsOverlayService } from '../debug/debug-stats-overlay.service';
+import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 
 export interface UIState {
   canvasSize: { width: number; height: number };
@@ -49,7 +50,8 @@ export class GameUIManager {
   constructor(
     @Inject(PLATFORM_ID) private platformId: Object,
     private debugCollector: SpaceshipDebugCollector,
-    private statsOverlay: DebugStatsOverlayService
+    private statsOverlay: DebugStatsOverlayService,
+    private logger: LoggingService
   ) {}
 
   /**
@@ -185,7 +187,7 @@ export class GameUIManager {
    */
   showError(error: string): void {
     this.showMessage(`Error: ${error}`, 5000);
-    console.error('Game UI Error:', error);
+    this.logger.log(LogLevel.ERROR, LogCategory.HUD, 'Game UI Error', error);
   }
 
   /**

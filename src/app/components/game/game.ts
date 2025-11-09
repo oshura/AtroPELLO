@@ -5,6 +5,7 @@ import { GameStateManager, GameState } from '../../services/game/game-state.serv
 import { GameInputHandler } from '../../services/game/game-input.service';
 import { GameInitializer } from '../../services/game/game-initializer.service';
 import { GameUIManager } from '../../services/game/game-ui.service';
+import { LoggingService, LogCategory } from '../../services/logging.service';
 
 @Component({
   selector: 'app-game',
@@ -25,22 +26,23 @@ export class Game implements AfterViewInit, OnDestroy {
     private inputHandler: GameInputHandler,
     private gameInitializer: GameInitializer,
     private uiManager: GameUIManager,
-    @Inject(PLATFORM_ID) private platformId: Object
+    @Inject(PLATFORM_ID) private platformId: Object,
+    private logger: LoggingService
   ) {}
 
   async ngAfterViewInit() {
-    console.log('🎮 Game component ngAfterViewInit - starting initialization...');
+  this.logger.info(LogCategory.GAME_INITIALIZATION, 'Game component view init start');
     
     // Solo inicializar en el navegador, no en SSR
     // FORZAR inicialización para depuración (desactivando detección SSR temporalmente)
-    console.log('🔍 Force init - bypassing SSR detection for debugging');
+  this.logger.debug(LogCategory.DEBUG, 'Force init - bypassing SSR detection for debugging');
     
     // Añadir un pequeño delay para asegurar que el DOM esté completamente listo
     setTimeout(async () => {
       try {
         await this.initializeGame();
       } catch (error) {
-        console.error('❌ Error durante inicialización forzada:', error);
+        this.logger.error(LogCategory.GAME_INITIALIZATION, 'Forced initialization error', error);
       }
     }, 500); // Más tiempo para asegurar que todo esté listo
   }
@@ -54,11 +56,11 @@ export class Game implements AfterViewInit, OnDestroy {
    */
   private async initializeGame(): Promise<void> {
     try {
-      console.log('🎯 Starting game initialization...');
+  this.logger.info(LogCategory.GAME_INITIALIZATION, 'Starting game initialization');
       
       // Verificar que estamos en el navegador
       if (!isPlatformBrowser(this.platformId)) {
-        console.log('⚠️ Not in browser - skipping WebGL initialization');
+        this.logger.warn(LogCategory.GAME_INITIALIZATION, 'Not in browser - skipping WebGL initialization');
         return;
       }
       
@@ -69,11 +71,11 @@ export class Game implements AfterViewInit, OnDestroy {
       }
       
       const testGL = canvas.getContext('webgl2') || canvas.getContext('webgl');
-      console.log('🧪 WebGL test context:', !!testGL);
+      this.logger.debug(LogCategory.RENDER, 'WebGL test context', { hasContext: !!testGL });
       if (testGL) {
         testGL.clearColor(0.2, 0.4, 0.8, 1.0);
         testGL.clear(testGL.COLOR_BUFFER_BIT);
-        console.log('✅ WebGL basic test successful - canvas should be blue');
+        this.logger.info(LogCategory.RENDER, 'WebGL basic test successful');
       }
       
       // Inicializar UI
@@ -106,23 +108,23 @@ export class Game implements AfterViewInit, OnDestroy {
 
         // Cambiar a estado listo
         this.stateManager.setState(GameState.READY);
-        console.log('✅ Game initialized successfully!', result);
+        this.logger.info(LogCategory.GAME_INITIALIZATION, 'Game initialized successfully', result);
       } else {
         this.stateManager.setState(GameState.ERROR);
         this.uiManager.showError(result.error || 'Unknown initialization error');
-        console.error('❌ Game initialization failed:', result.error);
+        this.logger.error(LogCategory.GAME_INITIALIZATION, 'Game initialization failed', result.error);
       }
     } catch (error) {
       // Verificar si es un error de SSR específico
       if (error instanceof Error && error.message.includes('NotYetImplemented')) {
-        console.log('⚠️ SSR error detected - this is expected during server-side rendering');
+        this.logger.warn(LogCategory.GAME_INITIALIZATION, 'SSR error detected (expected)');
         // No cambiar el estado a ERROR para errores de SSR
         return;
       }
       
       this.stateManager.setState(GameState.ERROR);
       this.uiManager.showError(error instanceof Error ? error.message : 'Initialization error');
-      console.error('❌ Game initialization error:', error);
+      this.logger.error(LogCategory.GAME_INITIALIZATION, 'Game initialization error', error);
     }
   }
 
@@ -179,7 +181,7 @@ export class Game implements AfterViewInit, OnDestroy {
     // Toggle stats overlay with 'ñ' (Spanish keyboard)
     if (event.key === 'ñ') {
       const visible = this.uiManager.toggleStatsOverlay();
-      console.log(visible ? '📊 Stats overlay (ñ) shown' : '📊 Stats overlay (ñ) hidden');
+      this.logger.debug(LogCategory.PERFORMANCE, visible ? 'Stats overlay shown (ñ)' : 'Stats overlay hidden (ñ)');
       event.preventDefault();
       return;
     }
@@ -214,7 +216,7 @@ export class Game implements AfterViewInit, OnDestroy {
    */
   async startGame(): Promise<void> {
     if (!this.stateManager.canStart()) {
-      console.warn('Cannot start game in current state:', this.gameState);
+      this.logger.warn(LogCategory.GAME_LOOP, 'Cannot start game in current state', { state: this.gameState });
       return;
     }
 
@@ -230,7 +232,7 @@ export class Game implements AfterViewInit, OnDestroy {
       // Unlock and start audio scene on user start gesture
       try { (gameEngine as any).enableAudio?.(); } catch {}
       
-      console.log('🎮 Game started!');
+      this.logger.info(LogCategory.GAME_LOOP, 'Game started');
     } catch (error) {
       this.stateManager.setState(GameState.ERROR);
       this.uiManager.showError(error instanceof Error ? error.message : 'Failed to start game');
@@ -242,7 +244,7 @@ export class Game implements AfterViewInit, OnDestroy {
    */
   stopGame(): void {
     if (!this.stateManager.canStop()) {
-      console.warn('Cannot stop game in current state:', this.gameState);
+      this.logger.warn(LogCategory.GAME_LOOP, 'Cannot stop game in current state', { state: this.gameState });
       return;
     }
 
@@ -252,7 +254,7 @@ export class Game implements AfterViewInit, OnDestroy {
     }
 
     this.stateManager.setState(GameState.STOPPED);
-    console.log('⏹️ Game stopped');
+    this.logger.info(LogCategory.GAME_LOOP, 'Game stopped');
   }
 
   /**
@@ -266,7 +268,7 @@ export class Game implements AfterViewInit, OnDestroy {
           gameEngine.stop(); // GameEngine no tiene pause, usa stop
         }
         this.stateManager.setState(GameState.PAUSED);
-        console.log('⏸️ Game paused');
+        this.logger.info(LogCategory.GAME_LOOP, 'Game paused');
       }
     } else if (this.gameState === GameState.PAUSED) {
       if (this.stateManager.canStart()) {
@@ -275,7 +277,7 @@ export class Game implements AfterViewInit, OnDestroy {
           gameEngine.start();
         }
         this.stateManager.setState(GameState.RUNNING);
-        console.log('▶️ Game resumed');
+        this.logger.info(LogCategory.GAME_LOOP, 'Game resumed');
       }
     }
   }
@@ -285,7 +287,7 @@ export class Game implements AfterViewInit, OnDestroy {
    */
   toggleDebugOverlay(): boolean {
     const isActive = this.uiManager.toggleSpaceshipDebug();
-    console.log(isActive ? '🎯 Debug overlay activated' : '❌ Debug overlay deactivated');
+    this.logger.debug(LogCategory.DEBUG, isActive ? 'Spaceship debug overlay activated' : 'Spaceship debug overlay deactivated');
     return isActive;
   }
 
@@ -312,7 +314,7 @@ export class Game implements AfterViewInit, OnDestroy {
    * Limpieza usando todos los servicios
    */
   private cleanup(): void {
-    console.log('🧹 Cleaning up game component...');
+    this.logger.info(LogCategory.GAME_INITIALIZATION, 'Cleaning up game component start');
     
     // Parar el juego si está corriendo
     if (this.gameState === GameState.RUNNING || this.gameState === GameState.PAUSED) {
@@ -324,6 +326,6 @@ export class Game implements AfterViewInit, OnDestroy {
     this.gameInitializer.cleanup();
     this.uiManager.cleanup();
     
-    console.log('✅ Game component cleaned up');
+    this.logger.info(LogCategory.GAME_INITIALIZATION, 'Game component cleaned up');
   }
 }

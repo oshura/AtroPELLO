@@ -1,4 +1,5 @@
 import { Component } from '@angular/core';
+import { LoggingService, LogCategory } from '../../services/logging.service';
 
 @Component({
   selector: 'app-footer',
@@ -8,16 +9,9 @@ import { Component } from '@angular/core';
 })
 export class Footer {
   currentYear = new Date().getFullYear();
+  constructor(private logger: LoggingService) {}
 
-  onCookiesClick() {
-    console.log('Cookies policy clicked');
-  }
-
-  onContactClick() {
-    console.log('Contact clicked');
-  }
-
-  onLegalClick() {
-    console.log('Legal terms clicked');
-  }
+  onCookiesClick() { this.logger.debug(LogCategory.INPUT, 'Cookies policy clicked'); }
+  onContactClick() { this.logger.debug(LogCategory.INPUT, 'Contact clicked'); }
+  onLegalClick() { this.logger.debug(LogCategory.INPUT, 'Legal terms clicked'); }
 }

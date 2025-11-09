@@ -2,6 +2,8 @@ import { Injectable } from '@angular/core';
 import { ITargetable } from '../../types/targeting.types';
 import { GameEngine } from '../../GameEngine';
 import { GameAnimation } from './types';
+import { GameLogger } from '../../utils/GameLogger';
+import { LogCategory } from '../../../services/logging.service';
 
 @Injectable({ providedIn: 'root' })
 export class AnimationManagerService {
@@ -46,7 +48,7 @@ export class AnimationManagerService {
         anim.start(engine, target);
         this.current = anim;
       } catch (e) {
-        console.error('Failed to load VoidJumpAnimation', e);
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load VoidJumpAnimation', e); } catch {}
         this.current = null;
       }
     })();
@@ -129,7 +131,7 @@ export class AnimationManagerService {
         anim.start(engine, target);
         this.current = anim;
       } catch (e) {
-        console.error('Failed to load GateRiteAnimation', e);
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load GateRiteAnimation', e); } catch {}
         this.current = null;
       }
     })();

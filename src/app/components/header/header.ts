@@ -1,5 +1,6 @@
 import { Component } from '@angular/core';
 import { AudioSettingsDialogComponent } from '../dialogs/audio-settings-dialog/audio-settings-dialog';
+import { LoggingService, LogCategory } from '../../services/logging.service';
 
 @Component({
   selector: 'app-header',
@@ -9,11 +10,13 @@ import { AudioSettingsDialogComponent } from '../dialogs/audio-settings-dialog/a
 })
 export class Header {
   showAudio = false;
+  constructor(private logger: LoggingService) {}
   onOptionsClick() {
     this.showAudio = true;
+    this.logger.debug(LogCategory.INPUT, 'Options dialog opened');
   }
 
   onLoginClick() {
-    console.log('Login clicked');
+    this.logger.info(LogCategory.INPUT, 'Login clicked');
   }
 }

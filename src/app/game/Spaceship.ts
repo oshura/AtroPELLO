@@ -1,6 +1,8 @@
 import { GameObject } from './GameObject';
 import { Vector3 } from '../types/game.types';
 import { mat4, vec3, quat } from 'gl-matrix';
+import { GameLogger } from './utils/GameLogger';
+import { LogCategory } from '../services/logging.service';
 
 /**
  * Estados del thruster para diferentes efectos visuales
@@ -78,7 +80,7 @@ export class Spaceship extends GameObject {
     // Inicializar matriz de orientación como identidad
     this.initializeOrientationMatrix();
     
-    console.log('🚀 Spaceship created with geometry:', {
+    GameLogger.info(LogCategory.GAME_INITIALIZATION, 'Spaceship created with geometry', {
       vertices: this.vertices.length,
       indices: this.indices.length,
       position: this.position

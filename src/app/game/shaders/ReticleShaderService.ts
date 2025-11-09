@@ -1,4 +1,6 @@
 import { WebGLService } from '../../services/webgl.service';
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
 
 export class ReticleShaderService {
   private gl: WebGL2RenderingContext | null = null;
@@ -20,7 +22,7 @@ export class ReticleShaderService {
     this.gl.attachShader(prog, fs);
     this.gl.linkProgram(prog);
     if (!this.gl.getProgramParameter(prog, this.gl.LINK_STATUS)) {
-      console.error('❌ Reticle shader link error:', this.gl.getProgramInfoLog(prog));
+      try { GameLogger.error(LogCategory.SHADERS, 'Reticle shader link error', { info: this.gl.getProgramInfoLog(prog) }); } catch {}
       this.gl.deleteProgram(prog);
       return;
     }
@@ -51,7 +53,7 @@ export class ReticleShaderService {
     this.gl.shaderSource(shader, source);
     this.gl.compileShader(shader);
     if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-      console.error('❌ Reticle shader compile error:', this.gl.getShaderInfoLog(shader));
+      try { GameLogger.error(LogCategory.SHADERS, 'Reticle shader compile error', { info: this.gl.getShaderInfoLog(shader) }); } catch {}
       this.gl.deleteShader(shader);
       return null;
     }

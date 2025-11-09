@@ -1,4 +1,6 @@
 import { CameraMode } from '../Camera';
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
 import { HUDTexture } from './HUDTexture';
 import { VelocityBar } from './elements/VelocityBar';
 import { Compass } from './elements/Compass';
@@ -45,12 +47,12 @@ export class HUDManager {
   }
   
   constructor(gl: WebGL2RenderingContext) {
-    console.log('🎯 HUDManager constructor iniciado');
+    GameLogger.debug(LogCategory.HUD, 'HUDManager constructor iniciado');
     this.gl = gl;
     
     // Inicializar sistema de texturas dinámicas
-    this.hudTexture = new HUDTexture(gl, 1024, 768);
-    console.log('✅ HUDTexture creada:', !!this.hudTexture);
+  this.hudTexture = new HUDTexture(gl, 1024, 768);
+  GameLogger.debug(LogCategory.HUD, 'HUDTexture creada', { ok: !!this.hudTexture });
     
     // Inicializar elementos del HUD
     this.velocityBarLeft = new VelocityBar('left');
@@ -60,15 +62,15 @@ export class HUDManager {
     this.speedometer = new SpeedometerDigital();
     this.marqueePanel = new MarqueePanel();
   this.targetPanel = new TargetPanel();
-    console.log('✅ Elementos HUD creados');
+    GameLogger.debug(LogCategory.HUD, 'Elementos HUD creados');
     
     // Inicializar sistema de targeting
-    this.targetingSystem = new TargetingSystem();
-    console.log('✅ Sistema targeting inicializado');
+  this.targetingSystem = new TargetingSystem();
+  GameLogger.debug(LogCategory.HUD, 'Sistema targeting inicializado');
     
     // Crear geometría del plano
-    this.createHUDPlaneGeometry();
-    console.log('✅ Geometría HUD creada:', !!this.hudGeometry);
+  this.createHUDPlaneGeometry();
+  GameLogger.debug(LogCategory.HUD, 'Geometría HUD creada', { ok: !!this.hudGeometry });
 
     
     
@@ -78,14 +80,7 @@ export class HUDManager {
     // KEYBOARD LISTENERS: F1 y F2 para debug
     this.setupKeyboardListeners();
     
-    console.log('🎯 HUDManager inicializado con FASE 4+ completa:');
-    console.log('   📺 MarqueePanel - Mensajes rotativos');
-    console.log('   📊 VelocityBars - Barras laterales');
-    console.log('   🎯 Compass - Sistema de targeting (Norte=cuadrado, Target=triángulo)');  
-    console.log('   🏃 SpeedometerDigital - Recolocado');
-    console.log('   🎯 TargetingSystem - Listo para asteroides, naves, planetas...');
-    console.log('🔧 DEBUG: Usa toggleHUDShader() en la consola para alternar shaders');
-    console.log('⌨️  O usa las teclas: F1 (shaders) / F2 (canvas debug)');
+  GameLogger.info(LogCategory.HUD, 'HUDManager inicializado con FASE 4+ completa');
   }
 
   /**
@@ -157,9 +152,9 @@ export class HUDManager {
     this.targetPanel.setData({ active: true, ...state });
     const pc = (state as any).previewCanvas as HTMLCanvasElement | null | undefined;
     if (pc) {
-      console.log('🖼️ TargetPanel.update: previewCanvas', { w: pc.width, h: pc.height });
+      GameLogger.debug(LogCategory.HUD, 'TargetPanel.update: previewCanvas', { w: pc.width, h: pc.height });
     } else {
-      console.log('🖼️ TargetPanel.update: SIN previewCanvas');
+      GameLogger.debug(LogCategory.HUD, 'TargetPanel.update: SIN previewCanvas');
     }
   }
   public clearTargetPanel() { this.targetPanel.clear(); }
@@ -168,13 +163,13 @@ export class HUDManager {
    * Debug: Mostrar información de estado en consola (F1)
    */
   public showDebugInfo(): void {
-    console.log(`🔧 === INFORMACIÓN DE DEBUG HUD ===`);
-    console.log(`Estado forceDebugShader: ${this.forceDebugShader ? 'ACTIVO (Magenta)' : 'INACTIVO (Texturizado)'}`);
-    console.log(`Estado showDebugCanvas: ${this.showDebugCanvas ? 'ACTIVO (Marco debug rojo)' : 'INACTIVO'}`);
-    console.log(`Estado showHUDFrame: ${this.showHUDFrame ? 'ACTIVO (Marco cockpit azul)' : 'INACTIVO'}`);
-    console.log(`Dimensiones Canvas: ${this.hudTexture.getCanvas().width}x${this.hudTexture.getCanvas().height}`);
-        console.log(`WebGL Texture: ${this.hudTexture.getWebGLTexture() ? 'CREADA' : 'NO CREADA'}`);
-    console.log('📊 Estados actuales del HUD mostrados en consola');
+    GameLogger.info(LogCategory.HUD, 'INFO DEBUG HUD', {
+      forceDebugShader: this.forceDebugShader,
+      showDebugCanvas: this.showDebugCanvas,
+      showHUDFrame: this.showHUDFrame,
+      canvas: `${this.hudTexture.getCanvas().width}x${this.hudTexture.getCanvas().height}`,
+      hasTexture: !!this.hudTexture.getWebGLTexture()
+    });
   }
 
   /**
@@ -182,27 +177,23 @@ export class HUDManager {
    * Útil para comparar y identificar problemas
    */
   public toggleDebugShader(): void {
-    this.forceDebugShader = !this.forceDebugShader;
-    console.log(`🔧 === CAMBIO DE SHADER ===`);
-    console.log(`Estado: ${this.forceDebugShader ? 'FORZAR FALLBACK (Magenta)' : 'INTENTAR TEXTURIZADO'}`);
-    console.log(`Próximo render usará: ${this.forceDebugShader ? 'Shader básico (magenta)' : 'Shader texturizado (Canvas 2D)'}`);
-    console.log('📢 ¡Mira el HUD después del próximo frame!');
+  this.forceDebugShader = !this.forceDebugShader;
+  GameLogger.info(LogCategory.HUD, 'Cambio de shader', { forceFallback: this.forceDebugShader });
   }
 
   /**
    * Debug: Alternar debug canvas con F2
    */
   public toggleDebugCanvas(): void {
-    this.showDebugCanvas = !this.showDebugCanvas;
-    console.log(`🎨 === TOGGLE DEBUG CANVAS ===`);
-    console.log(`Estado: ${this.showDebugCanvas ? 'ACTIVADO' : 'DESACTIVADO'}`);
+  this.showDebugCanvas = !this.showDebugCanvas;
+  GameLogger.info(LogCategory.HUD, 'Toggle debug canvas', { active: this.showDebugCanvas });
     
     if (this.showDebugCanvas) {
       this.createDebugCanvasDisplay();
-      console.log('📺 Canvas debug creado - visible en pantalla');
+      GameLogger.debug(LogCategory.HUD, 'Canvas debug creado');
     } else {
       this.removeDebugCanvasDisplay();
-      console.log('🚫 Canvas debug eliminado');
+      GameLogger.debug(LogCategory.HUD, 'Canvas debug eliminado');
     }
   }
 
@@ -228,9 +219,7 @@ export class HUDManager {
       }
     });
 
-    console.log('⌨️  Controles debug configurados:');
-    console.log('   🔄 F1: Alternar shader (HUD ↔ Fallback)');
-    console.log('   🎨 F2: Alternar canvas debug');
+  GameLogger.debug(LogCategory.HUD, 'Controles debug configurados');
   }
 
   // === MÉTODOS PÚBLICOS PARA MARQUEE PANEL ===
@@ -293,7 +282,7 @@ export class HUDManager {
    * ENFOQUE SISTEMÁTICO CON DEBUG DETALLADO
    */
   public render(cameraMode: CameraMode, shaderManager: any, viewMatrix: Float32Array, projectionMatrix: Float32Array, cameraPosition?: {x: number, y: number, z: number}): void {
-    if (this.debugHudLogs) console.log('🎯 HUDManager.render called with:', {
+  if (this.debugHudLogs) GameLogger.debug(LogCategory.HUD, 'HUDManager.render called with', {
       cameraMode: cameraMode,
       isCockpit: cameraMode === CameraMode.COCKPIT,
       hasGeometry: !!this.hudGeometry,
@@ -301,14 +290,14 @@ export class HUDManager {
     });
     
     if (cameraMode !== CameraMode.COCKPIT || !this.hudGeometry) {
-      if (this.debugHudLogs) console.log('🚫 HUD render rejected:', {
+  if (this.debugHudLogs) GameLogger.debug(LogCategory.HUD, 'HUD render rejected', {
         wrongMode: cameraMode !== CameraMode.COCKPIT,
         noGeometry: !this.hudGeometry
       });
       return;
     }
 
-    if (this.debugHudLogs) console.log('🎯 === INICIO RENDER HUD ===');
+  if (this.debugHudLogs) GameLogger.debug(LogCategory.HUD, '=== INICIO RENDER HUD ===');
     
     // PASO 1: Verificar que la textura Canvas 2D está actualizada
   if (this.showDebugCanvas) this.debugCanvasContent();
@@ -317,7 +306,7 @@ export class HUDManager {
     const hudProgram = shaderManager.hudProgram;
     const webglTexture = this.hudTexture?.getWebGLTexture();
     
-    if (this.debugHudLogs) console.log('🔍 Estado de componentes:', {
+  if (this.debugHudLogs) GameLogger.debug(LogCategory.HUD, 'Estado de componentes', {
       hasHUDProgram: !!hudProgram,
       hasHudTexture: !!this.hudTexture,
       hasWebGLTexture: !!webglTexture,
@@ -329,7 +318,7 @@ export class HUDManager {
     const useHUDShader = hasValidComponents && !this.forceDebugShader;
     
     if (useHUDShader) {
-  if (this.debugHudLogs) console.log('✅ Usando shader HUD');
+  if (this.debugHudLogs) GameLogger.debug(LogCategory.HUD, 'Usando shader HUD');
       this.gl.useProgram(hudProgram);
       
       // DEBUG CRÍTICO: Verificar el programa shader en detalle
@@ -339,7 +328,7 @@ export class HUDManager {
       this.setupHUDMatrices(shaderManager, viewMatrix, projectionMatrix);
     } else {
       const reason = this.forceDebugShader ? 'FORZADO' : 'COMPONENTES FALTANTES';
-  if (this.debugHudLogs) console.log(`⚠️ Usando shader FALLBACK (magenta) - Razón: ${reason}`);
+  if (this.debugHudLogs) GameLogger.debug(LogCategory.HUD, 'Usando shader FALLBACK (magenta)', { reason });
       const program = shaderManager.litProgram;
       this.gl.useProgram(program);
       
@@ -351,26 +340,14 @@ export class HUDManager {
       shaderManager.setLitColor(new Float32Array([1.0, 0.0, 1.0])); // Magenta brillante
     }
     
-    if (false) { // Desactivado temporalmente
-      console.log('🎯 FALLBACK: shader básico (rosa) - faltan componentes');
-      const program = shaderManager.litProgram;
-      if (!program) {
-        console.error('❌ litProgram no disponible');
-        return;
-      }
-
-      this.gl.useProgram(program);
-      this.setupBasicRenderingState(shaderManager);
-      this.setupBasicHUDMatrices(shaderManager, viewMatrix, projectionMatrix);
-      shaderManager.setLitColor(new Float32Array([1.0, 0.0, 1.0]));
-    }
+    // Bloque fallback legacy desactivado
     
     // Debug: verificar estado del renderizado
     if (this.debugHudLogs) {
       const currentProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
       const activeTexture = this.gl.getParameter(this.gl.ACTIVE_TEXTURE);
       const boundTexture = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
-      console.log('🔍 Estado HUD debug:', {
+  GameLogger.trace(LogCategory.HUD, 'Estado HUD debug', {
         vertices: this.hudGeometry.vertices.length,
         indices: this.hudGeometry.indices.length,
         currentProgram: currentProgram,
@@ -398,9 +375,9 @@ export class HUDManager {
     // Verificar errores GL
     const error = this.gl.getError();
     if (error !== this.gl.NO_ERROR) {
-      console.error('❌ Error GL al renderizar HUD:', error);
+  GameLogger.error(LogCategory.HUD, 'Error GL al renderizar HUD', { error });
     } else if (this.debugHudLogs) {
-      console.log('✅ HUD renderizado sin errores GL');
+  GameLogger.debug(LogCategory.HUD, 'HUD renderizado sin errores GL');
     }
     
     // Restaurar estado
@@ -421,7 +398,7 @@ export class HUDManager {
     // Por ahora, mantener la geometría fija hasta que funcione el movimiento básico
     // TODO: Implementar transformación de geometría basada en orientación de cámara
     
-    console.log('📍 HUD siguiendo cámara en:', cameraPosition);
+  GameLogger.trace(LogCategory.HUD, 'HUD siguiendo cámara', { cameraPosition });
   }
 
   /**
@@ -720,7 +697,7 @@ export class HUDManager {
       ctx.strokeRect(2, 2, canvas.width - 4, canvas.height - 4);
     }
     
-  if (this.debugHudLogs) console.log('🎨 Canvas 2D renderizado con debug visual');
+  if (this.debugHudLogs) GameLogger.trace(LogCategory.HUD, 'Canvas 2D renderizado con debug visual');
     
     // Forzar flush del contexto Canvas 2D
   if (this.debugHudLogs) ctx.getImageData(0, 0, 1, 1);
@@ -728,7 +705,7 @@ export class HUDManager {
     // Actualizar textura WebGL
     this.hudTexture.updateTexture();
     
-    if (this.debugHudLogs) console.log('📸 Textura WebGL actualizada desde Canvas 2D');
+  if (this.debugHudLogs) GameLogger.trace(LogCategory.HUD, 'Textura WebGL actualizada desde Canvas 2D');
   }
 
 
@@ -752,7 +729,7 @@ export class HUDManager {
       }
     }
     
-    console.log('🎨 DEBUG Canvas 2D:', {
+  GameLogger.debug(LogCategory.HUD, 'DEBUG Canvas 2D', {
       dimensions: `${canvas.width}x${canvas.height}`,
       hasContent: hasContent,
       firstPixel: [data[0], data[1], data[2], data[3]]
@@ -817,7 +794,7 @@ export class HUDManager {
     }
     document.body.appendChild(debugDiv);
 
-    console.log('🎨 Debug canvas display creado');
+  GameLogger.info(LogCategory.HUD, 'Debug canvas display creado');
   }
 
   /**
@@ -827,7 +804,7 @@ export class HUDManager {
     const existing = document.getElementById('hud-debug-canvas');
     if (existing) {
       existing.remove();
-      console.log('🚫 Debug canvas display eliminado');
+  GameLogger.info(LogCategory.HUD, 'Debug canvas display eliminado');
     }
   }
 
@@ -863,72 +840,72 @@ export class HUDManager {
    * Debug detallado del programa shader
    */
   private debugShaderProgram(program: WebGLProgram, type: string): void {
-    console.log(`🔍 === DEBUG SHADER ${type} ===`);
+  GameLogger.debug(LogCategory.HUD, 'DEBUG SHADER begin', { type });
     
     if (!this.gl.isProgram(program)) {
-      console.error(`❌ ${type}: No es un programa válido`);
+  GameLogger.error(LogCategory.HUD, `${type}: No es un programa válido`);
       return;
     }
     
     // Verificar si está linkeado
     const linkStatus = this.gl.getProgramParameter(program, this.gl.LINK_STATUS);
-    console.log(`🔗 ${type} Link Status:`, linkStatus);
+  GameLogger.debug(LogCategory.HUD, `${type} Link Status`, { linkStatus });
     
     if (!linkStatus) {
       const errorInfo = this.gl.getProgramInfoLog(program);
-      console.error(`❌ ${type} Link Error:`, errorInfo);
+  GameLogger.error(LogCategory.HUD, `${type} Link Error`, { errorInfo });
     }
     
     // Obtener número de atributos y uniforms activos
     const activeAttributes = this.gl.getProgramParameter(program, this.gl.ACTIVE_ATTRIBUTES);
     const activeUniforms = this.gl.getProgramParameter(program, this.gl.ACTIVE_UNIFORMS);
     
-    console.log(`📊 ${type} Activos:`, {
+  GameLogger.debug(LogCategory.HUD, `${type} Activos`, {
       attributes: activeAttributes,
       uniforms: activeUniforms
     });
     
     // Listar todos los atributos activos
-    console.log(`📋 ${type} Atributos:`);
+  GameLogger.trace(LogCategory.HUD, `${type} Atributos listado`);
     for (let i = 0; i < activeAttributes; i++) {
       const info = this.gl.getActiveAttrib(program, i);
       if (info) {
         const location = this.gl.getAttribLocation(program, info.name);
-        console.log(`  - ${info.name}: location=${location}, type=${info.type}, size=${info.size}`);
+  GameLogger.trace(LogCategory.HUD, 'Atributo activo', { shaderType: type, name: info.name, location, glType: info.type, size: info.size });
       }
     }
     
     // Listar todos los uniforms activos
-    console.log(`📋 ${type} Uniforms:`);
+  GameLogger.trace(LogCategory.HUD, `${type} Uniforms listado`);
     for (let i = 0; i < activeUniforms; i++) {
       const info = this.gl.getActiveUniform(program, i);
       if (info) {
         const location = this.gl.getUniformLocation(program, info.name);
-        console.log(`  - ${info.name}: location=${location}, type=${info.type}, size=${info.size}`);
+  GameLogger.trace(LogCategory.HUD, 'Uniform activo', { shaderType: type, name: info.name, location, glType: info.type, size: info.size });
       }
     }
     
-    console.log(`✅ Debug shader ${type} completado`);
+  GameLogger.debug(LogCategory.HUD, 'Debug shader completado', { type });
   }
 
   /**
    * Configura el estado de renderizado para texturas dinámicas
    */
   private setupHUDRenderingState(shaderManager: any): void {
-    console.log('🎨 === CONFIGURANDO ESTADO HUD ===');
+  GameLogger.debug(LogCategory.HUD, 'CONFIGURANDO ESTADO HUD');
     
     // PASO 1: Verificar y enlazar textura del HUD
     const webglTexture = this.hudTexture.getWebGLTexture();
     const isValidTexture = this.gl.isTexture(webglTexture);
     
-    console.log('🖼️ Estado de textura:', {
+  GameLogger.trace(LogCategory.HUD, 'Estado de textura', {
       texture: webglTexture,
       isValidTexture: isValidTexture,
       textureTarget: this.gl.TEXTURE_2D
     });
     
     if (!isValidTexture) {
-      console.error('❌ CRÍTICO: Textura WebGL no válida');
+  GameLogger.error(LogCategory.HUD, 'CRÍTICO: Textura WebGL no válida');
       return;
     }
     
@@ -937,19 +914,19 @@ export class HUDManager {
     
     // Verificar que la textura se enlazó correctamente
     const boundTexture = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
-    console.log('✅ Textura enlazada:', this.gl.isTexture(boundTexture));
+  GameLogger.trace(LogCategory.HUD, 'Textura enlazada', { valid: this.gl.isTexture(boundTexture) });
     
     // PASO 2: Configurar buffers de geometría
     const hasVertexBuffer = this.gl.isBuffer(this.vertexBuffer);
     const hasIndexBuffer = this.gl.isBuffer(this.indexBuffer);
     
-    console.log('📊 Buffers:', {
+  GameLogger.trace(LogCategory.HUD, 'Buffers estado', {
       vertexBuffer: hasVertexBuffer,
       indexBuffer: hasIndexBuffer
     });
     
     if (!hasVertexBuffer || !hasIndexBuffer) {
-      console.error('❌ CRÍTICO: Buffers de geometría no válidos');
+  GameLogger.error(LogCategory.HUD, 'CRÍTICO: Buffers de geometría no válidos');
       return;
     }
     
@@ -960,7 +937,7 @@ export class HUDManager {
     const positionLocation = shaderManager.hudAttributes?.['position'] ?? -1;
     const uvLocation = shaderManager.hudAttributes?.['uv'] ?? -1;
     
-    console.log('🎯 Atributos shader HUD:', {
+  GameLogger.trace(LogCategory.HUD, 'Atributos shader HUD', {
       position: positionLocation,
       uv: uvLocation,
       availableAttributes: Object.keys(shaderManager.hudAttributes || {})
@@ -972,18 +949,18 @@ export class HUDManager {
       this.gl.enableVertexAttribArray(positionLocation);
       this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 5 * 4, 0);
       attributesConfigured++;
-      console.log('✅ Atributo posición configurado');
+  GameLogger.trace(LogCategory.HUD, 'Atributo posición configurado');
     } else {
-      console.error('❌ CRÍTICO: Atributo position no encontrado');
+  GameLogger.error(LogCategory.HUD, 'CRÍTICO: Atributo position no encontrado');
     }
     
     if (uvLocation >= 0) {
       this.gl.enableVertexAttribArray(uvLocation);
       this.gl.vertexAttribPointer(uvLocation, 2, this.gl.FLOAT, false, 5 * 4, 3 * 4);
       attributesConfigured++;
-      console.log('✅ Atributo UV configurado');
+  GameLogger.trace(LogCategory.HUD, 'Atributo UV configurado');
     } else {
-      console.error('❌ CRÍTICO: Atributo uv no encontrado');
+  GameLogger.error(LogCategory.HUD, 'CRÍTICO: Atributo uv no encontrado');
     }
 
     // El shader HUD no requiere normales, solo posición y UV
@@ -992,7 +969,7 @@ export class HUDManager {
     const textureLocation = shaderManager.hudUniforms?.['texture'];
     const opacityLocation = shaderManager.hudUniforms?.['opacity'];
     
-    console.log('🎯 Uniforms HUD disponibles:', {
+  GameLogger.trace(LogCategory.HUD, 'Uniforms HUD disponibles', {
       texture: textureLocation,
       opacity: opacityLocation,
       allUniforms: Object.keys(shaderManager.hudUniforms || {})
@@ -1004,21 +981,21 @@ export class HUDManager {
     if (textureLocation !== null && textureLocation !== undefined) {
       this.gl.uniform1i(textureLocation, 0); // Textura en unidad 0
       textureUniformSet = true;
-      console.log('✅ Uniform u_texture configurado');
+  GameLogger.trace(LogCategory.HUD, 'Uniform u_texture configurado');
     } else {
-      console.error('❌ CRÍTICO: No se encontró uniform u_texture');
+  GameLogger.error(LogCategory.HUD, 'CRÍTICO: No se encontró uniform u_texture');
     }
     
     if (opacityLocation !== null && opacityLocation !== undefined) {
       this.gl.uniform1f(opacityLocation, 1.0); // Opacidad completa
-      console.log('✅ Uniform u_opacity configurado');
+  GameLogger.trace(LogCategory.HUD, 'Uniform u_opacity configurado');
     }
     
     // PASO 5: Verificar estado final de WebGL
     const finalBoundTexture = this.gl.getParameter(this.gl.TEXTURE_BINDING_2D);
     const activeTextureUnit = this.gl.getParameter(this.gl.ACTIVE_TEXTURE);
     
-    console.log('🔍 Estado final WebGL:', {
+  GameLogger.trace(LogCategory.HUD, 'Estado final WebGL', {
       textureBinding2D: finalBoundTexture,
       isValidBoundTexture: this.gl.isTexture(finalBoundTexture),
       activeTextureUnit: activeTextureUnit,
@@ -1028,9 +1005,9 @@ export class HUDManager {
     // Verificar errores WebGL
     const error = this.gl.getError();
     if (error !== this.gl.NO_ERROR) {
-      console.error('❌ Error WebGL en setupHUDRenderingState:', error);
+  GameLogger.error(LogCategory.HUD, 'Error WebGL en setupHUDRenderingState', { error });
     } else {
-      console.log(`✅ Estado HUD configurado (${attributesConfigured} atributos, textura: ${textureUniformSet})`);
+  GameLogger.debug(LogCategory.HUD, 'Estado HUD configurado', { attributesConfigured, textureUniformSet });
     }
   }
 
@@ -1069,7 +1046,7 @@ export class HUDManager {
       0, 0, 0, 1
     ]);
 
-    console.log('📐 HUD ESPACIO CÁMARA: se mueve y rota CON la cámara');
+  GameLogger.trace(LogCategory.HUD, 'HUD ESPACIO CÁMARA (básico)');
 
     shaderManager.setLitMatrices(
       hudModelMatrix,
@@ -1150,11 +1127,11 @@ export class HUDManager {
       this.gl.uniform3fv(baseColorLocation, new Float32Array([1, 1, 1])); // Color base blanco
     }
 
-    console.log('📐 HUD ESPACIO CÁMARA: se mueve y rota CON la cámara');
+  GameLogger.trace(LogCategory.HUD, 'HUD ESPACIO CÁMARA (fallback)');
   }
 
   private setupHUDMatrices(shaderManager: any, originalViewMatrix: Float32Array, projectionMatrix: Float32Array): void {
-    console.log('📐 === CONFIGURANDO MATRICES HUD ===');
+  GameLogger.debug(LogCategory.HUD, 'CONFIGURANDO MATRICES HUD');
     
     // HUD EN ESPACIO DE CÁMARA: matriz identidad para que se mueva CON la cámara
     const hudModelMatrix = new Float32Array([
@@ -1175,16 +1152,14 @@ export class HUDManager {
     // Shader HUD no requiere matriz normal
 
     // Debug: verificar uniforms disponibles
-    console.log('🔍 Uniforms HUD disponibles:', 
-      Object.keys(shaderManager.hudUniforms || {})
-    );
+    GameLogger.trace(LogCategory.HUD, 'Uniforms HUD disponibles', { uniforms: Object.keys(shaderManager.hudUniforms || {}) });
 
     // Aplicar matrices para el shader HUD
     const modelMatrixLocation = shaderManager.hudUniforms?.['modelMatrix'];
     const viewMatrixLocation = shaderManager.hudUniforms?.['viewMatrix'];
     const projectionMatrixLocation = shaderManager.hudUniforms?.['projectionMatrix'];
 
-    console.log('🎯 Localizaciones de matrices HUD:', {
+  GameLogger.trace(LogCategory.HUD, 'Localizaciones de matrices HUD', {
       model: modelMatrixLocation,
       view: viewMatrixLocation,
       projection: projectionMatrixLocation
@@ -1195,24 +1170,24 @@ export class HUDManager {
     if (modelMatrixLocation !== null && modelMatrixLocation !== undefined) {
       this.gl.uniformMatrix4fv(modelMatrixLocation, false, hudModelMatrix);
       matricesConfigured++;
-      console.log('✅ Matriz modelo configurada');
+  GameLogger.trace(LogCategory.HUD, 'Matriz modelo configurada');
     }
     if (viewMatrixLocation !== null && viewMatrixLocation !== undefined) {
       this.gl.uniformMatrix4fv(viewMatrixLocation, false, hudViewMatrix);
       matricesConfigured++;
-      console.log('✅ Matriz vista configurada');
+  GameLogger.trace(LogCategory.HUD, 'Matriz vista configurada');
     }
     if (projectionMatrixLocation !== null && projectionMatrixLocation !== undefined) {
       this.gl.uniformMatrix4fv(projectionMatrixLocation, false, projectionMatrix);
       matricesConfigured++;
-      console.log('✅ Matriz proyección configurada');
+  GameLogger.trace(LogCategory.HUD, 'Matriz proyección configurada');
     }
     // El shader HUD no requiere matriz normal
 
-    console.log(`📊 Matrices configuradas: ${matricesConfigured}/3`);
+  GameLogger.debug(LogCategory.HUD, 'Matrices configuradas', { count: matricesConfigured, expected: 3 });
 
     // El shader HUD no requiere parámetros de iluminación - es simple textura 2D
-    console.log('✅ Configuración de matrices HUD completada');
+  GameLogger.debug(LogCategory.HUD, 'Configuración de matrices HUD completada');
   }
 
   /**
@@ -1229,7 +1204,7 @@ export class HUDManager {
   const baseY = -0.63;  // Un poco más bajo para asegurar que no se recorte el borde inferior
     const tilt = 10 * (Math.PI / 180); // Inclinación ligera para legibilidad
     
-    console.log('🎯 === CREANDO GEOMETRÍA HUD ===');
+  GameLogger.debug(LogCategory.HUD, 'CREANDO GEOMETRÍA HUD');
     
     // HUD dentro del frustum visible - FORMATO: [x, y, z, u, v]
     const vertices = [
@@ -1243,16 +1218,16 @@ export class HUDManager {
       -width/2, baseY + height * Math.cos(tilt), baseZ - height * Math.sin(tilt), 0.0, 0.0
     ];
 
-  console.log('� Coordenadas de vértices (x,y,z,u,v):');
+  GameLogger.trace(LogCategory.HUD, 'Coordenadas de vértices (x,y,z,u,v)');
     for (let i = 0; i < vertices.length; i += 5) {
-      console.log(`  Vértice ${i/5}: pos(${vertices[i].toFixed(2)}, ${vertices[i+1].toFixed(2)}, ${vertices[i+2].toFixed(2)}) uv(${vertices[i+3].toFixed(2)}, ${vertices[i+4].toFixed(2)})`);
+  GameLogger.trace(LogCategory.HUD, 'Vértice', { index: i/5, x: +vertices[i].toFixed(2), y: +vertices[i+1].toFixed(2), z: +vertices[i+2].toFixed(2), u: +vertices[i+3].toFixed(2), v: +vertices[i+4].toFixed(2) });
     }
 
     // Triángulos: 0-1-2, 0-2-3 (orden counter-clockwise)
     const indices = [0, 1, 2, 0, 2, 3];
     
-    console.log('🔺 Índices de triángulos:', indices);
-    console.log(`📏 Dimensiones: ${width}x${height}, inclinación: ${(tilt * 180/Math.PI).toFixed(1)}°`);
+  GameLogger.trace(LogCategory.HUD, 'Índices de triángulos', { indices });
+  GameLogger.debug(LogCategory.HUD, 'Dimensiones HUD', { width, height, tiltDeg: +(tilt * 180/Math.PI).toFixed(1) });
 
     this.hudGeometry = {
       vertices: new Float32Array(vertices),
@@ -1261,7 +1236,7 @@ export class HUDManager {
     
     this.createBuffers();
     
-    console.log('✅ Geometría HUD creada: 4 vértices, 2 triángulos, 5 floats/vértice [x,y,z,u,v]');
+  GameLogger.info(LogCategory.HUD, 'Geometría HUD creada', { vertices: 4, triangles: 2, floatsPerVertex: 5 });
   }
 
   /**
@@ -1269,19 +1244,19 @@ export class HUDManager {
    */
   private createBuffers(): void {
     if (!this.hudGeometry) {
-      console.error('❌ No hay geometría HUD para crear buffers');
+  GameLogger.error(LogCategory.HUD, 'No hay geometría HUD para crear buffers');
       return;
     }
     
     this.vertexBuffer = this.gl.createBuffer();
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.vertexBuffer);
     this.gl.bufferData(this.gl.ARRAY_BUFFER, this.hudGeometry.vertices, this.gl.STATIC_DRAW);
-    console.log('✅ Vertex buffer creado:', !!this.vertexBuffer);
+  GameLogger.debug(LogCategory.HUD, 'Vertex buffer creado', { ok: !!this.vertexBuffer });
     
     this.indexBuffer = this.gl.createBuffer();
     this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
     this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, this.hudGeometry.indices, this.gl.STATIC_DRAW);
-    console.log('✅ Index buffer creado:', !!this.indexBuffer);
+  GameLogger.debug(LogCategory.HUD, 'Index buffer creado', { ok: !!this.indexBuffer });
   }
 
   /**

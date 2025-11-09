@@ -4,6 +4,7 @@
  */
 
 import { Injectable } from '@angular/core';
+import { LoggingService, LogCategory } from '../../../services/logging.service';
 import { 
   ITargetHighlighter, 
   HighlightConfig, 
@@ -42,7 +43,8 @@ export class TargetHighlighter implements ITargetHighlighter {
   private typeConfigs: Map<string, HighlightConfig> = new Map();
 
   constructor(
-    private webglService: WebGLService
+    private webglService: WebGLService,
+    private logger: LoggingService
   ) {
     this.setupDefaultConfigs();
   }
@@ -55,11 +57,11 @@ export class TargetHighlighter implements ITargetHighlighter {
     this.shaderManager = shaderManager;
     
     if (!this.gl || !this.shaderManager) {
-      console.error('❌ TargetHighlighter: WebGL o ShaderManager no disponibles');
+      this.logger.error(LogCategory.TARGETING, 'TargetHighlighter: WebGL o ShaderManager no disponibles');
       return false;
     }
 
-    console.log('✨ TargetHighlighter inicializado');
+    this.logger.info(LogCategory.TARGETING, 'TargetHighlighter inicializado');
     return true;
   }
 
@@ -78,7 +80,7 @@ export class TargetHighlighter implements ITargetHighlighter {
     
     this.highlightedTargets.set(target.id, highlighted);
     
-    console.log('✨ Target highlighted:', target.getDisplayName(), 'Type:', targetConfig.type);
+    this.logger.debug(LogCategory.TARGETING, 'Target highlighted', { name: target.getDisplayName(), type: targetConfig.type });
   }
 
   /**
@@ -87,7 +89,7 @@ export class TargetHighlighter implements ITargetHighlighter {
   public removeHighlight(target: ITargetable): void {
     if (this.highlightedTargets.has(target.id)) {
       this.highlightedTargets.delete(target.id);
-      console.log('🚫 Highlight removed:', target.getDisplayName());
+      this.logger.debug(LogCategory.TARGETING, 'Highlight removed', { name: target.getDisplayName() });
     }
   }
 
@@ -265,7 +267,7 @@ export class TargetHighlighter implements ITargetHighlighter {
       highlighted.config.color[3] * highlighted.intensity
     ]);
 
-    console.log('🎨 Rendering highlight for:', target.getDisplayName(), 'Intensity:', highlighted.intensity);
+  this.logger.trace(LogCategory.TARGETING, 'Rendering highlight', { name: target.getDisplayName(), intensity: highlighted.intensity });
     
     // El renderizado específico dependerá del tipo de objeto
     // Por ahora solo loggeamos para verificar que funciona
@@ -316,7 +318,7 @@ export class TargetHighlighter implements ITargetHighlighter {
    */
   public clear(): void {
     this.highlightedTargets.clear();
-    console.log('🧹 All highlights cleared');
+    this.logger.info(LogCategory.TARGETING, 'All highlights cleared');
   }
 
   /**
@@ -324,6 +326,6 @@ export class TargetHighlighter implements ITargetHighlighter {
    */
   public dispose(): void {
     this.clear();
-    console.log('🧹 TargetHighlighter disposed');
+    this.logger.info(LogCategory.TARGETING, 'TargetHighlighter disposed');
   }
 }

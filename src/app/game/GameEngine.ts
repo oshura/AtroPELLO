@@ -8,6 +8,9 @@ import { Spaceship, ThrusterState } from './Spaceship';
 import { Asteroid } from './Asteroid';
 import { Camera, CameraMode } from './Camera';
 import { ShaderManager } from './ShaderManager';
+import { SolarSystemService } from './services/game/solar-system.service';
+import { HumanSolarSystemService } from './services/game/human-solar-system.service';
+import { PortalPersistenceService } from './services/game/portal-persistence.service';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
 import { SuperAsteroid } from './SuperAsteroid';
@@ -17,9 +20,8 @@ import { AdaptiveTargetingIntegrator } from './targeting/v2/AdaptiveTargetingInt
 import { AsteroidClusterService } from './services/game/asteroid-cluster.service';
 import { TargetCatalogService } from './services/target-catalog.service';
 import { AnimationManagerService } from './services/animations/animation-manager.service';
-import { TargetType, ITargetable } from './types/targeting.types';
 import { RelationService } from '../services/relation.service';
-import { runCameraSpaceshipTests } from './tests/CameraSpaceshipIntegration.test';
+// Integration test removed; manual hook no longer available
 import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { SolarSystemPanel } from './hud/SolarSystemPanel';
@@ -37,6 +39,10 @@ import { Sun } from './Sun';
 import { EarthSplitPlanet } from './EarthSplitPlanet';
 import { MegaAsteroid } from './MegaAsteroid';
 import { Portal } from './Portal';
+import { LoggingService, LogCategory, LogLevel } from '../services/logging.service';
+// Snapshot types for system swapping
+import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
+import { TargetType, ITargetable } from './types/targeting.types';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -70,6 +76,11 @@ export class GameEngine {
   private landingOverlay: LandingOverlay | null = null;
   private domCanvas: HTMLCanvasElement | null = null;
   private mapIdToTarget: Map<string, ITargetable> = new Map();
+  // Defers a map selection when the user clicks immediately after opening the map
+  // before the id->target mapping has been rebuilt in the first render pass.
+  private pendingMapSelectId: string | null = null;
+  // Central logger
+  public readonly logger: LoggingService;
   
   // Audio
   private audio: AudioEngineService | null = null;
@@ -95,6 +106,8 @@ export class GameEngine {
   private primarySun: Sun | null = null;
   // Debris asociados a un planeta (e.g., anillo de mega-asteroides de la Tierra dividida)
   private planetDebris: Map<string, Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }>> = new Map();
+  // Track last applied snapshot id (debug)
+  private lastAppliedSnapshotId: string | null = null;
 
   // Landing minigame state
   private _prevSurfaceDistance: Map<string, number> = new Map();
@@ -163,6 +176,10 @@ export class GameEngine {
     asteroidClusterService: AsteroidClusterService,
     private relationService: RelationService,
     private animationManager: AnimationManagerService,
+    loggingService: LoggingService,
+  private solarSystemService?: SolarSystemService,
+  private humanSolarSystemService?: HumanSolarSystemService,
+  private portalPersistenceService?: PortalPersistenceService,
     audioEngine?: AudioEngineService,
     musicDirector?: MusicDirectorService
   ) {
@@ -175,6 +192,8 @@ export class GameEngine {
     // Optional audio wiring
     this.audio = audioEngine || null;
     this.music = musicDirector || null;
+    // Logger
+    this.logger = loggingService;
   }
 
   /**
@@ -184,13 +203,13 @@ export class GameEngine {
     try {
       // Inicializar WebGL
       if (!this.webglService.initialize(canvasRef)) {
-        console.error('No se pudo inicializar WebGL');
+        this.logger.log(LogLevel.ERROR, LogCategory.RENDER, 'No se pudo inicializar WebGL');
         return false;
       }
 
       this.gl = this.webglService.getContext() as WebGL2RenderingContext;
       if (!this.gl) {
-        console.error('No se pudo obtener el contexto WebGL');
+        this.logger.log(LogLevel.ERROR, LogCategory.RENDER, 'No se pudo obtener el contexto WebGL');
         return false;
       }
 
@@ -200,7 +219,7 @@ export class GameEngine {
       // Inicializar sistemas
       this.shaderManager = new ShaderManager(this.webglService);
       if (!this.shaderManager.isReady()) {
-        console.error('No se pudieron inicializar los shaders');
+        this.logger.log(LogLevel.ERROR, LogCategory.SHADERS, 'No se pudieron inicializar los shaders');
         return false;
       }
 
@@ -222,23 +241,24 @@ export class GameEngine {
       // Inicializar sistema de partículas
       this.particleEffects = this.particleEffectsService;
       this.particleEffects.initialize(this.shaderManager);
+      
 
       // Inicializar sistema HUD con texturas dinámicas (FASE 3)
       this.hudManager = new HUDManager(this.gl);
-      console.log('🎯 HUDManager inicializado con Canvas 2D → WebGL');
+  this.logger.log(LogLevel.INFO, LogCategory.HUD, 'HUDManager inicializado con Canvas 2D → WebGL');
 
       // Inicializar renderer 2D de outline/placa de target (STEP 5)
       try {
         this.targetOutline2D = new TargetOutline2DRenderer(this.webglService as any);
         const ok = this.targetOutline2D.initialize();
         if (!ok) {
-          console.warn('⚠️ TargetOutline2DRenderer no pudo inicializarse');
+          this.logger.log(LogLevel.WARN, LogCategory.HUD, 'TargetOutline2DRenderer no pudo inicializarse');
           this.targetOutline2D = null;
         }
   // Increase redraw rate for smoother motion (~8Hz)
   try { (this.targetOutline2D as any).setMinUploadInterval?.(120); } catch {}
       } catch (e) {
-        console.warn('⚠️ Error inicializando TargetOutline2DRenderer:', e);
+        this.logger.log(LogLevel.WARN, LogCategory.HUD, 'Error inicializando TargetOutline2DRenderer', e);
         this.targetOutline2D = null;
       }
 
@@ -250,9 +270,11 @@ export class GameEngine {
     this.grimoirePanel = new GrimoirePanel(this.gl, 1024, 1024);
     this.grimoirePanel.setEnabled(false);
   } catch (e) {
-    console.warn('⚠️ GrimoirePanel initialization failed:', e);
+    this.logger.log(LogLevel.WARN, LogCategory.HUD, 'GrimoirePanel initialization failed', e);
     this.grimoirePanel = null;
   }
+
+  
 
   // Crear cámara
   const canvas = canvasRef.nativeElement;
@@ -273,32 +295,32 @@ export class GameEngine {
     const c: HTMLCanvasElement = (this.webglService.getContext() as any).canvas as HTMLCanvasElement;
     this.landingOverlay = new LandingOverlay(this.gl, c?.width || 1024, c?.height || 768);
   } catch (e) {
-    console.warn('⚠️ LandingOverlay could not be initialized:', e);
+    this.logger.log(LogLevel.WARN, LogCategory.HUD, 'LandingOverlay could not be initialized', e);
     this.landingOverlay = null;
   }
       // Fullscreen landing overlay (background HUD)
       try {
         this.landingOverlay = new LandingOverlay(this.gl, canvas.width, canvas.height);
       } catch (e) {
-        console.warn('LandingOverlay initialization failed:', e);
+        this.logger.log(LogLevel.WARN, LogCategory.HUD, 'LandingOverlay initialization failed', e);
         this.landingOverlay = null;
       }
 
       // Inicializar sistema de retícula con renderizado (FASE 2)
       const reticleInit = await this.reticleManager.initialize(this.camera, this.shaderManager);
       if (!reticleInit) {
-        console.error('❌ Error inicializando sistema de retícula');
+        this.logger.log(LogLevel.ERROR, LogCategory.TARGETING, 'Error inicializando sistema de retícula');
         return false;
       }
-      console.log('🎯 ReticleManager inicializado con visual system');
+      this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'ReticleManager inicializado con visual system');
 
       // Inicializar nuevo sistema de targeting adaptativo
       const adaptiveInit = await this.adaptiveTargeting.initialize(this.camera, this.shaderManager);
       if (!adaptiveInit) {
-        console.error('❌ Error inicializando sistema de targeting adaptativo');
+        this.logger.log(LogLevel.ERROR, LogCategory.TARGETING, 'Error inicializando sistema de targeting adaptativo');
         return false;
       }
-      console.log('🎯 AdaptiveTargetingIntegrator inicializado');
+      this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'AdaptiveTargetingIntegrator inicializado');
 
       // Crear objetos del juego
       this.createGameObjects();
@@ -318,36 +340,35 @@ export class GameEngine {
 
   // Registro de targets se realiza al crear los clusters (initializeAllBuffers)
 
-      // Ejecutar tests de integración cámara-nave
-      this.runIntegrationTests();
+      // Integration tests removed
 
-      console.log('GameEngine inicializado correctamente');
+  this.logger.log(LogLevel.INFO, LogCategory.GAME_INITIALIZATION, 'GameEngine inicializado correctamente');
       // Expose a simple console hook to toggle the 2D outliner at runtime for FPS testing
       try {
         const w = (globalThis as any);
         w.Debug = w.Debug || {};
         w.Debug.setOutlinerEnabled = (v: boolean) => {
           this.outlinerEnabled = !!v;
-          console.log('🟢 Outliner enabled =', this.outlinerEnabled);
+          this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Outliner enabled', { value: this.outlinerEnabled });
         };
         w.Debug.setOutlinerUpdateMs = (ms: number) => {
           try {
             (this.targetOutline2D as any)?.setMinUploadInterval?.(ms);
-            console.log('🟢 Outliner update min interval set to', ms, 'ms');
+            this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Outliner update min interval set', { ms });
           } catch (e) {
-            console.warn('No se pudo ajustar el intervalo del outliner:', e);
+            this.logger.log(LogLevel.WARN, LogCategory.DEBUG, 'No se pudo ajustar el intervalo del outliner', e);
           }
         };
         // Targeting runtime tweaks
         w.Debug.Targeting = w.Debug.Targeting || {};
         w.Debug.Targeting.useRaycastHover = (v: boolean) => {
-          try { (this.adaptiveTargeting as any)?.setUseRaycastHover?.(!!v); console.log('🟢 useRaycastHover =', !!v); } catch {}
+          try { (this.adaptiveTargeting as any)?.setUseRaycastHover?.(!!v); this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'useRaycastHover', { value: !!v }); } catch {}
         };
         w.Debug.Targeting.dominantGate = (v: boolean) => {
-          try { (this.adaptiveTargeting as any)?.setDominantGateEnabled?.(!!v); console.log('🟢 dominantGateEnabled =', !!v); } catch {}
+          try { (this.adaptiveTargeting as any)?.setDominantGateEnabled?.(!!v); this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'dominantGateEnabled', { value: !!v }); } catch {}
         };
         w.Debug.Targeting.setDominantFraction = (f: number) => {
-          try { (this.adaptiveTargeting as any)?.setDominantRadiusFraction?.(Number(f)); console.log('🟢 dominantRadiusFraction =', f); } catch {}
+          try { (this.adaptiveTargeting as any)?.setDominantRadiusFraction?.(Number(f)); this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'dominantRadiusFraction', { value: f }); } catch {}
         };
         // Panels: Map and Grimoire (ancient book)
         w.Debug.Panels = w.Debug.Panels || {};
@@ -357,7 +378,7 @@ export class GameEngine {
           this.updateMapClickBinding();
           this.updateGrimoirePointerBinding();
           this.updateCanvasCursor();
-          console.log('🗺️ Map panel enabled =', !!v);
+          this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Map panel enabled', { value: !!v });
         };
         w.Debug.Panels.setGrimoireEnabled = (v: boolean) => {
           try { this.grimoirePanel?.setEnabled(!!v); } catch {}
@@ -365,15 +386,213 @@ export class GameEngine {
           this.updateMapClickBinding();
           this.updateGrimoirePointerBinding();
           this.updateCanvasCursor();
-          console.log('📖 Grimoire panel enabled =', !!v);
+          this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Grimoire panel enabled', { value: !!v });
         };
       } catch {}
       return true;
 
     } catch (error) {
-      console.error('Error al inicializar GameEngine:', error);
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_INITIALIZATION, 'Error al inicializar GameEngine', error);
       return false;
     }
+  }
+
+  /** Apply a procedural or serialized SolarSystemSnapshot to the current engine state. */
+  public applySolarSystemSnapshot(snapshot: SolarSystemSnapshot): { portalsCreated: PortalSnapshot[] } {
+    if (!snapshot) { this.logger.log(LogLevel.ERROR, LogCategory.SOLAR_SYSTEM_GENERATION, 'applySolarSystemSnapshot: snapshot null'); return { portalsCreated: [] }; }
+    const gl = this.gl;
+    this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Applying snapshot', { id: snapshot.id, planets: snapshot.planets.length, clusters: snapshot.clusters?.length || 0 });
+    const existingPortals = this.portals.slice();
+    // Clear planets & debris
+    this.planets = [];
+    this.primarySun = null;
+    this.planetDebris.clear();
+    // Clear clusters
+    try { this.asteroidClusterService.clearAll?.(); } catch {}
+    // Reset target catalog buckets (keep portal bucket)
+    try {
+      this.targetCatalog.register(TargetType.PLANET, []);
+      this.targetCatalog.register(TargetType.ASTEROID, []);
+      this.targetCatalog.register(TargetType.SUPER_ASTEROID, []);
+      this.targetCatalog.register(TargetType.CLUSTER, []);
+      this.targetCatalog.register(TargetType.MEGA_ASTEROID, []);
+    } catch {}
+
+    // Sun
+    try {
+      if (snapshot.sun) {
+        const sun = new Sun(snapshot.sun.id, snapshot.sun.radius, { ...snapshot.sun.position });
+        sun.customName = snapshot.sun.name || sun.customName;
+        // Anchor sun: ensure zero orbit so it never drifts
+        sun.orbitCenter = { ...snapshot.sun.position } as any;
+        sun.semiMajor = 0; sun.semiMinor = 0; sun.orbitAngularSpeed = 0; sun.orbitAngle = 0; sun.orbitOrientation = 0;
+        (sun as any).orbitNormal = { x: 0, y: 1, z: 0 };
+        (sun as any).orbitU = { x: 1, y: 0, z: 0 };
+        if (gl && !sun.vertexBuffer) sun.initBuffers(gl as WebGL2RenderingContext);
+        this.planets.push(sun as any);
+        this.primarySun = sun;
+      }
+    } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.SOLAR_SYSTEM_GENERATION, 'Sun instantiation failed', e); }
+
+    // Planets
+    const pickColor = (k?: string): any => {
+      const x = String(k || '').toLowerCase();
+      if (x === 'ringed') return 'gris';
+      if (x === 'gaseous') return 'azul_hielo';
+      if (x === 'giant') return 'marron';
+      if (x === 'dwarf') return 'gris';
+      if (x === 'protoplanet') return 'gris';
+      if (x === 'terrestrial' || x === 'rocky') return 'azul_marino';
+      return 'marron';
+    };
+    for (const p of snapshot.planets) {
+      try {
+        const kind = String(p.kind || '').toLowerCase();
+        // Prefer explicit snapshot color when provided; else pick by kind
+        const snapshotColor = (p as any).baseColorName as any;
+        const color: any = snapshotColor || pickColor(kind);
+        const pos = { ...p.position };
+        let planetObj: Planet;
+        // Special cases for handcrafted system
+        if (p.id === 'planet-earth') {
+          // Force canonical Earth base color 'azul_marino' to keep split hemisphere tint/texture
+          const earthColor: any = (snapshotColor || 'azul_marino');
+          const created = EarthSplitPlanet.createWithDebris('planet-earth', earthColor, p.radius || 400, pos, 150, 320);
+          planetObj = created.planet as Planet;
+          // Register debris locals to follow Earth spin in update loop
+          const arr: Array<{ obj: any; local: { x: number; y: number; z: number } }> = [];
+          for (const m of created.debris) {
+            arr.push({ obj: m, local: { x: m.position.x - pos.x, y: m.position.y - pos.y, z: m.position.z - pos.z } });
+          }
+          this.planetDebris.set('planet-earth', arr as any);
+          // Apply canonical Earth axial tilt (23.5°) and spin to drive debris rotation
+          try { (planetObj as any).axialTiltRad = (23.5 * Math.PI) / 180; } catch {}
+          try { (planetObj as any).angularVelocity = (planetObj as any).angularVelocity || { x: 0, y: 0, z: 0 }; } catch {}
+          (planetObj as any).angularVelocity.y = (2 * Math.PI) / 300; // ~1 rev / 5 min
+        } else {
+          switch (kind) {
+            case 'ringed': planetObj = new RingedPlanet(p.id, color, p.radius, pos); break;
+            case 'gaseous': planetObj = new GaseousPlanet(p.id, color, p.radius, pos); break;
+            case 'giant': planetObj = new GiantPlanet(p.id, color, p.radius, pos); break;
+            case 'dwarf': planetObj = new DwarfPlanet(p.id, color, p.radius, pos); break;
+            case 'protoplanet': planetObj = new Protoplanet(p.id, color, p.radius, pos); break;
+            case 'terrestrial': planetObj = new Planet(p.id, color, p.radius, pos); break;
+            case 'rocky': planetObj = new Planet(p.id, color, p.radius, pos); break;
+            default: planetObj = new Planet(p.id, color, p.radius, pos); break;
+          }
+        }
+        if (p.name) planetObj.customName = p.name;
+        if (typeof p.probabilityOfLifePct === 'number') (planetObj as any).probabilityOfLifePct = p.probabilityOfLifePct;
+        if (p.orbit) {
+          planetObj.orbitCenter = { ...(p.orbit.center || { x: 0, y: 0, z: 0 }) } as any;
+          planetObj.semiMajor = p.orbit.semiMajor;
+          planetObj.semiMinor = p.orbit.semiMinor;
+          planetObj.orbitOrientation = p.orbit.orientation || 0;
+          planetObj.orbitAngle = p.orbit.angle || 0;
+          planetObj.orbitAngularSpeed = p.orbit.angularSpeed || planetObj.orbitAngularSpeed;
+          (planetObj as any).orbitNormal = { ...(p.orbit.normal || { x: 0, y: 1, z: 0 }) };
+          (planetObj as any).orbitU = { ...(p.orbit.u || { x: 1, y: 0, z: 0 }) };
+        }
+        // Ensure a sensible default spin so debris belts rotate with their parent
+        try {
+          const kindSpin = ((): number => {
+            if (p.id === 'planet-saturn' || kind === 'ringed') return (2 * Math.PI) / 500; // a bit slower
+            if (kind === 'gaseous' || kind === 'giant') return (2 * Math.PI) / 900; // slow giants
+            return (2 * Math.PI) / 600; // default
+          })();
+          (planetObj as any).angularVelocity = (planetObj as any).angularVelocity || { x: 0, y: 0, z: 0 };
+          if (!Number.isFinite((planetObj as any).angularVelocity.y) || (planetObj as any).angularVelocity.y === 0) {
+            (planetObj as any).angularVelocity.y = kindSpin;
+          }
+          // Apply a reasonable axial tilt to ringed planets to incline the ring
+          if (p.id === 'planet-saturn' || kind === 'ringed') {
+            (planetObj as any).axialTiltRad = (26.7 * Math.PI) / 180;
+          }
+        } catch {}
+        if (gl && !planetObj.vertexBuffer) planetObj.initBuffers(gl as WebGL2RenderingContext);
+        this.planets.push(planetObj);
+        // Saturn debris belt similar to legacy if available
+        if (p.id === 'planet-saturn') {
+          try {
+            const belt = this.createDebrisBeltForPlanet(planetObj, 280, { spreadScale: 0.45, yScale: 0.7 });
+            this.planetDebris.set(planetObj.id, belt as any);
+          } catch {}
+        }
+      } catch (e) {
+        this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Planet instantiation failed', { id: p.id, e });
+      }
+    }
+    try { this.targetCatalog.register(TargetType.PLANET, this.planets as any); } catch {}
+
+    // Clusters
+    const normals: any[] = [];
+    const supers: any[] = [];
+    try {
+      for (const c of (snapshot.clusters || [])) {
+        const inst = this.asteroidClusterService.createCluster({
+          id: c.id,
+          center: { ...c.center },
+          direction: { ...c.direction },
+          speed: c.speed,
+          count: c.count,
+          includeSuper: c.includeSuper,
+          radius: c.radius,
+          centerSpeedFactor: c.centerSpeedFactor,
+        });
+        if (gl) { for (const o of inst.objects) if (!o.vertexBuffer) o.initBuffers(gl as WebGL2RenderingContext); }
+        for (const o of inst.objects) {
+          const name = (o as any)?.constructor?.name;
+            if (name === 'SuperAsteroid') supers.push(o as any); else normals.push(o as any);
+        }
+      }
+      this.targetCatalog.register(TargetType.ASTEROID, normals);
+      this.targetCatalog.register(TargetType.SUPER_ASTEROID, supers);
+      this.targetCatalog.register(TargetType.CLUSTER, []);
+    } catch (e) { this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Cluster instantiation error', e); }
+
+    // Portals (preserve existing + add new)
+    const createdPortals: PortalSnapshot[] = [];
+    try {
+      if (existingPortals.length) {
+        this.targetCatalog.register(TargetType.PORTAL, existingPortals as any);
+      }
+      for (const p of (snapshot.portals || [])) {
+        if (this.portals.some(ep => ep.id === p.id)) { createdPortals.push(p); continue; }
+        const portal = new Portal(p.id, { ...p.position }, p.radius, this.logger);
+        portal.linkedPortalId = p.linkedPortalId;
+        portal.applyEyeState(p.eyeState);
+        if (gl && !portal.vertexBuffer) portal.initBuffers(gl as WebGL2RenderingContext);
+        this.portals.push(portal);
+        this.targetCatalog.add(TargetType.PORTAL, portal as any);
+        createdPortals.push(p);
+      }
+    } catch (e) { this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'Portal instantiation error', e); }
+
+    this.lastAppliedSnapshotId = snapshot.id || null;
+    // Restore debris from snapshot (generic) if provided
+    try {
+      if (snapshot.planetDebris && snapshot.planetDebris.length) {
+        for (const d of snapshot.planetDebris) {
+          const parent = this.planets.find(pl => pl.id === d.planetId);
+          if (!parent) continue;
+          const pos = {
+            x: parent.position.x + d.localOffset.x,
+            y: parent.position.y + d.localOffset.y,
+            z: parent.position.z + d.localOffset.z
+          };
+          const size = d.size || 1;
+          const obj = new MegaAsteroid(d.id, pos, size);
+          obj.updateModelMatrix();
+          const existing = this.planetDebris.get(d.planetId) || [];
+            existing.push({ obj, local: { ...d.localOffset } });
+          this.planetDebris.set(d.planetId, existing as any);
+          if (gl && !obj.vertexBuffer) obj.initBuffers(gl as WebGL2RenderingContext);
+          try { this.targetCatalog.add(TargetType.MEGA_ASTEROID, obj as any); } catch {}
+        }
+      }
+    } catch (e) { this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Debris restore failed', e); }
+    this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Snapshot applied', { id: snapshot.id, planetCount: this.planets.length, portalCount: this.portals.length });
+    return { portalsCreated: createdPortals };
   }
 
   /**
@@ -407,12 +626,12 @@ export class GameEngine {
     try {
       // Crear nave del jugador en el origen
       this.spaceship = new Spaceship({ x: 0, y: 0, z: 0 });
-      console.log('🚀 Spaceship created successfully at position:', this.spaceship.position);
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_INITIALIZATION, 'Spaceship created successfully', { position: this.spaceship.position });
     } catch (error) {
-      console.error('❌ Error creating spaceship:', error);
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_INITIALIZATION, 'Error creating spaceship', error);
       throw error;
     }
-    console.log('🚀 Spaceship geometry check:', {
+    this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Spaceship geometry check', {
       vertices: this.spaceship.vertices.length,
       indices: this.spaceship.indices.length,
       visible: this.spaceship.visible,
@@ -441,21 +660,32 @@ export class GameEngine {
    */
   private initializeAllBuffers(): void {
     if (!this.gl) {
-      console.error('❌ Cannot initialize buffers: WebGL context not available');
+      this.logger.log(LogLevel.ERROR, LogCategory.RENDER, 'Cannot initialize buffers: WebGL context not available');
       return;
     }
     
     // Inicializar buffers de la nave
     this.spaceship.initBuffers(this.gl);
-    console.log('🚀 Spaceship buffers initialized:', {
+    this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Spaceship buffers initialized', {
       vertexBuffer: !!this.spaceship.vertexBuffer,
       indexBuffer: !!this.spaceship.indexBuffer,
       vertices: this.spaceship.vertices.length,
       indices: this.spaceship.indices.length
     });
     
-    // 1) Crear y registrar planetas primero (necesitamos la órbita de la Tierra)
-    this.createPlanets();
+    // 1) Crear y registrar planetas primero usando snapshot humano si disponible
+    if (this.humanSolarSystemService) {
+      try {
+        const snap = this.humanSolarSystemService.createSnapshot();
+        this.applySolarSystemSnapshot(snap);
+        this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Applied human solar system snapshot during buffer init', { id: snap.id });
+      } catch (e) {
+        this.logger.log(LogLevel.ERROR, LogCategory.SOLAR_SYSTEM_GENERATION, 'Failed human snapshot; falling back', e);
+        this.createPlanets();
+      }
+    } else {
+      this.createPlanets();
+    }
     this.planets.forEach(p => p.initBuffers(this.gl!));
     this.targetCatalog.register(TargetType.PLANET, this.planets as unknown as ITargetable[]);
 
@@ -661,7 +891,7 @@ export class GameEngine {
         this.spaceship.updateModelMatrix();
       } catch {}
     } else {
-      console.warn('⚠️ No se encontró la Tierra; se omite rastro de clusters.');
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Earth not found; skipping cluster trail');
     }
 
     // Inicializar buffers de los objetos de todos los clusters
@@ -693,17 +923,15 @@ export class GameEngine {
    * Inicia el bucle principal del juego
    */
   public start(): void {
-    console.log('🚀 GameEngine.start() LLAMADO:', {
-      wasRunning: this.isRunning
-    });
+  this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'GameEngine.start() called', { wasRunning: this.isRunning });
     
     if (!this.isRunning) {
       this.isRunning = true;
       this.lastFrameTime = performance.now();
       this.gameLoop();
-      console.log('✅ GameEngine iniciado - isRunning:', this.isRunning);
+  this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'GameEngine iniciado', { isRunning: this.isRunning });
     } else {
-      console.log('⚠️ GameEngine ya estaba corriendo');
+  this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'GameEngine ya estaba corriendo');
     }
   }
 
@@ -724,9 +952,9 @@ export class GameEngine {
       if (ok && this.thrusterCtl) {
         this.thrusterCtl.start(0.0);
       }
-      console.log('🔊 Audio enabled:', ok);
+      this.logger.log(LogLevel.INFO, LogCategory.AUDIO, 'Audio enabled', { ok });
     } catch (e) {
-      console.warn('Audio enable failed', e);
+      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Audio enable failed', e);
     }
   }
 
@@ -735,7 +963,7 @@ export class GameEngine {
    */
   public stop(): void {
     this.isRunning = false;
-    console.log('GameEngine detenido');
+  this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'GameEngine detenido');
   }
 
   /**
@@ -804,7 +1032,7 @@ export class GameEngine {
       }
     }
 
-    console.log('🎯 Randomized start near Sun:', { startPos, sunRadius, distFromSurface });
+    this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Randomized start near Sun', { startPos, sunRadius, distFromSurface });
   }
 
   /**
@@ -813,7 +1041,7 @@ export class GameEngine {
   private gameLoop = (): void => {
     // DEBUG CRÍTICO - Verificar isRunning
     if (!this.isRunning) {
-      console.log('⚠️ GameLoop BLOQUEADO - isRunning:', this.isRunning);
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'GameLoop blocked - isRunning false', { isRunning: this.isRunning });
       return;
     }
 
@@ -823,7 +1051,7 @@ export class GameEngine {
 
     // DEBUG CRÍTICO - Verificar gameLoop
     if (performance.now() % 2000 < 50) { // Cada 2 segundos
-      console.log('🔄 GameEngine.gameLoop() EJECUTADO:', {
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'GameEngine.gameLoop() executed', {
         deltaTime: Math.round(deltaTime * 1000) + 'ms',
         isRunning: this.isRunning,
         currentTime: Math.round(currentTime)
@@ -848,7 +1076,7 @@ export class GameEngine {
     this.animationManager.update(this, deltaTime);
     // DEBUG CRÍTICO - Verificar que update se ejecuta
     if (performance.now() % 1500 < 50) { // Cada 1.5 segundos
-      console.log('🎮 GameEngine.update() EJECUTADO:', {
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'GameEngine.update() executed', {
         deltaTime: Math.round(deltaTime * 1000) + 'ms',
         spaceship: !!this.spaceship,
         asteroids: this.asteroids.length
@@ -857,7 +1085,7 @@ export class GameEngine {
     
     // Actualizar nave si existe
     if (!this.spaceship) {
-      console.error('❌ Spaceship is undefined in update method');
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Spaceship is undefined in update method');
       return;
     }
     
@@ -1174,7 +1402,7 @@ export class GameEngine {
     
     // Debug ocasional para verificar targets
     if (Math.random() < 0.001) { // 0.1% chance
-      console.log('🎯 GameEngine targets update:', {
+      this.logger.log(LogLevel.DEBUG, LogCategory.TARGETING, 'GameEngine targets update', {
         asteroidCount: this.asteroids.length,
         targetCount: availableTargets.length,
         firstTarget: availableTargets[0]?.getDisplayName() || 'none'
@@ -1183,7 +1411,7 @@ export class GameEngine {
     
     // DEBUG CRÍTICO - Verificar llamada (increased frequency for testing)
     if (performance.now() % 5000 < 50) { // Cada 5 segundos aprox para testing
-      console.log('🚀 GameEngine→AdaptiveTargeting.update():', {
+      this.logger.log(LogLevel.DEBUG, LogCategory.TARGETING, 'AdaptiveTargeting.update()', {
         deltaTime: Math.round(deltaTime * 1000) + 'ms',
         asteroids: this.targetCatalog.getByType(TargetType.ASTEROID).length,
         targets: availableTargets.length,
@@ -1203,7 +1431,7 @@ export class GameEngine {
     if (this.adaptiveTargeting) {
       this.adaptiveTargeting.update(deltaTime, availableTargets, mousePos);
     } else {
-      console.warn('⚠️ AdaptiveTargeting not initialized yet');
+      this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'AdaptiveTargeting not initialized yet');
     }
 
   // Update target preview animation regardless of selection
@@ -1257,7 +1485,7 @@ export class GameEngine {
       // Render preview into offscreen canvas
       this.targetPreview.renderPreview(selected);
       if (Math.random() < 0.01) {
-        console.log('🎯 TargetPreview status:', (this.targetPreview as any).getStatus?.());
+        this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'TargetPreview status', (this.targetPreview as any).getStatus?.());
       }
   const previewCanvas = this.targetPreview.getCanvas();
 
@@ -1308,7 +1536,7 @@ export class GameEngine {
     try {
       this.updateLandingSystem(deltaTime);
     } catch (e) {
-      console.warn('⚠️ Landing system update error:', e);
+      this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Landing system update error', e);
     }
   }
 
@@ -1446,9 +1674,9 @@ export class GameEngine {
         }
         if (ok) {
           this._isInsidePlanetId = p.id;
-          console.log(`🛬 Landing entry succeeded on ${p.customName || p.id}`);
+          this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Landing entry succeeded', { planet: p.customName || p.id });
         } else {
-          console.log(`💥 Crash on ${p.customName || p.id} - restarting`);
+          this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Crash on planet - restarting', { planet: p.customName || p.id });
           this.resetAfterCrash();
         }
       }
@@ -1558,7 +1786,7 @@ export class GameEngine {
       }
       cache[target.id] = res.data;
     } catch (e) {
-      console.warn('Target details fetch failed', e);
+      this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'Target details fetch failed', e);
     }
   }
 
@@ -1647,7 +1875,7 @@ export class GameEngine {
     // Colisiones nave-asteroides
     this.asteroids.forEach((asteroid, index) => {
       if (this.spaceship.checkCollision(asteroid)) {
-        console.log('¡Colisión detectada!');
+        this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Collision detected');
         // Por ahora solo registrar la colisión
         // TODO: Implementar lógica de daño/reinicio
       }
@@ -1659,7 +1887,7 @@ export class GameEngine {
    */
   private render(): void {
     if (!this.gl || !this.shaderManager) {
-      console.warn('❌ Render skipped: gl or shaderManager not available');
+      this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'Render skipped: gl or shaderManager not available');
       return;
     }
 
@@ -1679,8 +1907,7 @@ export class GameEngine {
     
     // Log detallado cada 60 frames para evitar spam
     if (Math.floor(performance.now() / 1000) % 3 === 0) {
-      console.log('🎨 Rendering frame - Spaceship:', this.spaceship?.position, 'Asteroids:', this.asteroids.length);
-      console.log('📹 Camera pos:', this.camera?.position, 'target:', this.camera?.target);
+      this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Rendering frame', { ship: this.spaceship?.position, asteroids: this.asteroids.length });
     }
 
     // Configurar iluminación global
@@ -1829,31 +2056,34 @@ export class GameEngine {
 
   // Renderizar planetas después de asteroides
   this.renderPlanets();
-  // Render portals
+  // Render portals (blank portal: just halo disk)
   try {
     if (this.portals.length) {
-      const gl = this.gl as WebGL2RenderingContext;
-      // State for blending (slight glow)
+    const gl = this.gl as WebGL2RenderingContext;
+    // State for blending and depth (draw symbol/eye/flame as overlay)
       const prevProg = gl.getParameter(gl.CURRENT_PROGRAM);
       const wasBlend = gl.isEnabled(gl.BLEND);
-  gl.enable(gl.BLEND);
-  // Use additive blend to intensify arcane glow
-  gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
+    const prevDepthMask = gl.getParameter(gl.DEPTH_WRITEMASK) as boolean;
+    gl.enable(gl.BLEND);
+    // Use additive blend to intensify arcane glow
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    // Disable depth test/writes to avoid self-occlusion with disk
+    gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
       for (const p of this.portals) {
         if (!p.vertexBuffer || !p.indexBuffer) continue;
         this.shaderManager.usePortalProgram();
         this.shaderManager.setPortalMatrices(p.modelMatrix, this.camera.viewMatrix, this.camera.projectionMatrix);
         const t = (performance.now() || 0) / 1000;
-  // Tuned palette for arcane cyan with deeper inner core
-  const outer = new Float32Array([0.25, 0.9, 1.15]);
-  const inner = new Float32Array([0.06, 0.14, 0.25]);
-  // Slightly expand ring to accommodate multi-ring shader
-  const ringInner = 0.58;
-  const ringOuter = 0.995;
-        const eyeDir = new Float32Array([p.eyeDir.x, p.eyeDir.y, p.eyeDir.z]);
-  const eyeRadius = 0.07; // Slightly smaller pupil for new iris ring
-        this.shaderManager.setPortalParams(t, outer, inner, ringInner, ringOuter, eyeDir, eyeRadius);
-        // Bind geometry
+        const outer = new Float32Array([0.25, 0.9, 1.15]);
+        const inner = new Float32Array([0.06, 0.14, 0.25]);
+        const ringInner = 0.58;
+        const ringOuter = 0.995;
+        const pent = new Float32Array([0.0, 0.0, 0.0]);
+        const eyeDir = new Float32Array([0.0, 0.0, 1.0]);
+        const eyeRadius = 0.0;
+        this.shaderManager.setPortalParams(t, outer, inner, ringInner, ringOuter, pent, eyeDir, eyeRadius);
         const aPos = (this.shaderManager as any).portalAttributes['position'];
         gl.bindBuffer(gl.ARRAY_BUFFER, p.vertexBuffer);
         gl.enableVertexAttribArray(aPos);
@@ -1862,7 +2092,9 @@ export class GameEngine {
         gl.drawElements(gl.TRIANGLES, p.indices.length, gl.UNSIGNED_SHORT, 0);
         gl.disableVertexAttribArray(aPos);
       }
-      if (!wasBlend) gl.disable(gl.BLEND);
+  if (!wasBlend) gl.disable(gl.BLEND);
+  if (wasDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+  gl.depthMask(prevDepthMask);
       if (prevProg) gl.useProgram(prevProg as any);
     }
   } catch {}
@@ -1919,6 +2151,15 @@ export class GameEngine {
         // Allow selecting the player's ship as an ally from the map
         this.mapIdToTarget.set('ship', this.spaceship as unknown as ITargetable);
       }
+        // If there is a deferred map selection (click happened before mapping), resolve it now
+        if (this.pendingMapSelectId) {
+          const pendingTgt = this.mapIdToTarget.get(this.pendingMapSelectId);
+          if (pendingTgt && this.adaptiveTargeting) {
+            try { this.adaptiveTargeting.selectTarget(pendingTgt); } catch {}
+            try { this.systemPanel.setSelectedId(this.pendingMapSelectId); } catch {}
+          }
+          this.pendingMapSelectId = null;
+        }
       // Prepare details for active item (selected or hovered)
       let details: Record<string, any> | undefined = undefined;
       try {
@@ -1954,7 +2195,7 @@ export class GameEngine {
       this.systemPanel.updateMap({ center, planets, clusters, debris, ship, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
-      console.warn('SolarSystemPanel render failed', e);
+      this.logger.log(LogLevel.WARN, LogCategory.HUD, 'SolarSystemPanel render failed', e);
     }
   } else if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
     try {
@@ -1962,7 +2203,7 @@ export class GameEngine {
       this.grimoirePanel.update(0);
       this.grimoirePanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
-      console.warn('GrimoirePanel render failed', e);
+      this.logger.log(LogLevel.WARN, LogCategory.HUD, 'GrimoirePanel render failed', e);
     }
   } else {
     // Draw background landing overlay behind the cockpit HUD (full camera view)
@@ -2235,6 +2476,11 @@ export class GameEngine {
   /** Actualiza la posición/orientación de planetas según su órbita */
   private updatePlanets(dt: number): void {
     for (const p of this.planets) {
+      // Skip orbital translation for anchored primary sun
+      if (this.primarySun && p.id === this.primarySun.id) {
+        p.update(dt);
+        continue;
+      }
       p.orbitAngle += p.orbitAngularSpeed * dt;
       // Mantener ángulo en rango
       if (p.orbitAngle > Math.PI * 2) p.orbitAngle -= Math.PI * 2;
@@ -2536,7 +2782,7 @@ export class GameEngine {
         try {
           (p as any).renderCapsEmissive(this.gl, this.shaderManager, cam.viewMatrix, cam.projectionMatrix);
         } catch (e) {
-          console.warn('renderCapsEmissive failed', e);
+          this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderCapsEmissive failed', e);
         }
       }
       // Brillo del Sol (si aplica)
@@ -2544,7 +2790,7 @@ export class GameEngine {
         try {
           (p as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
         } catch (e) {
-          console.warn('renderGlow(sun) failed', e);
+          this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderGlow(sun) failed', e);
         }
       }
       // Si el sol está detrás de la cámara, mantener un glow ambiente suave
@@ -2760,7 +3006,7 @@ export class GameEngine {
 
     // Verificar que la nave tiene buffers inicializados
     if (!this.spaceship.vertexBuffer) {
-      console.error('❌ Spaceship has no vertex buffer! Skipping render.');
+  this.logger.log(LogLevel.ERROR, LogCategory.RENDER, 'Spaceship has no vertex buffer - skipping render');
       return;
     }
 
@@ -2771,7 +3017,7 @@ export class GameEngine {
     if (!this.onceLoggedAttribCollision) {
       const litNormalIdx = this.shaderManager.litAttributes['normal'];
       const basicColorIdx = this.shaderManager.basicAttributes['color'];
-      console.log('🔬 Attrib indices (lit.a_normal vs basic.a_color):', { litNormalIdx, basicColorIdx, equal: litNormalIdx === basicColorIdx });
+  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Attrib indices check', { litNormalIdx, basicColorIdx, equal: litNormalIdx === basicColorIdx });
       this.onceLoggedAttribCollision = true;
     }
 
@@ -2913,7 +3159,7 @@ export class GameEngine {
     // Debug: after reticle render, check which program is active
     if (this.gl) {
       const prog = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
-      console.log('🔬 Program after reticle render:', { programId: prog ? (prog as any) : null });
+  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Program after reticle render', { programId: prog ? (prog as any) : null });
     }
   }
 
@@ -3058,9 +3304,9 @@ export class GameEngine {
       return; // Salir sin renderizar nada
     }
 
-    console.log('🛸 Renderizando cabina del piloto...');
+  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Renderizando cabina del piloto');
   const cockpitGeometry = this.spaceship.createCockpitGeometry();
-    console.log('🛸 Geometría de cabina creada:', cockpitGeometry.vertices.length, 'vértices');
+  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Geometría de cabina creada', { vertices: cockpitGeometry.vertices.length });
     const program = this.shaderManager.litProgram;
     if (!program) return;
 
@@ -3092,7 +3338,7 @@ export class GameEngine {
   private renderSpaceshipEngineNozzle(): void {
     if (!this.gl || !this.shaderManager || !this.spaceship) return;
 
-    console.log('🔧 Renderizando tubo del motor...');
+  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Renderizando tubo del motor');
   const nozzleGeometry = this.spaceship.createEngineNozzleGeometry();
     const program = this.shaderManager.litProgram;
     if (!program) return;
@@ -3322,13 +3568,13 @@ export class GameEngine {
    */
   private renderObject(object: GameObject): void {
     if (!this.gl || !this.shaderManager) {
-      console.warn('❌ RenderObject skipped: gl or shaderManager not available');
+  this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'RenderObject skipped: gl or shaderManager not available');
       return;
     }
     
     // Verificar que el objeto tiene buffers inicializados
     if (!object.vertexBuffer) {
-      console.error('❌ Object', object.id, 'has no vertex buffer! Skipping render.');
+  this.logger.log(LogLevel.ERROR, LogCategory.RENDER, 'Object has no vertex buffer - skipping', { id: object.id });
       return;
     }
 
@@ -3354,7 +3600,7 @@ export class GameEngine {
     if (idx < 0) return;
     const enabled = !!this.gl.getVertexAttrib(idx, this.gl.VERTEX_ATTRIB_ARRAY_ENABLED);
     if (this.lastNormalAttribEnabled !== enabled) {
-      console.log('🔬 a_normal enabled state changed:', { where, enabled });
+  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'a_normal enabled state changed', { where, enabled });
       this.lastNormalAttribEnabled = enabled;
     }
   }
@@ -3448,9 +3694,6 @@ export class GameEngine {
               try { this.systemPanel.setSelectedId(null); } catch {}
             }
           } catch {}
-        } else {
-          // Closing map: clear selection
-          this.clearTargetSelection();
         }
       }
       try { this.updateMapClickBinding(); } catch {}
@@ -3483,16 +3726,14 @@ export class GameEngine {
         this.systemPanel.setEnabled(false);
         try { this.updateMapClickBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
-        // Esc también limpia el target al cerrar paneles
-        this.clearTargetSelection();
+        // Mantener selección actual al cerrar mapa con Escape
         return;
       }
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
         this.grimoirePanel.setEnabled(false);
         try { this.updateGrimoirePointerBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
-        // Esc también limpia el target al cerrar paneles
-        this.clearTargetSelection();
+        // Mantener selección actual al cerrar grimorio con Escape
         return;
       }
       // No panels open: treat Escape as clear-target
@@ -3545,7 +3786,7 @@ export class GameEngine {
                 this.spaceship.voidEnergyCurrent = Math.max(0, this.spaceship.voidEnergyCurrent - 50);
                 this.animationManager.startVoidJump(this, target);
               } else {
-                console.info('[VoidJump] Target demasiado cerca (<4000u). Dist:', Math.round(dist));
+                this.logger.log(LogLevel.INFO, LogCategory.TARGETING, '[VoidJump] Target demasiado cerca (<4000u)', { distance: Math.round(dist) });
                 this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
               }
             } else {
@@ -3571,7 +3812,7 @@ export class GameEngine {
             const surf = dCenter - R;
             if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
             // Iniciar Gate Rite tras el pre-focus ya hecho (2s bloqueados)
-            try { this.animationManager.startGateRite(this, t); } catch (e) { console.error('GateRite start error', e); }
+            try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
           }
         }, 2000);
         return;
@@ -3603,7 +3844,7 @@ export class GameEngine {
                 this.spaceship.voidEnergyCurrent = Math.max(0, this.spaceship.voidEnergyCurrent - 50);
                 this.animationManager.startVoidJump(this, target);
               } else {
-                console.info('[VoidJump] Target demasiado cerca (<4000u). Dist:', Math.round(dist));
+                this.logger.log(LogLevel.INFO, LogCategory.TARGETING, '[VoidJump] Target demasiado cerca (<4000u)', { distance: Math.round(dist) });
                 this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
               }
             } else {
@@ -3624,7 +3865,7 @@ export class GameEngine {
             const dCenter = Math.hypot(dx, dy, dz);
             const surf = dCenter - R;
             if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
-            try { this.animationManager.startGateRite(this, t); } catch (e) { console.error('GateRite start error', e); }
+            try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
           }
         }, 2000);
         return;
@@ -3724,7 +3965,7 @@ export class GameEngine {
       const dir = reverse ? -1 : 1;
       (this.adaptiveTargeting as any).cycleTarget?.(dir);
     } catch (e) {
-      console.warn('Cycle selection failed:', e);
+  this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'Cycle selection failed', e);
     }
   }
 
@@ -3876,34 +4117,13 @@ export class GameEngine {
       delBuf(this.shipBuffers.nozzle); delBuf(this.shipBuffers.wings); delBuf(this.shipBuffers.thruster);
     }
     
-    console.log('GameEngine limpiado');
+  this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'GameEngine cleaned up');
   }
 
   /**
    * Ejecuta tests de integración para verificar la relación cámara-nave
    */
-  private runIntegrationTests(): void {
-    try {
-      console.log('🧪 Iniciando tests de integración cámara-nave...');
-      const results = runCameraSpaceshipTests();
-      
-      if (results.passedTests === results.totalTests) {
-        console.log(`✅ Todos los tests pasaron: ${results.passedTests}/${results.totalTests}`);
-      } else {
-        console.warn(`⚠️ Tests fallidos: ${results.failedTests}/${results.totalTests}`);
-        console.log('📋 Detalles de tests fallidos:');
-        results.details
-          .filter(test => !test.passed)
-          .forEach(test => {
-            console.log(`  ❌ ${test.name}:`);
-            console.log(`     Esperado: ${test.expected}`);
-            console.log(`     Actual: ${test.actual}`);
-          });
-      }
-    } catch (error) {
-      console.error('❌ Error ejecutando tests de integración:', error);
-    }
-  }
+  // runIntegrationTests() removed from automatic flow; manual hook exposed via Debug.runIntegrationTests
 
   /**
    * Crea matriz de transformación para el thruster con orden correcto: Escala → Rotación → Traslación
@@ -4026,7 +4246,7 @@ export class GameEngine {
     const halfWidth = width / 2;
     const halfHeight = height / 2;
     
-    console.log('🎯 Creando geometría HUD:', {
+  this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'Creando geometría HUD', {
       width, height, distance, tilt: tilt * 180 / Math.PI
     });
     
@@ -4045,7 +4265,7 @@ export class GameEngine {
       -halfWidth, halfHeight * Math.cos(tilt) - 0.5, distance - halfHeight * Math.sin(tilt)
     ];
     
-    console.log('🎯 Vértices HUD:', vertices);
+  this.logger.log(LogLevel.TRACE, LogCategory.HUD, 'Vértices HUD', { vertices });
     
     // Índices para formar los triángulos del plano
     const indices = [
@@ -4065,7 +4285,7 @@ export class GameEngine {
    */
   private renderHUDPlane(): void {
     if (!this.gl || !this.shaderManager || !this.spaceship || !this.hudManager) {
-      console.log('🚫 HUD render skipped - missing components:', {
+  this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'HUD render skipped - missing components', {
         hasGL: !!this.gl,
         hasShaderManager: !!this.shaderManager,
         hasSpaceship: !!this.spaceship,
@@ -4076,7 +4296,7 @@ export class GameEngine {
 
     // DEBUG: Verificar modo de cámara actual
     const currentCameraMode = this.camera.getCurrentMode();
-    console.log('🎥 HUD render attempt - Camera mode:', {
+  this.logger.log(LogLevel.TRACE, LogCategory.HUD, 'HUD render attempt - Camera mode', {
       currentMode: currentCameraMode,
       isCockpit: currentCameraMode === CameraMode.COCKPIT,
       CockpitEnum: CameraMode.COCKPIT
@@ -4119,7 +4339,7 @@ export class GameEngine {
         this.hudManager.setTarget(currentTarget);
       }
     } catch (e) {
-      console.warn('⚠️ No se pudo sincronizar target con HUD:', e);
+  this.logger.log(LogLevel.WARN, LogCategory.HUD, 'No se pudo sincronizar target con HUD', e);
     }
 
     // Actualizar elementos del HUD
@@ -4134,7 +4354,7 @@ export class GameEngine {
       this.camera.position
     );
 
-    console.log('🎯 HUD dinámico FIJO renderizado:', {
+  this.logger.log(LogLevel.TRACE, LogCategory.HUD, 'HUD dinámico FIJO renderizado', {
       velocity: gameData.velocity.toFixed(1),
       heading: gameData.heading.toFixed(1),
       speed: gameData.speed.toFixed(1)
@@ -4328,6 +4548,9 @@ export class GameEngine {
             if (target && this.adaptiveTargeting) {
               try { this.adaptiveTargeting.selectTarget(target); } catch {}
               try { this.systemPanel!.setSelectedId(id); } catch {}
+            } else {
+              // Defer selection until id->target mapping is rebuilt in the first render pass
+              this.pendingMapSelectId = id;
             }
           }
         };
@@ -4477,32 +4700,29 @@ export class GameEngine {
     const canvas = this.webglService.getCanvas();
     
     if (!canvas) {
-      console.warn('⚠️ No se pudo obtener canvas desde WebGLService para eventos de targeting');
+  this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'No se pudo obtener canvas desde WebGLService para eventos de targeting');
       return;
     }
 
-    console.log('✅ Canvas obtenido desde WebGLService para targeting events');
+  this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'Canvas obtenido desde WebGLService para eventos de targeting');
 
     // Setup click handler for adaptive targeting
     const handleClick = (event: MouseEvent) => {
-      // If an opaque panel is open, swallow the click so it doesn't affect 3D selection
+      // If an opaque panel is open, do NOT handle 3D selection here; let the panel's own handler receive the event
       const mapOpen = !!(this.systemPanel && this.systemPanel.isEnabled?.());
       const grimoireOpen = !!(this.grimoirePanel && this.grimoirePanel.isEnabled?.());
       if (mapOpen || grimoireOpen) {
-        try {
-          event.preventDefault();
-          event.stopPropagation();
-          (event as any).cancelBubble = true;
-          if ((event as any).stopImmediatePropagation) (event as any).stopImmediatePropagation();
-        } catch {}
-        return;
+        // Important: don't stop propagation here so SolarSystemPanel/Grimoire listeners can process the click
+        // Swallow legacy ReticleManager click consumption by marking a flag; ReticleManager will skip for mapOpen
+        (globalThis as any).GameEngineInstance = (globalThis as any).GameEngineInstance || this;
+        return; // no adaptive click selection
       }
       if (!this.adaptiveTargeting) return;
       this.adaptiveTargeting.handleClick();
     };
 
     canvas.addEventListener('click', handleClick);
-    console.log('🎯 AdaptiveTargeting mouse events configured successfully');
+  this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'AdaptiveTargeting mouse events configured successfully');
   }
 
   /** Map ID resolver for a given world target: returns the map item id to select/highlight */

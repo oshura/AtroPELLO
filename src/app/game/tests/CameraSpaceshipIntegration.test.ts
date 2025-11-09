@@ -1,6 +1,8 @@
 import { Camera } from '../Camera';
 import { Spaceship } from '../Spaceship';
 import { Vector3 } from '../../types/game.types';
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
 
 /**
  * Test de integración para verificar la relación entre cámara y nave
@@ -18,7 +20,7 @@ export class CameraSpaceshipIntegrationTest {
    * Ejecuta todos los tests de integración
    */
   public runAllTests(): TestResults {
-    console.log('🧪 Ejecutando tests de integración cámara-nave...');
+  try { GameLogger.info(LogCategory.DEBUG, '🧪 Ejecutando tests de integración cámara-nave...'); } catch {}
     
     const results: TestResults = {
       totalTests: 0,
@@ -42,7 +44,7 @@ export class CameraSpaceshipIntegrationTest {
     // Test 5: Combinación de rotaciones
     this.runTest(results, 'Combined Rotations', () => this.testCombinedRotations());
 
-    console.log(`✅ Tests completados: ${results.passedTests}/${results.totalTests} exitosos`);
+  try { GameLogger.info(LogCategory.DEBUG, `✅ Tests completados: ${results.passedTests}/${results.totalTests} exitosos`); } catch {}
     return results;
   }
 
@@ -55,16 +57,16 @@ export class CameraSpaceshipIntegrationTest {
       const result = testFunction();
       if (result.passed) {
         results.passedTests++;
-        console.log(`✅ ${testName}: ${result.message}`);
+  try { GameLogger.info(LogCategory.DEBUG, `✅ ${testName}: ${result.message}`); } catch {}
       } else {
         results.failedTests++;
-        console.log(`❌ ${testName}: ${result.message}`);
+  try { GameLogger.warn(LogCategory.DEBUG, `❌ ${testName}: ${result.message}`); } catch {}
       }
       results.details.push({ name: testName, ...result });
     } catch (error) {
       results.failedTests++;
       const errorMessage = `Error en test: ${error}`;
-      console.log(`❌ ${testName}: ${errorMessage}`);
+  try { GameLogger.error(LogCategory.DEBUG, `❌ ${testName}: ${errorMessage}`); } catch {}
       results.details.push({ 
         name: testName, 
         passed: false, 

@@ -1,5 +1,6 @@
 import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { LoggingService, LogCategory, LogLevel, LogEntry } from '../logging.service';
 
 @Injectable({ providedIn: 'root' })
 export class DebugStatsOverlayService {
@@ -10,7 +11,10 @@ export class DebugStatsOverlayService {
   private emaFps = 0; // Exponential moving average for FPS
   private gameEngine: any | null = null; // runtime-reflection access
 
-  constructor(@Inject(PLATFORM_ID) private platformId: Object) {}
+  constructor(
+    @Inject(PLATFORM_ID) private platformId: Object,
+    private logging: LoggingService
+  ) {}
 
   initialize(engine?: any): void {
     this.gameEngine = engine ?? this.gameEngine;
@@ -60,18 +64,25 @@ export class DebugStatsOverlayService {
     const el = document.createElement('div');
     el.id = 'debug-stats-overlay';
     el.innerHTML = `
-      <div class="dbg-header">📊 Stats (ñ)</div>
-      <div class="dbg-content">
-        <div>FPS: <span id="stat-fps">0</span></div>
-        <div>Frame: <span id="stat-frame">0.0</span> ms</div>
-        <div>Instancing: <span id="stat-instancing">unknown</span></div>
-        <div>Camera: <span id="stat-cam-name">N/A</span> (<span id="stat-cam-mode">-</span>)</div>
-        <div>Clusters: <span id="stat-clusters">-</span></div>
-        <div>Objects: <span id="stat-objects">-</span></div>
+      <div class="dbg-header">📊 Stats & Logs (ñ)</div>
+      <div class="dbg-sections">
+        <div class="dbg-content" id="dbg-stats-section">
+          <div>FPS: <span id="stat-fps">0</span></div>
+          <div>Frame: <span id="stat-frame">0.0</span> ms</div>
+          <div>Instancing: <span id="stat-instancing">unknown</span></div>
+          <div>Camera: <span id="stat-cam-name">N/A</span> (<span id="stat-cam-mode">-</span>)</div>
+          <div>Clusters: <span id="stat-clusters">-</span></div>
+          <div>Objects: <span id="stat-objects">-</span></div>
+        </div>
+        <div class="dbg-logs" id="dbg-logs-section">
+          <div class="dbg-subheader">Logs</div>
+          <div id="log-controls"></div>
+          <div id="log-entries"></div>
+        </div>
       </div>
     `;
     el.style.cssText = `
-      position: fixed; left: 20px; top: 20px; width: 240px; z-index: 10001;
+      position: fixed; left: 20px; top: 20px; width: 360px; max-height: 70vh; overflow-y: auto; z-index: 10001;
       color: #0ff; background: rgba(0,0,0,0.85); border: 1px solid #0ff; border-radius: 8px;
       font: 12px 'Courier New', monospace; padding: 8px 10px; display: none;
       box-shadow: 0 0 12px rgba(0,255,255,0.25);
@@ -80,10 +91,24 @@ export class DebugStatsOverlayService {
     style.textContent = `
       #debug-stats-overlay .dbg-header { font-weight: bold; margin-bottom: 6px; color: #0ff; }
       #debug-stats-overlay .dbg-content div { margin: 2px 0; }
+      #debug-stats-overlay .dbg-sections { display: flex; flex-direction: column; gap: 8px; }
+      #debug-stats-overlay .dbg-logs { border-top: 1px solid #055; padding-top: 6px; }
+      #debug-stats-overlay .dbg-subheader { font-weight: bold; margin-bottom: 4px; color: #0ff; }
+      #debug-stats-overlay #log-controls { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+      #debug-stats-overlay #log-controls button, #debug-stats-overlay #log-controls select { background:#022; color:#0ff; border:1px solid #066; border-radius:4px; font-size:11px; padding:2px 6px; cursor:pointer; }
+      #debug-stats-overlay #log-controls button.active { background:#0a4; border-color:#0f6; color:#fff; }
+      #debug-stats-overlay #log-entries { max-height: 240px; overflow-y: auto; font-size:11px; line-height:1.3; }
+      #debug-stats-overlay #log-entries .log-entry { margin:0 0 2px 0; white-space:nowrap; }
+      #debug-stats-overlay #log-entries .lvl-ERROR { color:#f55; }
+      #debug-stats-overlay #log-entries .lvl-WARN { color:#fa0; }
+      #debug-stats-overlay #log-entries .lvl-INFO { color:#0af; }
+      #debug-stats-overlay #log-entries .lvl-DEBUG { color:#888; }
+      #debug-stats-overlay #log-entries .lvl-TRACE { color:#555; }
     `;
     document.head.appendChild(style);
     document.body.appendChild(el);
     this.overlayElement = el;
+    this.buildLogControls();
   }
 
   private startLoop(): void {
@@ -154,5 +179,86 @@ export class DebugStatsOverlayService {
       setText('stat-clusters', clustersTxt);
       setText('stat-objects', objectsTxt);
     }
+  }
+
+  // ===== Logging UI =====
+  private buildLogControls(): void {
+    if (!this.overlayElement) return;
+    const controls = this.overlayElement.querySelector('#log-controls');
+    if (!controls) return;
+    controls.innerHTML = '';
+    // Level selector
+    const levelSelect = document.createElement('select');
+    Object.keys(LogLevel).filter(k => isNaN(Number(k))).forEach(k => {
+      if (k === 'OFF' || k === 'TRACE' || k === 'DEBUG' || k === 'INFO' || k === 'WARN' || k === 'ERROR') {
+        const opt = document.createElement('option');
+        opt.value = k;
+        opt.textContent = k;
+        if (LogLevel[k as keyof typeof LogLevel] === this.logging.getLevelThreshold()) opt.selected = true;
+        levelSelect.appendChild(opt);
+      }
+    });
+    levelSelect.onchange = () => {
+      const val = levelSelect.value as keyof typeof LogLevel;
+      this.logging.setLevelThreshold(LogLevel[val]);
+    };
+    controls.appendChild(levelSelect);
+
+    // Category buttons
+    // Global toggles
+    const btnEnableAll = document.createElement('button');
+    btnEnableAll.textContent = 'Enable All';
+    btnEnableAll.onclick = () => {
+      Object.values(LogCategory).forEach((c) => this.logging.enableCategory(c as LogCategory));
+      this.buildLogControls();
+    };
+    controls.appendChild(btnEnableAll);
+
+    const btnDisableAll = document.createElement('button');
+    btnDisableAll.textContent = 'Disable All';
+    btnDisableAll.onclick = () => {
+      Object.values(LogCategory).forEach((c) => this.logging.disableCategory(c as LogCategory));
+      this.buildLogControls();
+    };
+    controls.appendChild(btnDisableAll);
+
+    // One button per category
+    const cats = Object.values(LogCategory);
+    cats.forEach((cat: LogCategory) => {
+      const btn = document.createElement('button');
+      btn.textContent = cat.replace('SOLAR_SYSTEM_', 'SOLAR_');
+      const updateBtn = () => {
+        if (this.logging.isCategoryEnabled(cat as LogCategory)) btn.classList.add('active'); else btn.classList.remove('active');
+      };
+      btn.onclick = () => {
+        if (this.logging.isCategoryEnabled(cat as LogCategory)) this.logging.disableCategory(cat as LogCategory); else this.logging.enableCategory(cat as LogCategory);
+        updateBtn();
+      };
+      updateBtn();
+      controls.appendChild(btn);
+    });
+
+    // Live update of entries via subscription
+    this.logging.subscribe(() => this.renderLogEntries());
+    this.renderLogEntries();
+  }
+
+  private renderLogEntries(): void {
+    if (!this.overlayElement) return;
+    const container = this.overlayElement.querySelector('#log-entries');
+    if (!container) return;
+  const history: LogEntry[] = this.logging.getHistory().slice(-120); // show last 120
+  const lines = history.map((e: LogEntry) => this.formatEntry(e));
+    container.innerHTML = lines.join('');
+    // Scroll to bottom to show most recent
+    container.scrollTop = container.scrollHeight;
+  }
+
+  private formatEntry(entry: LogEntry): string {
+    const lvlName = LogLevel[entry.level];
+    const t = (entry.time / 1000).toFixed(2).padStart(6,'0');
+    const cat = entry.category;
+    const msg = ('' + entry.message).replace(/</g,'&lt;');
+    return `<div class="log-entry lvl-${lvlName}">${t}s [${lvlName}] [${cat}] ${msg}</div>`;
   }
 }

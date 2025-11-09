@@ -1,4 +1,6 @@
 import { ITargetable, TargetType } from '../types/targeting.types';
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
 
 /**
  * Renders a simple rotating 3D preview of a target onto an offscreen canvas.
@@ -68,7 +70,10 @@ export class TargetPreviewRenderer {
   }
 
   renderPreview(target: ITargetable): void {
-    console.log('🖼️ TargetPreview.renderPreview()', { status: this.status, w: this.canvas.width, h: this.canvas.height });
+    // Sample noisy preview calls (only log ~3% of frames to avoid overlay spam)
+    if (Math.random() < 0.03) {
+      try { GameLogger.debug(LogCategory.HUD, 'TargetPreview.renderPreview()', { status: this.status, w: this.canvas.width, h: this.canvas.height }); } catch {}
+    }
     if (!this.gl || !this.program) {
       // Fallback 2D: dibujar cubo wireframe girando
       if (this.ctx2d) this.render2DFallback(target);
@@ -226,15 +231,15 @@ export class TargetPreviewRenderer {
     const gl = this.gl!;
     const vs = gl.createShader(gl.VERTEX_SHADER)!;
     gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
-    if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(vs)); return null; }
+  if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) { try { GameLogger.error(LogCategory.SHADERS, 'TargetPreview VS compile error', gl.getShaderInfoLog(vs)); } catch {}; return null; }
 
     const fs = gl.createShader(gl.FRAGMENT_SHADER)!;
     gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
-    if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) { console.error(gl.getShaderInfoLog(fs)); return null; }
+  if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) { try { GameLogger.error(LogCategory.SHADERS, 'TargetPreview FS compile error', gl.getShaderInfoLog(fs)); } catch {}; return null; }
 
     const prog = gl.createProgram()!;
     gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { console.error(gl.getProgramInfoLog(prog)); return null; }
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { try { GameLogger.error(LogCategory.SHADERS, 'TargetPreview program link error', gl.getProgramInfoLog(prog)); } catch {}; return null; }
     return prog;
   }
 

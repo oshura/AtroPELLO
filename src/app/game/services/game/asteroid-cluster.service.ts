@@ -155,6 +155,11 @@ export class AsteroidClusterService {
 
   getClusters(): AsteroidClusterInstance[] { return Array.from(this.clusters.values()); }
 
+  /** Remove all clusters from the service (used during system swaps). */
+  clearAll(): void {
+    this.clusters.clear();
+  }
+
   /** Actualiza LOD por distancia con histéresis y dwell; devuelve true si hubo cambios */
   updateLOD(
     playerPos: Vector3,

@@ -1,5 +1,6 @@
 import { Injectable, ElementRef, PLATFORM_ID, Inject } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
+import { LoggingService, LogCategory, LogLevel } from './logging.service';
 
 export interface WebGLConfig {
   antialias?: boolean;
@@ -32,7 +33,7 @@ export class WebGLService {
 
   private resizeObserver?: ResizeObserver;
 
-  constructor(@Inject(PLATFORM_ID) private platformId: Object) {}
+  constructor(@Inject(PLATFORM_ID) private platformId: Object, private logger: LoggingService) {}
 
   /**
    * Inicializa el contexto WebGL en el canvas especificado
@@ -47,7 +48,7 @@ export class WebGLService {
     try {
       // Verificar que estamos en el navegador
       if (!isPlatformBrowser(this.platformId)) {
-        console.log('⚠️ WebGL initialization skipped - not in browser');
+        this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'WebGL initialization skipped - not in browser');
         return false;
       }
 
@@ -90,7 +91,7 @@ export class WebGLService {
       this.setupWebGLDefaults();
 
       this.state.isInitialized = true;
-      console.log('✅ WebGL initialized successfully', {
+      this.logger.log(LogLevel.INFO, LogCategory.RENDER, 'WebGL initialized successfully', {
         version: this.getWebGLVersion(),
         renderer: this.getRenderer(),
         maxTextureSize: this.getMaxTextureSize()
@@ -98,7 +99,7 @@ export class WebGLService {
 
       return true;
     } catch (error) {
-      console.error('❌ WebGL initialization failed:', error);
+      this.logger.log(LogLevel.ERROR, LogCategory.RENDER, 'WebGL initialization failed', error);
       this.state.isInitialized = false;
       return false;
     }
@@ -282,6 +283,6 @@ export class WebGLService {
       devicePixelRatio: 1
     };
 
-    console.log('🧹 WebGL service destroyed');
+    this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'WebGL service destroyed');
   }
 }

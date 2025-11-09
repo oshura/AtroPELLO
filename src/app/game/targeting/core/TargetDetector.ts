@@ -14,6 +14,7 @@ import {
 } from '../types/reticle.types';
 import { Camera } from '../../Camera';
 import { WebGLService } from '../../../services/webgl.service';
+import { LoggingService, LogCategory } from '../../../services/logging.service';
 
 @Injectable({
   providedIn: 'root'
@@ -38,7 +39,7 @@ export class TargetDetector implements ITargetDetector {
   // Ganancia por tamaño unificada para todos los tipos (comportamiento igual entre asteroid y super_asteroid)
   private readonly TOL_SIZE_GAIN_UNIFIED = 1.4; // Aumentada de 1.0 a 1.4 para mayor tolerancia
   
-  constructor(private webglService: WebGLService) {
+  constructor(private webglService: WebGLService, private logger: LoggingService) {
     this.config = {
       maxDistance: Infinity,
       raycastPrecision: 0.1,
@@ -67,10 +68,7 @@ export class TargetDetector implements ITargetDetector {
     this.camera = camera;
     this.canvas = this.webglService.getCanvas() || null;
     
-    console.log('🎯 TargetDetector inicializado', {
-      camera: !!this.camera,
-      canvas: !!this.canvas
-    });
+    this.logger.info(LogCategory.TARGETING, 'TargetDetector inicializado', { camera: !!this.camera, canvas: !!this.canvas });
   }
 
   /**
@@ -105,7 +103,7 @@ export class TargetDetector implements ITargetDetector {
    */
   public detectTargetAt(screenPos: ScreenPosition, detectionRadiusPx: number = 50): RaycastHit | null {
     if (!this.camera || !this.canvas) {
-      console.warn('❌ TargetDetector: Camera o Canvas no inicializados');
+      this.logger.warn(LogCategory.TARGETING, 'TargetDetector: Camera o Canvas no inicializados');
       return null;
     }
 
@@ -113,7 +111,7 @@ export class TargetDetector implements ITargetDetector {
   const shouldDebug = this.debugLogs;
     
     if (shouldDebug) {
-      console.log('🔍 detectTargetAt() start', { screenPos, availableTargets: this.availableTargets.length });
+      this.logger.trace(LogCategory.TARGETING, 'detectTargetAt() start', { screenPos, available: this.availableTargets.length });
     }
     
     // extra debug trimmed
@@ -121,7 +119,7 @@ export class TargetDetector implements ITargetDetector {
     // Convertir coordenadas de pantalla a mundo
     const worldRay = this.screenToWorldRay(screenPos);
     if (!worldRay) {
-      if (shouldDebug) console.log('❌ No world ray generated');
+      if (shouldDebug) this.logger.trace(LogCategory.TARGETING, 'No world ray generated');
       return null;
     }
 
@@ -169,7 +167,7 @@ export class TargetDetector implements ITargetDetector {
         
   // Debug crítico para objetos muy lejanos
         if (pixelDistance < 50 && adaptiveTol < 10 && Math.random() < 0.05) {
-          console.log('🔍 Objeto cercano pero tolerancia baja:', {
+          this.logger.debug(LogCategory.TARGETING, 'Objeto cercano pero tolerancia baja', {
             type: (target as any).getTargetType?.(),
             distance: Math.round(this.getWorldDistance(target.position)),
             pixelDistance: Math.round(pixelDistance),
@@ -377,7 +375,7 @@ export class TargetDetector implements ITargetDetector {
     
     // Debug ocasional para objetos lejanos problemáticos
     if (distance > 100 && (isMega || isSuper || isCluster || isAsteroid) && Math.random() < 0.01) {
-      console.log('🎯 Tolerancia lejana:', {
+      this.logger.trace(LogCategory.TARGETING, 'Tolerancia lejana', {
         type: tType,
         distance: Math.round(distance),
         radiusWorld: Math.round(radiusWorld),
@@ -385,7 +383,7 @@ export class TargetDetector implements ITargetDetector {
         baseline: Math.round(baseline),
         finalTolerance: Math.round(finalTolerance),
         farMinPx,
-        TOL_MIN_ABS_PX: this.TOL_MIN_ABS_PX
+        minAbs: this.TOL_MIN_ABS_PX
       });
     }
     
@@ -576,7 +574,7 @@ export class TargetDetector implements ITargetDetector {
     // Debug para objetos lejanos con proyección problemática
     const distance = this.getWorldDistance(worldPos);
     if (distance > 200 && (Math.abs(screenX - clampedX) > 1 || Math.abs(screenY - clampedY) > 1) && Math.random() < 0.05) {
-      console.log('🎯 Proyección lejana clampada:', {
+      this.logger.trace(LogCategory.TARGETING, 'Proyección lejana clampada', {
         distance: Math.round(distance),
         original: { x: Math.round(screenX), y: Math.round(screenY) },
         clamped: { x: Math.round(clampedX), y: Math.round(clampedY) },

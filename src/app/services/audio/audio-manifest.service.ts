@@ -4,6 +4,7 @@ import { HttpClient } from '@angular/common/http';
 import { firstValueFrom } from 'rxjs';
 import { AudioEngineService } from './audio-engine.service';
 import { AudioDebugService } from './audio-debug.service';
+import { LoggingService, LogCategory } from '../logging.service';
 
 type ManifestMap = Record<string, string>;
 
@@ -17,6 +18,7 @@ export class AudioManifestService {
     private http: HttpClient,
   private audio: AudioEngineService,
   private debug: AudioDebugService,
+  private logger: LoggingService,
     @Inject(PLATFORM_ID) private platformId: Object
   ) {}
 
@@ -29,17 +31,17 @@ export class AudioManifestService {
     if (this.readyPromise) return this.readyPromise;
     this.readyPromise = (async () => {
       try {
-        const manifest = await firstValueFrom(this.http.get<ManifestMap>(this.manifestUrl));
+    const manifest = await firstValueFrom(this.http.get<ManifestMap>(this.manifestUrl));
         this.manifest = manifest;
   const entries = Object.entries(manifest);
-  console.log(`[AudioManifest] Loaded manifest with ${entries.length} entries from ${this.manifestUrl}`);
+  try { this.logger.info(LogCategory.AUDIO, `Manifest loaded (${entries.length} entries)`, { url: this.manifestUrl }); } catch {}
   try { this.debug.logInfo(`Manifest loaded (${entries.length} entries)`); } catch {}
         // Preload/Decode all entries in parallel
   await Promise.all(entries.map(([name, url]) => this.safeLoad(name, url)));
-  console.log('[AudioManifest] Preload complete');
+  try { this.logger.info(LogCategory.AUDIO, 'Preload complete'); } catch {}
   try { this.debug.logInfo('Preload complete'); } catch {}
       } catch (err) {
-        console.warn('[AudioManifest] Failed to load manifest:', err);
+    try { this.logger.warn(LogCategory.AUDIO, 'Failed to load manifest', err); } catch {}
       }
     })();
     return this.readyPromise;
@@ -69,7 +71,7 @@ export class AudioManifestService {
         await this.audio.load(name, url);
       }
     } catch (e) {
-      console.warn(`[AudioManifest] Failed to load ${name} from ${url}`, e);
+      try { this.logger.warn(LogCategory.AUDIO, `Failed to load ${name} from ${url}`, e); } catch {}
     }
   }
 }

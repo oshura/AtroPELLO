@@ -1,4 +1,6 @@
 import { WebGLService } from '../services/webgl.service';
+import { GameLogger } from './utils/GameLogger';
+import { LogCategory } from '../services/logging.service';
 import { InstancedLitShaderService } from './shaders/InstancedLitShaderService';
 import { HudShaderService } from './shaders/HudShaderService';
 import { ReticleShaderService } from './shaders/ReticleShaderService';
@@ -18,6 +20,8 @@ export class ShaderManager {
   public unlitTexProgram: WebGLProgram | null = null;
   public stormShellProgram: WebGLProgram | null = null;
   public portalProgram: WebGLProgram | null = null;
+  public eyeProgram: WebGLProgram | null = null; // 3D eye sphere shader
+  public flameProgram: WebGLProgram | null = null; // upward flame billboard shader
   // Modular services own these programs, we expose getters for back-compat
   private hudSvc: HudShaderService | null = null;
   private reticleSvc: ReticleShaderService | null = null;
@@ -56,6 +60,10 @@ export class ShaderManager {
   public stormShellUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   public portalAttributes: { [key: string]: number } = {};
   public portalUniforms: { [key: string]: WebGLUniformLocation | null } = {};
+  public eyeAttributes: { [key: string]: number } = {};
+  public eyeUniforms: { [key: string]: WebGLUniformLocation | null } = {};
+  public flameAttributes: { [key: string]: number } = {};
+  public flameUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   // Attributes for instanced-lit are exposed via helper getters
 
   constructor(private webglService: WebGLService) {
@@ -116,6 +124,18 @@ export class ShaderManager {
       this.getPortalFragmentShader()
     );
 
+    // Programa del ojo 3D (esfera + pupila)
+    this.eyeProgram = this.createProgram(
+      this.getEyeVertexShader(),
+      this.getEyeFragmentShader()
+    );
+
+    // Programa de la llama vertical desde la pupila
+    this.flameProgram = this.createProgram(
+      this.getFlameVertexShader(),
+      this.getFlameFragmentShader()
+    );
+
     // Servicios modulares
     this.hudSvc = new HudShaderService(this.webglService); this.hudSvc.initialize();
     this.reticleSvc = new ReticleShaderService(this.webglService); this.reticleSvc.initialize();
@@ -145,6 +165,8 @@ export class ShaderManager {
   if (this.unlitTexProgram) this.getUnlitTexProgramLocations();
   if (this.stormShellProgram) this.getStormShellProgramLocations();
   if (this.portalProgram) this.getPortalProgramLocations();
+  if (this.eyeProgram) this.getEyeProgramLocations();
+  if (this.flameProgram) this.getFlameProgramLocations();
 
     // Locations for instanced program are held inside the service
   }
@@ -396,79 +418,163 @@ export class ShaderManager {
     in vec2 v_pos; // XY on plane (unit circle before model scale)
     out vec4 fragColor;
     uniform float u_time;
-    uniform vec3 u_colorOuter; // ring color
-    uniform vec3 u_colorInner; // inner disk color
-    uniform float u_ringInner; // inner radius of ring (0..1)
-    uniform float u_ringOuter; // outer radius of ring (0..1)
-    uniform vec3 u_eyeDir;     // direction of eye on plane (normalized XY with Z ignored)
-    uniform float u_eyeRadius; // pupil radius (0..1 of disk)
-
-    float hash(vec2 p){ return fract(sin(dot(p, vec2(27.1, 91.7))) * 13758.5453); }
-    float noise(vec2 p){
-      vec2 i = floor(p), f = fract(p);
-      float a = hash(i);
-      float b = hash(i+vec2(1,0));
-      float c = hash(i+vec2(0,1));
-      float d = hash(i+vec2(1,1));
-      vec2 u = f*f*(3.0-2.0*f);
-      return mix(a,b,u.x)+ (c-a)*u.y*(1.0-u.x) + (d-b)*u.x*u.y;
-    }
-
+    uniform vec3 u_colorOuter; // outer glow color
+    uniform vec3 u_colorInner; // inner glow color
     void main(){
       float r = length(v_pos);
-      // Multi-ring masks
-      float ringMain = smoothstep(u_ringInner, u_ringInner+0.008, r) * (1.0 - smoothstep(u_ringOuter-0.012, u_ringOuter, r));
-      float ringInnerGlow = smoothstep(u_ringInner*0.55, u_ringInner*0.55+0.01, r) * (1.0 - smoothstep(u_ringInner*0.72, u_ringInner*0.72+0.012, r));
-      float ringOuterSigil = smoothstep(u_ringOuter+0.035, u_ringOuter+0.045, r) * (1.0 - smoothstep(u_ringOuter+0.085, u_ringOuter+0.095, r));
-
-      // Angular field
-      float ang = atan(v_pos.y, v_pos.x); // [-pi,pi]
-      float t = u_time;
-      // Base stripes for runes
-      float runeStripe = abs(sin(ang*14.0 + t*0.9));
-      float noiseWarp = noise(vec2(ang*4.0, t*0.35));
-      float glyphMod = smoothstep(0.55, 0.98, runeStripe + noiseWarp*0.65);
-      // Radial pulse to animate brightness traveling around
-      float sweep = smoothstep(0.0, 1.0, fract(t*0.08 + ang/6.28318));
-      float arcPulse = pow(sweep, 3.0) * exp(-sweep*2.2);
-
-      // Inner disk mask (soft, mystical fog)
-      float innerMask = 1.0 - smoothstep(u_ringInner*0.92, u_ringInner*0.92+0.035, r);
-
-      // Eye pupil: keep centered (no lateral offset yet) but allow subtle drift modulated by eyeDir
-      vec2 dir = normalize(u_eyeDir.xy + 1e-7);
-      vec2 pupilCenter = dir * (u_ringInner * 0.28) * (0.35 + 0.65*smoothstep(0.0,1.0,0.5+0.5*sin(t*0.6)));
-      float pupil = 1.0 - smoothstep(u_eyeRadius, u_eyeRadius+0.012, length(v_pos - pupilCenter));
-      // Iris ring
-      float iris = smoothstep(u_eyeRadius*1.4, u_eyeRadius*1.4+0.01, length(v_pos - pupilCenter)) * (1.0 - smoothstep(u_eyeRadius*2.2, u_eyeRadius*2.2+0.01, length(v_pos - pupilCenter)));
-
-      // Colors
-      vec3 baseOuter = u_colorOuter;
-      vec3 baseInner = mix(u_colorInner, u_colorOuter*0.25, 0.5);
-      vec3 glyphColor = mix(baseOuter*1.4, baseOuter*2.4, glyphMod) * (0.6 + 0.4*arcPulse);
-      vec3 ringCol = baseOuter * (0.55 + 0.45*glyphMod);
-      vec3 innerCol = baseInner * (0.25 + 0.35*noiseWarp);
-      vec3 glowInner = baseOuter * 0.9;
-      vec3 sigilOuter = baseOuter * (0.35 + 0.65*arcPulse);
-      vec3 pupilCol = vec3(0.02,0.025,0.03);
-      vec3 irisCol = mix(baseOuter*0.6, baseOuter*1.2, noise(vec2(t*0.5, ang*3.0)));
-
-      vec3 col = vec3(0.0);
-      col += ringMain * ringCol;
-      col += ringInnerGlow * glowInner;
-      col += ringOuterSigil * sigilOuter;
-      col += innerMask * innerCol;
-      col += glyphColor * ringMain * 0.35; // subtle glyph overlay
-      col = mix(col, pupilCol, pupil);
-      col += irisCol * iris * 0.85;
-
-      // Emissive bloom weighting (alpha drives additive blend externally)
-      float alpha = clamp(ringMain*0.85 + ringInnerGlow*0.55 + ringOuterSigil*0.5 + innerMask*0.35 + iris*0.9 + pupil*1.0, 0.0, 1.0);
-      // Soften edge falloff
-      alpha *= 1.0 - smoothstep(u_ringOuter-0.01, u_ringOuter+0.12, r);
+      float glow = exp(-r*2.2);
+      float edge = 1.0 - smoothstep(0.92, 1.05, r);
+      vec3 col = mix(u_colorOuter, u_colorInner, glow);
+      float alpha = glow * 0.22 * edge;
       fragColor = vec4(col, alpha);
     }`;
   }
+  // ===== Eye sphere shader (3D) =====
+  private getEyeVertexShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec3 a_position;
+    in vec3 a_normal;
+    uniform mat4 u_modelMatrix;
+    uniform mat4 u_viewMatrix;
+    uniform mat4 u_projectionMatrix;
+    out vec3 v_normal;
+    out vec3 v_posObj;
+    void main(){
+      vec4 world = u_modelMatrix * vec4(a_position,1.0);
+      gl_Position = u_projectionMatrix * (u_viewMatrix * world);
+      v_normal = a_normal;
+      v_posObj = a_position;
+    }`;
+  }
+  private getEyeFragmentShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec3 v_normal;
+    in vec3 v_posObj;
+    out vec4 fragColor;
+    uniform vec3 u_eyeDir; // direction in object space (normalized)
+    uniform float u_time;
+    // Colors
+    uniform vec3 u_irisColor;
+    uniform vec3 u_pupilColor;
+    // Pupil radius in object space (0..1)
+    uniform float u_pupilRadius;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
+    float noise(vec2 p){
+      vec2 i=floor(p); vec2 f=fract(p);
+      float a=hash(i); float b=hash(i+vec2(1,0)); float c=hash(i+vec2(0,1)); float d=hash(i+vec2(1,1));
+      vec2 u=f*f*(3.0-2.0*f);
+      return mix(a,b,u.x)+(c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y;
+    }
+    void main(){
+      vec3 N = normalize(v_normal);
+      vec3 D = normalize(u_eyeDir);
+      float facing = dot(N, D); // 1 at pupil center
+      // Pupil mask based on facing
+      float pupil = smoothstep(u_pupilRadius, u_pupilRadius*0.65, facing);
+      // Iris pattern radial noise modulated by facing
+      vec2 uv = vec2(dot(normalize(v_posObj.xy), vec2(1.0,0.0)), dot(normalize(v_posObj.xy), vec2(0.0,1.0)));
+      float n = noise(uv*14.0 + u_time*0.25);
+      float ring = smoothstep(0.15, 0.85, abs(facing));
+      vec3 iris = u_irisColor * (0.65 + 0.35*n) * (0.3 + 0.7*ring);
+      vec3 col = mix(iris, u_pupilColor, pupil);
+      // Subtle highlight opposite pupil direction
+      float highlight = pow(max(dot(N, -D), 0.0), 4.0);
+      col += vec3(1.0,0.9,0.4) * highlight * 0.4;
+      float alpha = 1.0;
+      fragColor = vec4(col, alpha);
+    }`;
+  }
+  private getEyeProgramLocations(): void {
+    if (!this.gl || !this.eyeProgram) return; const gl = this.gl;
+    this.eyeAttributes['position'] = gl.getAttribLocation(this.eyeProgram, 'a_position');
+    this.eyeAttributes['normal'] = gl.getAttribLocation(this.eyeProgram, 'a_normal');
+    this.eyeUniforms['modelMatrix'] = gl.getUniformLocation(this.eyeProgram, 'u_modelMatrix');
+    this.eyeUniforms['viewMatrix'] = gl.getUniformLocation(this.eyeProgram, 'u_viewMatrix');
+    this.eyeUniforms['projectionMatrix'] = gl.getUniformLocation(this.eyeProgram, 'u_projectionMatrix');
+    this.eyeUniforms['eyeDir'] = gl.getUniformLocation(this.eyeProgram, 'u_eyeDir');
+    this.eyeUniforms['time'] = gl.getUniformLocation(this.eyeProgram, 'u_time');
+    this.eyeUniforms['irisColor'] = gl.getUniformLocation(this.eyeProgram, 'u_irisColor');
+    this.eyeUniforms['pupilColor'] = gl.getUniformLocation(this.eyeProgram, 'u_pupilColor');
+    this.eyeUniforms['pupilRadius'] = gl.getUniformLocation(this.eyeProgram, 'u_pupilRadius');
+  }
+  public useEyeProgram(): void { if (this.gl && this.eyeProgram) this.gl.useProgram(this.eyeProgram); }
+  public setEyeMatrices(model: Float32Array, view: Float32Array, proj: Float32Array): void {
+    if (!this.gl || !this.eyeProgram) return; const gl = this.gl;
+    if (this.eyeUniforms['modelMatrix']) gl.uniformMatrix4fv(this.eyeUniforms['modelMatrix'], false, model);
+    if (this.eyeUniforms['viewMatrix']) gl.uniformMatrix4fv(this.eyeUniforms['viewMatrix'], false, view);
+    if (this.eyeUniforms['projectionMatrix']) gl.uniformMatrix4fv(this.eyeUniforms['projectionMatrix'], false, proj);
+  }
+  public setEyeParams(time:number, eyeDir: Float32Array, irisColor: Float32Array, pupilColor: Float32Array, pupilRadius:number): void {
+    if (!this.gl || !this.eyeProgram) return; const gl = this.gl;
+    if (this.eyeUniforms['time']) gl.uniform1f(this.eyeUniforms['time'], time);
+    if (this.eyeUniforms['eyeDir']) gl.uniform3fv(this.eyeUniforms['eyeDir'], eyeDir);
+    if (this.eyeUniforms['irisColor']) gl.uniform3fv(this.eyeUniforms['irisColor'], irisColor);
+    if (this.eyeUniforms['pupilColor']) gl.uniform3fv(this.eyeUniforms['pupilColor'], pupilColor);
+    if (this.eyeUniforms['pupilRadius']) gl.uniform1f(this.eyeUniforms['pupilRadius'], pupilRadius);
+  }
+
+  // ===== Flame billboard shader =====
+  private getFlameVertexShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec3 a_position;
+    in vec2 a_uv;
+    uniform mat4 u_modelMatrix;
+    uniform mat4 u_viewMatrix;
+    uniform mat4 u_projectionMatrix;
+    out vec2 v_uv;
+    void main(){
+      vec4 world = u_modelMatrix * vec4(a_position,1.0);
+      gl_Position = u_projectionMatrix * (u_viewMatrix * world);
+      v_uv = a_uv;
+    }`;
+  }
+  private getFlameFragmentShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec2 v_uv; // expect uv in [0,1]
+    out vec4 fragColor;
+    uniform float u_time;
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(41.3,289.1))) * 12541.534); }
+    float noise(vec2 p){ vec2 i=floor(p); vec2 f=fract(p); float a=hash(i); float b=hash(i+vec2(1,0)); float c=hash(i+vec2(0,1)); float d=hash(i+vec2(1,1)); vec2 u=f*f*(3.0-2.0*f); return mix(a,b,u.x)+ (c-a)*u.y*(1.0-u.x)+(d-b)*u.x*u.y; }
+    float fbm(vec2 p){ float v=0.0; float a=0.5; for(int i=0;i<4;i++){ v+=a*noise(p); p*=2.11; a*=0.55; } return v; }
+    void main(){
+      float t = u_time*1.8;
+      // Remap UV for flame (y upward)
+      float y = v_uv.y;
+      float x = (v_uv.x - 0.5);
+      // Turbulence
+      float n = fbm(vec2(x*6.0, y*8.0 - t));
+      float core = smoothstep(0.15, 0.02, abs(x) + (1.0-y)*0.3);
+      float rise = smoothstep(0.0, 1.0, y) * (1.0 - smoothstep(0.6 + n*0.2, 0.95, y));
+      float shape = core * rise;
+      float flicker = 0.85 + 0.25*noise(vec2(t*0.3, y*5.0));
+      vec3 base = mix(vec3(1.0,0.55,0.05), vec3(1.0,0.9,0.4), smoothstep(0.0,1.0,y));
+      vec3 col = base * (0.4 + 0.6*flicker) * shape;
+      float alpha = shape * 0.9;
+      if(alpha < 0.02) discard;
+      fragColor = vec4(col, alpha);
+    }`;
+  }
+  private getFlameProgramLocations(): void {
+    if (!this.gl || !this.flameProgram) return; const gl = this.gl;
+    this.flameAttributes['position'] = gl.getAttribLocation(this.flameProgram, 'a_position');
+    this.flameAttributes['uv'] = gl.getAttribLocation(this.flameProgram, 'a_uv');
+    this.flameUniforms['modelMatrix'] = gl.getUniformLocation(this.flameProgram, 'u_modelMatrix');
+    this.flameUniforms['viewMatrix'] = gl.getUniformLocation(this.flameProgram, 'u_viewMatrix');
+    this.flameUniforms['projectionMatrix'] = gl.getUniformLocation(this.flameProgram, 'u_projectionMatrix');
+    this.flameUniforms['time'] = gl.getUniformLocation(this.flameProgram, 'u_time');
+  }
+  public useFlameProgram(): void { if (this.gl && this.flameProgram) this.gl.useProgram(this.flameProgram); }
+  public setFlameMatrices(model: Float32Array, view: Float32Array, proj: Float32Array): void {
+    if (!this.gl || !this.flameProgram) return; const gl = this.gl;
+    if (this.flameUniforms['modelMatrix']) gl.uniformMatrix4fv(this.flameUniforms['modelMatrix'], false, model);
+    if (this.flameUniforms['viewMatrix']) gl.uniformMatrix4fv(this.flameUniforms['viewMatrix'], false, view);
+    if (this.flameUniforms['projectionMatrix']) gl.uniformMatrix4fv(this.flameUniforms['projectionMatrix'], false, proj);
+  }
+  public setFlameParams(time:number): void { if (!this.gl || !this.flameProgram) return; const gl=this.gl; if (this.flameUniforms['time']) gl.uniform1f(this.flameUniforms['time'], time); }
   private getPortalProgramLocations(): void {
     if (!this.gl || !this.portalProgram) return;
     const gl = this.gl;
@@ -481,6 +587,7 @@ export class ShaderManager {
     this.portalUniforms['colorInner'] = gl.getUniformLocation(this.portalProgram, 'u_colorInner');
     this.portalUniforms['ringInner'] = gl.getUniformLocation(this.portalProgram, 'u_ringInner');
     this.portalUniforms['ringOuter'] = gl.getUniformLocation(this.portalProgram, 'u_ringOuter');
+    this.portalUniforms['pentColor'] = gl.getUniformLocation(this.portalProgram, 'u_pentColor');
     this.portalUniforms['eyeDir'] = gl.getUniformLocation(this.portalProgram, 'u_eyeDir');
     this.portalUniforms['eyeRadius'] = gl.getUniformLocation(this.portalProgram, 'u_eyeRadius');
   }
@@ -491,13 +598,14 @@ export class ShaderManager {
     if (this.portalUniforms['viewMatrix']) gl.uniformMatrix4fv(this.portalUniforms['viewMatrix'], false, view);
     if (this.portalUniforms['projectionMatrix']) gl.uniformMatrix4fv(this.portalUniforms['projectionMatrix'], false, proj);
   }
-  public setPortalParams(time:number, colorOuter: Float32Array, colorInner: Float32Array, ringInner:number, ringOuter:number, eyeDir: Float32Array, eyeRadius:number): void {
+  public setPortalParams(time:number, colorOuter: Float32Array, colorInner: Float32Array, ringInner:number, ringOuter:number, pentColor: Float32Array, eyeDir: Float32Array, eyeRadius:number): void {
     if (!this.gl || !this.portalProgram) return; const gl = this.gl;
     if (this.portalUniforms['time']) gl.uniform1f(this.portalUniforms['time'], time);
     if (this.portalUniforms['colorOuter']) gl.uniform3fv(this.portalUniforms['colorOuter'], colorOuter);
     if (this.portalUniforms['colorInner']) gl.uniform3fv(this.portalUniforms['colorInner'], colorInner);
     if (this.portalUniforms['ringInner']) gl.uniform1f(this.portalUniforms['ringInner'], ringInner);
     if (this.portalUniforms['ringOuter']) gl.uniform1f(this.portalUniforms['ringOuter'], ringOuter);
+    if (this.portalUniforms['pentColor']) gl.uniform3fv(this.portalUniforms['pentColor'], pentColor);
     if (this.portalUniforms['eyeDir']) gl.uniform3fv(this.portalUniforms['eyeDir'], eyeDir);
     if (this.portalUniforms['eyeRadius']) gl.uniform1f(this.portalUniforms['eyeRadius'], eyeRadius);
   }
@@ -828,7 +936,7 @@ export class ShaderManager {
 
     // Verificar que el programa se vinculó correctamente
     if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
-      console.error('Error al vincular programa de shader:', this.gl.getProgramInfoLog(program));
+  GameLogger.error(LogCategory.SHADERS, 'Shader program link error', { info: this.gl.getProgramInfoLog(program) });
       this.gl.deleteProgram(program);
       return null;
     }
@@ -854,7 +962,7 @@ export class ShaderManager {
 
     // Verificar que el shader se compiló correctamente
     if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-      console.error('Error al compilar shader:', this.gl.getShaderInfoLog(shader));
+  GameLogger.error(LogCategory.SHADERS, 'Shader compilation error', { info: this.gl.getShaderInfoLog(shader) });
       this.gl.deleteShader(shader);
       return null;
     }
@@ -1171,7 +1279,7 @@ export class ShaderManager {
     this.hudUniforms['texture'] = this.gl.getUniformLocation(this.hudProgram, 'u_texture');
     this.hudUniforms['opacity'] = this.gl.getUniformLocation(this.hudProgram, 'u_opacity');
 
-    console.log('🎯 Shader HUD inicializado:', {
+    GameLogger.info(LogCategory.SHADERS, 'HUD shader initialized', {
       attributes: Object.keys(this.hudAttributes).length,
       uniforms: Object.keys(this.hudUniforms).length
     });
@@ -1195,7 +1303,7 @@ export class ShaderManager {
     this.reticleUniforms['color'] = this.gl.getUniformLocation(this.reticleProgram, 'u_color');
     this.reticleUniforms['opacity'] = this.gl.getUniformLocation(this.reticleProgram, 'u_opacity');
 
-    console.log('🎯 Shader Retícula inicializado:', {
+    GameLogger.info(LogCategory.SHADERS, 'Reticle shader initialized', {
       attributes: Object.keys(this.reticleAttributes).length,
       uniforms: Object.keys(this.reticleUniforms).length
     });
@@ -1218,7 +1326,7 @@ export class ShaderManager {
   // Symmetry: expose outline color uniform too
   this.outlineUniforms['outlineColor'] = this.gl.getUniformLocation(this.outlineProgram, 'u_outlineColor');
 
-    console.log('🟡 Shader Outline inicializado:', {
+    GameLogger.info(LogCategory.SHADERS, 'Outline shader initialized', {
       attributes: Object.keys(this.outlineAttributes).length,
       uniforms: Object.keys(this.outlineUniforms).length
     });

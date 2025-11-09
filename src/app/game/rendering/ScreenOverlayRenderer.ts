@@ -1,3 +1,6 @@
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
+
 export class ScreenOverlayRenderer {
   private gl: WebGL2RenderingContext;
   private program: WebGLProgram | null = null;
@@ -49,18 +52,18 @@ export class ScreenOverlayRenderer {
     }`;
     const vsh = gl.createShader(gl.VERTEX_SHADER)!; gl.shaderSource(vsh, vs); gl.compileShader(vsh);
     if (!gl.getShaderParameter(vsh, gl.COMPILE_STATUS)) {
-      console.error('ScreenOverlayRenderer VS error:', gl.getShaderInfoLog(vsh));
+      try { GameLogger.error(LogCategory.SHADERS, 'ScreenOverlayRenderer VS error', { info: gl.getShaderInfoLog(vsh) }); } catch {}
     }
     const fsh = gl.createShader(gl.FRAGMENT_SHADER)!; gl.shaderSource(fsh, fs); gl.compileShader(fsh);
     if (!gl.getShaderParameter(fsh, gl.COMPILE_STATUS)) {
-      console.error('ScreenOverlayRenderer FS error:', gl.getShaderInfoLog(fsh));
+      try { GameLogger.error(LogCategory.SHADERS, 'ScreenOverlayRenderer FS error', { info: gl.getShaderInfoLog(fsh) }); } catch {}
     }
     const prog = gl.createProgram()!;
     gl.attachShader(prog, vsh);
     gl.attachShader(prog, fsh);
     gl.linkProgram(prog);
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      console.error('ScreenOverlayRenderer link error:', gl.getProgramInfoLog(prog));
+      try { GameLogger.error(LogCategory.SHADERS, 'ScreenOverlayRenderer link error', { info: gl.getProgramInfoLog(prog) }); } catch {}
     }
     gl.deleteShader(vsh); gl.deleteShader(fsh);
     this.program = prog;

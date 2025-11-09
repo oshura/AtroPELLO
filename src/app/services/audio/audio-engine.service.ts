@@ -1,6 +1,8 @@
 import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { AudioDebugService } from './audio-debug.service';
+import { GameLogger } from '../../game/utils/GameLogger';
+import { LogCategory, LogLevel } from '../logging.service';
 
 export type AudioBus = 'master' | 'music' | 'sfx' | 'voice' | 'ui' | 'ambience';
 
@@ -47,12 +49,12 @@ export class AudioEngineService {
   constructor(@Inject(PLATFORM_ID) private platformId: Object, private debug: AudioDebugService) {}
 
   public isAvailable(): boolean {
-    return isPlatformBrowser(this.platformId) && !!(window as any).AudioContext;
+  return isPlatformBrowser(this.platformId) && !!(window as any).AudioContext;
   }
 
   public ensureContext(): void {
     if (this.ctx || !this.isAvailable()) return;
-    this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+  this.ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
     // Master and buses
     this.master = this.ctx.createGain();
     this.master.gain.value = 1.0;
@@ -155,7 +157,7 @@ export class AudioEngineService {
     try {
       const res = await fetch(url);
       if (!res.ok) {
-        console.warn(`[Audio] Failed to fetch ${name} from ${url}: ${res.status} ${res.statusText}`);
+    GameLogger.warn(LogCategory.AUDIO, 'Failed to fetch audio buffer', { name, url, status: res.status, statusText: res.statusText });
         return;
       }
       const arr = await res.arrayBuffer();
@@ -163,10 +165,10 @@ export class AudioEngineService {
       this.buffers.set(name, buf);
       const t1 = (typeof performance !== 'undefined' ? performance.now() : Date.now());
       const dur = (buf.duration ?? 0).toFixed(2);
-      console.log(`[Audio] Loaded '${name}' (${dur}s, ${arr.byteLength} bytes) from ${url} in ${(t1 - t0).toFixed(0)}ms`);
+  GameLogger.info(LogCategory.AUDIO, 'Audio buffer loaded', { name, durationSec: dur, bytes: arr.byteLength, ms: Number((t1 - t0).toFixed(0)) });
   try { this.debug.markLoaded(name); this.debug.logInfo(`Loaded '${name}' (${dur}s)`); } catch {}
     } catch (e) {
-      console.warn(`[Audio] Error loading '${name}' from ${url}`, e);
+  GameLogger.warn(LogCategory.AUDIO, 'Error decoding audio buffer', { name, url, error: e });
     }
   }
 
@@ -176,7 +178,7 @@ export class AudioEngineService {
     this.ensureContext();
     if (!this.ctx) return null;
     const buf = this.buffers.get(name);
-    if (!buf) { console.warn('[Audio] Buffer not loaded:', name); return null; }
+  if (!buf) { GameLogger.warn(LogCategory.AUDIO, 'Buffer not loaded', { name }); return null; }
 
     const id = this.nextId++;
     const src = this.ctx.createBufferSource();
@@ -220,7 +222,7 @@ export class AudioEngineService {
     // Debug log: sound started
     try {
       const desc = `loop=${!!opts.loop}, vol=${(opts.volume ?? 1).toFixed(2)}, bus=${opts.bus ?? 'sfx'}, rate=${opts.playbackRate ?? 1}`;
-      console.log(`[Audio] Play #${id} '${name}' (${desc})`);
+  GameLogger.debug(LogCategory.AUDIO, 'Play buffer', { id, name, desc });
       try { this.debug.markPlay(id, name, desc); } catch {}
     } catch {}
 
@@ -284,7 +286,7 @@ export class AudioEngineService {
       src.addEventListener('ended', () => {
         playing = false;
         try { src.disconnect(); } catch {}
-        try { console.log(`[Audio] Ended #${id} '${name}'`); this.debug.markEnded(id, name); } catch {}
+  try { GameLogger.debug(LogCategory.AUDIO, 'Audio ended', { id, name }); this.debug.markEnded(id, name); } catch {}
       });
     }
 

@@ -1,4 +1,5 @@
 import { Injectable } from '@angular/core';
+import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 
 export enum GameState {
   INITIALIZING = 'initializing',
@@ -19,7 +20,7 @@ export class GameStateManager {
   private currentState: GameState = GameState.INITIALIZING;
   private stateChangeListeners: ((state: GameState) => void)[] = [];
 
-  constructor() {}
+  constructor(private logger: LoggingService) {}
 
   /**
    * Obtiene el estado actual del juego
@@ -35,7 +36,7 @@ export class GameStateManager {
     const previousState = this.currentState;
     this.currentState = newState;
     
-    console.log(`🎮 Game State: ${previousState} → ${newState}`);
+  this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Game State change', { from: previousState, to: newState });
     
     // Notificar a los listeners
     this.stateChangeListeners.forEach(listener => listener(newState));

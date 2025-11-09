@@ -49,5 +49,42 @@ export interface SolarSystemSnapshot {
   sun: SunSnapshot;
   planets: PlanetSnapshot[];
   clusters?: ClusterSnapshot[];
+  portals?: PortalSnapshot[];
+  planetDebris?: PlanetDebrisSnapshot[]; // optional serialized debris linked to planets
   meta?: Record<string, any>;
+}
+
+// Eye state for the portal's central eye (Ojo)
+export interface EyeState {
+  gazeTarget?: 'ship' | Vector3; // 'ship' follows player ship, or a fixed point
+  eyelidOpen?: number; // 0..1, 0 closed, 1 fully open
+  intensity?: number;  // 0..1 emissive/intensity factor
+}
+
+// Persistent snapshot for a portal; supports bidirectional pairing
+export interface PortalSnapshot {
+  id: string;
+  position: Vector3;
+  radius: number;
+  linkedPortalId?: string; // id of the paired portal for two-way travel
+  eyeState?: EyeState;
+}
+
+// Serialized debris item (e.g., Earth/Saturn belts mega-asteroids)
+export interface PlanetDebrisSnapshot {
+  id: string; // debris object id
+  planetId: string; // parent planet id
+  localOffset: Vector3; // local offset relative to planet center
+  size?: number; // optional size or scale hint
+  type?: string; // future type classification
+}
+
+// Generation options to steer procedural system creation (future expansion)
+export interface GenerationOptions {
+  sunCount?: 1 | 2;
+  planetCountRange?: [number, number];
+  clusterConfig?: { trailChance?: number; maxTrailClusters?: number };
+  lifeChancePct?: number; // probability of planets with >30% habitability
+  maxOrbitSemiMajor?: number;
+  minOrbitSpacingPct?: number; // minimal spacing between orbits
 }
