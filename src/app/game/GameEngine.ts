@@ -290,6 +290,8 @@ export class GameEngine {
       this.billboardRenderer = new BillboardRenderer(this.gl);
   // Overlay renderer for robust full-screen fades and image flashes
   this.overlayRenderer = new ScreenOverlayRenderer(this.gl);
+    // Nuevo renderer encapsulado para portales (visual halo/eye futuro)
+    try { (this as any).portalRenderer = new (require('./rendering/PortalRenderer').PortalRenderer)(this.webglService as any, this.shaderManager); } catch {}
   // Background full-view HUD layer for landing windows
   try {
     const c: HTMLCanvasElement = (this.webglService.getContext() as any).canvas as HTMLCanvasElement;
@@ -2056,46 +2058,11 @@ export class GameEngine {
 
   // Renderizar planetas después de asteroides
   this.renderPlanets();
-  // Render portals (blank portal: just halo disk)
+  // Render portals (halo encapsulado en PortalRenderer)
   try {
-    if (this.portals.length) {
-    const gl = this.gl as WebGL2RenderingContext;
-    // State for blending and depth (draw symbol/eye/flame as overlay)
-      const prevProg = gl.getParameter(gl.CURRENT_PROGRAM);
-      const wasBlend = gl.isEnabled(gl.BLEND);
-    const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
-    const prevDepthMask = gl.getParameter(gl.DEPTH_WRITEMASK) as boolean;
-    gl.enable(gl.BLEND);
-    // Use additive blend to intensify arcane glow
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    // Disable depth test/writes to avoid self-occlusion with disk
-    gl.disable(gl.DEPTH_TEST);
-    gl.depthMask(false);
-      for (const p of this.portals) {
-        if (!p.vertexBuffer || !p.indexBuffer) continue;
-        this.shaderManager.usePortalProgram();
-        this.shaderManager.setPortalMatrices(p.modelMatrix, this.camera.viewMatrix, this.camera.projectionMatrix);
-        const t = (performance.now() || 0) / 1000;
-        const outer = new Float32Array([0.25, 0.9, 1.15]);
-        const inner = new Float32Array([0.06, 0.14, 0.25]);
-        const ringInner = 0.58;
-        const ringOuter = 0.995;
-        const pent = new Float32Array([0.0, 0.0, 0.0]);
-        const eyeDir = new Float32Array([0.0, 0.0, 1.0]);
-        const eyeRadius = 0.0;
-        this.shaderManager.setPortalParams(t, outer, inner, ringInner, ringOuter, pent, eyeDir, eyeRadius);
-        const aPos = (this.shaderManager as any).portalAttributes['position'];
-        gl.bindBuffer(gl.ARRAY_BUFFER, p.vertexBuffer);
-        gl.enableVertexAttribArray(aPos);
-        gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, p.indexBuffer);
-        gl.drawElements(gl.TRIANGLES, p.indices.length, gl.UNSIGNED_SHORT, 0);
-        gl.disableVertexAttribArray(aPos);
-      }
-  if (!wasBlend) gl.disable(gl.BLEND);
-  if (wasDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
-  gl.depthMask(prevDepthMask);
-      if (prevProg) gl.useProgram(prevProg as any);
+    const portalRenderer = (this as any).portalRenderer;
+    if (portalRenderer) {
+      portalRenderer.render(this.portals, this.camera.viewMatrix, this.camera.projectionMatrix, (performance.now() || 0) / 1000);
     }
   } catch {}
 
@@ -2151,6 +2118,11 @@ export class GameEngine {
         // Allow selecting the player's ship as an ally from the map
         this.mapIdToTarget.set('ship', this.spaceship as unknown as ITargetable);
       }
+      // Portals
+      const portals = this.portals.map(p => {
+        this.mapIdToTarget.set(p.id, p as unknown as ITargetable);
+        return { id: p.id, pos: { x: p.position.x, y: p.position.y, z: p.position.z }, label: 'Portal' };
+      });
         // If there is a deferred map selection (click happened before mapping), resolve it now
         if (this.pendingMapSelectId) {
           const pendingTgt = this.mapIdToTarget.get(this.pendingMapSelectId);
@@ -2192,7 +2164,7 @@ export class GameEngine {
         }
       } catch {}
 
-      this.systemPanel.updateMap({ center, planets, clusters, debris, ship, marginPx: 48, details });
+  this.systemPanel.updateMap({ center, planets, clusters, debris, ship, portals, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.HUD, 'SolarSystemPanel render failed', e);

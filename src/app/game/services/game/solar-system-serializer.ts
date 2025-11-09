@@ -25,6 +25,8 @@ export class SolarSystemSerializer {
       orbitOrientation?: number;
       orbitAngle?: number;
       orbitAngularSpeed?: number;
+      orbitNormal?: Vector3;
+      orbitU?: Vector3;
     }>;
     clusters?: Array<{
       id: string;
@@ -59,7 +61,9 @@ export class SolarSystemSerializer {
         semiMinor: p.semiMinor,
         orientation: p.orbitOrientation ?? 0,
         angle: p.orbitAngle ?? 0,
-        angularSpeed: p.orbitAngularSpeed ?? 0
+        angularSpeed: p.orbitAngularSpeed ?? 0,
+        normal: p.orbitNormal,
+        u: p.orbitU
       } : undefined
     }));
 

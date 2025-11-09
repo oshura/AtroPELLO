@@ -9,7 +9,6 @@ import { Portal } from '../../Portal';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
 import { GameLogger } from '../../utils/GameLogger';
 
-// Phases enumerated according to design doc (future phases stubbed)
 enum GateRitePhase {
   PreFocus = 0,
   CameraZoomOut = 1,
@@ -70,7 +69,7 @@ export class GateRiteAnimation implements GameAnimation {
       }
     } catch {}
     this.enterCameraZoomOut(engine);
-    // Capture snapshot NOW for later restoration/reference
+    // Capture snapshot NOW (including debris + portals) for later persistence/reference
     try {
       this.originalSnapshot = SolarSystemSerializer.fromState({
         sun: engine['primarySun'] ? { id: engine['primarySun'].id, name: engine['primarySun'].customName, position: { ...engine['primarySun'].position }, scale: { ...engine['primarySun'].scale } } : null,
@@ -88,6 +87,8 @@ export class GateRiteAnimation implements GameAnimation {
           orbitOrientation: p.orbitOrientation,
           orbitAngle: p.orbitAngle,
           orbitAngularSpeed: p.orbitAngularSpeed,
+          orbitNormal: p.orbitNormal,
+          orbitU: p.orbitU,
         })) || [],
         clusters: engine['asteroidClusterService']?.getClusters?.()?.map((c: any) => ({
           id: c.id,
@@ -98,8 +99,29 @@ export class GateRiteAnimation implements GameAnimation {
           includeSuper: true,
           radius: c.radius || 12,
           centerSpeedFactor: c.centerSpeedFactor || 0.5,
-        })) || []
+        })) || [],
+        planetDebris: (() => {
+          const out: any[] = [];
+          try {
+            const debrisMap: Map<string, Array<{ obj: any; local: { x:number;y:number;z:number } }>> = engine['planetDebris'];
+            if (debrisMap) {
+              for (const [planetId, items] of debrisMap.entries()) {
+                for (const d of items) {
+                  out.push({ id: d.obj.id, planetId, localOffset: { ...d.local }, size: d.obj.scale?.x, type: 'mega' });
+                }
+              }
+            }
+          } catch {}
+          return out;
+        })()
       });
+      // Persist original snapshot if portal persistence is available (only once per rite start)
+      try {
+        const persistence: any = (engine as any)['portalPersistenceService'];
+        if (persistence && this.originalSnapshot) {
+          persistence.autoLabelAndSave?.('gate-origin', this.originalSnapshot);
+        }
+      } catch {}
   } catch (e) { try { GameLogger.warn(LogCategory.ANIMATION, 'GateRite snapshot failed', e); } catch {} }
   }
 
@@ -411,6 +433,13 @@ export class GateRiteAnimation implements GameAnimation {
           } catch {}
           (engine as any).applySolarSystemSnapshot(snapshot);
           try { GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite transit applied new system', { id: snapshot.id }); } catch {}
+          // Persist generated snapshot
+          try {
+            const persistence: any = (engine as any)['portalPersistenceService'];
+            if (persistence && snapshot) {
+              persistence.autoLabelAndSave?.('gate-generated', snapshot);
+            }
+          } catch {}
         }
       } catch (e) { try { GameLogger.warn(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite transit apply failed', e); } catch {} }
       this.enterPlasmaBall(engine);

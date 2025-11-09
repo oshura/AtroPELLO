@@ -29,7 +29,7 @@ export class SolarSystemPanel {
   private items: Array<{
     id: string;
     label: string;
-    category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center';
+    category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center' | 'portal';
     pos: Vector3;
     px: number;
     py: number;
@@ -176,6 +176,7 @@ export class SolarSystemPanel {
     clusters: Array<{ id: string; center: Vector3; label?: string }>; // always included regardless of gameplay culling
     debris: Array<{ id: string; pos: Vector3; label?: string }>; // e.g., Earth mega-asteroids
     ship?: { pos: Vector3; label?: string };
+    portals?: Array<{ id: string; pos: Vector3; label?: string }>;
     marginPx?: number;
     // Optional: details to display for the active (selected or hovered) item
     details?: Record<string, any>;
@@ -187,7 +188,8 @@ export class SolarSystemPanel {
     // Palette
     const planetColor = '#68a0ff';
     const megaColor = '#e88d3a'; // shared for debris and clusters
-    const shipColor = '#32d296';
+  const shipColor = '#32d296';
+  const portalColor = '#c084fc';
 
   // Local vector math helpers (for orbit projection)
   const len = (v: Vector3) => Math.hypot(v.x, v.y, v.z);
@@ -276,7 +278,7 @@ export class SolarSystemPanel {
     const pushItem = (
       id: string,
       label: string,
-      category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center',
+      category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center' | 'portal',
       pos: Vector3,
       rPx: number,
       color: string
@@ -296,6 +298,8 @@ export class SolarSystemPanel {
     for (const d of data.debris) pushItem(d.id, d.label ?? d.id, 'debris', d.pos, 1.5, megaColor);
     // Clusters (always included)
     for (const cl of data.clusters) pushItem(cl.id, cl.label ?? cl.id, 'cluster', cl.center, 2.5, megaColor);
+    // Portals (arcane purple)
+    for (const p of (data.portals || [])) pushItem(p.id, p.label ?? p.id, 'portal', p.pos, 3.2, portalColor);
   // Ship (friendly green)
   if (data.ship) pushItem('ship', data.ship.label ?? 'Ship', 'ship', data.ship.pos, 3.5, shipColor);
 
@@ -358,6 +362,7 @@ export class SolarSystemPanel {
             case 'center': return 'Estrella';
             case 'cluster': return 'Cúmulo';
             case 'debris': return 'Escombros';
+            case 'portal': return 'Portal';
             case 'ship': return 'Nave';
             default: return 'Objeto';
           }
