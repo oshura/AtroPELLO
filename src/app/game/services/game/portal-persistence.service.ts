@@ -35,6 +35,16 @@ export class PortalPersistenceService {
     }));
   }
 
+  /** Find the first stored snapshot containing a portal with the given id. */
+  findByPortalId(portalId: string): SolarSystemSnapshot | undefined {
+    for (const snap of this.snapshots.values()) {
+      if (snap.portals && snap.portals.some(p => p.id === portalId)) {
+        return snap;
+      }
+    }
+    return undefined;
+  }
+
   apply(label: string, engine: GameEngine): boolean {
     const snap = this.get(label);
     if (!snap) return false;

@@ -455,11 +455,15 @@ export class ShaderManager {
     out vec4 fragColor;
     uniform vec3 u_eyeDir; // direction in object space (normalized)
     uniform float u_time;
-    // Colors
+    // Inner-eye Colors
     uniform vec3 u_irisColor;
     uniform vec3 u_pupilColor;
-    // Pupil radius in object space (0..1)
-    uniform float u_pupilRadius;
+    uniform float u_pupilRadius; // 0..1
+    // Eyelid shell controls
+    uniform float u_shellFactor;   // 0 = inner-eye mode, 1 = eyelid shell mode
+    uniform float u_eyelidOpen;    // 0..1 band half-height around equator grows with open
+    uniform vec3  u_scleraColor;   // base color for outer shell
+    uniform float u_bandEdge;      // edge softness
     float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1,311.7))) * 43758.5453); }
     float noise(vec2 p){
       vec2 i=floor(p); vec2 f=fract(p);
@@ -470,20 +474,27 @@ export class ShaderManager {
     void main(){
       vec3 N = normalize(v_normal);
       vec3 D = normalize(u_eyeDir);
+      if (u_shellFactor > 0.5) {
+        // Eyelid shell: opaque fuera de la banda de apertura; transparente en la banda ecuatorial
+        float t = clamp(u_eyelidOpen, 0.0, 1.0);
+        // Translate open (0..1) into half-band height on |N.y|
+        float band = smoothstep(t, t + max(0.001, u_bandEdge), abs(N.y));
+        float alpha = band; // 0 in opening, 1 on lids
+        if (alpha < 0.01) discard;
+        fragColor = vec4(u_scleraColor, alpha);
+        return;
+      }
+      // Inner eye: iris + pupil rings
       float facing = dot(N, D); // 1 at pupil center
-      // Pupil mask based on facing
       float pupil = smoothstep(u_pupilRadius, u_pupilRadius*0.65, facing);
-      // Iris pattern radial noise modulated by facing
       vec2 uv = vec2(dot(normalize(v_posObj.xy), vec2(1.0,0.0)), dot(normalize(v_posObj.xy), vec2(0.0,1.0)));
-      float n = noise(uv*14.0 + u_time*0.25);
+      float n = noise(uv*14.0 + u_time*0.1);
       float ring = smoothstep(0.15, 0.85, abs(facing));
-      vec3 iris = u_irisColor * (0.65 + 0.35*n) * (0.3 + 0.7*ring);
+      vec3 iris = u_irisColor * (0.55 + 0.45*n) * (0.35 + 0.65*ring);
       vec3 col = mix(iris, u_pupilColor, pupil);
-      // Subtle highlight opposite pupil direction
       float highlight = pow(max(dot(N, -D), 0.0), 4.0);
-      col += vec3(1.0,0.9,0.4) * highlight * 0.4;
-      float alpha = 1.0;
-      fragColor = vec4(col, alpha);
+      col += vec3(1.0,0.9,0.4) * highlight * 0.35;
+      fragColor = vec4(col, 1.0);
     }`;
   }
   private getEyeProgramLocations(): void {
@@ -498,6 +509,10 @@ export class ShaderManager {
     this.eyeUniforms['irisColor'] = gl.getUniformLocation(this.eyeProgram, 'u_irisColor');
     this.eyeUniforms['pupilColor'] = gl.getUniformLocation(this.eyeProgram, 'u_pupilColor');
     this.eyeUniforms['pupilRadius'] = gl.getUniformLocation(this.eyeProgram, 'u_pupilRadius');
+    this.eyeUniforms['shellFactor'] = gl.getUniformLocation(this.eyeProgram, 'u_shellFactor');
+    this.eyeUniforms['eyelidOpen'] = gl.getUniformLocation(this.eyeProgram, 'u_eyelidOpen');
+    this.eyeUniforms['scleraColor'] = gl.getUniformLocation(this.eyeProgram, 'u_scleraColor');
+    this.eyeUniforms['bandEdge'] = gl.getUniformLocation(this.eyeProgram, 'u_bandEdge');
   }
   public useEyeProgram(): void { if (this.gl && this.eyeProgram) this.gl.useProgram(this.eyeProgram); }
   public setEyeMatrices(model: Float32Array, view: Float32Array, proj: Float32Array): void {
@@ -506,13 +521,17 @@ export class ShaderManager {
     if (this.eyeUniforms['viewMatrix']) gl.uniformMatrix4fv(this.eyeUniforms['viewMatrix'], false, view);
     if (this.eyeUniforms['projectionMatrix']) gl.uniformMatrix4fv(this.eyeUniforms['projectionMatrix'], false, proj);
   }
-  public setEyeParams(time:number, eyeDir: Float32Array, irisColor: Float32Array, pupilColor: Float32Array, pupilRadius:number): void {
+  public setEyeParams(time:number, eyeDir: Float32Array, irisColor: Float32Array, pupilColor: Float32Array, pupilRadius:number, shellFactor:number, eyelidOpen:number, scleraColor: Float32Array, bandEdge:number): void {
     if (!this.gl || !this.eyeProgram) return; const gl = this.gl;
     if (this.eyeUniforms['time']) gl.uniform1f(this.eyeUniforms['time'], time);
     if (this.eyeUniforms['eyeDir']) gl.uniform3fv(this.eyeUniforms['eyeDir'], eyeDir);
     if (this.eyeUniforms['irisColor']) gl.uniform3fv(this.eyeUniforms['irisColor'], irisColor);
     if (this.eyeUniforms['pupilColor']) gl.uniform3fv(this.eyeUniforms['pupilColor'], pupilColor);
     if (this.eyeUniforms['pupilRadius']) gl.uniform1f(this.eyeUniforms['pupilRadius'], pupilRadius);
+    if (this.eyeUniforms['shellFactor']) gl.uniform1f(this.eyeUniforms['shellFactor'], shellFactor);
+    if (this.eyeUniforms['eyelidOpen']) gl.uniform1f(this.eyeUniforms['eyelidOpen'], eyelidOpen);
+    if (this.eyeUniforms['scleraColor']) gl.uniform3fv(this.eyeUniforms['scleraColor'], scleraColor);
+    if (this.eyeUniforms['bandEdge']) gl.uniform1f(this.eyeUniforms['bandEdge'], bandEdge);
   }
 
   // ===== Flame billboard shader =====

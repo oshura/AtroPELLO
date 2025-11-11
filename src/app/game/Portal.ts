@@ -17,11 +17,32 @@ export class Portal extends GameObject implements ITargetable {
   // Store original planet size reference
   public planetRadiusRef: number;
   // Blank portal: legacy eye direction removed from rendering; keep stub for shader uniform compatibility
-  public eyeDir = { x: 0, y: 0, z: 1 };
+  public eyeDir = { x: 0, y: 0, z: 1 }; // dirección actual del ojo (normalizada)
+  private _eyeDirTarget = { x: 0, y: 0, z: 1 }; // dirección objetivo suavizada
+  private _eyeDirSmoothSpeed = 3.2; // velocidad de seguimiento (rads/sec aproximado)
+  private _nextBlinkTime = 0; // tiempo absoluto para próximo blink
+  private _blinkDuration = 0.18; // duración de un parpadeo completo (segundos)
+  private _blinkElapsed = 0; // acumulador dentro de ciclo de blink
+  private _isBlinking = false;
   // Bidirectional link metadata (id of paired portal)
   public linkedPortalId?: string;
   // Snapshot-driven eye state (gaze, eyelid openness, intensity)
   public eyeState?: EyeState;
+  // Sub-geom para ojo 3D (esfera simple) reutilizando procedencia similar a Planet pero de baja resolución
+  private _eyeVertices: Float32Array | null = null;
+  private _eyeNormals: Float32Array | null = null;
+  private _eyeIndices: Uint16Array | null = null;
+  private _eyeVBO: WebGLBuffer | null = null;
+  private _eyeNBO: WebGLBuffer | null = null;
+  private _eyeIBO: WebGLBuffer | null = null;
+  private _eyeEnabled: boolean = true; // se puede desactivar si se quiere solo pentáculo
+  // Geometría para billboard de llama (quad con UV)
+  private _flameVBO: WebGLBuffer | null = null;
+  private _flameUVBO: WebGLBuffer | null = null;
+  private _flameIBO: WebGLBuffer | null = null;
+  private _flameIndexCount: number = 0;
+  // Control de párpado (0 cerrado, 1 totalmente abierto)
+  public eyelidOpen: number = 0;
 
   constructor(id: string, position: Vector3, radius: number = 100, private logger?: LoggingService) {
     super(id, position, { x: 0, y: 0, z: 0 }, { x: radius, y: radius, z: radius });
@@ -36,43 +57,115 @@ export class Portal extends GameObject implements ITargetable {
   }
 
   protected initGeometry(): void {
-    // Tabula rasa: solo un disco básico unitario como placeholder
-    const segments = 48;
-    const verts: number[] = [];
-    const indices: number[] = [];
-
+    // Geometría base: disco de halo (triángulos) + pentáculo (líneas) en buffers separados.
+    // 1. Halo (triángulos) ----------------------------------------------------
+    const segments = 64;
+    const haloVerts: number[] = [];
+    const haloIndices: number[] = [];
     // Centro
-    verts.push(0, 0, 0); // posición
-    // Normales Z+ para todo
-    const normals: number[] = [0, 0, 1];
-    const uvs: number[] = [0.5, 0.5];
-
+    haloVerts.push(0, 0, 0); // posición
+    const haloNormals: number[] = [0, 0, 1];
+    const haloUVs: number[] = [0.5, 0.5];
     for (let i = 0; i <= segments; i++) {
       const a = (i / segments) * Math.PI * 2;
       const x = Math.cos(a);
       const y = Math.sin(a);
-      verts.push(x, y, 0);
-      normals.push(0, 0, 1);
-      uvs.push((x + 1) * 0.5, (y + 1) * 0.5);
+      haloVerts.push(x, y, 0);
+      haloNormals.push(0, 0, 1);
+      haloUVs.push((x + 1) * 0.5, (y + 1) * 0.5);
     }
-    // Triángulos desde centro (0) a cada borde
     for (let i = 1; i <= segments; i++) {
       const next = i === segments ? 1 : i + 1;
-      indices.push(0, i, next);
+      haloIndices.push(0, i, next);
     }
+    this.vertices = new Float32Array(haloVerts);
+    this.indices = new Uint16Array(haloIndices);
+    this.normals = new Float32Array(haloNormals);
+    this.uvs = new Float32Array(haloUVs);
 
-    this.vertices = new Float32Array(verts);
-    this.indices = new Uint16Array(indices);
-    this.normals = new Float32Array(normals);
-    this.uvs = new Float32Array(uvs);
-
-    // No sub-geometry stored
+    // 2. Pentáculo (líneas) ---------------------------------------------------
+    // Estrella de 5 puntas inscrita en círculo (misma que cursor GrimoirePanel) usando orden 0,2,4,1,3,0.
+  // Estrella circunscrita gigante: radio completo (1.0) para tocar el círculo exterior del portal
+  const starR = 1.0; // radio relativo dentro del disco unitario (circunscrito)
+    const starPoints: Array<[number, number]> = [];
+    for (let i = 0; i < 5; i++) {
+      const ang = (-Math.PI / 2) + i * 2 * Math.PI / 5;
+      starPoints.push([Math.cos(ang) * starR, Math.sin(ang) * starR]);
+    }
+    const starOrder = [0, 2, 4, 1, 3, 0];
+    const starVerts: number[] = [];
+    for (let i = 0; i < starOrder.length; i++) {
+      const idx = starOrder[i];
+      starVerts.push(starPoints[idx][0], starPoints[idx][1], 0);
+    }
+    this._pentacleVertexArray = new Float32Array(starVerts);
+    this._pentacleVertexCount = starOrder.length;
   }
 
   public override update(deltaTime: number): void {
     this.manifestTime += deltaTime;
     // No efectos propios; solo mantener manifestTime para animación externa
+    this.updateGazeAndBlink(deltaTime);
     super.update(deltaTime);
+  }
+
+  /** Actualiza la dirección del ojo y el estado de blink con suavizado y límites */
+  private updateGazeAndBlink(dt: number): void {
+    // Determinar target: si hay eyeState con gazeTarget ship y existe la nave en window scope o global engine
+    try {
+      let shipPos: any = (window as any)?.gameEngine?.spaceship?.position;
+      if (!shipPos && (window as any)?.spaceship) shipPos = (window as any).spaceship.position;
+      if (this.eyeState?.gazeTarget === 'ship' && shipPos) {
+        const dx = shipPos.x - this.position.x;
+        const dy = shipPos.y - this.position.y;
+        const dz = shipPos.z - this.position.z;
+        const len = Math.sqrt(dx*dx + dy*dy + dz*dz) || 1;
+        // Clamp vertical componente para evitar giros antinaturales (> ~55°)
+        const vyClamp = 0.82; // cos(55°) ~ 0.57; limit normalized y
+        let nx = dx/len, ny = dy/len, nz = dz/len;
+        if (ny > vyClamp) ny = vyClamp; else if (ny < -vyClamp) ny = -vyClamp;
+        // Renormalizar tras clamp
+        const renLen = Math.sqrt(nx*nx + ny*ny + nz*nz) || 1;
+        nx/=renLen; ny/=renLen; nz/=renLen;
+        this._eyeDirTarget.x = nx; this._eyeDirTarget.y = ny; this._eyeDirTarget.z = nz;
+      }
+    } catch {}
+    // Suavizado (lerp angular) entre eyeDir y eyeDirTarget
+    const ax = this.eyeDir.x, ay = this.eyeDir.y, az = this.eyeDir.z;
+    let bx = this._eyeDirTarget.x, by = this._eyeDirTarget.y, bz = this._eyeDirTarget.z;
+    // Asegurar normalización de objetivo
+    const bLen = Math.sqrt(bx*bx + by*by + bz*bz) || 1; bx/=bLen; by/=bLen; bz/=bLen;
+    // Interpolación exponencial aproximada
+    const follow = 1 - Math.exp(-this._eyeDirSmoothSpeed * dt);
+    const ix = ax + (bx - ax) * follow;
+    const iy = ay + (by - ay) * follow;
+    const iz = az + (bz - az) * follow;
+    const iLen = Math.sqrt(ix*ix + iy*iy + iz*iz) || 1;
+    this.eyeDir.x = ix/iLen; this.eyeDir.y = iy/iLen; this.eyeDir.z = iz/iLen;
+
+    // Blink scheduling: si tiempo actual supera _nextBlinkTime, iniciar parpadeo
+    const now = performance.now() * 0.001; // segundos
+    if (!this._isBlinking && now >= this._nextBlinkTime) {
+      this._isBlinking = true; this._blinkElapsed = 0;
+      // Programar próximo blink (aleatorio 2.5–6.5s)
+      this._nextBlinkTime = now + (2.5 + Math.random()*4.0);
+    }
+    if (this._isBlinking) {
+      this._blinkElapsed += dt;
+      const k = Math.min(1, this._blinkElapsed / this._blinkDuration);
+      // Perfil de parpadeo: cierre rápido (0→0.2) luego apertura (0.2→1)
+      let curve: number;
+      if (k < 0.35) { // fase cierre
+        curve = 1 - (k / 0.35); // 1→0
+      } else { // fase apertura
+        const kk = (k - 0.35) / (0.65); // 0→1
+        curve = Math.min(1, kk); // 0→1
+      }
+      // Mezclar con eyelidOpen actual (manifest puede estar animándolo) usando mínimo
+      const baseOpen = (this as any).eyelidOpen ?? 1;
+      (this as any).eyelidOpen = Math.min(baseOpen, curve);
+      if (k >= 1) { this._isBlinking = false; }
+    }
   }
 
   /** Apply snapshot eye state (placeholder: future shader params, eyelid geometry). */
@@ -86,10 +179,81 @@ export class Portal extends GameObject implements ITargetable {
   }
 
   // Blank portal: no extra buffers to initialize
-  public initExtraBuffers(_gl: WebGL2RenderingContext): void { /* noop */ }
+  public initExtraBuffers(gl: WebGL2RenderingContext): void {
+    // Crear buffer para pentáculo (líneas) si no existe
+    if (this._pentacleVertexArray && !this._pentacleBuffer) {
+      this._pentacleBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._pentacleBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, this._pentacleVertexArray, gl.STATIC_DRAW);
+    }
+    // Crear geometría del ojo (esfera low-poly) si no existe
+    if (this._eyeEnabled && !this._eyeVBO) {
+      const latBands = 12, lonBands = 12;
+      const verts: number[] = []; const norms: number[] = []; const idx: number[] = [];
+      for (let lat=0; lat<=latBands; lat++) {
+        const theta = (lat * Math.PI) / latBands; const sinT = Math.sin(theta); const cosT = Math.cos(theta);
+        for (let lon=0; lon<=lonBands; lon++) {
+          const phi = (lon * 2 * Math.PI) / lonBands; const sinP = Math.sin(phi); const cosP = Math.cos(phi);
+          const x = cosP * sinT; const y = cosT; const z = sinP * sinT;
+          verts.push(x, y, z); norms.push(x, y, z);
+        }
+      }
+      for (let lat=0; lat<latBands; lat++) {
+        for (let lon=0; lon<lonBands; lon++) {
+          const first = lat * (lonBands + 1) + lon;
+          const second = first + lonBands + 1;
+          idx.push(first, second, first + 1, second, second + 1, first + 1);
+        }
+      }
+      this._eyeVertices = new Float32Array(verts);
+      this._eyeNormals = new Float32Array(norms);
+      this._eyeIndices = new Uint16Array(idx);
+      // Buffers
+      this._eyeVBO = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this._eyeVBO); gl.bufferData(gl.ARRAY_BUFFER, this._eyeVertices, gl.STATIC_DRAW);
+      this._eyeNBO = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this._eyeNBO); gl.bufferData(gl.ARRAY_BUFFER, this._eyeNormals, gl.STATIC_DRAW);
+      this._eyeIBO = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._eyeIBO); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, this._eyeIndices, gl.STATIC_DRAW);
+    }
+
+    // Crear quad para llama en pupila si no existe
+    if (!this._flameVBO) {
+      const pos = new Float32Array([
+        -0.5, -0.5, 0.0,
+         0.5, -0.5, 0.0,
+         0.5,  0.5, 0.0,
+        -0.5,  0.5, 0.0,
+      ]);
+      const uv = new Float32Array([
+        0.0, 0.0,
+        1.0, 0.0,
+        1.0, 1.0,
+        0.0, 1.0,
+      ]);
+      const idx = new Uint16Array([0,1,2, 0,2,3]);
+      this._flameVBO = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this._flameVBO); gl.bufferData(gl.ARRAY_BUFFER, pos, gl.STATIC_DRAW);
+      this._flameUVBO = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this._flameUVBO); gl.bufferData(gl.ARRAY_BUFFER, uv, gl.STATIC_DRAW);
+      this._flameIBO = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._flameIBO); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+      this._flameIndexCount = idx.length;
+    }
+  }
 
   // ITargetable implementation
   public getDisplayName(): string { return `Portal ${this.id}`; }
   public getTargetType(): TargetType { return TargetType.PORTAL; }
   public isActive(): boolean { return this.active && this.visible; }
+
+  // ===== Sub-geometry (pentáculo) =====
+  private _pentacleVertexArray: Float32Array | null = null;
+  private _pentacleBuffer: WebGLBuffer | null = null;
+  private _pentacleVertexCount: number = 0;
+  // Referencia al color base del planeta original (capturada durante Gate Rite)
+  public planetColorRef?: { r:number; g:number; b:number; a?:number };
+  /** Expuesto para renderizador especializado */
+  public getPentacleBuffer(): WebGLBuffer | null { return this._pentacleBuffer; }
+  public getPentacleVertexCount(): number { return this._pentacleVertexCount; }
+  public getEyeBuffers(): { v: WebGLBuffer | null; n: WebGLBuffer | null; i: WebGLBuffer | null; count: number } {
+    return { v: this._eyeVBO, n: this._eyeNBO, i: this._eyeIBO, count: this._eyeIndices ? this._eyeIndices.length : 0 };
+  }
+  public getFlameBuffers(): { v: WebGLBuffer | null; uv: WebGLBuffer | null; i: WebGLBuffer | null; count: number } {
+    return { v: this._flameVBO, uv: this._flameUVBO, i: this._flameIBO, count: this._flameIndexCount };
+  }
 }

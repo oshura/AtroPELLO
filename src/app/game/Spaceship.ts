@@ -493,13 +493,14 @@ export class Spaceship extends GameObject {
     // A velocidad máxima, queremos que el thruster sea 5% más grande que el tubo exterior
     const baseRadius = 0.15;
     const tubeOuterRadius = 0.1625;
-  // Reducir ligeramente el máximo para que crezca "un pixelillo o dos" menos
-  const maxRadius = tubeOuterRadius * 1.03; // antes 1.05 → ahora ~3% más grande que el tubo
     
-    // Calcular el factor de escala: de 1.0 (velocidad 0) a maxRadius/baseRadius (velocidad máxima)
-    const maxScaleFactor = maxRadius / baseRadius;
-    
-    return 1.0 + (maxScaleFactor - 1.0) * speedRatio;
+    // Visuals must never exceed "100%" scale even if speed temporarily surpasses maxSpeed (e.g. void jump)
+    const rawRatio = this.currentSpeed / Math.max(1e-6, this.maxSpeed);
+    const ratio = Math.min(1.0, rawRatio); // clamp visual ratio
+    // Slight bias so idle thruster isn't too small
+    const biased = 0.85 + ratio * 0.15;
+    // Preserve prior upper bound semantics but ratio clamp ensures <=1.0 path
+    return Math.min(biased, 1.03);
   }
 
   /**

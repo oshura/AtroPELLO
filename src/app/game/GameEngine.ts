@@ -29,7 +29,6 @@ import { GrimoirePanel } from './hud/GrimoirePanel';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
-import { LandingOverlay } from './hud/LandingOverlay';
 import { TargetOutline2DRenderer } from './hud/TargetOutline2DRenderer';
 import { Planet, PlanetColorName, PlanetType, DwarfPlanet, Protoplanet } from './Planet';
 import { GaseousPlanet } from './GaseousPlanet';
@@ -73,7 +72,7 @@ export class GameEngine {
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   // Runtime toggle to enable/disable the 2D outliner overlay for performance testing
   private outlinerEnabled: boolean = true;
-  private landingOverlay: LandingOverlay | null = null;
+  // Landing overlay removed
   private domCanvas: HTMLCanvasElement | null = null;
   private mapIdToTarget: Map<string, ITargetable> = new Map();
   // Defers a map selection when the user clicks immediately after opening the map
@@ -108,11 +107,11 @@ export class GameEngine {
   private planetDebris: Map<string, Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }>> = new Map();
   // Track last applied snapshot id (debug)
   private lastAppliedSnapshotId: string | null = null;
+  // Runtime portal traversal state
+  private portalTraversalCooldownSec: number = 0; // prevents rapid re-entry
+  private portalPrevDistances: Map<string, number> = new Map();
 
-  // Landing minigame state
-  private _prevSurfaceDistance: Map<string, number> = new Map();
-  private _landingTargetId: string | null = null;
-  private _isInsidePlanetId: string | null = null;
+  // Landing minigame removed
   
   // Configuración del mundo
   private readonly WORLD_SIZE = 50;
@@ -194,6 +193,77 @@ export class GameEngine {
     this.music = musicDirector || null;
     // Logger
     this.logger = loggingService;
+  }
+
+  /**
+   * Detect crossing into an active portal and traverse to its linked destination system.
+   * Simple criterion: when ship distance to portal center crosses below portal.radius and
+   * a linkedPortalId is set, swap to the snapshot containing the destination portal.
+   */
+  private handlePortalTraversal(deltaTime: number): void {
+    try {
+      // Cooldown timer
+      if (this.portalTraversalCooldownSec > 0) {
+        this.portalTraversalCooldownSec = Math.max(0, this.portalTraversalCooldownSec - deltaTime);
+      }
+      if (!this.portals || this.portals.length === 0) return;
+      const shipPos = this.spaceship.position;
+      for (const portal of this.portals) {
+        const dx = shipPos.x - portal.position.x;
+        const dy = shipPos.y - portal.position.y;
+        const dz = shipPos.z - portal.position.z;
+        const dist = Math.hypot(dx, dy, dz);
+        const prev = this.portalPrevDistances.get(portal.id) ?? Infinity;
+        this.portalPrevDistances.set(portal.id, dist);
+        // Entering transition: previously outside, now within portal radius
+        const R = Math.max(1, portal.radius || (portal as any)?.boundingSphere?.radius || 200);
+        const entering = prev > R && dist <= R;
+        if (!entering) continue;
+        if (this.portalTraversalCooldownSec > 0) continue;
+        // Must have a link
+        const destId = portal.linkedPortalId;
+        if (!destId || !this.portalPersistenceService) continue;
+        const destSnap = this.portalPersistenceService.findByPortalId(destId);
+        if (!destSnap) {
+          this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'Traversal attempted but destination snapshot not found', { from: portal.id, to: destId });
+          // Soft cooldown to avoid instant re-entry loop
+          this.portalTraversalCooldownSec = 2.0;
+          continue;
+        }
+        // Fade out quickly (solid black opaque)
+        try { this.overlayRenderer?.drawSolid([0,0,0], 1.0); } catch {}
+  // Apply destination system
+  this.applySolarSystemSnapshot(destSnap);
+        // Find the destination portal in the new scene
+        const destPortal = this.portals.find(p => p.id === destId) || null;
+        if (destPortal) {
+          // Runtime traversal behavior: preserve ship velocity and orientation.
+          // Reposition the ship at the center of the destination portal (emerging from it)
+          this.spaceship.position.x = destPortal.position.x;
+          this.spaceship.position.y = destPortal.position.y;
+          this.spaceship.position.z = destPortal.position.z;
+          // Do NOT change look direction or speeds; cooldown prevents immediate re-entry bounce
+          // Optionally nudge slightly along current forward to avoid z-fighting at exact center
+          try {
+            const fwd = this.normalize({ ...this.spaceship.forwardDirection });
+            const eps = 0.01;
+            this.spaceship.position.x += fwd.x * eps;
+            this.spaceship.position.y += fwd.y * eps;
+            this.spaceship.position.z += fwd.z * eps;
+          } catch {}
+        }
+        // Quick fade-in to clear
+        try { this.overlayRenderer?.drawSolid([0,0,0], 0.0); } catch {}
+        // Set cooldown to prevent immediate re-entry
+        this.portalTraversalCooldownSec = 3.0;
+        // Reset previous distances to avoid mis-detection in the new system
+        this.portalPrevDistances.clear();
+        // Only process one portal per frame
+        break;
+      }
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'handlePortalTraversal error', e);
+    }
   }
 
   /**
@@ -292,21 +362,7 @@ export class GameEngine {
   this.overlayRenderer = new ScreenOverlayRenderer(this.gl);
     // Nuevo renderer encapsulado para portales (visual halo/eye futuro)
     try { (this as any).portalRenderer = new (require('./rendering/PortalRenderer').PortalRenderer)(this.webglService as any, this.shaderManager); } catch {}
-  // Background full-view HUD layer for landing windows
-  try {
-    const c: HTMLCanvasElement = (this.webglService.getContext() as any).canvas as HTMLCanvasElement;
-    this.landingOverlay = new LandingOverlay(this.gl, c?.width || 1024, c?.height || 768);
-  } catch (e) {
-    this.logger.log(LogLevel.WARN, LogCategory.HUD, 'LandingOverlay could not be initialized', e);
-    this.landingOverlay = null;
-  }
-      // Fullscreen landing overlay (background HUD)
-      try {
-        this.landingOverlay = new LandingOverlay(this.gl, canvas.width, canvas.height);
-      } catch (e) {
-        this.logger.log(LogLevel.WARN, LogCategory.HUD, 'LandingOverlay initialization failed', e);
-        this.landingOverlay = null;
-      }
+  // Landing overlay removed
 
       // Inicializar sistema de retícula con renderizado (FASE 2)
       const reticleInit = await this.reticleManager.initialize(this.camera, this.shaderManager);
@@ -404,7 +460,10 @@ export class GameEngine {
     if (!snapshot) { this.logger.log(LogLevel.ERROR, LogCategory.SOLAR_SYSTEM_GENERATION, 'applySolarSystemSnapshot: snapshot null'); return { portalsCreated: [] }; }
     const gl = this.gl;
     this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Applying snapshot', { id: snapshot.id, planets: snapshot.planets.length, clusters: snapshot.clusters?.length || 0 });
-    const existingPortals = this.portals.slice();
+    // IMPORTANT: Do NOT carry over existing portals when applying a new system snapshot.
+    // Design: The origin portal remains only in the origin system; the destination portal is part of the new snapshot.
+    // Clearing the current portal list avoids duplicates (origin + destination) coexisting in the same context.
+    this.portals = [];
     // Clear planets & debris
     this.planets = [];
     this.primarySun = null;
@@ -552,12 +611,11 @@ export class GameEngine {
       this.targetCatalog.register(TargetType.CLUSTER, []);
     } catch (e) { this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Cluster instantiation error', e); }
 
-    // Portals (preserve existing + add new)
+    // Portals (replace with those from the snapshot only)
     const createdPortals: PortalSnapshot[] = [];
     try {
-      if (existingPortals.length) {
-        this.targetCatalog.register(TargetType.PORTAL, existingPortals as any);
-      }
+      // Reset target catalog bucket for portals to reflect the new system state
+      try { this.targetCatalog.register(TargetType.PORTAL, [] as any); } catch {}
       for (const p of (snapshot.portals || [])) {
         if (this.portals.some(ep => ep.id === p.id)) { createdPortals.push(p); continue; }
         const portal = new Portal(p.id, { ...p.position }, p.radius, this.logger);
@@ -1093,6 +1151,9 @@ export class GameEngine {
     
     this.spaceship.update(deltaTime);
 
+    // Runtime portal traversal (outside Gate Rite cinematic)
+    this.handlePortalTraversal(deltaTime);
+
     // Update audio listener pose and ship-related continuous sounds
     try {
       if (this.audio && this.camera) {
@@ -1121,7 +1182,7 @@ export class GameEngine {
         const speed = this.spaceship.currentSpeed;
         // Use base max (pre-rite) to allow audio to continue 100%→200% during the rite
         const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
-        const speedOverBase = Math.max(0, Math.min(2, speed / Math.max(1e-6, baseMax))); // 0..2 when rite doubles
+        const speedOverBase = Math.max(0, Math.min(2, speed / Math.max(1e-6, baseMax))); // allow up to 200% mapping
         const speedNorm = speedOverBase; // pass extended [0..2] to audio
         // Map visual thruster states to an accel proxy [0..1]
         let accelNorm = 0.0;
@@ -1333,6 +1394,8 @@ export class GameEngine {
       }
     }
   }
+
+  
   // Aplicar update a cada objeto del cluster (mueve posición según direction/driftSpeed) o proxy
   this.asteroidClusterService.getClusters().forEach(c => {
     if (c.lodMode === 'proxy') {
@@ -1534,157 +1597,10 @@ export class GameEngine {
     // Detectar colisiones
     this.checkCollisions();
 
-    // Landing windows and entry validation (HUD-only)
-    try {
-      this.updateLandingSystem(deltaTime);
-    } catch (e) {
-      this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Landing system update error', e);
-    }
+    // Landing system removed
   }
 
-  /**
-   * Update landing windows visualization and handle entry checks.
-   * Two windows: current trajectory impact and ideal window 30° ahead along tangent.
-   * Activate only when ship is within 250u of the planet surface.
-   */
-  private updateLandingSystem(deltaTime: number): void {
-    if (!this.spaceship || !this.hudManager) return;
-    // Pick target planet via forward ray intersection (nearest hit)
-    const shipPos = this.spaceship.position;
-    const fwd = this.normalize({ ...this.spaceship.forwardDirection });
-    let best: { p: Planet; t: number; hit: { x: number; y: number; z: number } } | null = null;
-    for (const obj of this.planets) {
-      const p = obj as Planet;
-      if (!p || (p as any).planetType === 'Sun') continue;
-      const hit = this.raySphere(shipPos, fwd, p.position, p.scale.x);
-      if (hit && hit.t > 0) {
-        if (!best || hit.t < best.t) best = { p, t: hit.t, hit: hit.point };
-      }
-    }
-
-    if (!best) {
-      try { this.landingOverlay?.setWindows(null); } catch {}
-      this._landingTargetId = null;
-    } else {
-      const planet = best.p;
-      this._landingTargetId = planet.id;
-      // Gate activation by distance to surface
-      const Rgate = Math.max(1, planet.scale.x);
-      const dCenterGate = Math.hypot(
-        this.spaceship.position.x - planet.position.x,
-        this.spaceship.position.y - planet.position.y,
-        this.spaceship.position.z - planet.position.z
-      );
-      const surfDistGate = dCenterGate - Rgate;
-      if (surfDistGate > 250) {
-        try { this.landingOverlay?.setWindows(null); } catch {}
-        this._landingTargetId = null;
-        return;
-      }
-
-      // Compute window quads
-      const R = Math.max(1, planet.scale.x);
-      const center = planet.position;
-      const impact = best.hit;
-      const n = this.normalize({ x: impact.x - center.x, y: impact.y - center.y, z: impact.z - center.z });
-      const fwdProj = this.normalize(this.projectOntoPlane(fwd, n));
-      const t1 = fwdProj;
-      let t2 = this.normalize({ x: n.y * t1.z - n.z * t1.y, y: n.z * t1.x - n.x * t1.z, z: n.x * t1.y - n.y * t1.x });
-      if (!isFinite(t2.x) || !isFinite(t2.y) || !isFinite(t2.z) || Math.hypot(t2.x, t2.y, t2.z) < 1e-6) {
-        t2 = this.normalize(this.projectOntoPlane({ x: 0, y: 1, z: 0 }, n));
-      }
-      const theta = 30 * Math.PI / 180;
-      const nIdeal = this.normalize({ x: n.x * Math.cos(theta) + t1.x * Math.sin(theta), y: n.y * Math.cos(theta) + t1.y * Math.sin(theta), z: n.z * Math.cos(theta) + t1.z * Math.sin(theta) });
-      const ideal = { x: center.x + nIdeal.x * R, y: center.y + nIdeal.y * R, z: center.z + nIdeal.z * R };
-  // Smaller windows; landing larger than impact
-  const sideLanding = Math.max(60, Math.min(R * 0.03, 320));
-  const sideImpact = Math.max(40, Math.min(sideLanding * 0.7, 220));
-  const halfLanding = sideLanding / 2;
-  const halfImpact = sideImpact / 2;
-      const toCorner = (C: { x: number; y: number; z: number }, ux: number, uy: number) => ({
-        x: C.x + t1.x * ux + t2.x * uy,
-        y: C.y + t1.y * ux + t2.y * uy,
-        z: C.z + t1.z * ux + t2.z * uy,
-      });
-      const currentQuadW = [
-        toCorner(impact, -halfImpact, -halfImpact),
-        toCorner(impact, +halfImpact, -halfImpact),
-        toCorner(impact, +halfImpact, +halfImpact),
-        toCorner(impact, -halfImpact, +halfImpact)
-      ];
-      const idealQuadW = [
-        toCorner(ideal, -halfLanding, -halfLanding),
-        toCorner(ideal, +halfLanding, -halfLanding),
-        toCorner(ideal, +halfLanding, +halfLanding),
-        toCorner(ideal, -halfLanding, +halfLanding)
-      ];
-      const currentQuadNDC = currentQuadW.map(p => this.worldToNDC(p));
-      const idealQuadNDC = idealQuadW.map(p => this.worldToNDC(p));
-      const relSpeed = Math.hypot(this.spaceship.velocity.x, this.spaceship.velocity.y, this.spaceship.velocity.z);
-      const idealColor = relSpeed > 5 ? 'rgba(255,0,0,0.95)' : 'rgba(0,255,0,0.95)';
-      try {
-        this.landingOverlay?.setWindows({
-          current: { pointsNDC: currentQuadNDC, color: 'rgba(255,255,0,0.9)' },
-          ideal: { pointsNDC: idealQuadNDC, color: idealColor }
-        });
-      } catch {}
-    }
-
-    // Entry mechanic: detect crossing into planet and validate against ideal window and speed
-    for (const obj of this.planets) {
-      const p = obj as Planet;
-      if (!p || (p as any).planetType === 'Sun') continue;
-      const R = Math.max(1, p.scale.x);
-      const dCenter = Math.hypot(this.spaceship.position.x - p.position.x, this.spaceship.position.y - p.position.y, this.spaceship.position.z - p.position.z);
-      const surfDist = dCenter - R; // positive outside
-      const prev = this._prevSurfaceDistance.get(p.id) ?? Infinity;
-      if (prev > 0 && surfDist <= 0) {
-        const matchesTarget = (this._landingTargetId && this._landingTargetId === p.id);
-        let ok = false;
-        if (matchesTarget) {
-          const fwd = this.normalize({ ...this.spaceship.forwardDirection });
-          const hit = this.raySphere(this.spaceship.position, fwd, p.position, R);
-          if (hit) {
-            const impact = hit.point;
-            const n = this.normalize({ x: impact.x - p.position.x, y: impact.y - p.position.y, z: impact.z - p.position.z });
-            const t1 = this.normalize(this.projectOntoPlane(fwd, n));
-            let t2 = this.normalize({ x: n.y * t1.z - n.z * t1.y, y: n.z * t1.x - n.x * t1.z, z: n.x * t1.y - n.y * t1.x });
-            if (!isFinite(t2.x) || !isFinite(t2.y) || !isFinite(t2.z) || Math.hypot(t2.x, t2.y, t2.z) < 1e-6) {
-              t2 = this.normalize(this.projectOntoPlane({ x: 0, y: 1, z: 0 }, n));
-            }
-            const theta = 30 * Math.PI / 180;
-            const nIdeal = this.normalize({ x: n.x * Math.cos(theta) + t1.x * Math.sin(theta), y: n.y * Math.cos(theta) + t1.y * Math.sin(theta), z: n.z * Math.cos(theta) + t1.z * Math.sin(theta) });
-            const ideal = { x: p.position.x + nIdeal.x * R, y: p.position.y + nIdeal.y * R, z: p.position.z + nIdeal.z * R };
-            // Use landing window size for validation
-            const sideLanding = Math.max(60, Math.min(R * 0.03, 320));
-            const half = sideLanding / 2;
-            const nAtShip = this.normalize({ x: this.spaceship.position.x - p.position.x, y: this.spaceship.position.y - p.position.y, z: this.spaceship.position.z - p.position.z });
-            const entryProj = { x: p.position.x + nAtShip.x * R, y: p.position.y + nAtShip.y * R, z: p.position.z + nAtShip.z * R };
-            // Project offset at ideal center into tangent basis
-            const t1Ideal = this.normalize(this.projectOntoPlane(t1, nIdeal));
-            let t2Ideal = this.normalize({ x: nIdeal.y * t1Ideal.z - nIdeal.z * t1Ideal.y, y: nIdeal.z * t1Ideal.x - nIdeal.x * t1Ideal.z, z: nIdeal.x * t1Ideal.y - nIdeal.y * t1Ideal.x });
-            if (!isFinite(t2Ideal.x) || !isFinite(t2Ideal.y) || !isFinite(t2Ideal.z) || Math.hypot(t2Ideal.x, t2Ideal.y, t2Ideal.z) < 1e-6) {
-              t2Ideal = this.normalize(this.projectOntoPlane({ x: 0, y: 1, z: 0 }, nIdeal));
-            }
-            const off = { x: entryProj.x - ideal.x, y: entryProj.y - ideal.y, z: entryProj.z - ideal.z };
-            const u = off.x * t1Ideal.x + off.y * t1Ideal.y + off.z * t1Ideal.z;
-            const v = off.x * t2Ideal.x + off.y * t2Ideal.y + off.z * t2Ideal.z;
-            const inside = Math.abs(u) <= half && Math.abs(v) <= half;
-            const relSpeed = Math.hypot(this.spaceship.velocity.x, this.spaceship.velocity.y, this.spaceship.velocity.z);
-            ok = inside && relSpeed <= 5;
-          }
-        }
-        if (ok) {
-          this._isInsidePlanetId = p.id;
-          this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Landing entry succeeded', { planet: p.customName || p.id });
-        } else {
-          this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Crash on planet - restarting', { planet: p.customName || p.id });
-          this.resetAfterCrash();
-        }
-      }
-      this._prevSurfaceDistance.set(p.id, surfDist);
-    }
-  }
+  // Landing system removed
 
   // --- Helpers for landing system ---
   private raySphere(ro: { x: number; y: number; z: number }, rd: { x: number; y: number; z: number }, center: { x: number; y: number; z: number }, radius: number): { t: number; point: { x: number; y: number; z: number } } | null {
@@ -1728,11 +1644,8 @@ export class GameEngine {
       this.spaceship.currentSpeed = 0;
       this.spaceship.targetSpeed = 0;
     }
-    this._isInsidePlanetId = null;
-    this._landingTargetId = null;
-    this._prevSurfaceDistance.clear();
-    try { this.hudManager?.setLandingWindows(null); } catch {}
-    try { this.landingOverlay?.setWindows(null); } catch {}
+    // Landing mechanic removed
+  // Landing windows cleanup call removed
   }
 
   private async fetchAndCacheTargetDetails(target: ITargetable) {
@@ -1815,17 +1728,23 @@ export class GameEngine {
 
   // Generate a random planet name inspired by discovered exoplanets and classical naming
   private generatePlanetName(): string {
+    // Delegate to SolarSystemService so names are unique across systems
+    try {
+      const svc = this.solarSystemService as any;
+      if (svc && typeof svc.generateUniquePlanetName === 'function') {
+        return svc.generateUniquePlanetName();
+      }
+    } catch {}
+    // Fallback: local generator (non-unique)
     const catalogPrefixes = ['Kepler', 'TRAPPIST', 'Gliese', 'Proxima', 'HD', 'K2', 'Tau', 'LHS', 'WASP', 'HIP'];
     const separators = ['-', ' ', ' '];
     const suffixAlpha = ['b', 'c', 'd', 'e', 'f', 'g', 'h'];
-    const num = () => Math.floor(10 + Math.random() * 8900); // 10..8909 approx
+    const num = () => Math.floor(10 + Math.random() * 8900);
     const pick = (arr: any[]) => arr[Math.floor(Math.random() * arr.length)];
     const style = Math.random();
     if (style < 0.5) {
-      // Catalog style: Kepler-452 b, TRAPPIST-1 e
       return `${pick(catalogPrefixes)}${pick(separators)}${num()}${Math.random() < 0.5 ? '' : ' '}${pick(suffixAlpha)}`.trim();
     } else {
-      // Mythical/Latin + Roman numerals
       const myth = ['Aether', 'Chronos', 'Erebus', 'Gaia', 'Nyx', 'Hera', 'Hyperion', 'Icarus', 'Janus', 'Tethys', 'Rhea', 'Atlas'];
       const romans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
       return `${pick(myth)} ${pick(romans)}`;
@@ -2180,11 +2099,7 @@ export class GameEngine {
   } else {
     // Draw background landing overlay behind the cockpit HUD (full camera view)
     try {
-      if (this.overlayRenderer && this.landingOverlay && this.gl) {
-        const c = this.gl.canvas as HTMLCanvasElement;
-        this.landingOverlay.resize(c.width, c.height);
-        this.landingOverlay.render(this.overlayRenderer);
-      }
+      // Landing overlay removed
     } catch {}
     // Renderizar HUD al final para que quede por encima de objetos y outlines
     this.renderHUDPlane();
@@ -4282,15 +4197,17 @@ export class GameEngine {
     );
 
     const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
-    const speedPctExtended = (this.spaceship.currentSpeed / Math.max(1e-6, baseMax)) * 100; // 0..200 when rite active
+    const speedPctExtended = (this.spaceship.currentSpeed / Math.max(1e-6, baseMax)) * 100; // 0..200 when jumping/rite
     const riteActive = !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && performance.now() < this.speedRiteUntilMs);
+    const voidJumpActive = !!(this as any).voidJumpActive;
+    const speedForHud = voidJumpActive ? Math.max(0, Math.min(100, speedPctExtended)) : Math.max(0, Math.min(200, speedPctExtended));
     const gameData = {
       velocity: velocityMagnitude,
       heading: this.spaceship.rotation.y * (180 / Math.PI), // Convertir a grados
       pitch: this.spaceship.rotation.x * (180 / Math.PI),
       roll: this.spaceship.rotation.z * (180 / Math.PI),
       altitude: this.spaceship.position.y,
-  speed: Math.max(0, Math.min(200, speedPctExtended)),
+  speed: speedForHud,
       maxSpeed: this.spaceship.maxSpeed,
       baseMaxSpeed: baseMax,
       voidEnergy: {

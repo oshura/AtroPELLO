@@ -29,6 +29,49 @@ function vec(x: number, y: number, z: number): Vector3 { return { x, y, z }; }
 
 @Injectable({ providedIn: 'root' })
 export class SystemGeneratorService {
+  /** Registry of all celestial names generated so far (stars + planets) to avoid reuse. */
+  private usedCelestialNames: Set<string> = new Set<string>();
+
+  /** Public: register names from any external snapshot so the generator avoids reusing them. */
+  public registerUsedNamesFromSnapshot(snap: SolarSystemSnapshot | null | undefined): void {
+    if (!snap) return;
+    if (snap.sun?.name) this.usedCelestialNames.add(String(snap.sun.name));
+    for (const p of (snap.planets || [])) {
+      if (p?.name) this.usedCelestialNames.add(String(p.name));
+    }
+  }
+
+  /** Generate a unique planet name at runtime, avoiding any previously used names. */
+  public generateUniquePlanetName(): string {
+    // Use Math.random for runtime; deterministic seed not required here
+    const rnd = Math.random;
+    const canonical = ['Mercury','Venus','Earth','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto','Ceres','Haumea','Eris','Makemake'];
+    const syllA = ['Ka','Lo','Xe','Ra','Vor','Tal','Zen','Iri','Gha','Qua','Bel','Or','Sy','Ty','Lun'];
+    const syllB = ['rin','dus','mos','th','li','nar','xus','phi','gor','lon','tris','vak','mer','dri'];
+    let base: string;
+    const attemptCanonical = rnd() < 0.45 && canonical.length > 0;
+    if (attemptCanonical) {
+      const unusedCanonical = canonical.filter(n => !this.usedCelestialNames.has(n));
+      base = unusedCanonical.length ? unusedCanonical[Math.floor(rnd()*unusedCanonical.length)] : canonical[Math.floor(rnd()*canonical.length)];
+      if (rnd() < 0.25) base += ` ${Math.floor(1 + rnd()*5)}`;
+    } else {
+      const a = syllA[Math.floor(rnd()*syllA.length)] || 'Ka';
+      const b = syllB[Math.floor(rnd()*syllB.length)] || 'rin';
+      const suffix = rnd()<0.3 ? String.fromCharCode(97+Math.floor(rnd()*6)) : '';
+      base = a + b + suffix;
+    }
+    if (!this.usedCelestialNames.has(base)) { this.usedCelestialNames.add(base); return base; }
+    let idx = 2;
+    while (idx < 1000) {
+      const c = `${base} ${idx}`;
+      if (!this.usedCelestialNames.has(c)) { this.usedCelestialNames.add(c); return c; }
+      idx++;
+    }
+    let fallback = base + '-' + Math.floor(Math.random()*1e6).toString(36);
+    while (this.usedCelestialNames.has(fallback)) fallback = base + '-' + Math.floor(Math.random()*1e6).toString(36);
+    this.usedCelestialNames.add(fallback);
+    return fallback;
+  }
   /**
    * Generate a deterministic solar system snapshot from a seed.
    * Current model: 1 sun + 9 planets on elliptical orbits similar to engine defaults.
@@ -36,17 +79,43 @@ export class SystemGeneratorService {
   generate(seed: RNGSeed = Date.now(), options?: GenerationOptions): SolarSystemSnapshot {
     const rnd = mulberry32(hashSeed(seed));
 
-    // Sun(s) in origin or slight offset for binary
-    const sunCount = options?.sunCount === 2 ? 2 : 1;
+    // Sun(s): random chance of binary if allowed
+    const allowBinary = options?.sunCount === 2 || (options?.sunCount === undefined && rnd() < 0.25);
+    const sunCount = allowBinary ? 2 : 1;
     let sun: SunSnapshot;
+    const pickUniqueName = (candidates: string[], fallbackPrefix: string): string => {
+      // Filter out already used names
+      const available = candidates.filter(n => !this.usedCelestialNames.has(n));
+      let chosen = available.length ? (available[Math.floor(rnd()*available.length)] || available[0]) : (candidates[Math.floor(rnd()*candidates.length)] || candidates[0]);
+      // If chosen already used, derive a suffix until unique
+      if (this.usedCelestialNames.has(chosen)) {
+        let idx = 2;
+        while (this.usedCelestialNames.has(`${chosen} ${idx}`) && idx < 1000) idx++;
+        chosen = `${chosen} ${idx}`;
+      }
+      this.usedCelestialNames.add(chosen);
+      return chosen;
+    };
     if (sunCount === 1) {
-      sun = { id: 'sol-primario', name: 'Sol', position: vec(0, 0, 0), radius: 1800 };
+      const starNames = ['Aether','Helion','Solis','Orion','Nyxar','Ilyos','Zeph','Dracon','Lumen'];
+      const sName = pickUniqueName(starNames, 'Helion');
+      sun = { id: `star-primary-${seed}`, name: sName, position: vec(0, 0, 0), radius: 1400 + Math.round(rnd()*900) };
     } else {
-      // Represent primary; secondary will be encoded via meta until multi-sun render is supported
-      sun = { id: 'sol-binario-a', name: 'Sol A', position: vec(-1500, 0, 0), radius: 1600 };
+      const binSep = 2200 + rnd()*1200;
+      const starNames = ['Dualis','Gemini','Janus','Castor','Pollux','Helios','Lya','Pyra'];
+      const base = pickUniqueName(starNames, 'Dualis');
+      // Represent first star; secondary will implicitly share base name with B suffix but kept unique too
+      let secondary = base + ' B';
+      if (this.usedCelestialNames.has(secondary)) {
+        let idx = 2;
+        while (this.usedCelestialNames.has(`${secondary}-${idx}`) && idx < 1000) idx++;
+        secondary = `${secondary}-${idx}`;
+      }
+      this.usedCelestialNames.add(secondary);
+      sun = { id: `star-binary-a-${seed}`, name: `${base} A`, position: vec(-binSep*0.5, 0, 0), radius: 1300 + Math.round(rnd()*600) };
     }
 
-  const planetCountRange = options?.planetCountRange || [9, 9];
+  const planetCountRange = options?.planetCountRange || [5, 13];
   const count = Math.max(1, Math.round(planetCountRange[0] + (planetCountRange[1] - planetCountRange[0]) * rnd()));
   const minA = 50000;
   const maxA = options?.maxOrbitSemiMajor && options.maxOrbitSemiMajor > minA ? options.maxOrbitSemiMajor : 100000;
@@ -73,13 +142,62 @@ export class SystemGeneratorService {
       baseOrbits.push({ a, b, orient: rnd() * Math.PI * 2, angle0: rnd() * Math.PI * 2, normal, u: { x: ux, y: uy, z: uz } });
     }
 
-  const names = ['Mercury','Venus','Earth','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto','Ceres','Haumea','Eris','Makemake'];
-  const kindsBase = ['Rocky','Rocky','Terrestrial','Rocky','Giant','Ringed','Gaseous','Gaseous','Dwarf','Dwarf','Dwarf','Rocky','Rocky'];
-  const radiiBase = [1200,1400,1500,1300,3200,2900,2400,2300,900,650,700,1100,1250];
-  const radii = radiiBase.map(r => Math.round(r * (0.8 + 0.4 * rnd())));
+  // Random name syllable generator for variety beyond canonical list
+  const canonical = ['Mercury','Venus','Earth','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto','Ceres','Haumea','Eris','Makemake'];
+  const syllA = ['Ka','Lo','Xe','Ra','Vor','Tal','Zen','Iri','Gha','Qua','Bel','Or','Sy','Ty','Lun'];
+  const syllB = ['rin','dus','mos','th','li','nar','xus','phi','gor','lon','tris','vak','mer','dri'];
+  const randUniquePlanetName = () => {
+    let base: string;
+    const attemptCanonical = rnd() < 0.45 && canonical.length;
+    if (attemptCanonical) {
+      // choose unused canonical first
+      const unusedCanonical = canonical.filter(n => !this.usedCelestialNames.has(n));
+      base = unusedCanonical.length ? unusedCanonical[Math.floor(rnd()*unusedCanonical.length)] : canonical[Math.floor(rnd()*canonical.length)];
+      if (rnd() < 0.25) base += ` ${Math.floor(1 + rnd()*5)}`;
+    } else {
+      const a = syllA[Math.floor(rnd()*syllA.length)] || 'Ka';
+      const b = syllB[Math.floor(rnd()*syllB.length)] || 'rin';
+      const suffix = rnd()<0.3 ? String.fromCharCode(97+Math.floor(rnd()*6)) : '';
+      base = a + b + suffix;
+    }
+    let candidate = base;
+    if (!this.usedCelestialNames.has(candidate)) {
+      this.usedCelestialNames.add(candidate);
+      return candidate;
+    }
+    // Resolve collision: append numeric or Roman suffix until unique
+    let idx = 2;
+    while (idx < 1000) {
+      const withIdx = `${base} ${idx}`;
+      if (!this.usedCelestialNames.has(withIdx)) {
+        this.usedCelestialNames.add(withIdx);
+        return withIdx;
+      }
+      idx++;
+    }
+    // Fallback truly unique hash-based name
+    let fallback = base + '-' + Math.floor(rnd()*1e6).toString(36);
+    while (this.usedCelestialNames.has(fallback)) fallback = base + '-' + Math.floor(rnd()*1e6).toString(36);
+    this.usedCelestialNames.add(fallback);
+    return fallback;
+  };
+  const kindPool = ['Rocky','Terrestrial','Rocky','Giant','Ringed','Gaseous','Dwarf','Protoplanet'];
+  const pickKind = (i:number) => kindPool[Math.floor(rnd()*kindPool.length)] || 'Rocky';
+  const radiiBase = [900,1100,1250,1400,1600,1900,2200,2600,3000,3400];
+  const radiusForKind = (kind: string) => {
+    switch (kind) {
+      case 'Giant': return 2800 + Math.round(rnd()*1800);
+      case 'Ringed': return 2000 + Math.round(rnd()*1400);
+      case 'Gaseous': return 1800 + Math.round(rnd()*1500);
+      case 'Dwarf': return 400 + Math.round(rnd()*600);
+      case 'Protoplanet': return 250 + Math.round(rnd()*350);
+      case 'Terrestrial': return 900 + Math.round(rnd()*900);
+      default: return radiiBase[Math.floor(rnd()*radiiBase.length)] || 1200;
+    }
+  };
 
-    const lifeChance = typeof options?.lifeChancePct === 'number' ? Math.max(0, Math.min(100, options.lifeChancePct)) : 5;
-    const planets: PlanetSnapshot[] = baseOrbits.map((o, i) => {
+  const lifeChance = typeof options?.lifeChancePct === 'number' ? Math.max(0, Math.min(100, options.lifeChancePct)) : 8;
+  const planets: PlanetSnapshot[] = baseOrbits.map((o, i) => {
       const a = o.a, b = o.b, orient = o.orient; // orient rotates in-plane axes around normal
       const phi = o.angle0;
       const center = vec(0,0,0);
@@ -99,14 +217,15 @@ export class SystemGeneratorService {
         center.y + uR.y * (a * Math.cos(phi)) + vR.y * (b * Math.sin(phi)),
         center.z + uR.z * (a * Math.cos(phi)) + vR.z * (b * Math.sin(phi))
       );
-  const kind = kindsBase[i] || 'Rocky';
-      const name = names[i] || `P-${i+1}`;
-      const radius = radii[i] || Math.round(1000 + 1800 * rnd());
+    const kind = pickKind(i);
+  const name = randUniquePlanetName();
+    const radius = radiusForKind(kind);
   // Probability of life picks exceptional planets based on lifeChancePct
   const exceptional = rnd() * 100 < lifeChance;
   const life = exceptional ? Math.round(30 + rnd() * 50) : (kind === 'Terrestrial' ? Math.round(rnd() * 10) : (kind === 'Gaseous' ? 0 : Math.round(rnd() * 4)));
       const angSpeed = 0.00002 + rnd() * 0.00008; // rad/s small
-      const baseColorName = kind === 'Ringed' ? 'ringed' : (kind === 'Gaseous' ? 'gaseous' : (kind === 'Giant' ? 'giant' : undefined));
+  // Map kind to internal baseColor hint set (reuse existing color keys)
+  const baseColorName = kind === 'Ringed' ? 'gris' : (kind === 'Gaseous' ? 'azul_hielo' : (kind === 'Giant' ? 'marron' : (kind === 'Dwarf' ? 'gris' : (kind === 'Protoplanet' ? 'gris' : 'azul_marino'))));
       return {
         id: `planet-${i}`,
         name,
@@ -128,14 +247,16 @@ export class SystemGeneratorService {
       } as PlanetSnapshot;
     });
 
-  // Simple asteroid clusters ring behind Earth analog (i=2)
+  // Asteroid clusters: choose a random anchor planet index (avoid last few small ones when possible)
   const clusters: ClusterSnapshot[] = [];
-    const rows = 6;
-    const cols = 40;
+    const trailAnchor = Math.min(count-1, Math.floor(rnd()*Math.max(3, count-3))); // bias early orbits
+    const rows = 4 + Math.floor(rnd()*4); // 4..7
+    const cols = 25 + Math.floor(rnd()*40); // 25..64
     const ROW_SPACING = 75;
     const COL_SPACING = 300;
     const START_OFFSET = 10000;
-    const a = baseOrbits[2].a, b = baseOrbits[2].b, orient = baseOrbits[2].orient, phiEarth = baseOrbits[2].angle0;
+  const anchorOrbit = baseOrbits[trailAnchor];
+  const a = anchorOrbit.a, b = anchorOrbit.b, orient = anchorOrbit.orient, phiEarth = anchorOrbit.angle0;
     // Build Earth analog basis with multi-plane support
     const nE = baseOrbits[2].normal, uE = baseOrbits[2].u;
     const vxE = nE.y * uE.z - nE.z * uE.y, vyE = nE.z * uE.x - nE.x * uE.z, vzE = nE.x * uE.y - nE.y * uE.x;
@@ -160,7 +281,7 @@ export class SystemGeneratorService {
       for (let i=0;i<maxIter && acc < ds;i++) { const s = speedAt(phi); const dphi = Math.min(0.01, (ds-acc) / Math.max(1e-6, s)); acc += s * dphi; phi -= dphi; }
       return phi;
     };
-    const phiCols: number[] = []; for (let c=0;c<cols;c++){ const ds = START_OFFSET + c * COL_SPACING; phiCols.push(phiBehindBy(ds)); }
+  const phiCols: number[] = []; for (let c=0;c<cols;c++){ const ds = START_OFFSET + c * COL_SPACING; phiCols.push(phiBehindBy(ds)); }
     for (let r=0;r<rows;r++) {
       for (let c=0;c<cols;c++) {
         const phi = phiCols[c];
@@ -170,11 +291,59 @@ export class SystemGeneratorService {
   const s = vec( vR.x, vR.y, vR.z );
         const lateral = (r - (rows-1)/2) * ROW_SPACING * (1 + 1.2 * (c/(cols-1)));
         const center = vec(base.x + s.x * lateral, base.y + s.y * lateral, base.z + s.z * lateral);
-        clusters.push({ id: `trail-${r}-${c}`, center, direction: t, speed: 1.5, count: 8, includeSuper: true, radius: 12, centerSpeedFactor: 0.5 });
+        clusters.push({ id: `trail-${trailAnchor}-${r}-${c}`, center, direction: t, speed: 1.2 + rnd()*1.2, count: 6 + Math.floor(rnd()*6), includeSuper: rnd() < 0.5, radius: 10 + Math.floor(rnd()*10), centerSpeedFactor: 0.4 + rnd()*0.3 });
       }
     }
 
-    const snapshot: SolarSystemSnapshot = { id: `sys-${(seed as any)}`, seed, timestamp: Date.now(), sun, planets, clusters, meta: { optionsUsed: options || null, sunCount } };
+    // Additional asteroid "cloud" clusters between orbits to differentiate systems.
+    // Clouds: free-floating groups not constrained to the trail; placed at random orbital radii and slight vertical offsets.
+    const cloudCount = 8 + Math.floor(rnd() * 12); // 8..19 clouds
+    for (let i = 0; i < cloudCount; i++) {
+      // Pick a random orbit band between first and last semi-major axes
+      const bandT = rnd();
+      const aBand = minA + bandT * (maxA - minA);
+      // Random eccentricity factor for placement ellipse (not necessarily matching a planet)
+      const eCloud = 0.1 + rnd() * 0.6; // 0.1..0.7
+      const bBand = aBand * Math.sqrt(1 - eCloud * eCloud);
+      // Random angle along ellipse
+      const phi = rnd() * Math.PI * 2;
+      // Sample a slight multi-plane tilt for clouds (wider variance than planet orbits)
+      const nx = (rnd()*2 - 1) * 0.6;
+      const ny = 0.2 + rnd()*0.9; // keep upward component
+      const nz = (rnd()*2 - 1) * 0.6;
+      const nLen = Math.hypot(nx, ny, nz) || 1; const n = { x: nx/nLen, y: ny/nLen, z: nz/nLen };
+      // Derive in-plane axes
+      let rx = rnd()*2-1, ry = rnd()*2-1, rz = rnd()*2-1; let rl = Math.hypot(rx,ry,rz)||1; rx/=rl; ry/=rl; rz/=rl;
+      const dotRN = rx*n.x + ry*n.y + rz*n.z;
+      let ux = rx - dotRN*n.x, uy = ry - dotRN*n.y, uz = rz - dotRN*n.z;
+      const ul = Math.hypot(ux,uy,uz)||1; ux/=ul; uy/=ul; uz/=ul;
+      // v = n × u
+      const vx = n.y * uz - n.z * uy;
+      const vy = n.z * ux - n.x * uz;
+      const vz = n.x * uy - n.y * ux;
+      const vl = Math.hypot(vx,vy,vz)||1; const v = { x: vx/vl, y: vy/vl, z: vz/vl };
+      // Position on ellipse using (u,v) basis
+      const pos = vec(
+        ux * (aBand * Math.cos(phi)) + v.x * (bBand * Math.sin(phi)),
+        uy * (aBand * Math.cos(phi)) + v.y * (bBand * Math.sin(phi)),
+        uz * (aBand * Math.cos(phi)) + v.z * (bBand * Math.sin(phi))
+      );
+      // Cloud direction: slow drift in a random normalized direction (not necessarily tangent)
+      let dx = rnd()*2-1, dy = rnd()*2-1, dz = rnd()*2-1; const dl = Math.hypot(dx,dy,dz)||1; dx/=dl; dy/=dl; dz/=dl;
+      const cloudId = `cloud-${i}`;
+      clusters.push({
+        id: cloudId,
+        center: pos,
+        direction: { x: dx, y: dy, z: dz },
+        speed: 0.4 + rnd()*0.8, // slower drift than trail
+        count: 8 + Math.floor(rnd()*10), // 8..17 small asteroids
+        includeSuper: rnd() < 0.25, // rarer super asteroids in clouds
+        radius: 20 + Math.floor(rnd()*60), // wider dispersion
+        centerSpeedFactor: 0.15 + rnd()*0.25 // slower center movement
+      });
+    }
+
+    const snapshot: SolarSystemSnapshot = { id: `sys-${(seed as any)}`, seed, timestamp: Date.now(), sun, planets, clusters, meta: { optionsUsed: options || null, sunCount, trailAnchor } };
     return snapshot;
   }
 }

@@ -29,6 +29,7 @@ export class VoidJumpAnimation implements GameAnimation {
   private originalMaxSpeed = 0;
   private originalAcceleration = 0;
   private originalDeceleration = 0;
+  private inputBlockers: Array<() => void> = [];
 
   private overlayAlpha = 0;
   private overlayColor: [number, number, number] = [1, 1, 1];
@@ -49,17 +50,25 @@ export class VoidJumpAnimation implements GameAnimation {
     this.prevCameraMode = engine['camera']?.getCurrentMode?.() ?? CameraMode.INMOVILE_EXTERNAL;
     engine['camera']?.setCameraMode?.(CameraMode.INMOVILE_EXTERNAL);
 
-    // Ship: store and temporarily extend dynamics for visual ramp; pause void energy consumption
+    // Ship: store dynamics (but DO NOT raise maxSpeed) — we only boost acceleration/deceleration.
     this.originalMaxSpeed = engine['spaceship']?.maxSpeed ?? 5;
     this.originalAcceleration = engine['spaceship']?.acceleration ?? 2;
     this.originalDeceleration = engine['spaceship']?.deceleration ?? 2.5;
     if (engine['spaceship']) {
-      engine['spaceship'].maxSpeed = 200; // higher top speed during jump
-      engine['spaceship'].acceleration = 150; // reach 200 quickly
-      engine['spaceship'].deceleration = 200; // snap to 0 after teleport
+      engine['spaceship'].acceleration = 150; // fast ramp to >max speed
+      engine['spaceship'].deceleration = 200; // quick stop post-teleport
       engine['spaceship'].voidEnergyPaused = true;
       this.savedVoidEnergy = engine['spaceship'].voidEnergyCurrent ?? 0;
     }
+    // Mark engine void-jump active for HUD/audio clamping
+    (engine as any).voidJumpActive = true;
+    // Global key blockers: prevent ALL gameplay keys (panels, speed, camera, etc.)
+  const blockKey: EventListener = (e: Event) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
+    const keyEvents: Array<keyof DocumentEventMap> = ['keydown','keyup','keypress'];
+    keyEvents.forEach((evt) => {
+      document.addEventListener(evt, blockKey, { capture: true });
+      this.inputBlockers.push(() => document.removeEventListener(evt, blockKey, { capture: true }));
+    });
 
     // Build streak seeds (camera-local positions ahead of camera)
     this.streakSeeds = [];
@@ -153,18 +162,18 @@ export class VoidJumpAnimation implements GameAnimation {
       ship.targetSpeed = Math.min(ship.maxSpeed, lerp(0, 30, k));
     }
 
-    // Phase 2: speed ramp (visual) up to 200
+  // Phase 2: speed ramp (visual) up to 200 (targetSpeed may exceed maxSpeed intentionally)
     if (this.t > this.orientTime && this.t <= this.orientTime + this.speedRampTime) {
       const k = clamp01((this.t - this.orientTime) / this.speedRampTime);
       ship.thrusterState = ship.ThrusterState?.ACCELERATING ?? ship.thrusterState;
-      ship.targetSpeed = Math.min(ship.maxSpeed, lerp(30, 200, k));
+  ship.targetSpeed = lerp(30, 200, k); // exceed maxSpeed without altering maxSpeed
     }
 
     // Phase 2.5: hold at 200
     const holdTopStart = this.orientTime + this.speedRampTime;
     if (this.t > holdTopStart && this.t <= holdTopStart + this.speedHoldTime) {
       ship.thrusterState = ship.ThrusterState?.CRUISING ?? ship.thrusterState;
-      ship.targetSpeed = Math.min(ship.maxSpeed, 200);
+  ship.targetSpeed = 200; // hold even if > maxSpeed
     }
 
     // Phase 3: fade to overlay (black if images, white otherwise)
@@ -201,7 +210,6 @@ export class VoidJumpAnimation implements GameAnimation {
     if (this.t >= this.totalTime) {
       // Reset ship speed limits and camera; restore void energy and resume drain
       if (engine['spaceship']) {
-        engine['spaceship'].maxSpeed = this.originalMaxSpeed;
         engine['spaceship'].acceleration = this.originalAcceleration;
         engine['spaceship'].deceleration = this.originalDeceleration;
         engine['spaceship'].targetSpeed = 0;
@@ -209,6 +217,9 @@ export class VoidJumpAnimation implements GameAnimation {
         engine['spaceship'].voidEnergyCurrent = this.savedVoidEnergy;
         engine['spaceship'].voidEnergyPaused = false;
       }
+      // Remove key blockers & flag
+      try { this.inputBlockers.forEach(fn => fn()); this.inputBlockers = []; } catch {}
+      (engine as any).voidJumpActive = false;
       engine['camera']?.setCameraMode?.(this.prevCameraMode);
       this.blocking = false;
       return true;

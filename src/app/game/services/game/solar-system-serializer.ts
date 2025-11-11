@@ -50,7 +50,26 @@ export class SolarSystemSerializer {
     const planets: PlanetSnapshot[] = state.planets.map(p => ({
       id: p.id,
       name: p.customName,
-      kind: p.planetType,
+      // Normalizar 'kind' para consumo de generadores posteriores.
+      // El motor procedural espera valores en inglés en minúsculas: 'ringed','gaseous','giant','dwarf','protoplanet','terrestrial','rocky'.
+      // Los enum y strings internos pueden venir como 'Tierra','Planetoid','Ringed','Gaseous','Giant','Dwarf','Protoplanet'.
+      kind: (() => {
+        const raw = (p.planetType || '').toString();
+        const x = raw.toLowerCase();
+        if (!x) return undefined;
+        if (x === 'tierra') return 'terrestrial';
+        if (x === 'planetoid') return 'rocky'; // mapeo aproximado
+        // Mantener ya compatibles
+        if (x === 'ringed') return 'ringed';
+        if (x === 'gaseous') return 'gaseous';
+        if (x === 'giant') return 'giant';
+        if (x === 'dwarf') return 'dwarf';
+        if (x === 'protoplanet') return 'protoplanet';
+        if (x === 'sun') return 'sun';
+        // Fallback: si el color sugiere oceánico usar 'terrestrial'
+        if (p.baseColorName === 'azul_marino') return 'terrestrial';
+        return x; // dejar valor original si no coincide
+      })(),
       baseColorName: p.baseColorName,
       position: { ...p.position },
       radius: p.radius ?? p.scale?.x ?? 1000,

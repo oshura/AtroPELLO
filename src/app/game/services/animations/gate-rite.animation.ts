@@ -15,9 +15,11 @@ enum GateRitePhase {
   PlanetWrapper = 2,
   PlanetCollapse = 3,
   PortalManifest = 4,
-  Transit = 5,
-  PlasmaBall = 6,
-  Completed = 7,
+  CameraReframe = 5,
+  Transit = 6,
+  PlasmaBall = 7,
+  FadeSwitch = 8,
+  Completed = 9,
 }
 
 export class GateRiteAnimation implements GameAnimation {
@@ -34,10 +36,14 @@ export class GateRiteAnimation implements GameAnimation {
   private collapseStormTime = 0; // accumulates for storm shell animation
   private manifestElapsed = 0;
   private manifestDuration = 10.0; // seconds portal materialize (spec: 10s emergence)
+  private reframeElapsed = 0;
+  private reframeDuration = 1.6; // seconds to rotate + gentle zoom after portal exists
   private transitElapsed = 0;
   private transitDuration = 1.2; // seconds warp through portal
   private plasmaElapsed = 0;
   private plasmaDuration = 2.5; // seconds after transit
+  private fadeElapsed = 0;
+  private fadeDuration = 0.5; // seconds fade to switch systems & camera
   private portalInstance: Portal | null = null;
   private generator: SystemGeneratorService | null = null; // lazy resolved from engine injector if needed
 
@@ -47,6 +53,12 @@ export class GateRiteAnimation implements GameAnimation {
   private initialCamPos: { x: number; y: number; z: number } | null = null;
   private initialCamTarget: { x: number; y: number; z: number } | null = null;
   private targetDistanceMultiplier = 4; // heuristic to frame planet
+  // Reframe camera endpoints
+  private reframeStart: { x:number;y:number;z:number } | null = null;
+  private reframeEnd: { x:number;y:number;z:number } | null = null;
+  private reframeTarget: { x:number;y:number;z:number } | null = null;
+  // Transit ship path start
+  private shipStartPos: { x:number;y:number;z:number } | null = null;
 
   start(engine: GameEngine, target: ITargetable): void {
     if (target.getTargetType() !== TargetType.PLANET) { this.finished = true; return; }
@@ -55,6 +67,11 @@ export class GateRiteAnimation implements GameAnimation {
     this.t = 0;
     this.finished = false;
     try { (engine as any).showPlaceholderText?.('GATE RITE: INIT', 900); } catch {}
+    // Pausar consumo de energía del vacío durante toda la animación
+    try {
+      const ship: any = (engine as any)['spaceship'];
+      if (ship) ship.voidEnergyPaused = true;
+    } catch {}
     // Seed manual camera with current active transform, then switch to MANUAL to prevent ship overrides
     try {
       const cam: any = (engine as any).camera;
@@ -153,11 +170,17 @@ export class GateRiteAnimation implements GameAnimation {
       case GateRitePhase.PortalManifest:
         this.updatePortalManifest(engine, dt);
         break;
+      case GateRitePhase.CameraReframe:
+        this.updateCameraReframe(engine, dt);
+        break;
       case GateRitePhase.Transit:
         this.updateTransit(engine, dt);
         break;
       case GateRitePhase.PlasmaBall:
         this.updatePlasmaBall(engine, dt);
+        break;
+      case GateRitePhase.FadeSwitch:
+        this.updateFadeSwitch(engine, dt);
         break;
       default:
         break; // future phases
@@ -320,6 +343,13 @@ export class GateRiteAnimation implements GameAnimation {
         : (((this.targetPlanet as any)?.scale?.x) || 120);
       const logger: LoggingService | undefined = (engine as any)?.logger as LoggingService | undefined;
       const portal = new Portal('portal-gaterite', pos, Math.max(60, Number(baseR)), logger);
+      // Capturar color base del planeta original para reutilizarlo en la esfera del ojo
+      try {
+        const p: any = this.targetPlanet as any;
+        if (p && p.color) {
+          portal.planetColorRef = { r: p.color.r ?? 0.4, g: p.color.g ?? 0.4, b: p.color.b ?? 0.4, a: p.color.a };
+        }
+      } catch {}
       this.portalInstance = portal;
       const gl = (engine as any).gl;
       if (gl && !portal.vertexBuffer) portal.initBuffers(gl);
@@ -341,41 +371,72 @@ export class GateRiteAnimation implements GameAnimation {
       const s = 0.1 + k * 0.9; // scale up from tiny to full
       this.portalInstance.scale.x = this.portalInstance.scale.y = this.portalInstance.scale.z = this.portalInstance.radius * s;
       (this.portalInstance as any).renderOpacity = Math.min(1, k * 1.2);
-      // Camera orbit: move camera around portal at 45° lateral and +15° pitch over full manifest duration
+      // Apertura de párpados: empezar con abertura mínima para ver iris/pupila
+      try { (this.portalInstance as any).eyelidOpen = Math.min(1, 0.15 + k * 0.85); } catch {}
+      // Activar seguimiento de mirada pronto
       try {
-        const cam: any = (engine as any).camera;
-        if (cam) {
-          const center = this.portalInstance.position;
-          const orbitAngle = k * (Math.PI * 1.5); // ~270°
-          const radius = this.portalInstance.radius * 4.5; // heuristic orbit distance
-          const pitch = 15 * Math.PI/180;
-          const ox = center.x + Math.cos(orbitAngle) * radius;
-          const oz = center.z + Math.sin(orbitAngle) * radius;
-          const oy = center.y + Math.sin(pitch) * radius * 0.35;
-          cam.position.x = ox;
-          cam.position.y = oy;
-          cam.position.z = oz;
-          cam.target.x = center.x;
-          cam.target.y = center.y;
-          cam.target.z = center.z;
-          cam.markDirty?.();
-        }
+        if (!this.portalInstance.eyeState) this.portalInstance.eyeState = { gazeTarget: 'ship', eyelidOpen: 1, intensity: 0.9 } as any;
+        else this.portalInstance.eyeState.gazeTarget = 'ship' as any;
       } catch {}
-      // Ship orientation gradually towards portal
+      // Mantener la cámara QUIETA durante todo el manifest: sin órbitas ni saltos
+      // No mover la nave: solo reorientar una vez al inicio del manifest
       try {
-        const ship: any = (engine as any)['spaceship'];
-        if (ship && ship.position) {
-          const dx = this.portalInstance.position.x - ship.position.x;
-          const dy = this.portalInstance.position.y - ship.position.y;
-          const dz = this.portalInstance.position.z - ship.position.z;
-          const yaw = Math.atan2(dx, dz); // assuming Z forward original
-          // Interpolate yaw (simple)
-          ship.rotation.y = ship.rotation.y + (yaw - ship.rotation.y) * 0.05;
-          ship.updateModelMatrix();
+        if (this.manifestElapsed < dt + 0.0001) {
+          const ship: any = (engine as any)['spaceship'];
+          if (ship && ship.position) {
+            const dx = this.portalInstance.position.x - ship.position.x;
+            const dz = this.portalInstance.position.z - ship.position.z;
+            const yaw = Math.atan2(dx, dz);
+            ship.rotation.y = yaw;
+            ship.updateModelMatrix();
+          }
         }
       } catch {}
     }
     if (this.manifestElapsed >= this.manifestDuration) {
+      this.enterCameraReframe(engine);
+    }
+  }
+
+  private enterCameraReframe(engine: GameEngine) {
+    this.phase = GateRitePhase.CameraReframe;
+    this.reframeElapsed = 0;
+    const cam: any = (engine as any).camera;
+    if (!cam || !this.portalInstance) return;
+    // Punto inicial: la posición actual (plano general)
+    this.reframeStart = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
+    const center = this.portalInstance.position;
+    this.reframeTarget = { x: center.x, y: center.y, z: center.z };
+    // Calcular un destino orbitando ~35° y acercando a ~3.2× radio
+    const v = { x: cam.position.x - center.x, y: cam.position.y - center.y, z: cam.position.z - center.z };
+    const dist = Math.hypot(v.x, v.y, v.z) || (this.portalInstance.radius * 4.5);
+    const endDist = Math.max(this.portalInstance.radius * 3.2, dist * 0.72); // zoom-in suave
+    const yaw = Math.atan2(v.z, v.x) + (Math.PI * 0.2); // +~36°
+    const pitch = Math.atan2(v.y, Math.hypot(v.x, v.z)) + (Math.PI * 0.05); // +~9°
+    const cosYaw = Math.cos(yaw), sinYaw = Math.sin(yaw);
+    const cosPitch = Math.cos(pitch), sinPitch = Math.sin(pitch);
+    const ex = center.x + cosYaw * endDist * cosPitch;
+    const ez = center.z + sinYaw * endDist * cosPitch;
+    const ey = center.y + sinPitch * endDist * 0.6; // limitar altura
+    this.reframeEnd = { x: ex, y: ey, z: ez };
+  }
+
+  private updateCameraReframe(engine: GameEngine, dt: number) {
+    this.reframeElapsed += dt;
+    const k = Math.min(1, this.reframeElapsed / Math.max(0.0001, this.reframeDuration));
+    const ease = (x:number) => 1 - Math.pow(1 - x, 3); // ease-out
+    const t = ease(k);
+    const cam: any = (engine as any).camera;
+    if (cam && this.reframeStart && this.reframeEnd && this.reframeTarget) {
+      cam.position.x = this.reframeStart.x + (this.reframeEnd.x - this.reframeStart.x) * t;
+      cam.position.y = this.reframeStart.y + (this.reframeEnd.y - this.reframeStart.y) * t;
+      cam.position.z = this.reframeStart.z + (this.reframeEnd.z - this.reframeStart.z) * t;
+      cam.target.x = this.reframeTarget.x;
+      cam.target.y = this.reframeTarget.y;
+      cam.target.z = this.reframeTarget.z;
+      cam.markDirty?.();
+    }
+    if (k >= 1) {
       this.enterTransit(engine);
     }
   }
@@ -386,62 +447,46 @@ export class GateRiteAnimation implements GameAnimation {
     try { (engine as any).showPlaceholderText?.('Gate Rite: Transit', 800); } catch {}
     // Lazy resolve generator via Angular injector pattern (fallback new)
     try { this.generator = (engine as any)['systemGeneratorService'] || this.generator || null; } catch {}
+    // Preparar trayectoria de la nave: desde su posición actual hasta el centro del portal
+    try {
+      const ship: any = (engine as any)['spaceship'];
+      if (ship && this.portalInstance) {
+        this.shipStartPos = { x: ship.position.x, y: ship.position.y, z: ship.position.z };
+        // Pausar consumo de energía del vacío durante todo el Gate Rite (si no estaba ya)
+        try { ship.voidEnergyPaused = true; } catch {}
+      }
+    } catch {}
   }
 
   private updateTransit(engine: GameEngine, dt: number) {
     this.transitElapsed += dt;
     const k = Math.min(1, this.transitElapsed / this.transitDuration);
-    // Simple camera push-in effect toward portal center
-    if (this.portalInstance) {
-      const cam: any = (engine as any).camera;
-      if (cam) {
-        const cpos = cam.position;
-        const target = this.portalInstance.position;
-        cpos.x += (target.x - cpos.x) * 0.05 * dt * (1 + k * 4);
-        cpos.y += (target.y - cpos.y) * 0.05 * dt * (1 + k * 4);
-        cpos.z += (target.z - cpos.z) * 0.05 * dt * (1 + k * 4);
-        cam.target.x = target.x;
-        cam.target.y = target.y;
-        cam.target.z = target.z;
-        cam.markDirty?.();
+    // Mantener cámara estable desde el reencuadre y mover la nave a través del centro del portal
+    try {
+      const ship: any = (engine as any)['spaceship'];
+      if (ship && this.portalInstance && this.shipStartPos) {
+        const center = this.portalInstance.position;
+        const sx = this.shipStartPos.x, sy = this.shipStartPos.y, sz = this.shipStartPos.z;
+        ship.position.x = sx + (center.x - sx) * k;
+        ship.position.y = sy + (center.y - sy) * k;
+        ship.position.z = sz + (center.z - sz) * k;
+        // Alinear rumbo hacia el portal
+        const dx = center.x - ship.position.x;
+        const dz = center.z - ship.position.z;
+        ship.rotation.y = Math.atan2(dx, dz);
+        ship.updateModelMatrix();
+        // Mantener la mirada de la cámara hacia el centro para ver el cruce
+        const cam: any = (engine as any).camera;
+        if (cam) {
+          cam.target.x = center.x;
+          cam.target.y = center.y;
+          cam.target.z = center.z;
+          cam.markDirty?.();
+        }
       }
-    }
+    } catch {}
     if (this.transitElapsed >= this.transitDuration) {
-      // Generate and apply a new system snapshot, adding a paired destination portal
-      try {
-        const solarSvc: SolarSystemService | undefined = (engine as any)['solarSystemService'];
-        const originPortal = this.portalInstance ? {
-          id: this.portalInstance.id,
-          position: { ...this.portalInstance.position },
-          radius: this.portalInstance.radius,
-          linkedPortalId: undefined,
-          eyeState: { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
-        } : null;
-        let snapshot: any = null; // SolarSystemSnapshot
-        if (solarSvc && originPortal) {
-          snapshot = solarSvc.generateWithLinkedPortal(originPortal);
-        } else if (this.generator) {
-          snapshot = this.generator.generate(Date.now());
-        }
-        if (snapshot && (engine as any).applySolarSystemSnapshot) {
-          // If we generated with linked portal, update origin portal's link to the new portal id
-          try {
-            const dest = (snapshot.portals && snapshot.portals.length) ? snapshot.portals[snapshot.portals.length - 1] : null;
-            if (dest && this.portalInstance) {
-              this.portalInstance.linkedPortalId = dest.id;
-            }
-          } catch {}
-          (engine as any).applySolarSystemSnapshot(snapshot);
-          try { GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite transit applied new system', { id: snapshot.id }); } catch {}
-          // Persist generated snapshot
-          try {
-            const persistence: any = (engine as any)['portalPersistenceService'];
-            if (persistence && snapshot) {
-              persistence.autoLabelAndSave?.('gate-generated', snapshot);
-            }
-          } catch {}
-        }
-      } catch (e) { try { GameLogger.warn(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite transit apply failed', e); } catch {} }
+      // No cambiar de sistema aún: pasar a PlasmaBall aún en el sistema de origen
       this.enterPlasmaBall(engine);
     }
   }
@@ -455,15 +500,112 @@ export class GateRiteAnimation implements GameAnimation {
   private updatePlasmaBall(engine: GameEngine, dt: number) {
     this.plasmaElapsed += dt;
     const k = Math.min(1, this.plasmaElapsed / this.plasmaDuration);
-    // Minimal effect: fade overlay (future particle system)
+    // Al terminar el plasma en el sistema de origen, iniciar fade de conmutación
+    if (k >= 1) this.enterFadeSwitch(engine);
+  }
+
+  private enterFadeSwitch(engine: GameEngine) {
+    this.phase = GateRitePhase.FadeSwitch;
+    this.fadeElapsed = 0;
+    // Iniciar cambio a cámara trasera durante el fade (no visible al usuario por la cortinilla)
+    try { (engine as any).camera?.setCameraMode?.(CameraMode.REAR_VIEW); } catch {}
+  }
+
+  private updateFadeSwitch(engine: GameEngine, dt: number) {
+    this.fadeElapsed += dt;
+    const k = Math.min(1, this.fadeElapsed / Math.max(0.0001, this.fadeDuration));
     if (k >= 1) {
+      // Al completar el fade, generar y aplicar el nuevo sistema, colocar nave, reactivar energía
+      try {
+        const solarSvc: SolarSystemService | undefined = (engine as any)['solarSystemService'];
+        const originPortal = this.portalInstance ? {
+          id: this.portalInstance.id,
+          position: { ...this.portalInstance.position },
+          radius: this.portalInstance.radius,
+          linkedPortalId: undefined,
+          eyeState: { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
+        } : null;
+        let snapshot: any = null;
+        if (solarSvc && originPortal) snapshot = solarSvc.generateWithLinkedPortal(originPortal);
+        else if (this.generator) snapshot = this.generator.generate(Date.now());
+        if (snapshot && (engine as any).applySolarSystemSnapshot) {
+          // Vincular portal de origen con destino para persistencia
+          let dest: any = null;
+          try {
+            dest = (snapshot.portals && snapshot.portals.length) ? snapshot.portals[snapshot.portals.length - 1] : null;
+            if (dest && this.portalInstance) this.portalInstance.linkedPortalId = dest.id;
+          } catch {}
+          // Persistir snapshot de origen con planeta colapsado excluido y portal enlazado
+          try {
+            const persistence: any = (engine as any)['portalPersistenceService'];
+            if (persistence && this.originalSnapshot && this.portalInstance && dest) {
+              const originPortalSnap = {
+                id: this.portalInstance.id,
+                position: { ...this.portalInstance.position },
+                radius: this.portalInstance.radius,
+                linkedPortalId: dest.id,
+                eyeState: { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
+              };
+              const collapsedId: string | undefined = (this.targetPlanet as any)?.id;
+              const filteredPlanets = Array.isArray(this.originalSnapshot.planets)
+                ? this.originalSnapshot.planets.filter((pl: any) => pl?.id !== collapsedId)
+                : [];
+              const originWithPortal = { ...this.originalSnapshot, planets: filteredPlanets, portals: [originPortalSnap] };
+              persistence.autoLabelAndSave?.('gate-origin-linked', originWithPortal);
+            }
+          } catch {}
+          // Aplicar nuevo sistema
+          (engine as any).applySolarSystemSnapshot(snapshot);
+          // Colocar nave a 1000u del portal de destino, encarada en dirección contraria al portal y frenando a 0
+          try {
+            const dest = (snapshot.portals && snapshot.portals.length) ? snapshot.portals[snapshot.portals.length - 1] : null;
+            const ship: any = (engine as any)['spaceship'];
+            const portalsArr: any[] = (engine as any)['portals'] || [];
+            const destPortalObj = dest ? portalsArr.find(p => p.id === dest.id) : null;
+            if (ship && dest && destPortalObj) {
+              const R = Number(destPortalObj.radius) || 120;
+              const pos = destPortalObj.position;
+              const spawnDist = 1000;
+              const offset = { x: 0, y: 0, z: spawnDist };
+              ship.position.x = pos.x + offset.x;
+              ship.position.y = pos.y + offset.y;
+              ship.position.z = pos.z + offset.z;
+              // Orientación alejándose del portal
+              const dx = ship.position.x - pos.x;
+              const dz = ship.position.z - pos.z;
+              ship.rotation.y = Math.atan2(dx, dz);
+              ship.updateModelMatrix();
+              // Velocidad y frenado
+              const shipAny: any = ship;
+              shipAny.currentSpeed = Math.max(shipAny.currentSpeed || 0, 120);
+              shipAny.targetSpeed = 0;
+              shipAny._gateRiteOriginalDecel = shipAny.deceleration;
+              shipAny.deceleration = Math.max(shipAny.deceleration, 30);
+            }
+          } catch {}
+          // Logs y persistencia del generado
+          try { GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite switched system after fade', { id: snapshot.id }); } catch {}
+          try {
+            const persistence: any = (engine as any)['portalPersistenceService'];
+            if (persistence && snapshot) persistence.autoLabelAndSave?.('gate-generated', snapshot);
+          } catch {}
+        }
+      } catch (e) { try { GameLogger.warn(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite fade switch failed', e); } catch {} }
+      // Finalizar: reactivar y rellenar Void Energy al 100%
+      try {
+        const ship: any = (engine as any)['spaceship'];
+        if (ship) {
+          ship.voidEnergyPaused = false;
+          ship.voidEnergyCurrent = ship.voidEnergyMax;
+          if (ship._gateRiteOriginalDecel !== undefined) {
+            ship.deceleration = ship._gateRiteOriginalDecel;
+            delete ship._gateRiteOriginalDecel;
+          }
+        }
+      } catch {}
+      // Completar animación
       this.phase = GateRitePhase.Completed;
       this.finished = true;
-      // Restore camera mode
-      try {
-        const cam2: any = (engine as any).camera;
-        if (cam2?.setCameraMode && this.prevCameraMode !== null) cam2.setCameraMode(this.prevCameraMode);
-      } catch {}
     }
   }
 
@@ -480,7 +622,61 @@ export class GateRiteAnimation implements GameAnimation {
     } catch {}
   }
 
-  render(_engine: GameEngine): void { /* future visuals */ }
+  render(engine: GameEngine): void {
+    // Render plasma ball during PlasmaBall phase
+    if (this.phase === GateRitePhase.PlasmaBall) {
+      try {
+        const gl = (engine as any)['gl'];
+        const ship: any = (engine as any)['spaceship'];
+        const cam: any = (engine as any)['camera'];
+        const bill: any = (engine as any)['billboardRenderer'];
+        if (gl && ship && cam && bill) {
+          // Billboard plasma sphere at ship position
+          const tex = bill.getCircleTexture('#FFB000'); // warm energy
+          const view = cam.viewMatrix as Float32Array;
+          const proj = cam.projectionMatrix as Float32Array;
+          // Camera basis
+          const fwd = {
+            x: cam.target.x - cam.position.x,
+            y: cam.target.y - cam.position.y,
+            z: cam.target.z - cam.position.z
+          };
+          const fl = Math.hypot(fwd.x, fwd.y, fwd.z) || 1; fwd.x/=fl; fwd.y/=fl; fwd.z/=fl;
+          const up = { x: cam.up.x, y: cam.up.y, z: cam.up.z };
+          // right = normalize(fwd x up)
+          let rx = fwd.y * up.z - fwd.z * up.y;
+          let ry = fwd.z * up.x - fwd.x * up.z;
+          let rz = fwd.x * up.y - fwd.y * up.x;
+          const rl = Math.hypot(rx, ry, rz) || 1; rx/=rl; ry/=rl; rz/=rl;
+          // Dynamic size in pixels: grow and then shrink slightly across plasma phase
+          const t = Math.min(1, Math.max(0, this.plasmaElapsed / Math.max(0.001, this.plasmaDuration)));
+          const sizePx = 140 + Math.sin(t * Math.PI) * 120; // 140→260→140
+          const tint: [number,number,number,number] = [1.0, 0.85, 0.35, 0.95];
+          bill.render(
+            { x: ship.position.x, y: ship.position.y, z: ship.position.z },
+            sizePx,
+            view,
+            proj,
+            { x: cam.position.x, y: cam.position.y, z: cam.position.z },
+            up,
+            { x: rx, y: ry, z: rz },
+            tint,
+            tex
+          );
+        }
+      } catch {}
+    }
+    // Render 500ms full-screen fade during FadeSwitch
+    if (this.phase === GateRitePhase.FadeSwitch) {
+      try {
+        const overlay: any = (engine as any)['overlayRenderer'];
+        if (overlay) {
+          const t = Math.min(1, Math.max(0, this.fadeElapsed / Math.max(0.001, this.fadeDuration)));
+          overlay.drawSolid([0,0,0], t);
+        }
+      } catch {}
+    }
+  }
 
   isBlockingInputs(): boolean { return !this.finished; }
 }

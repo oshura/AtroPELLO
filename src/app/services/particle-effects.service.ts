@@ -108,8 +108,10 @@ export class ParticleEffectsService {
       this.thrusterAccum -= step;
 
       // Calcular intensidad del propulsor
-      const isAccelerating = spaceship.controls.speedUp || spaceship.currentSpeed > 0.1;
-      const speedRatio = spaceship.currentSpeed / spaceship.maxSpeed;
+  const isAccelerating = spaceship.controls.speedUp || spaceship.currentSpeed > 0.1;
+  const speedRatioRaw = spaceship.currentSpeed / Math.max(1e-6, spaceship.maxSpeed);
+  // Clamp visual thruster ratio to 1.0 ALWAYS (void jump may exceed maxSpeed but visuals must not)
+  const speedRatio = Math.min(1.0, speedRatioRaw);
       const accelerationBonus = spaceship.controls.speedUp ? 0.4 : 0.0;
       let thrusterIntensity = Math.max(0.0, (speedRatio + accelerationBonus));
       if (isAccelerating && thrusterIntensity < 0.3) {
@@ -181,7 +183,8 @@ export class ParticleEffectsService {
         position: worldPos,
         // Tamaño ligeramente reducido en el máximo para un look menos invasivo
         // Antes: 0.12 + intensity * 0.18 (máx ≈ 0.30). Ahora reducimos el factor de escala.
-        size: 0.12 + intensity * 0.12,
+  // Clamp size growth strictly to what intensity within [0..1] allows (never exceed base 100%)
+  size: 0.12 + Math.min(1.0, intensity) * 0.12,
         intensity: intensity,
         color: this.getThrusterColor(intensity, Math.random()),
         life: 1.0 // Vida completa al nacer

@@ -43,9 +43,17 @@ export class SolarSystemService {
     return snap;
   }
 
+  /** Proxy unique planet name generator for engine run-time usage. */
+  public generateUniquePlanetName(): string {
+    try { return this.generator.generateUniquePlanetName(); } catch { return 'Unnamed'; }
+  }
+
   /** Apply a snapshot: clears current system objects and instantiates new ones; returns portal info created. */
   apply(snapshot: SolarSystemSnapshot, engine: GameEngine): { portalsCreated: PortalSnapshot[] } {
     GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'Applying solar system snapshot', { id: snapshot.id, planets: snapshot.planets.length, clusters: snapshot.clusters?.length || 0 });
+
+    // Register names present in this snapshot so future generated systems don't reuse them
+    try { this.generator.registerUsedNamesFromSnapshot?.(snapshot); } catch {}
 
     const gl: WebGL2RenderingContext | null = (engine as any)['gl'] || null;
     const logger = (engine as any)['logger'];
