@@ -43,6 +43,8 @@ export class GateRiteAnimation implements GameAnimation {
   private transitDuration = 1.2; // seconds warp through portal
   private plasmaElapsed = 0;
   private plasmaDuration = 2.5; // seconds after transit
+  private plasmaCenter: { x:number;y:number;z:number } | null = null; // portal center (origin side)
+  private plasmaDir: { x:number;y:number;z:number } | null = null; // direction away from portal (behind)
   private fadeElapsed = 0;
   private fadeDuration = 0.5; // seconds fade to switch systems & camera
   private arrivalElapsed = 0;
@@ -259,6 +261,14 @@ export class GateRiteAnimation implements GameAnimation {
     if (this.wrapperElapsed < dt + 0.0001) {
       try { (engine as any).showPlaceholderText?.('Gate Rite: Wrapping', 900); } catch {}
     }
+    // Suavizar aparición del "envolvente" del planeta: exponer alpha gradual para renderer
+    try {
+      const p: any = this.targetPlanet as any;
+      if (p) {
+        const alpha = Math.min(1, this.wrapperElapsed / 0.6); // fade-in sobre 0.6s
+        p._gateRiteWrapperEnvelope = { alpha, time: this.wrapperElapsed };
+      }
+    } catch {}
     // Camera jitter: small per-axis sin noise scaled by (0→peak at mid→0)
     const cam: any = (engine as any).camera;
     if (cam && this.baseCamPos) {
@@ -360,6 +370,13 @@ export class GateRiteAnimation implements GameAnimation {
           portal.rotation.y = yaw + Math.PI; // yaw opuesto
           portal.rotation.z = 0;
           portal.updateModelMatrix();
+          // Alinear el ojo inicial con la normal del portal
+          const n = {
+            x: -Math.cos(pitch) * Math.sin(yaw),
+            y: Math.sin(pitch),
+            z: Math.cos(pitch) * Math.cos(yaw)
+          };
+          try { (portal as any).eyeDir = { ...n }; } catch {}
         }
       } catch {}
       // Capturar color base del planeta original para reutilizarlo en la esfera del ojo
@@ -398,19 +415,23 @@ export class GateRiteAnimation implements GameAnimation {
         else this.portalInstance.eyeState.gazeTarget = 'ship' as any;
       } catch {}
       // Mantener la cámara QUIETA durante todo el manifest: sin órbitas ni saltos
-      // No mover la nave: solo reorientar una vez al inicio del manifest (yaw + pitch hacia el portal)
+      // No mover la nave: solo reorientar una vez al inicio del manifest (usar lookAt hacia el portal si existe)
       try {
         if (this.manifestElapsed < dt + 0.0001) {
           const ship: any = (engine as any)['spaceship'];
           if (ship && ship.position) {
-            const dx = this.portalInstance.position.x - ship.position.x;
-            const dy = this.portalInstance.position.y - ship.position.y;
-            const dz = this.portalInstance.position.z - ship.position.z;
-            const yaw = Math.atan2(dx, dz);
-            const pitch = Math.atan2(dy, Math.hypot(dx, dz));
-            ship.rotation.y = yaw;
-            if (typeof ship.rotation.x === 'number') ship.rotation.x = pitch;
-            ship.updateModelMatrix();
+            if (typeof ship.lookAt === 'function') {
+              ship.lookAt({ x: this.portalInstance.position.x, y: this.portalInstance.position.y, z: this.portalInstance.position.z });
+            } else {
+              const dx = this.portalInstance.position.x - ship.position.x;
+              const dy = this.portalInstance.position.y - ship.position.y;
+              const dz = this.portalInstance.position.z - ship.position.z;
+              const yaw = Math.atan2(dx, dz);
+              const pitch = Math.atan2(dy, Math.hypot(dx, dz));
+              ship.rotation.y = yaw;
+              if (typeof ship.rotation.x === 'number') ship.rotation.x = pitch;
+              ship.updateModelMatrix();
+            }
           }
         }
       } catch {}
@@ -493,10 +514,16 @@ export class GateRiteAnimation implements GameAnimation {
         ship.position.y = sy + (center.y - sy) * k;
         ship.position.z = sz + (center.z - sz) * k;
         // Alinear rumbo hacia el portal
-        const dx = center.x - ship.position.x;
-        const dz = center.z - ship.position.z;
-        ship.rotation.y = Math.atan2(dx, dz);
-        ship.updateModelMatrix();
+        if (typeof ship.lookAt === 'function') {
+          ship.lookAt(center);
+        } else {
+          const dx = center.x - ship.position.x;
+          const dy = center.y - ship.position.y;
+          const dz = center.z - ship.position.z;
+          ship.rotation.y = Math.atan2(dx, dz);
+          if (typeof ship.rotation.x === 'number') ship.rotation.x = Math.atan2(dy, Math.hypot(dx, dz));
+          ship.updateModelMatrix();
+        }
         // Mantener la mirada de la cámara hacia el centro para ver el cruce
         const cam: any = (engine as any).camera;
         if (cam) {
@@ -517,6 +544,19 @@ export class GateRiteAnimation implements GameAnimation {
     this.phase = GateRitePhase.PlasmaBall;
     this.plasmaElapsed = 0;
     try { (engine as any).showPlaceholderText?.('Gate Rite: Plasma', 900); } catch {}
+    // Definir posición de origen del plasma (centro del portal) y dirección de salida por detrás
+    try {
+      if (this.portalInstance && this.shipStartPos) {
+        this.plasmaCenter = { x: this.portalInstance.position.x, y: this.portalInstance.position.y, z: this.portalInstance.position.z };
+        const dir = {
+          x: this.shipStartPos.x - this.portalInstance.position.x,
+          y: this.shipStartPos.y - this.portalInstance.position.y,
+          z: this.shipStartPos.z - this.portalInstance.position.z,
+        };
+        const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
+        this.plasmaDir = { x: dir.x / dl, y: dir.y / dl, z: dir.z / dl };
+      }
+    } catch {}
   }
 
   private updatePlasmaBall(engine: GameEngine, dt: number) {
@@ -600,8 +640,13 @@ export class GateRiteAnimation implements GameAnimation {
               ship.position.y = pos.y + fwd.y * spawnDist;
               ship.position.z = pos.z + fwd.z * spawnDist;
               // Orientación alineada con el forward del portal (alejándose del centro)
-              ship.rotation.y = Math.atan2(fwd.x, fwd.z);
-              ship.updateModelMatrix();
+              if (typeof ship.lookAt === 'function') {
+                ship.lookAt({ x: ship.position.x + fwd.x, y: ship.position.y + fwd.y, z: ship.position.z + fwd.z });
+              } else {
+                ship.rotation.y = Math.atan2(fwd.x, fwd.z);
+                if (typeof ship.rotation.x === 'number') ship.rotation.x = Math.atan2(fwd.y, Math.hypot(fwd.x, fwd.z));
+                ship.updateModelMatrix();
+              }
               // Velocidad y frenado
               const shipAny: any = ship;
               shipAny.currentSpeed = Math.max(shipAny.currentSpeed || 0, 120);
@@ -610,6 +655,8 @@ export class GateRiteAnimation implements GameAnimation {
               shipAny.deceleration = Math.max(shipAny.deceleration, 30);
               // Mantener pausa de energía hasta completar el frenado
               ship.voidEnergyPaused = true;
+              // Alinear ojo del portal de destino con su normal en el primer frame
+              try { (destPortalObj as any).eyeDir = { x: fwd.x, y: fwd.y, z: fwd.z }; } catch {}
             }
           } catch {}
           // Logs y persistencia del generado
@@ -673,42 +720,28 @@ export class GateRiteAnimation implements GameAnimation {
     if (this.phase === GateRitePhase.PlasmaBall) {
       try {
         const gl = (engine as any)['gl'];
-        const ship: any = (engine as any)['spaceship'];
         const cam: any = (engine as any)['camera'];
         const bill: any = (engine as any)['billboardRenderer'];
-        if (gl && ship && cam && bill) {
-          // Billboard plasma sphere at ship position
-          const tex = bill.getCircleTexture('#FFB000'); // warm energy
+        if (gl && cam && bill) {
+          // Posición del plasma: se aleja por detrás del portal
+          const center = this.plasmaCenter || (this.portalInstance ? this.portalInstance.position : { x:0,y:0,z:0 });
+          const dir = this.plasmaDir || { x: 0, y: 0, z: -1 };
+          const t = Math.min(1, Math.max(0, this.plasmaElapsed / Math.max(0.001, this.plasmaDuration)));
+          const dist = (this.portalInstance ? this.portalInstance.radius * 1.2 : 120) + (t * t) * 1200;
+          const pos = { x: center.x + dir.x * dist, y: center.y + dir.y * dist, z: center.z + dir.z * dist };
+          const tex = bill.getCircleTexture('#FFB000');
           const view = cam.viewMatrix as Float32Array;
           const proj = cam.projectionMatrix as Float32Array;
-          // Camera basis
-          const fwd = {
-            x: cam.target.x - cam.position.x,
-            y: cam.target.y - cam.position.y,
-            z: cam.target.z - cam.position.z
-          };
+          const fwd = { x: cam.target.x - cam.position.x, y: cam.target.y - cam.position.y, z: cam.target.z - cam.position.z };
           const fl = Math.hypot(fwd.x, fwd.y, fwd.z) || 1; fwd.x/=fl; fwd.y/=fl; fwd.z/=fl;
           const up = { x: cam.up.x, y: cam.up.y, z: cam.up.z };
-          // right = normalize(fwd x up)
           let rx = fwd.y * up.z - fwd.z * up.y;
           let ry = fwd.z * up.x - fwd.x * up.z;
           let rz = fwd.x * up.y - fwd.y * up.x;
           const rl = Math.hypot(rx, ry, rz) || 1; rx/=rl; ry/=rl; rz/=rl;
-          // Dynamic size in pixels: grow and then shrink slightly across plasma phase
-          const t = Math.min(1, Math.max(0, this.plasmaElapsed / Math.max(0.001, this.plasmaDuration)));
-          const sizePx = 140 + Math.sin(t * Math.PI) * 120; // 140→260→140
+          const sizePx = 220 - t * 140; // decreciente mientras se aleja
           const tint: [number,number,number,number] = [1.0, 0.85, 0.35, 0.95];
-          bill.render(
-            { x: ship.position.x, y: ship.position.y, z: ship.position.z },
-            sizePx,
-            view,
-            proj,
-            { x: cam.position.x, y: cam.position.y, z: cam.position.z },
-            up,
-            { x: rx, y: ry, z: rz },
-            tint,
-            tex
-          );
+          bill.render(pos, sizePx, view, proj, { x: cam.position.x, y: cam.position.y, z: cam.position.z }, up, { x: rx, y: ry, z: rz }, tint, tex);
         }
       } catch {}
     }
