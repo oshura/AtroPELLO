@@ -19,7 +19,8 @@ enum GateRitePhase {
   Transit = 6,
   PlasmaBall = 7,
   FadeSwitch = 8,
-  Completed = 9,
+  ArrivalDecel = 9,
+  Completed = 10,
 }
 
 export class GateRiteAnimation implements GameAnimation {
@@ -44,6 +45,8 @@ export class GateRiteAnimation implements GameAnimation {
   private plasmaDuration = 2.5; // seconds after transit
   private fadeElapsed = 0;
   private fadeDuration = 0.5; // seconds fade to switch systems & camera
+  private arrivalElapsed = 0;
+  private arrivalDuration = 2.5; // seconds to decelerate to 0 after spawn
   private portalInstance: Portal | null = null;
   private generator: SystemGeneratorService | null = null; // lazy resolved from engine injector if needed
 
@@ -181,6 +184,9 @@ export class GateRiteAnimation implements GameAnimation {
         break;
       case GateRitePhase.FadeSwitch:
         this.updateFadeSwitch(engine, dt);
+        break;
+      case GateRitePhase.ArrivalDecel:
+        this.updateArrivalDecel(engine, dt);
         break;
       default:
         break; // future phases
@@ -343,6 +349,19 @@ export class GateRiteAnimation implements GameAnimation {
         : (((this.targetPlanet as any)?.scale?.x) || 120);
       const logger: LoggingService | undefined = (engine as any)?.logger as LoggingService | undefined;
       const portal = new Portal('portal-gaterite', pos, Math.max(60, Number(baseR)), logger);
+      // Orientar el portal con la normal opuesta al forward de la nave para cruce perpendicular (incluye pitch)
+      try {
+        const ship: any = (engine as any)['spaceship'];
+        if (ship && ship.rotation) {
+          const yaw = Number(ship.rotation.y) || 0;
+          const pitch = Number(ship.rotation.x) || 0;
+          // La geometría del portal mira a +Z; para que mire a la nave, su normal debe ser -forward de la nave
+          portal.rotation.x = -pitch; // invertir pitch para apuntar su normal contra el forward de la nave
+          portal.rotation.y = yaw + Math.PI; // yaw opuesto
+          portal.rotation.z = 0;
+          portal.updateModelMatrix();
+        }
+      } catch {}
       // Capturar color base del planeta original para reutilizarlo en la esfera del ojo
       try {
         const p: any = this.targetPlanet as any;
@@ -379,15 +398,18 @@ export class GateRiteAnimation implements GameAnimation {
         else this.portalInstance.eyeState.gazeTarget = 'ship' as any;
       } catch {}
       // Mantener la cámara QUIETA durante todo el manifest: sin órbitas ni saltos
-      // No mover la nave: solo reorientar una vez al inicio del manifest
+      // No mover la nave: solo reorientar una vez al inicio del manifest (yaw + pitch hacia el portal)
       try {
         if (this.manifestElapsed < dt + 0.0001) {
           const ship: any = (engine as any)['spaceship'];
           if (ship && ship.position) {
             const dx = this.portalInstance.position.x - ship.position.x;
+            const dy = this.portalInstance.position.y - ship.position.y;
             const dz = this.portalInstance.position.z - ship.position.z;
             const yaw = Math.atan2(dx, dz);
+            const pitch = Math.atan2(dy, Math.hypot(dx, dz));
             ship.rotation.y = yaw;
+            if (typeof ship.rotation.x === 'number') ship.rotation.x = pitch;
             ship.updateModelMatrix();
           }
         }
@@ -566,14 +588,19 @@ export class GateRiteAnimation implements GameAnimation {
               const R = Number(destPortalObj.radius) || 120;
               const pos = destPortalObj.position;
               const spawnDist = 1000;
-              const offset = { x: 0, y: 0, z: spawnDist };
-              ship.position.x = pos.x + offset.x;
-              ship.position.y = pos.y + offset.y;
-              ship.position.z = pos.z + offset.z;
-              // Orientación alejándose del portal
-              const dx = ship.position.x - pos.x;
-              const dz = ship.position.z - pos.z;
-              ship.rotation.y = Math.atan2(dx, dz);
+              // Calcular vector forward del portal a partir de su rotación (normal del plano)
+              const yaw = Number(destPortalObj.rotation?.y) || 0;
+              const pitch = Number(destPortalObj.rotation?.x) || 0;
+              const fwd = {
+                x: -Math.cos(pitch) * Math.sin(yaw),
+                y: Math.sin(pitch),
+                z: Math.cos(pitch) * Math.cos(yaw)
+              };
+              ship.position.x = pos.x + fwd.x * spawnDist;
+              ship.position.y = pos.y + fwd.y * spawnDist;
+              ship.position.z = pos.z + fwd.z * spawnDist;
+              // Orientación alineada con el forward del portal (alejándose del centro)
+              ship.rotation.y = Math.atan2(fwd.x, fwd.z);
               ship.updateModelMatrix();
               // Velocidad y frenado
               const shipAny: any = ship;
@@ -581,6 +608,8 @@ export class GateRiteAnimation implements GameAnimation {
               shipAny.targetSpeed = 0;
               shipAny._gateRiteOriginalDecel = shipAny.deceleration;
               shipAny.deceleration = Math.max(shipAny.deceleration, 30);
+              // Mantener pausa de energía hasta completar el frenado
+              ship.voidEnergyPaused = true;
             }
           } catch {}
           // Logs y persistencia del generado
@@ -591,22 +620,39 @@ export class GateRiteAnimation implements GameAnimation {
           } catch {}
         }
       } catch (e) { try { GameLogger.warn(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite fade switch failed', e); } catch {} }
-      // Finalizar: reactivar y rellenar Void Energy al 100%
-      try {
-        const ship: any = (engine as any)['spaceship'];
-        if (ship) {
+      // Pasar a fase de frenado en destino
+      this.enterArrivalDecel(engine);
+    }
+  }
+
+  private enterArrivalDecel(_engine: GameEngine) {
+    this.phase = GateRitePhase.ArrivalDecel;
+    this.arrivalElapsed = 0;
+  }
+
+  private updateArrivalDecel(engine: GameEngine, dt: number) {
+    this.arrivalElapsed += dt;
+    try {
+      const ship: any = (engine as any)['spaceship'];
+      if (ship) {
+        // Asegurar objetivo 0 durante la fase
+        ship.targetSpeed = 0;
+        // Si ya casi parado o tiempo cumplido → finalizar
+        const stopped = (ship.currentSpeed ?? 0) <= 0.5;
+        if (stopped || this.arrivalElapsed >= this.arrivalDuration) {
+          // Reactivar y rellenar Void Energy al 100%
           ship.voidEnergyPaused = false;
           ship.voidEnergyCurrent = ship.voidEnergyMax;
           if (ship._gateRiteOriginalDecel !== undefined) {
             ship.deceleration = ship._gateRiteOriginalDecel;
             delete ship._gateRiteOriginalDecel;
           }
+          this.phase = GateRitePhase.Completed;
+          this.finished = true;
+          return;
         }
-      } catch {}
-      // Completar animación
-      this.phase = GateRitePhase.Completed;
-      this.finished = true;
-    }
+      }
+    } catch {}
   }
 
   private finishEarly(engine: GameEngine, reason: string) {
