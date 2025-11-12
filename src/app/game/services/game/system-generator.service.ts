@@ -41,15 +41,18 @@ export class SystemGeneratorService {
     }
   }
 
-  /** Generate a unique planet name at runtime, avoiding any previously used names. */
-  public generateUniquePlanetName(): string {
-    // Use Math.random for runtime; deterministic seed not required here
+  /** Generate a unique planet name at runtime, avoiding any previously used names.
+   *  Respects global uniqueness and optionally forbids canonical names if allowCanonicalNames=false
+   *  in later generation calls. Runtime version (non-deterministic) intentionally uses Math.random.
+   */
+  public generateUniquePlanetName(opts?: { allowCanonicalNames?: boolean }): string {
     const rnd = Math.random;
-    const canonical = ['Mercury','Venus','Earth','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto','Ceres','Haumea','Eris','Makemake'];
+    const allowCanonical = opts?.allowCanonicalNames !== false; // default true
+    const canonical = allowCanonical ? ['Mercury','Venus','Earth','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto','Ceres','Haumea','Eris','Makemake'] : [];
     const syllA = ['Ka','Lo','Xe','Ra','Vor','Tal','Zen','Iri','Gha','Qua','Bel','Or','Sy','Ty','Lun'];
     const syllB = ['rin','dus','mos','th','li','nar','xus','phi','gor','lon','tris','vak','mer','dri'];
     let base: string;
-    const attemptCanonical = rnd() < 0.45 && canonical.length > 0;
+    const attemptCanonical = allowCanonical && rnd() < 0.45 && canonical.length > 0;
     if (attemptCanonical) {
       const unusedCanonical = canonical.filter(n => !this.usedCelestialNames.has(n));
       base = unusedCanonical.length ? unusedCanonical[Math.floor(rnd()*unusedCanonical.length)] : canonical[Math.floor(rnd()*canonical.length)];
@@ -143,12 +146,13 @@ export class SystemGeneratorService {
     }
 
   // Random name syllable generator for variety beyond canonical list
-  const canonical = ['Mercury','Venus','Earth','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto','Ceres','Haumea','Eris','Makemake'];
+  const allowCanonical = options?.allowCanonicalNames !== false;
+  const canonical = allowCanonical ? ['Mercury','Venus','Earth','Mars','Jupiter','Saturn','Uranus','Neptune','Pluto','Ceres','Haumea','Eris','Makemake'] : [];
   const syllA = ['Ka','Lo','Xe','Ra','Vor','Tal','Zen','Iri','Gha','Qua','Bel','Or','Sy','Ty','Lun'];
   const syllB = ['rin','dus','mos','th','li','nar','xus','phi','gor','lon','tris','vak','mer','dri'];
   const randUniquePlanetName = () => {
     let base: string;
-    const attemptCanonical = rnd() < 0.45 && canonical.length;
+  const attemptCanonical = allowCanonical && rnd() < 0.45 && canonical.length;
     if (attemptCanonical) {
       // choose unused canonical first
       const unusedCanonical = canonical.filter(n => !this.usedCelestialNames.has(n));
@@ -184,19 +188,27 @@ export class SystemGeneratorService {
   const kindPool = ['Rocky','Terrestrial','Rocky','Giant','Ringed','Gaseous','Dwarf','Protoplanet'];
   const pickKind = (i:number) => kindPool[Math.floor(rnd()*kindPool.length)] || 'Rocky';
   const radiiBase = [900,1100,1250,1400,1600,1900,2200,2600,3000,3400];
+  const maxGiantCap = options?.maxGiantRadius && options.maxGiantRadius > 0 ? options.maxGiantRadius : undefined;
   const radiusForKind = (kind: string) => {
+    let r: number;
     switch (kind) {
-      case 'Giant': return 2800 + Math.round(rnd()*1800);
-      case 'Ringed': return 2000 + Math.round(rnd()*1400);
-      case 'Gaseous': return 1800 + Math.round(rnd()*1500);
-      case 'Dwarf': return 400 + Math.round(rnd()*600);
-      case 'Protoplanet': return 250 + Math.round(rnd()*350);
-      case 'Terrestrial': return 900 + Math.round(rnd()*900);
-      default: return radiiBase[Math.floor(rnd()*radiiBase.length)] || 1200;
+      case 'Giant': r = 2800 + Math.round(rnd()*1800); break; // 2800..4600
+      case 'Ringed': r = 2000 + Math.round(rnd()*1400); break; // 2000..3400
+      case 'Gaseous': r = 1800 + Math.round(rnd()*1500); break; // 1800..3300
+      case 'Dwarf': r = 400 + Math.round(rnd()*600); break; // 400..1000
+      case 'Protoplanet': r = 250 + Math.round(rnd()*350); break; // 250..600
+      case 'Terrestrial': r = 900 + Math.round(rnd()*900); break; // 900..1800
+      default: r = radiiBase[Math.floor(rnd()*radiiBase.length)] || 1200; break;
     }
+    if (maxGiantCap && (kind === 'Giant' || kind === 'Ringed' || kind === 'Gaseous')) {
+      r = Math.min(r, maxGiantCap);
+    }
+    return r;
   };
 
   const lifeChance = typeof options?.lifeChancePct === 'number' ? Math.max(0, Math.min(100, options.lifeChancePct)) : 8;
+  // Optional palette override for baseColorName variety/unification
+  const palette = (options?.colorPaletteOverride && options.colorPaletteOverride.length) ? options.colorPaletteOverride : undefined;
   const planets: PlanetSnapshot[] = baseOrbits.map((o, i) => {
       const a = o.a, b = o.b, orient = o.orient; // orient rotates in-plane axes around normal
       const phi = o.angle0;
@@ -218,14 +230,19 @@ export class SystemGeneratorService {
         center.z + uR.z * (a * Math.cos(phi)) + vR.z * (b * Math.sin(phi))
       );
     const kind = pickKind(i);
-  const name = randUniquePlanetName();
+    const name = randUniquePlanetName();
     const radius = radiusForKind(kind);
   // Probability of life picks exceptional planets based on lifeChancePct
   const exceptional = rnd() * 100 < lifeChance;
   const life = exceptional ? Math.round(30 + rnd() * 50) : (kind === 'Terrestrial' ? Math.round(rnd() * 10) : (kind === 'Gaseous' ? 0 : Math.round(rnd() * 4)));
       const angSpeed = 0.00002 + rnd() * 0.00008; // rad/s small
   // Map kind to internal baseColor hint set (reuse existing color keys)
-  const baseColorName = kind === 'Ringed' ? 'gris' : (kind === 'Gaseous' ? 'azul_hielo' : (kind === 'Giant' ? 'marron' : (kind === 'Dwarf' ? 'gris' : (kind === 'Protoplanet' ? 'gris' : 'azul_marino'))));
+  let baseColorName = kind === 'Ringed' ? 'gris' : (kind === 'Gaseous' ? 'azul_hielo' : (kind === 'Giant' ? 'marron' : (kind === 'Dwarf' ? 'gris' : (kind === 'Protoplanet' ? 'gris' : 'azul_marino'))));
+      if (palette) {
+        // deterministic pick from palette using planet index & seed-based rnd
+        const idx = Math.floor(rnd() * palette.length);
+        baseColorName = palette[idx] || baseColorName;
+      }
       return {
         id: `planet-${i}`,
         name,
@@ -249,101 +266,141 @@ export class SystemGeneratorService {
 
   // Asteroid clusters: choose a random anchor planet index (avoid last few small ones when possible)
   const clusters: ClusterSnapshot[] = [];
-    const trailAnchor = Math.min(count-1, Math.floor(rnd()*Math.max(3, count-3))); // bias early orbits
-    const rows = 4 + Math.floor(rnd()*4); // 4..7
-    const cols = 25 + Math.floor(rnd()*40); // 25..64
-    const ROW_SPACING = 75;
-    const COL_SPACING = 300;
-    const START_OFFSET = 10000;
-  const anchorOrbit = baseOrbits[trailAnchor];
-  const a = anchorOrbit.a, b = anchorOrbit.b, orient = anchorOrbit.orient, phiEarth = anchorOrbit.angle0;
-    // Build Earth analog basis with multi-plane support
-    const nE = baseOrbits[2].normal, uE = baseOrbits[2].u;
-    const vxE = nE.y * uE.z - nE.z * uE.y, vyE = nE.z * uE.x - nE.x * uE.z, vzE = nE.x * uE.y - nE.y * uE.x;
-    const vEl = Math.hypot(vxE,vyE,vzE)||1; const vE = { x: vxE/vEl, y: vyE/vEl, z: vzE/vEl };
-    const coE = Math.cos(orient), soE = Math.sin(orient);
-    const uR = { x: uE.x*coE + vE.x*soE, y: uE.y*coE + vE.y*soE, z: uE.z*coE + vE.z*soE };
-    const vR = { x: vE.x*coE - uE.x*soE, y: vE.y*coE - uE.y*soE, z: vE.z*coE - uE.z*soE };
-    const posAt = (phi: number) => vec(
-      uR.x * (a * Math.cos(phi)) + vR.x * (b * Math.sin(phi)),
-      uR.y * (a * Math.cos(phi)) + vR.y * (b * Math.sin(phi)),
-      uR.z * (a * Math.cos(phi)) + vR.z * (b * Math.sin(phi))
-    );
-    const tanAt = (phi: number) => {
-      const tx = uR.x * (-a * Math.sin(phi)) + vR.x * (b * Math.cos(phi));
-      const ty = uR.y * (-a * Math.sin(phi)) + vR.y * (b * Math.cos(phi));
-      const tz = uR.z * (-a * Math.sin(phi)) + vR.z * (b * Math.cos(phi));
-      const l = Math.hypot(tx,ty,tz) || 1; return vec(tx/l,ty/l,tz/l);
-    };
-    const speedAt = (phi: number) => Math.hypot(a * Math.sin(phi), b * Math.cos(phi));
-    const phiBehindBy = (ds: number) => {
-      let acc = 0; let phi = phiEarth; const maxIter = 10000;
-      for (let i=0;i<maxIter && acc < ds;i++) { const s = speedAt(phi); const dphi = Math.min(0.01, (ds-acc) / Math.max(1e-6, s)); acc += s * dphi; phi -= dphi; }
-      return phi;
-    };
-  const phiCols: number[] = []; for (let c=0;c<cols;c++){ const ds = START_OFFSET + c * COL_SPACING; phiCols.push(phiBehindBy(ds)); }
-    for (let r=0;r<rows;r++) {
-      for (let c=0;c<cols;c++) {
-        const phi = phiCols[c];
-        const base = posAt(phi);
-        const t = tanAt(phi);
-  // lateral offset perpendicular to tangent and normal (approx planet radial in-plane)
-  const s = vec( vR.x, vR.y, vR.z );
-        const lateral = (r - (rows-1)/2) * ROW_SPACING * (1 + 1.2 * (c/(cols-1)));
-        const center = vec(base.x + s.x * lateral, base.y + s.y * lateral, base.z + s.z * lateral);
-        clusters.push({ id: `trail-${trailAnchor}-${r}-${c}`, center, direction: t, speed: 1.2 + rnd()*1.2, count: 6 + Math.floor(rnd()*6), includeSuper: rnd() < 0.5, radius: 10 + Math.floor(rnd()*10), centerSpeedFactor: 0.4 + rnd()*0.3 });
+    // Optional TRAIL (disabled if disableTrail=true)
+    if (!options?.disableTrail) {
+      const trailAnchor = Math.min(count-1, Math.floor(rnd()*Math.max(3, count-3))); // bias early orbits
+      const rows = 4 + Math.floor(rnd()*4); // 4..7
+      const cols = 25 + Math.floor(rnd()*40); // 25..64
+      const ROW_SPACING = 75;
+      const COL_SPACING = 300;
+      const START_OFFSET = 10000;
+      const anchorOrbit = baseOrbits[trailAnchor];
+      const a = anchorOrbit.a, b = anchorOrbit.b, orient = anchorOrbit.orient, phiEarth = anchorOrbit.angle0;
+      // Build Earth analog basis with multi-plane support
+      const nE = baseOrbits[Math.min(2, baseOrbits.length-1)].normal, uE = baseOrbits[Math.min(2, baseOrbits.length-1)].u;
+      const vxE = nE.y * uE.z - nE.z * uE.y, vyE = nE.z * uE.x - nE.x * uE.z, vzE = nE.x * uE.y - nE.y * uE.x;
+      const vEl = Math.hypot(vxE,vyE,vzE)||1; const vE = { x: vxE/vEl, y: vyE/vEl, z: vzE/vEl };
+      const coE = Math.cos(orient), soE = Math.sin(orient);
+      const uR = { x: uE.x*coE + vE.x*soE, y: uE.y*coE + vE.y*soE, z: uE.z*coE + vE.z*soE };
+      const vR = { x: vE.x*coE - uE.x*soE, y: vE.y*coE - uE.y*soE, z: vE.z*coE - uE.z*soE };
+      const posAt = (phi: number) => vec(
+        uR.x * (a * Math.cos(phi)) + vR.x * (b * Math.sin(phi)),
+        uR.y * (a * Math.cos(phi)) + vR.y * (b * Math.sin(phi)),
+        uR.z * (a * Math.cos(phi)) + vR.z * (b * Math.sin(phi))
+      );
+      const tanAt = (phi: number) => {
+        const tx = uR.x * (-a * Math.sin(phi)) + vR.x * (b * Math.cos(phi));
+        const ty = uR.y * (-a * Math.sin(phi)) + vR.y * (b * Math.cos(phi));
+        const tz = uR.z * (-a * Math.sin(phi)) + vR.z * (b * Math.cos(phi));
+        const l = Math.hypot(tx,ty,tz) || 1; return vec(tx/l,ty/l,tz/l);
+      };
+      const speedAt = (phi: number) => Math.hypot(a * Math.sin(phi), b * Math.cos(phi));
+      const phiBehindBy = (ds: number) => {
+        let acc = 0; let phi = phiEarth; const maxIter = 10000;
+        for (let i=0;i<maxIter && acc < ds;i++) { const s = speedAt(phi); const dphi = Math.min(0.01, (ds-acc) / Math.max(1e-6, s)); acc += s * dphi; phi -= dphi; }
+        return phi;
+      };
+      const phiCols: number[] = []; for (let c=0;c<cols;c++){ const ds = START_OFFSET + c * COL_SPACING; phiCols.push(phiBehindBy(ds)); }
+      for (let r=0;r<rows;r++) {
+        for (let c=0;c<cols;c++) {
+          const phi = phiCols[c];
+          const base = posAt(phi);
+          const t = tanAt(phi);
+          // lateral offset perpendicular to tangent and normal (approx planet radial in-plane)
+          const s = vec( vR.x, vR.y, vR.z );
+          const lateral = (r - (rows-1)/2) * ROW_SPACING * (1 + 1.2 * (c/(cols-1)));
+          const center = vec(base.x + s.x * lateral, base.y + s.y * lateral, base.z + s.z * lateral);
+          clusters.push({ id: `trail-${trailAnchor}-${r}-${c}`, center, direction: t, speed: 1.2 + rnd()*1.2, count: 6 + Math.floor(rnd()*6), includeSuper: rnd() < 0.5, radius: 10 + Math.floor(rnd()*10), centerSpeedFactor: 0.4 + rnd()*0.3 });
+        }
       }
     }
 
     // Additional asteroid "cloud" clusters between orbits to differentiate systems.
     // Clouds: free-floating groups not constrained to the trail; placed at random orbital radii and slight vertical offsets.
-    const cloudCount = 8 + Math.floor(rnd() * 12); // 8..19 clouds
-    for (let i = 0; i < cloudCount; i++) {
-      // Pick a random orbit band between first and last semi-major axes
+    // CLOUD GROUPS: each 'cloud' is a group of 10-20 standard clusters plus 1-3 mega-asteroids
+    // Cloud group count scaled by cloudGroupScale (e.g., 0.1 => one tenth the previous random count)
+    const baseCloudCount = 8 + Math.floor(rnd() * 12); // 8..19
+    const scale = (typeof options?.cloudGroupScale === 'number' && options.cloudGroupScale >= 0) ? options.cloudGroupScale : 1;
+    let cloudGroupCount = Math.max(1, Math.floor(baseCloudCount * scale));
+    // If minClouds is specified, interpret it as minimum total clusters if scale not provided; otherwise ignore here
+    for (let gi = 0; gi < cloudGroupCount; gi++) {
+      // Choose a random orbital band for the group's center
       const bandT = rnd();
       const aBand = minA + bandT * (maxA - minA);
-      // Random eccentricity factor for placement ellipse (not necessarily matching a planet)
-      const eCloud = 0.1 + rnd() * 0.6; // 0.1..0.7
-      const bBand = aBand * Math.sqrt(1 - eCloud * eCloud);
-      // Random angle along ellipse
-      const phi = rnd() * Math.PI * 2;
-      // Sample a slight multi-plane tilt for clouds (wider variance than planet orbits)
-      const nx = (rnd()*2 - 1) * 0.6;
-      const ny = 0.2 + rnd()*0.9; // keep upward component
-      const nz = (rnd()*2 - 1) * 0.6;
+      const eBand = 0.1 + rnd() * 0.6;
+      const bBand = aBand * Math.sqrt(1 - eBand * eBand);
+      const phi0 = rnd() * Math.PI * 2;
+      // Plane orientation for the group
+      const nx = (rnd()*2 - 1) * 0.4;
+      const ny = 0.25 + rnd()*0.8;
+      const nz = (rnd()*2 - 1) * 0.4;
       const nLen = Math.hypot(nx, ny, nz) || 1; const n = { x: nx/nLen, y: ny/nLen, z: nz/nLen };
-      // Derive in-plane axes
+      // Orthonormal basis (u,v) in plane
       let rx = rnd()*2-1, ry = rnd()*2-1, rz = rnd()*2-1; let rl = Math.hypot(rx,ry,rz)||1; rx/=rl; ry/=rl; rz/=rl;
       const dotRN = rx*n.x + ry*n.y + rz*n.z;
       let ux = rx - dotRN*n.x, uy = ry - dotRN*n.y, uz = rz - dotRN*n.z;
       const ul = Math.hypot(ux,uy,uz)||1; ux/=ul; uy/=ul; uz/=ul;
-      // v = n × u
       const vx = n.y * uz - n.z * uy;
       const vy = n.z * ux - n.x * uz;
       const vz = n.x * uy - n.y * ux;
       const vl = Math.hypot(vx,vy,vz)||1; const v = { x: vx/vl, y: vy/vl, z: vz/vl };
-      // Position on ellipse using (u,v) basis
-      const pos = vec(
-        ux * (aBand * Math.cos(phi)) + v.x * (bBand * Math.sin(phi)),
-        uy * (aBand * Math.cos(phi)) + v.y * (bBand * Math.sin(phi)),
-        uz * (aBand * Math.cos(phi)) + v.z * (bBand * Math.sin(phi))
+      // Group center position on its orbital ellipse
+      const groupCenter = vec(
+        ux * (aBand * Math.cos(phi0)) + v.x * (bBand * Math.sin(phi0)),
+        uy * (aBand * Math.cos(phi0)) + v.y * (bBand * Math.sin(phi0)),
+        uz * (aBand * Math.cos(phi0)) + v.z * (bBand * Math.sin(phi0))
       );
-      // Cloud direction: slow drift in a random normalized direction (not necessarily tangent)
-      let dx = rnd()*2-1, dy = rnd()*2-1, dz = rnd()*2-1; const dl = Math.hypot(dx,dy,dz)||1; dx/=dl; dy/=dl; dz/=dl;
-      const cloudId = `cloud-${i}`;
-      clusters.push({
-        id: cloudId,
-        center: pos,
-        direction: { x: dx, y: dy, z: dz },
-        speed: 0.4 + rnd()*0.8, // slower drift than trail
-        count: 8 + Math.floor(rnd()*10), // 8..17 small asteroids
-        includeSuper: rnd() < 0.25, // rarer super asteroids in clouds
-        radius: 20 + Math.floor(rnd()*60), // wider dispersion
-        centerSpeedFactor: 0.15 + rnd()*0.25 // slower center movement
-      });
+      // Ellipse axes for the local cloud area (semi-axes): 500 (major) and 300 (minor)
+      const elA = 500, elB = 300;
+      // Cluster counts
+      const normalClusters = 10 + Math.floor(rnd() * 11); // 10..20
+      const megaClusters = 1 + Math.floor(rnd() * 3); // 1..3
+      const makeOffset = () => {
+        // Sample inside ellipse with near-uniform distribution
+        const theta = rnd() * Math.PI * 2;
+        const r = Math.sqrt(rnd()); // radial distribution
+        const ox = elA * r * Math.cos(theta);
+        const oy = elB * r * Math.sin(theta);
+        return vec(
+          ux * ox + v.x * oy,
+          uy * ox + v.y * oy,
+          uz * ox + v.z * oy
+        );
+      };
+      const dir = options?.staticClouds ? { x: 0, y: 0, z: 0 } : (() => { let dx=rnd()*2-1,dy=rnd()*2-1,dz=rnd()*2-1; const dl=Math.hypot(dx,dy,dz)||1; return { x: dx/dl, y: dy/dl, z: dz/dl }; })();
+      // Normal asteroid clusters
+      for (let ci = 0; ci < normalClusters; ci++) {
+        const off = makeOffset();
+        const center = vec(groupCenter.x + off.x, groupCenter.y + off.y, groupCenter.z + off.z);
+        clusters.push({
+          id: `cloudG-${gi}-c-${ci}`,
+          center,
+          direction: dir,
+          speed: options?.staticClouds ? 0 : (0.25 + rnd()*0.5),
+          count: 8 + Math.floor(rnd()*10),
+          includeSuper: false,
+          radius: 18 + Math.floor(rnd()*40),
+          centerSpeedFactor: options?.staticClouds ? 0 : (0.1 + rnd()*0.2)
+        });
+      }
+      // Mega asteroids (represented as tiny clusters with 1 member and includeSuper)
+      for (let mi = 0; mi < megaClusters; mi++) {
+        const off = makeOffset();
+        const center = vec(groupCenter.x + off.x, groupCenter.y + off.y, groupCenter.z + off.z);
+        clusters.push({
+          id: `cloudG-${gi}-m-${mi}`,
+          center,
+          direction: dir,
+          speed: options?.staticClouds ? 0 : (0.2 + rnd()*0.3),
+          count: 1,
+          includeSuper: true,
+          radius: 6 + Math.floor(rnd()*12),
+          centerSpeedFactor: options?.staticClouds ? 0 : (0.05 + rnd()*0.1)
+        });
+      }
     }
 
-    const snapshot: SolarSystemSnapshot = { id: `sys-${(seed as any)}`, seed, timestamp: Date.now(), sun, planets, clusters, meta: { optionsUsed: options || null, sunCount, trailAnchor } };
+    const snapshot: SolarSystemSnapshot = { id: `sys-${(seed as any)}`, seed, timestamp: Date.now(), sun, planets, clusters, meta: { optionsUsed: options || null, sunCount, trailDisabled: !!options?.disableTrail } };
     return snapshot;
   }
 }

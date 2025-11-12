@@ -30,8 +30,16 @@ Características clave:
 ## Interfaz y experiencia de usuario
 
 - Entrada del usuario: navegación con mouse/teclado; las entradas capturadas por el panel bloquean la interacción con la escena 3D mientras está abierto.
-- Persistencia de selección: si cierras el grimorio con una runa seleccionada, puedes seguir lanzándola con la tecla rápida.
+- Persistencia de selección: si cierras el grimorio con una runa seleccionada, puedes seguir lanzándola con la tecla rápida; abrir/cerrar el panel NO borra la selección.
 - Coherencia visual: los glifos usan RNG con semilla para imágenes deterministas; las áreas de runa están enmarcadas con delineado claro.
+
+### Selección y tecla rápida
+
+- La tecla rápida por defecto es 'h'. Para lanzar, se requiere una selección explícita (no se usa el glifo solo “hovered”).
+- Al pulsar 'h' con un glifo seleccionado, la selección se deselecciona inmediatamente, independientemente de que el lanzamiento tenga éxito o sea abortado por validaciones.
+- Si el grimorio está cerrado y existía una selección persistente, 'h' la utiliza y acto seguido la borra (queda sin glifo seleccionado tras la pulsación).
+- Si no hay glifo seleccionado, 'h' no hace nada.
+- Abrir/cerrar el libro con 'L' no cambia el estado de selección.
 
 ## Flujo de lanzamiento estandarizado
 
@@ -43,7 +51,8 @@ El flujo de casteo está unificado para todos los hechizos activados por la tecl
 
 Notas:
 - Este flujo también se respeta cuando el grimorio está cerrado y disparas con tecla rápida.
-- Si el hechizo no puede ejecutarse (p. ej. falta de recursos), se muestra el placeholder y se aborta sin efectos secundarios.
+- La deselección del glifo sucede en el momento de pulsar 'h' (antes de la ventana de 2s) para evitar re-lanzados accidentales en pulsaciones repetidas.
+- Si el hechizo no puede ejecutarse (p. ej. falta de recursos), se muestra el placeholder y se aborta sin efectos secundarios, manteniendo la deselección ya aplicada.
 
 ## Recursos y restricciones (Energía del Vacío)
 
@@ -103,6 +112,7 @@ Estados y bordes:
 - Volver a pulsar `h` antes de expirar para refrescar la duración.
 - Dejar expirar: comprobar que se oculta el contador y se restauran límites/curvas.
 - Probar Salto al Vacío con energía suficiente (≥ 50) y con energía insuficiente (< 50) para validar ambos caminos.
+- Verificar la lógica de selección: tras pulsar `h` la selección desaparece; nuevas pulsaciones de `h` no hacen nada hasta volver a seleccionar un glifo.
 
 ---
 

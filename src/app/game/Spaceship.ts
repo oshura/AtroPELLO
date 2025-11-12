@@ -40,6 +40,14 @@ export class Spaceship extends GameObject {
   public thrusterState: ThrusterState = ThrusterState.IDLE;
   public thrusterScaleFactor: number = 1.0; // Factor de escala dinámico del thruster
 
+  // --- Mitigación e instrumentación de jitter a alta velocidad ---
+  private highSpeedSmoothingEnabled: boolean = false; // activable externamente
+  private smoothedVelocity: Vector3 = { x: 0, y: 0, z: 0 }; // buffer de velocidad filtrada
+  private lastForwardDir: Vector3 | null = null; // para medir variación angular frame a frame
+  private jitterAccum: number = 0; // acumulador de variaciones angulares (radianes)
+  private jitterSamples: number = 0; // muestras acumuladas
+  private lastJitterReportMs: number = performance.now(); // timestamp del último reporte
+
   // Energía del vacío (sistema hipotético)
   public voidConversionPower: number = 0.05; // 5% de conversión de masa → energía
   public voidEnergyMax: number = 100; // capacidad máxima
@@ -340,10 +348,58 @@ export class Spaceship extends GameObject {
     // Calcular dirección hacia adelante basada en la rotación
     this.updateForwardDirection();
 
-    // Aplicar velocidad en la dirección hacia adelante
-    this.velocity.x = this.forwardDirection.x * this.currentSpeed;
-    this.velocity.y = this.forwardDirection.y * this.currentSpeed;
-    this.velocity.z = this.forwardDirection.z * this.currentSpeed;
+    // Instrumentación de jitter: medir variación angular del forward entre frames cuando v > 80u/s
+    if (this.lastForwardDir) {
+      const ax = this.lastForwardDir.x; const ay = this.lastForwardDir.y; const az = this.lastForwardDir.z;
+      const bx = this.forwardDirection.x; const by = this.forwardDirection.y; const bz = this.forwardDirection.z;
+      const al = Math.hypot(ax, ay, az) || 1; const bl = Math.hypot(bx, by, bz) || 1;
+      const dot = (ax * bx + ay * by + az * bz) / (al * bl);
+      const clamped = Math.min(1, Math.max(-1, dot));
+      const angle = Math.acos(clamped); // variación angular en radianes
+      if (this.currentSpeed > Math.max(80, this.maxSpeed * 0.8)) {
+        this.jitterAccum += angle;
+        this.jitterSamples++;
+      }
+    }
+    this.lastForwardDir = { ...this.forwardDirection };
+
+    // Reporte periódico (1s) si smoothing está desactivado y hay jitter perceptible
+    const now = performance.now();
+    if (now - this.lastJitterReportMs >= 1000 && this.jitterSamples > 0) {
+      const avgAngle = this.jitterAccum / Math.max(1, this.jitterSamples);
+      // Umbral muy pequeño (~0.1 grados ≈ 0.001745 rad) para detectar micro-oscilaciones
+      if (!this.highSpeedSmoothingEnabled && avgAngle > 0.0018) {
+        try { GameLogger.info(LogCategory.GAME_INITIALIZATION, 'High-speed jitter detectado', { avgAngleRad: +(avgAngle.toFixed(6)), samples: this.jitterSamples, speed: +(this.currentSpeed.toFixed(2)) }); } catch {}
+      }
+      this.jitterAccum = 0; this.jitterSamples = 0; this.lastJitterReportMs = now;
+    }
+
+    // Aplicar velocidad en la dirección hacia adelante con posible suavizado
+    const targetVx = this.forwardDirection.x * this.currentSpeed;
+    const targetVy = this.forwardDirection.y * this.currentSpeed;
+    const targetVz = this.forwardDirection.z * this.currentSpeed;
+
+    if (this.highSpeedSmoothingEnabled && this.currentSpeed > Math.max(80, this.maxSpeed * 0.8)) {
+      // Filtro exponencial: acerca suavemente la velocidad real al objetivo para amortiguar pequeñas variaciones de forward
+      // Factor adaptativo basado en deltaTime y fracción de velocidad sobre el máximo
+      const speedRatio = Math.min(1, this.currentSpeed / Math.max(1e-6, this.maxSpeed));
+      const baseAlpha = 12; // respuesta base
+      const alpha = Math.min(1, deltaTime * baseAlpha * (0.6 + 0.4 * speedRatio));
+      this.smoothedVelocity.x += (targetVx - this.smoothedVelocity.x) * alpha;
+      this.smoothedVelocity.y += (targetVy - this.smoothedVelocity.y) * alpha;
+      this.smoothedVelocity.z += (targetVz - this.smoothedVelocity.z) * alpha;
+      this.velocity.x = this.smoothedVelocity.x;
+      this.velocity.y = this.smoothedVelocity.y;
+      this.velocity.z = this.smoothedVelocity.z;
+    } else {
+      this.velocity.x = targetVx;
+      this.velocity.y = targetVy;
+      this.velocity.z = targetVz;
+      // Mantener buffer sincronizado para evitar salto cuando se active smoothing
+      this.smoothedVelocity.x = this.velocity.x;
+      this.smoothedVelocity.y = this.velocity.y;
+      this.smoothedVelocity.z = this.velocity.z;
+    }
   }
 
   /**
@@ -479,6 +535,20 @@ export class Spaceship extends GameObject {
    */
   public getOrientationQuaternion(): quat {
     return quat.clone(this.orientationQuaternion);
+  }
+
+  /** Activa/desactiva el suavizado de velocidad para mitigar jitter a alta velocidad */
+  public setHighSpeedSmoothing(enabled: boolean): void {
+    this.highSpeedSmoothingEnabled = enabled;
+    if (!enabled) {
+      // Al desactivar, forzar sincronización inmediata para evitar "rebotes"
+      this.smoothedVelocity.x = this.forwardDirection.x * this.currentSpeed;
+      this.smoothedVelocity.y = this.forwardDirection.y * this.currentSpeed;
+      this.smoothedVelocity.z = this.forwardDirection.z * this.currentSpeed;
+      this.velocity.x = this.smoothedVelocity.x;
+      this.velocity.y = this.smoothedVelocity.y;
+      this.velocity.z = this.smoothedVelocity.z;
+    }
   }
 
   /**

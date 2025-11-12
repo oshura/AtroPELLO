@@ -1148,8 +1148,19 @@ export class GameEngine {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Spaceship is undefined in update method');
       return;
     }
-    
-    this.spaceship.update(deltaTime);
+    // Activar suavizado de alta velocidad durante void jump / gate rite transit
+    try {
+      const voidJumpActive = !!(this as any).voidJumpActive;
+      // También activar mientras haya una animación que bloquee inputs (GateRite transit lo habilita explícitamente)
+      if (this.spaceship && typeof (this.spaceship as any).setHighSpeedSmoothing === 'function') {
+        (this.spaceship as any).setHighSpeedSmoothing(voidJumpActive);
+      }
+    } catch {}
+
+  // Tick del HUD para transiciones (fade-in/out)
+  try { if (this.hudManager && (this.hudManager as any).tick) (this.hudManager as any).tick(deltaTime); } catch {}
+
+  this.spaceship.update(deltaTime);
 
     // Runtime portal traversal (outside Gate Rite cinematic)
     this.handlePortalTraversal(deltaTime);
@@ -3631,12 +3642,13 @@ export class GameEngine {
     if (key.toLowerCase() === 'h') {
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
         const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|null;
-        const hovered = (this.grimoirePanel as any).getHoveredSpellType?.() as 'speed'|'longjump'|'gaterite'|null;
-        const spell = selected || hovered;
+        const spell = selected; // Do not fall back to hovered; require explicit selection
         if (!spell) {
           // Nada seleccionado: no hacer nada
           return;
         }
+        // Immediately clear selection upon pressing 'h'
+        try { (this.grimoirePanel as any)?.clearSelection?.(); } catch {}
         // Capturar target actual/hovered en el momento del casteo (si aplica al hechizo)
         const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
         // Cerrar el grimorio y volver a la escena 3D con cámara '0'
@@ -3699,6 +3711,8 @@ export class GameEngine {
             const surf = dCenter - R;
             if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
             // Iniciar Gate Rite tras el pre-focus ya hecho (2s bloqueados)
+            // Limpiar selección de target para que la cinemática se vea limpia
+            try { this.clearTargetSelection(); } catch {}
             try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
           }
         }, 2000);
@@ -3708,6 +3722,8 @@ export class GameEngine {
       if (this.grimoirePanel) {
         const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|null;
         if (!selected) return;
+        // Immediately clear selection upon pressing 'h'
+        try { (this.grimoirePanel as any)?.clearSelection?.(); } catch {}
         const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
         // Cambiar cámara y ejecutar tras 2s, igual que cuando se castea desde el grimorio
         if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
@@ -3752,6 +3768,7 @@ export class GameEngine {
             const dCenter = Math.hypot(dx, dy, dz);
             const surf = dCenter - R;
             if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
+            try { this.clearTargetSelection(); } catch {}
             try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
           }
         }, 2000);

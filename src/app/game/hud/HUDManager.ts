@@ -81,6 +81,11 @@ export class HUDManager {
   private showHUDFrame: boolean = true; // Marco y grid permanente para inmersión cockpit
   // Reduce noisy logs by default unless explicitly debugging
   private debugHudLogs: boolean = false;
+  // Opacidad actual del HUD (0..1) para transiciones
+  private hudOpacity: number = 1.0;
+  private hudFadeActive: boolean = false;
+  private hudFadeDuration: number = 0.3; // 300ms por defecto (dentro de rango pedido 250–400ms)
+  private hudFadeElapsed: number = 0;
   
   // Sistema de targeting
   private targetingSystem: TargetingSystem;
@@ -134,6 +139,26 @@ export class HUDManager {
     // Guardar armas de la nave para panel izquierdo
     (this as any)._weaponsHUD = gameData.weapons || [];
     this.renderToTexture();
+  }
+
+  /** Inicia un fade-in del HUD desde 0 a 1 en la duración configurada */
+  public startFadeIn(duration: number = 0.3): void {
+    this.hudFadeDuration = Math.max(0.25, Math.min(0.4, duration));
+    this.hudFadeElapsed = 0;
+    this.hudOpacity = 0;
+    this.hudFadeActive = true;
+  }
+
+  /** Actualiza animaciones internas (llamar cada frame con deltaTime) */
+  public tick(deltaTime: number): void {
+    if (this.hudFadeActive) {
+      this.hudFadeElapsed += deltaTime;
+      const k = Math.min(1, this.hudFadeElapsed / Math.max(0.001, this.hudFadeDuration));
+      // Ease-out suave: 1 - (1-k)^3
+      const eased = 1 - Math.pow(1 - k, 3);
+      this.hudOpacity = eased;
+      if (k >= 1) { this.hudFadeActive = false; this.hudOpacity = 1; }
+    }
   }
 
   // === Target Panel Public API ===
@@ -359,6 +384,14 @@ export class HUDManager {
     this.gl.depthMask(false);
     
     // Renderizar el plano HUD
+    // Aplicar opacidad (si el shader la soporta) antes de dibujar
+    try {
+      const opacityLocation = shaderManager.hudUniforms?.['opacity'];
+      if (opacityLocation) {
+        this.gl.uniform1f(opacityLocation, Math.max(0, Math.min(1, this.hudOpacity)));
+      }
+    } catch {}
+
     this.gl.drawElements(this.gl.TRIANGLES, this.hudGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
     
     // Verificar errores GL

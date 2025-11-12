@@ -17,10 +17,9 @@ enum GateRitePhase {
   PortalManifest = 4,
   CameraReframe = 5,
   Transit = 6,
-  PlasmaBall = 7,
-  FadeSwitch = 8,
-  ArrivalDecel = 9,
-  Completed = 10,
+  FadeSwitch = 7,
+  ArrivalDecel = 8,
+  Completed = 9,
 }
 
 export class GateRiteAnimation implements GameAnimation {
@@ -40,17 +39,24 @@ export class GateRiteAnimation implements GameAnimation {
   private reframeElapsed = 0;
   private reframeDuration = 1.6; // seconds to rotate + gentle zoom after portal exists
   private transitElapsed = 0;
-  private transitDuration = 1.2; // seconds warp through portal
-  private plasmaElapsed = 0;
-  private plasmaDuration = 2.5; // seconds after transit
-  private plasmaCenter: { x:number;y:number;z:number } | null = null; // portal center (origin side)
-  private plasmaDir: { x:number;y:number;z:number } | null = null; // direction away from portal (behind)
+  private transitDuration = 3.5; // travelling to camera-0 pose while accelerating
+  private camTravelStart: { pos:{x:number;y:number;z:number}; target:{x:number;y:number;z:number}; up:{x:number;y:number;z:number} } | null = null;
   private fadeElapsed = 0;
   private fadeDuration = 0.5; // seconds fade to switch systems & camera
   private arrivalElapsed = 0;
-  private arrivalDuration = 2.5; // seconds to decelerate to 0 after spawn
+  private arrivalDuration = 7.5; // (tripled) seconds to decelerate to 0 after spawn for a more cinematic slow glide
   private portalInstance: Portal | null = null;
   private generator: SystemGeneratorService | null = null; // lazy resolved from engine injector if needed
+  // Speed streaks (void-jump style) during pre-cross travelling
+  private streakSeeds: Array<{x:number;y:number;z:number}> = [];
+  private streakNearZ = 2;
+  private streakFarZ = 100;
+  private streakBaseSpeed = 20;
+  private streakMaxBoost = 220;
+  private speedCapPreCross = 180; // u/s cap before crossing
+  private accelActive = false; // start acceleration only after travelling completes
+  private lockedHeading = false; // fijar orientación durante el tránsito para evitar micro-oscilaciones
+  private camTransitSmoothing = true; // activar suavizado de cámara durante Transit
 
   // Camera zoom state
   private zoomDuration = 2.5; // seconds (base before scaling)
@@ -62,8 +68,7 @@ export class GateRiteAnimation implements GameAnimation {
   private reframeStart: { x:number;y:number;z:number } | null = null;
   private reframeEnd: { x:number;y:number;z:number } | null = null;
   private reframeTarget: { x:number;y:number;z:number } | null = null;
-  // Transit ship path start
-  private shipStartPos: { x:number;y:number;z:number } | null = null;
+  // (removed) shipStartPos no longer required
 
   start(engine: GameEngine, target: ITargetable): void {
     if (target.getTargetType() !== TargetType.PLANET) { this.finished = true; return; }
@@ -181,9 +186,6 @@ export class GateRiteAnimation implements GameAnimation {
       case GateRitePhase.Transit:
         this.updateTransit(engine, dt);
         break;
-      case GateRitePhase.PlasmaBall:
-        this.updatePlasmaBall(engine, dt);
-        break;
       case GateRitePhase.FadeSwitch:
         this.updateFadeSwitch(engine, dt);
         break;
@@ -261,12 +263,32 @@ export class GateRiteAnimation implements GameAnimation {
     if (this.wrapperElapsed < dt + 0.0001) {
       try { (engine as any).showPlaceholderText?.('Gate Rite: Wrapping', 900); } catch {}
     }
-    // Suavizar aparición del "envolvente" del planeta: exponer alpha gradual para renderer
+    // Suavizar aparición del "envolvente" del planeta: exponer parámetros graduales para el renderer
     try {
       const p: any = this.targetPlanet as any;
       if (p) {
-        const alpha = Math.min(1, this.wrapperElapsed / 0.6); // fade-in sobre 0.6s
-        p._gateRiteWrapperEnvelope = { alpha, time: this.wrapperElapsed };
+        // Introducir un leve retardo inicial para evitar popping del patrón
+        const startDelay = 0.18; // segundos
+        const tRaw = Math.max(0, this.wrapperElapsed - startDelay) / Math.max(0.001, (this.wrapperDuration - startDelay));
+        // Easing suaves para distintos canales
+        const easeOutCubic = (x:number)=>1 - Math.pow(1 - x, 3);
+        const easeInOutQuad = (x:number)=> (x < 0.5) ? (2*x*x) : (1 - Math.pow(-2*x + 2, 2) / 2);
+        const tReveal = Math.min(1, easeOutCubic(Math.max(0, Math.min(1, tRaw))));
+        const tAlpha = Math.min(1, easeInOutQuad(Math.max(0, Math.min(1, tRaw))));
+        // Canales expuestos para el shader/algoritmo del wrapper
+        const alpha = Math.min(0.85, 0.1 + tAlpha * 0.75); // alpha objetivo con rampa progresiva
+        const reveal = tReveal; // 0..1: cuánto del patrón se debe revelar (p.ej. threshold/umbral)
+        const thickness = 0.15 + 0.85 * tReveal; // grosor/línea del "net": empieza fino
+        const distortion = 0.2 * Math.sin(this.wrapperElapsed * 2.2) * (0.25 + 0.75 * tReveal); // pulso ligero
+        const microScale = 1.0 + 0.003 * Math.sin(this.wrapperElapsed * 6.0) * (0.3 + 0.7 * tReveal);
+        p._gateRiteWrapperEnvelope = {
+          alpha,
+          reveal,
+          thickness,
+          distortion,
+          scale: microScale,
+          time: this.wrapperElapsed
+        };
       }
     } catch {}
     // Camera jitter: small per-axis sin noise scaled by (0→peak at mid→0)
@@ -311,7 +333,8 @@ export class GateRiteAnimation implements GameAnimation {
       // Ease-in-out (cubic) for tectonic feel
       const easeInOutCubic = (x: number) => (x < 0.5) ? (4 * x * x * x) : (1 - Math.pow(-2 * x + 2, 3) / 2);
       const ke = easeInOutCubic(k);
-      const shrink = Math.max(0.05, 1 - ke * 0.92); // shrink towards ~8% before disappearing
+      // Colapsar prácticamente a cero al final, con facilidad suave
+      const shrink = Math.max(0.00001, Math.pow(1 - ke, 2.2));
       if (p.scale) {
         const base = (this.collapseStartScale !== null && isFinite(this.collapseStartScale))
           ? this.collapseStartScale
@@ -370,13 +393,13 @@ export class GateRiteAnimation implements GameAnimation {
           portal.rotation.y = yaw + Math.PI; // yaw opuesto
           portal.rotation.z = 0;
           portal.updateModelMatrix();
-          // Alinear el ojo inicial con la normal del portal
+          // Alinear el ojo inicial con la normal del portal (si el ojo está habilitado)
           const n = {
             x: -Math.cos(pitch) * Math.sin(yaw),
             y: Math.sin(pitch),
             z: Math.cos(pitch) * Math.cos(yaw)
           };
-          try { (portal as any).eyeDir = { ...n }; } catch {}
+          try { if ((portal as any)._eyeEnabled) (portal as any).eyeDir = { ...n }; } catch {}
         }
       } catch {}
       // Capturar color base del planeta original para reutilizarlo en la esfera del ojo
@@ -385,6 +408,15 @@ export class GateRiteAnimation implements GameAnimation {
         if (p && p.color) {
           portal.planetColorRef = { r: p.color.r ?? 0.4, g: p.color.g ?? 0.4, b: p.color.b ?? 0.4, a: p.color.a };
         }
+      } catch {}
+      // Desactivar ojo central por ahora y prevenir flash de primer frame
+      try { (portal as any)._eyeEnabled = false; } catch {}
+      // Prevent one-frame flash: ensure tiny initial scale and zero opacity before first render
+      try {
+        const s0 = Math.max(1, portal.radius * 0.1);
+        portal.scale.x = portal.scale.y = portal.scale.z = s0;
+        (portal as any).renderOpacity = 0.0;
+        (portal as any).eyelidOpen = 0.05;
       } catch {}
       this.portalInstance = portal;
       const gl = (engine as any).gl;
@@ -408,12 +440,16 @@ export class GateRiteAnimation implements GameAnimation {
       this.portalInstance.scale.x = this.portalInstance.scale.y = this.portalInstance.scale.z = this.portalInstance.radius * s;
       (this.portalInstance as any).renderOpacity = Math.min(1, k * 1.2);
       // Apertura de párpados: empezar con abertura mínima para ver iris/pupila
-      try { (this.portalInstance as any).eyelidOpen = Math.min(1, 0.15 + k * 0.85); } catch {}
+      if ((this.portalInstance as any)._eyeEnabled) {
+        try { (this.portalInstance as any).eyelidOpen = Math.min(1, 0.15 + k * 0.85); } catch {}
+      }
       // Activar seguimiento de mirada pronto
-      try {
-        if (!this.portalInstance.eyeState) this.portalInstance.eyeState = { gazeTarget: 'ship', eyelidOpen: 1, intensity: 0.9 } as any;
-        else this.portalInstance.eyeState.gazeTarget = 'ship' as any;
-      } catch {}
+      if ((this.portalInstance as any)._eyeEnabled) {
+        try {
+          if (!this.portalInstance.eyeState) this.portalInstance.eyeState = { gazeTarget: 'ship', eyelidOpen: 1, intensity: 0.9 } as any;
+          else this.portalInstance.eyeState.gazeTarget = 'ship' as any;
+        } catch {}
+      }
       // Mantener la cámara QUIETA durante todo el manifest: sin órbitas ni saltos
       // No mover la nave: solo reorientar una vez al inicio del manifest (usar lookAt hacia el portal si existe)
       try {
@@ -490,13 +526,48 @@ export class GateRiteAnimation implements GameAnimation {
     try { (engine as any).showPlaceholderText?.('Gate Rite: Transit', 800); } catch {}
     // Lazy resolve generator via Angular injector pattern (fallback new)
     try { this.generator = (engine as any)['systemGeneratorService'] || this.generator || null; } catch {}
-    // Preparar trayectoria de la nave: desde su posición actual hasta el centro del portal
+    // Preparar: situar nave a 1000u del portal, orientar al centro; preparar travelling y streaks
     try {
       const ship: any = (engine as any)['spaceship'];
       if (ship && this.portalInstance) {
-        this.shipStartPos = { x: ship.position.x, y: ship.position.y, z: ship.position.z };
-        // Pausar consumo de energía del vacío durante todo el Gate Rite (si no estaba ya)
-        try { ship.voidEnergyPaused = true; } catch {}
+        const center = this.portalInstance.position;
+        // Colocar a 1000u del centro hacia atrás
+        const vx = center.x - ship.position.x;
+        const vy = center.y - ship.position.y;
+        const vz = center.z - ship.position.z;
+        const vlen = Math.hypot(vx, vy, vz) || 1;
+        const nx = vx / vlen, ny = vy / vlen, nz = vz / vlen;
+        ship.position.x = center.x - nx * 1000;
+        ship.position.y = center.y - ny * 1000;
+        ship.position.z = center.z - nz * 1000;
+  if (typeof ship.lookAt === 'function') ship.lookAt(center); else { ship.rotation.y = Math.atan2(vx, vz); ship.updateModelMatrix(); }
+  // Bloquear rumbo inicial durante todo el tránsito para reducir jitter visual a alta velocidad
+  try { if (typeof ship.setHighSpeedSmoothing === 'function') ship.setHighSpeedSmoothing(true); } catch {}
+  this.lockedHeading = true;
+  // Travelling inicial: aún sin aceleración de +10u/s (se activará al finalizar travelling)
+  this.accelActive = false;
+        // Pausar energía y marcar HUD para overspeed clamping
+        try { ship.voidEnergyPaused = true; (engine as any).voidJumpActive = true; } catch {}
+        // Capturar estado inicial de cámara manual para travelling
+        const cam: any = (engine as any).camera;
+        if (cam) {
+          this.camTravelStart = {
+            pos: { x: cam.position.x, y: cam.position.y, z: cam.position.z },
+            target: { x: cam.target.x, y: cam.target.y, z: cam.target.z },
+            up: { x: cam.up.x, y: cam.up.y, z: cam.up.z },
+          };
+        }
+        // Inicializar streaks
+        this.streakSeeds = [];
+        const count = 140;
+        for (let i = 0; i < count; i++) {
+          const z = this.streakNearZ + Math.random() * (this.streakFarZ - this.streakNearZ);
+          const y = (Math.random() * 2 - 1) * 20;
+          const x = (Math.random() * 2 - 1) * 35;
+          this.streakSeeds.push({ x, y, z });
+        }
+        // Reiniciar velocidades para rampa +10u/s
+        ship.targetSpeed = ship.currentSpeed = Math.max(0, ship.currentSpeed || 0);
       }
     } catch {}
   }
@@ -504,66 +575,117 @@ export class GateRiteAnimation implements GameAnimation {
   private updateTransit(engine: GameEngine, dt: number) {
     this.transitElapsed += dt;
     const k = Math.min(1, this.transitElapsed / this.transitDuration);
-    // Mantener cámara estable desde el reencuadre y mover la nave a través del centro del portal
     try {
       const ship: any = (engine as any)['spaceship'];
-      if (ship && this.portalInstance && this.shipStartPos) {
+      if (ship && this.portalInstance) {
         const center = this.portalInstance.position;
-        const sx = this.shipStartPos.x, sy = this.shipStartPos.y, sz = this.shipStartPos.z;
-        ship.position.x = sx + (center.x - sx) * k;
-        ship.position.y = sy + (center.y - sy) * k;
-        ship.position.z = sz + (center.z - sz) * k;
-        // Alinear rumbo hacia el portal
-        if (typeof ship.lookAt === 'function') {
-          ship.lookAt(center);
-        } else {
-          const dx = center.x - ship.position.x;
-          const dy = center.y - ship.position.y;
-          const dz = center.z - ship.position.z;
-          ship.rotation.y = Math.atan2(dx, dz);
-          if (typeof ship.rotation.x === 'number') ship.rotation.x = Math.atan2(dy, Math.hypot(dx, dz));
-          ship.updateModelMatrix();
+  // Mantener rumbo al centro una sola vez (enterTransit); evitar micro-ajustes por frame
+  if (!this.lockedHeading && typeof ship.lookAt === 'function') ship.lookAt(center);
+        // Suavizado de cámara durante travelling: interpolar manual camera hacia objetivo final aunque k<1
+        try {
+          const cam: any = (engine as any).camera;
+          if (cam && this.camTravelStart) {
+            const shipQ = ship.getOrientationQuaternion?.();
+            const rotVec = (v:{x:number;y:number;z:number}) => {
+              if (!shipQ) return v;
+              const qx = shipQ[0], qy = shipQ[1], qz = shipQ[2], qw = shipQ[3];
+              const qx2=qx*qx,qy2=qy*qy,qz2=qz*qz,qw2=qw*qw;
+              return {
+                x: v.x * (qx2 - qy2 - qz2 + qw2) + v.y * (2 * qx * qy - 2 * qz * qw) + v.z * (2 * qx * qz + 2 * qy * qw),
+                y: v.x * (2 * qx * qy + 2 * qz * qw) + v.y * (-qx2 + qy2 - qz2 + qw2) + v.z * (2 * qy * qz - 2 * qx * qw),
+                z: v.x * (2 * qx * qz - 2 * qy * qw) + v.y * (2 * qy * qz + 2 * qx * qw) + v.z * (-qx2 - qy2 + qz2 + qw2)
+              };
+            };
+            const offset = { x: 0, y: 2.3, z: -(cam.getZoomDistance?.() ? cam.getZoomDistance() * 2.0 : 9.0) };
+            const offW = rotVec(offset);
+            const fwdW = rotVec({ x: 0, y: 0, z: 3.0 });
+            const upW = rotVec({ x: 0, y: 1, z: 0 });
+            const endPos = { x: ship.position.x + offW.x, y: ship.position.y + offW.y, z: ship.position.z + offW.z };
+            const endTarget = { x: endPos.x + fwdW.x, y: endPos.y + fwdW.y, z: endPos.z + fwdW.z };
+            const endUp = upW;
+            const easeK = 1 - Math.pow(1 - k, 3);
+            // Aplicar interpolación adicional con leve amortiguación exponencial para reducir jitter
+            const damp = 1 - Math.exp(-dt * 12);
+            cam.position.x += (this.camTravelStart.pos.x + (endPos.x - this.camTravelStart.pos.x) * easeK - cam.position.x) * damp;
+            cam.position.y += (this.camTravelStart.pos.y + (endPos.y - this.camTravelStart.pos.y) * easeK - cam.position.y) * damp;
+            cam.position.z += (this.camTravelStart.pos.z + (endPos.z - this.camTravelStart.pos.z) * easeK - cam.position.z) * damp;
+            cam.target.x += (this.camTravelStart.target.x + (endTarget.x - this.camTravelStart.target.x) * easeK - cam.target.x) * damp;
+            cam.target.y += (this.camTravelStart.target.y + (endTarget.y - this.camTravelStart.target.y) * easeK - cam.target.y) * damp;
+            cam.target.z += (this.camTravelStart.target.z + (endTarget.z - this.camTravelStart.target.z) * easeK - cam.target.z) * damp;
+            cam.up.x += (this.camTravelStart.up.x + (endUp.x - this.camTravelStart.up.x) * easeK - cam.up.x) * damp;
+            cam.up.y += (this.camTravelStart.up.y + (endUp.y - this.camTravelStart.up.y) * easeK - cam.up.y) * damp;
+            cam.up.z += (this.camTravelStart.up.z + (endUp.z - this.camTravelStart.up.z) * easeK - cam.up.z) * damp;
+            cam.markDirty?.();
+          }
+        } catch {}
+        // Activar aceleración solo tras finalizar travelling (k >= 1)
+        if (k >= 1 && !this.accelActive) {
+          this.accelActive = true;
         }
-        // Mantener la mirada de la cámara hacia el centro para ver el cruce
+        if (this.accelActive) {
+          // Duplicar aceleración durante tránsito (antes: +10u/s^2, ahora +20u/s^2)
+          ship.currentSpeed = Math.min(this.speedCapPreCross, (ship.currentSpeed || 0) + 20 * dt);
+          ship.targetSpeed = ship.currentSpeed;
+        }
+        // Travelling de cámara manual hacia pose tipo cámara 0 detrás de la nave con ligera inclinación
         const cam: any = (engine as any).camera;
-        if (cam) {
-          cam.target.x = center.x;
-          cam.target.y = center.y;
-          cam.target.z = center.z;
+        if (cam && this.camTravelStart && !this.camTransitSmoothing) {
+          const offset = { x: 0, y: 2.3, z: -(cam.getZoomDistance?.() ? cam.getZoomDistance() * 2.0 : 9.0) };
+          const shipQ = ship.getOrientationQuaternion?.();
+          const rotVec = (v:{x:number;y:number;z:number}) => {
+            if (!shipQ) return v;
+            const qx = shipQ[0], qy = shipQ[1], qz = shipQ[2], qw = shipQ[3];
+            const qx2=qx*qx,qy2=qy*qy,qz2=qz*qz,qw2=qw*qw;
+            return {
+              x: v.x * (qx2 - qy2 - qz2 + qw2) + v.y * (2 * qx * qy - 2 * qz * qw) + v.z * (2 * qx * qz + 2 * qy * qw),
+              y: v.x * (2 * qx * qy + 2 * qz * qw) + v.y * (-qx2 + qy2 - qz2 + qw2) + v.z * (2 * qy * qz - 2 * qx * qw),
+              z: v.x * (2 * qx * qz - 2 * qy * qw) + v.y * (2 * qy * qz + 2 * qx * qw) + v.z * (-qx2 - qy2 + qz2 + qw2)
+            };
+          };
+          const offW = rotVec(offset);
+          const fwdW = rotVec({ x: 0, y: 0, z: 3.0 });
+          const upW = rotVec({ x: 0, y: 1, z: 0 });
+          const endPos = { x: ship.position.x + offW.x, y: ship.position.y + offW.y, z: ship.position.z + offW.z };
+          const endTarget = { x: endPos.x + fwdW.x, y: endPos.y + fwdW.y, z: endPos.z + fwdW.z };
+          const endUp = upW;
+          const ease = (x:number)=>1 - Math.pow(1-x,3);
+          cam.position.x = this.camTravelStart.pos.x + (endPos.x - this.camTravelStart.pos.x) * ease(k);
+          cam.position.y = this.camTravelStart.pos.y + (endPos.y - this.camTravelStart.pos.y) * ease(k);
+          cam.position.z = this.camTravelStart.pos.z + (endPos.z - this.camTravelStart.pos.z) * ease(k);
+          cam.target.x = this.camTravelStart.target.x + (endTarget.x - this.camTravelStart.target.x) * ease(k);
+          cam.target.y = this.camTravelStart.target.y + (endTarget.y - this.camTravelStart.target.y) * ease(k);
+          cam.target.z = this.camTravelStart.target.z + (endTarget.z - this.camTravelStart.target.z) * ease(k);
+          cam.up.x = this.camTravelStart.up.x + (endUp.x - this.camTravelStart.up.x) * ease(k);
+          cam.up.y = this.camTravelStart.up.y + (endUp.y - this.camTravelStart.up.y) * ease(k);
+          cam.up.z = this.camTravelStart.up.z + (endUp.z - this.camTravelStart.up.z) * ease(k);
           cam.markDirty?.();
         }
+        // Actualizar streaks
+        if (this.streakSeeds.length) {
+          const factor = Math.min(1, (ship.currentSpeed || 0) / Math.max(1, this.speedCapPreCross));
+          const streakSpeed = this.streakBaseSpeed + this.streakMaxBoost * factor;
+          for (let i = 0; i < this.streakSeeds.length; i++) {
+            const s = this.streakSeeds[i];
+            s.z -= streakSpeed * dt;
+            if (s.z < this.streakNearZ) {
+              s.z = this.streakFarZ + Math.random() * 20;
+              s.x = (Math.random() * 2 - 1) * 35;
+              s.y = (Math.random() * 2 - 1) * 20;
+            }
+          }
+        }
+        // Condición de cruce (solo considerar después de iniciar aceleración)
+        const dx = center.x - ship.position.x;
+        const dy = center.y - ship.position.y;
+        const dz = center.z - ship.position.z;
+        const dist = Math.hypot(dx, dy, dz);
+        if (this.accelActive && dist <= Math.max(50, this.portalInstance.radius * 0.25)) {
+          // Inmediatamente iniciar fade a negro para swap de sistema
+          this.enterFadeSwitch(engine);
+          return;
+        }
       }
     } catch {}
-    if (this.transitElapsed >= this.transitDuration) {
-      // No cambiar de sistema aún: pasar a PlasmaBall aún en el sistema de origen
-      this.enterPlasmaBall(engine);
-    }
-  }
-
-  private enterPlasmaBall(engine: GameEngine) {
-    this.phase = GateRitePhase.PlasmaBall;
-    this.plasmaElapsed = 0;
-    try { (engine as any).showPlaceholderText?.('Gate Rite: Plasma', 900); } catch {}
-    // Definir posición de origen del plasma (centro del portal) y dirección de salida por detrás
-    try {
-      if (this.portalInstance && this.shipStartPos) {
-        this.plasmaCenter = { x: this.portalInstance.position.x, y: this.portalInstance.position.y, z: this.portalInstance.position.z };
-        const dir = {
-          x: this.shipStartPos.x - this.portalInstance.position.x,
-          y: this.shipStartPos.y - this.portalInstance.position.y,
-          z: this.shipStartPos.z - this.portalInstance.position.z,
-        };
-        const dl = Math.hypot(dir.x, dir.y, dir.z) || 1;
-        this.plasmaDir = { x: dir.x / dl, y: dir.y / dl, z: dir.z / dl };
-      }
-    } catch {}
-  }
-
-  private updatePlasmaBall(engine: GameEngine, dt: number) {
-    this.plasmaElapsed += dt;
-    const k = Math.min(1, this.plasmaElapsed / this.plasmaDuration);
-    // Al terminar el plasma en el sistema de origen, iniciar fade de conmutación
-    if (k >= 1) this.enterFadeSwitch(engine);
   }
 
   private enterFadeSwitch(engine: GameEngine) {
@@ -588,7 +710,21 @@ export class GateRiteAnimation implements GameAnimation {
           eyeState: { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
         } : null;
         let snapshot: any = null;
-        if (solarSvc && originPortal) snapshot = solarSvc.generateWithLinkedPortal(originPortal);
+        if (solarSvc && originPortal) {
+          // Destination generation constraints
+          const prevPalette = Array.isArray(this.originalSnapshot?.planets)
+            ? Array.from(new Set(this.originalSnapshot.planets.map((p: any) => p?.baseColorName).filter((c: any) => !!c)))
+            : [];
+          const genOptions: any = {
+            disableTrail: true,
+            staticClouds: true,
+            cloudGroupScale: 0.1, // one tenth of previous random cloud group count
+            allowCanonicalNames: false,
+            maxGiantRadius: 3400,
+            colorPaletteOverride: prevPalette && prevPalette.length ? prevPalette : undefined,
+          };
+          snapshot = solarSvc.generateWithLinkedPortal(originPortal, Date.now(), genOptions);
+        }
         else if (this.generator) snapshot = this.generator.generate(Date.now());
         if (snapshot && (engine as any).applySolarSystemSnapshot) {
           // Vincular portal de origen con destino para persistencia
@@ -650,9 +786,14 @@ export class GateRiteAnimation implements GameAnimation {
               // Velocidad y frenado
               const shipAny: any = ship;
               shipAny.currentSpeed = Math.max(shipAny.currentSpeed || 0, 120);
-              shipAny.targetSpeed = 0;
+              shipAny.targetSpeed = 1; // objetivo final
               shipAny._gateRiteOriginalDecel = shipAny.deceleration;
-              shipAny.deceleration = Math.max(shipAny.deceleration, 30);
+              // Calcular una deceleración que permita frenar aproximadamente en arrivalDuration
+              const desiredStopTime = this.arrivalDuration; // 7.5s
+              const initialSpeed = shipAny.currentSpeed;
+              const computedDecel = (initialSpeed - 1) / Math.max(0.001, desiredStopTime); // (v0 - v1)/t hacia 1u/s
+              // Clamp mínima para no hacer la frenada interminable si speed es baja
+              shipAny.deceleration = Math.max(4, Math.min(computedDecel, 25)); // limitar arriba para mantener suavidad
               // Mantener pausa de energía hasta completar el frenado
               ship.voidEnergyPaused = true;
               // Alinear ojo del portal de destino con su normal en el primer frame
@@ -682,14 +823,37 @@ export class GateRiteAnimation implements GameAnimation {
     try {
       const ship: any = (engine as any)['spaceship'];
       if (ship) {
-        // Asegurar objetivo 0 durante la fase
-        ship.targetSpeed = 0;
-        // Si ya casi parado o tiempo cumplido → finalizar
-        const stopped = (ship.currentSpeed ?? 0) <= 0.5;
-        if (stopped || this.arrivalElapsed >= this.arrivalDuration) {
+        // Objetivo final 1u/s durante la fase
+        ship.targetSpeed = 1;
+        // Estabilidad: velocidad cerca de 1 y movimiento real cercano a 1u/s
+        const targetStable = 1;
+        const speedError = Math.abs((ship.currentSpeed ?? 0) - targetStable);
+        const speedOk = speedError <= 0.08;
+        const vel = ship.velocity || { x: 0, y: 0, z: 0 };
+        const velMag = Math.hypot(vel.x || 0, vel.y || 0, vel.z || 0);
+        const motionOk = Math.abs(velMag - targetStable) <= 0.06;
+        // Si se excede un tiempo razonable, forzar freno más fuerte pero no recargar aún hasta motionOk
+        if (this.arrivalElapsed >= this.arrivalDuration && !motionOk) {
+          // Si aún no se detuvo tras el tiempo objetivo, incrementar suavemente la deceleración
+          ship.deceleration = Math.min(Math.max(ship.deceleration * 1.25, 10), 48);
+        }
+        if (speedOk && motionOk) {
+          // Anclar a 1u/s para estabilidad
+          ship.currentSpeed = targetStable;
           // Reactivar y rellenar Void Energy al 100%
           ship.voidEnergyPaused = false;
           ship.voidEnergyCurrent = ship.voidEnergyMax;
+          try { (engine as any).voidJumpActive = false; } catch {}
+          // Desactivar suavizado de alta velocidad al finalizar el rito
+          try { const ship: any = (engine as any)['spaceship']; if (ship?.setHighSpeedSmoothing) ship.setHighSpeedSmoothing(false); } catch {}
+          // Cambiar a cámara de HUD/cabina (modo 8) como último paso
+          try {
+            (engine as any).camera?.setCameraMode?.(CameraMode.COCKPIT);
+            // Iniciar fade-in del HUD cuando entramos en modo cabina
+            if ((engine as any).hudManager?.startFadeIn) {
+              (engine as any).hudManager.startFadeIn(0.32); // 320ms dentro del rango solicitado
+            }
+          } catch {}
           if (ship._gateRiteOriginalDecel !== undefined) {
             ship.deceleration = ship._gateRiteOriginalDecel;
             delete ship._gateRiteOriginalDecel;
@@ -716,32 +880,54 @@ export class GateRiteAnimation implements GameAnimation {
   }
 
   render(engine: GameEngine): void {
-    // Render plasma ball during PlasmaBall phase
-    if (this.phase === GateRitePhase.PlasmaBall) {
+    // Render speed streaks only once acceleration is active (after travelling completes)
+    if (this.phase === GateRitePhase.Transit && this.streakSeeds.length && this.accelActive) {
       try {
-        const gl = (engine as any)['gl'];
+        const gl = (engine as any)['gl'] as WebGL2RenderingContext;
+        const shaderManager: any = (engine as any)['shaderManager'];
         const cam: any = (engine as any)['camera'];
-        const bill: any = (engine as any)['billboardRenderer'];
-        if (gl && cam && bill) {
-          // Posición del plasma: se aleja por detrás del portal
-          const center = this.plasmaCenter || (this.portalInstance ? this.portalInstance.position : { x:0,y:0,z:0 });
-          const dir = this.plasmaDir || { x: 0, y: 0, z: -1 };
-          const t = Math.min(1, Math.max(0, this.plasmaElapsed / Math.max(0.001, this.plasmaDuration)));
-          const dist = (this.portalInstance ? this.portalInstance.radius * 1.2 : 120) + (t * t) * 1200;
-          const pos = { x: center.x + dir.x * dist, y: center.y + dir.y * dist, z: center.z + dir.z * dist };
-          const tex = bill.getCircleTexture('#FFB000');
-          const view = cam.viewMatrix as Float32Array;
-          const proj = cam.projectionMatrix as Float32Array;
-          const fwd = { x: cam.target.x - cam.position.x, y: cam.target.y - cam.position.y, z: cam.target.z - cam.position.z };
-          const fl = Math.hypot(fwd.x, fwd.y, fwd.z) || 1; fwd.x/=fl; fwd.y/=fl; fwd.z/=fl;
-          const up = { x: cam.up.x, y: cam.up.y, z: cam.up.z };
-          let rx = fwd.y * up.z - fwd.z * up.y;
-          let ry = fwd.z * up.x - fwd.x * up.z;
-          let rz = fwd.x * up.y - fwd.y * up.x;
-          const rl = Math.hypot(rx, ry, rz) || 1; rx/=rl; ry/=rl; rz/=rl;
-          const sizePx = 220 - t * 140; // decreciente mientras se aleja
-          const tint: [number,number,number,number] = [1.0, 0.85, 0.35, 0.95];
-          bill.render(pos, sizePx, view, proj, { x: cam.position.x, y: cam.position.y, z: cam.position.z }, up, { x: rx, y: ry, z: rz }, tint, tex);
+        const ship: any = (engine as any)['spaceship'];
+        if (gl && shaderManager && cam && ship) {
+          const speedFactor = Math.min(1, (ship.currentSpeed || 0) / Math.max(1, this.speedCapPreCross));
+          const streakAlpha = Math.min(1, 0.12 + speedFactor * 0.7);
+          if (streakAlpha > 0.01) {
+            const camPos = cam.position;
+            const fwd = (() => { const v = { x: cam.target.x - camPos.x, y: cam.target.y - camPos.y, z: cam.target.z - camPos.z }; const l = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x/l, y: v.y/l, z: v.z/l }; })();
+            const upW = cam.up;
+            const right = { x: fwd.y * upW.z - fwd.z * upW.y, y: fwd.z * upW.x - fwd.x * upW.z, z: fwd.x * upW.y - fwd.y * upW.x };
+            const rl = Math.hypot(right.x, right.y, right.z) || 1; right.x/=rl; right.y/=rl; right.z/=rl;
+            const up = { x: right.y * fwd.z - right.z * fwd.y, y: right.z * fwd.x - right.x * fwd.z, z: right.x * fwd.y - right.y * fwd.x };
+            const lineLen = 2 + speedFactor * 16;
+            const verts: number[] = [];
+            const cols: number[] = [];
+            for (const s of this.streakSeeds) {
+              const base = { x: camPos.x + right.x * s.x + up.x * s.y + fwd.x * s.z,
+                             y: camPos.y + right.y * s.x + up.y * s.y + fwd.y * s.z,
+                             z: camPos.z + right.z * s.x + up.z * s.y + fwd.z * s.z };
+              const tip = { x: base.x - fwd.x * lineLen, y: base.y - fwd.y * lineLen, z: base.z - fwd.z * lineLen };
+              verts.push(base.x, base.y, base.z, tip.x, tip.y, tip.z);
+              cols.push(1,1,1, 0.65,0.7,0.85);
+            }
+            shaderManager.useBasicProgram?.();
+            const prog: WebGLProgram = shaderManager.basicProgram!;
+            gl.useProgram(prog);
+            if (shaderManager.setBasicMatrices) shaderManager.setBasicMatrices(new Float32Array([1,0,0,0, 0,1,0,0, 0,0,1,0, 0,0,0,1]), cam.viewMatrix, cam.projectionMatrix);
+            const vbo = gl.createBuffer()!; const cbo = gl.createBuffer()!;
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(verts), gl.DYNAMIC_DRAW);
+            const aPos = shaderManager.basicAttributes?.['position'] ?? gl.getAttribLocation(prog, 'a_position');
+            gl.enableVertexAttribArray(aPos); gl.vertexAttribPointer(aPos, 3, gl.FLOAT, false, 0, 0);
+            gl.bindBuffer(gl.ARRAY_BUFFER, cbo); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(cols), gl.DYNAMIC_DRAW);
+            const aCol = shaderManager.basicAttributes?.['color'] ?? gl.getAttribLocation(prog, 'a_color');
+            gl.enableVertexAttribArray(aCol); gl.vertexAttribPointer(aCol, 3, gl.FLOAT, false, 0, 0);
+            const wasBlend = gl.isEnabled(gl.BLEND); const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
+            gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+            gl.enable(gl.DEPTH_TEST);
+            gl.drawArrays(gl.LINES, 0, this.streakSeeds.length * 2);
+            gl.disableVertexAttribArray(aPos); gl.disableVertexAttribArray(aCol);
+            if (!wasBlend) gl.disable(gl.BLEND);
+            if (!wasDepth) gl.disable(gl.DEPTH_TEST);
+            gl.bindBuffer(gl.ARRAY_BUFFER, null); gl.deleteBuffer(vbo); gl.deleteBuffer(cbo);
+          }
         }
       } catch {}
     }

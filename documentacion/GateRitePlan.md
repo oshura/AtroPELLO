@@ -1,6 +1,6 @@
 # Gate Rite — Diseño y Plan de Implementación
 
-Última actualización: 2025-11-10 (post integración de viaje bidireccional y generación procedural extendida)
+Última actualización: 2025-11-12 (post pulido cinematográfico: eliminación plasma, ojo central, wrapper suave, travelling + streak gating, llegada a 1u/s)
 
 Este documento define el diseño funcional y técnico del nuevo rito “Gate Rite” y su integración completa con el motor, UI/Grimorio, animaciones y el ciclo de sistemas solares.
 
@@ -11,39 +11,37 @@ Este documento define el diseño funcional y técnico del nuevo rito “Gate Rit
 - Secuencia cinematográfica que destruye el planeta y materializa un portal (TargetType.PORTAL) persistente.
 - Teleporta la nave a un nuevo sistema solar generado proceduralmente.
 
-## Cambios confirmados / Decisiones
+## Cambios confirmados / Decisiones (estado actual)
 
-- El sigil/portal permanece: objeto persistente targeteable (TargetType.PORTAL), sin fade-out.
-- El planeta objetivo colapsado se reutiliza: su núcleo reducido se convierte en el Ojo central del símbolo arcano.
-- Eliminación real del planeta (catálogos, render, targeting) tras transferir su núcleo al Ojo.
-- El símbolo arcano consiste en: Pentagrama carmesí inscrito en círculo carmesí + Ojo central (esfera del núcleo) con iris/pupila flameante y venas.
-- Apertura de párpado: banda horizontal transparente que se expande (arcos superior/inferior) revelando iris y pupila.
-- Gaze tracking: el Ojo adquiere y sigue la nave (mirada estabilizada, retarget si distancia/angular > umbral).
-- Dos portales enlazados tras el primer salto: origen y destino (bidireccional), ambos con Ojo activo siguiendo la nave si está en su sistema.
-- Fase “bola de plasma”: la nave se convierte en esfera energética unos segundos tras tránsito y se realiza fundido a negro antes de reaparición.
-- Al reaparecer en nuevo sistema: nave con void energy recargada, localizada a ~1000u del portal destino, en reposo (velocidad 0). 
-- Snapshot previo (`SolarSystemSerializer`) antes del swap para preservar estado si se desea histórico.
-- Generación de nuevo sistema: expandir a 1–2 soles, rango de planetas, clusters adaptables, habitabilidad base 0% con probabilidad ajustable de excepcional (>30%).
-- Persistencia de enlaces de portales: metadata con IDs pares y estado.
-- Servicio unificado `SolarSystemService` para snapshot/apply/generate y registro de enlaces de portal.
+- Portal persistente targeteable (TargetType.PORTAL).
+- Ojo central DESACTIVADO/REMOVIDO (la fase ocular y tracking se posponen; el núcleo colapsado no genera ojo visible).
+- Eliminación real del planeta tras colapso (excluido del snapshot final de origen).
+- Símbolo arcano reducido a pentagrama + círculo carmesí (sin geometría ocular, sin párpados).
+- Eliminada completamente la fase “bola de plasma” (flujo simplificado).
+- Secuencia: travelling de cámara (3.5s) SIN streaks; solo tras completar travelling se activa aceleración y las líneas de velocidad.
+- Aceleración durante tránsito doblada (de +10u/s^2 a +20u/s^2) hasta el cruce del portal.
+- Cruce dispara fade inmediato (0.5s) y swap de sistema.
+- Llegada: nave reaparece a ~1000u y desacelera cinematográficamente hasta estabilizarse en ~1u/s (no se busca 0 absoluto) y solo entonces recarga Void Energy al 100%.
+- Void energy pausada durante todo el rito y hasta completar desaceleración de llegada.
+- Generación destino con restricciones: sin trail (disableTrail), nubes agrupadas (cloudGroupScale=0.1, grupos con 10–20 clusters + 1–3 mega asteroides), tamaños máximos para gigantes/gaseosos, nombres únicos no canónicos, paleta cromática heredada como `colorPaletteOverride`.
+- Anti-flash portal manifest: portal inicia con escala mínima y renderOpacity=0 progresando a visible.
+- Planet wrapper suavizado: parámetros graduales (alpha, reveal, thickness, microScale, distortion) evitando popping.
+- Arrival decel extendida (≈7.5s) calculando deceleración hacia 1u/s y recarga precisa cuando velocidad y magnitud de movimiento convergen.
 
-## Flujo de alto nivel
+## Flujo de alto nivel (versión vigente)
 
-1) Trigger (Grimorio): Seleccionar Gate Rite y castear.
-2) Validación: objetivo planeta a ≤ 50u de superficie. Si no, mock (2s) y abort.
-3) Pre-Focus (2s): bloquea inputs, cambia a cámara 0.
-4) Zoom-Out Planet Reveal (4s): encuadra planeta completo.
-5) Planet Wrapper (2s): efecto energía en superficie.
-6) Planet Collapse (5s): reducción a 0; eliminación real del planeta.
-7) Arcane Portal Emergence (10s total de fase):
-   - Portal (objeto persistente) aparece y crece hasta tamaño planetario, con ojo central que va mirando astros.
-  - Cámara orbita hasta 45° lateral; nave se orienta al portal.
-  - Símbolo arcano multi-anillos visible con glifos animados y blending aditivo.
-8) Gate Transit (3s): nave acelera a 1000u y cruza el portal.
-9) Post-Transit (2s): nave se muestra como bola de plasma; cámara fija rota para seguirla.
-10) Snapshot y System Swap: serializa estado (solo elementos persistentes) y genera sistema nuevo con portal destino emparejado.
-11) Cleanup y Restore: restablece límites de velocidad tras 5s de cooldown; inputs habilitados.
-12) Viaje runtime: posteriormente, atravesar cualquier portal activo vuelve a aplicar el snapshot del sistema enlazado (bidireccional) con un cooldown breve para evitar rebotes.
+1) Trigger (Grimorio): Seleccionar Gate Rite y castear (validación ≤50u a superficie).
+2) Pre-Focus (2s): cámara 0 y bloqueo de inputs.
+3) Camera Zoom-Out (zoom extendido ~7.5s total por factor ×3 sobre base 2.5s) encuadra el planeta.
+4) Planet Wrapper (2s): efectos de envolvente suaves.
+5) Planet Collapse (~15s por factor ×5 sobre base 3s): contracción a casi 0, fade y storm shell.
+6) Portal Manifest (10s): portal crece; ojo desactivado; nave reorientada al portal; sin órbita de cámara.
+7) Camera Reframe (~1.6s): posiciona cámara para travelling.
+8) Transit travelling (3.5s): cámara avanza a pose “cámara 0”; SIN streaks y SIN aceleración.
+9) Post-travelling acceleration: se activa aceleración doblada (+20u/s^2) y aparecen streaks; cuando distancia ≤ radio umbral se desencadena FadeSwitch.
+10) FadeSwitch (0.5s): cortinilla negra y generación/aplicación nuevo sistema (restricciones destino activas).
+11) ArrivalDecel (7.5s): rear view, desaceleración hacia 1u/s, recarga precisa de void energy al estabilizarse.
+12) Completed: inputs liberados; viaje runtime ulterior usa portales enlazados y cooldown.
 
 ## Integraciones y módulos
 
@@ -51,29 +49,11 @@ Este documento define el diseño funcional y técnico del nuevo rito “Gate Rit
 - KeyBindings: lanzar con tecla ‘h’ cuando Grimorio activo o usando selección persistente.
 - AnimationManagerService: nuevo `startGateRite(engine, planet)` y precarga de módulo `gate-rite.animation`.
 - GateRiteAnimation (nuevo archivo): state machine con fases y tiempos; controla cámara, nave, efectos y persistencia del Portal.
-### Portal (GameObject) — Especificación Revisada
+### Portal (GameObject) — Estado actual reducido
 
-Estado actual: implementación mínima (disco plano). Falta geometría compuesta, símbolo arcano y shaders dedicados.
-
-Objetivos de implementación (símbolo arcano con Ojo):
-- Simbología: Pentagrama carmesí inscrito en círculo carmesí (referencia: cursor del Grimorio) + Ojo central.
-- Núcleo/Ojo: la esfera final del planeta colapsado (núcleo) se reutiliza como ojo central.
-- Párpados: apertura horizontal por transparencia progresiva (banda ecuatorial que se expande), formando arcos superior/inferior.
-- Iris/Pupila: círculos concéntricos en la textura del ojo; pupila con fuego animado (shader o flipbook), iris con rampas radiales.
-- Venas: esfera interna ligeramente menor (≈ x% más pequeña) con textura fija generada proceduralmente (colores carmesí sobre base blanco-amarillento), capturada del algoritmo del core.
-- Geometría compuesta: círculo exterior (anillo), estrella de cinco puntas (malla), plano portal central, glifos sutiles sobre el anillo.
-- Shaders/pases:
-  - Pase Pentagrama + círculo: material carmesí emissive con suavizado en bordes y leve distorsión.
-  - Pase Ojo: material con capas (esclera/venas, iris, pupila llama, párpado alfa animado) y normales sutiles.
-  - Pase glifos: additive con alpha threshold y pulso.
-  - Uniformes: `u_time`, `u_openProgress`, `u_intensity`, `u_eyeDir` (vector 3D de mirada), `u_seed`, `u_eyelidAlpha`, `u_pupilFlamePhase`.
-- Estados: Manifest (apertura + escalado), GazeAcquire (apunta a nave), Track (sigue a la nave con suavizado), TransitPulse (pulso al cruce), Cooldown (emisión decreciente), Idle.
-- Targeting: boundingSphere = radio portal final; categoría PORTAL; visible en HUD/outliner.
-- Futuro: enlaces a otro portal (bidireccional), múltiples destinos, toggles de activación.
-- PlanetWrapperEffect: reutiliza/extrae algoritmo del núcleo de la Tierra.
-- Solar System Snapshot/Generator:
-  - `ISolarSystemSnapshot`: planetas, soles, asteroides, naves, clusters y estados.
-  - `SolarSystemGenerator`: crea sistemas procedurales con reglas (1–2 soles, planetas aleatorios, clusters nube, habitabilidad 0% salvo 5% >30%).
+- Representación: Pentagrama + círculo escalando durante manifest; sin ojo, sin párpados, sin gaze tracking.
+- Anti-flash: inicialización con escala pequeña y `renderOpacity=0` para evitar frame de tamaño final.
+- Futuro (para reintroducir): Ojo, párpados, iris/pupila animados, glifos aditivos adicionales.
 
 ## Contratos mínimos
 
@@ -100,18 +80,18 @@ interface GenerationOptions {
 }
 ```
 
-## Timeline y detalles técnicos
+## Timeline y detalles técnicos (parametrización vigente)
 
 - Fase 0 (0–2s): bloqueo de inputs; cámara 0; preparar referencias; leve “pulse” del planeta.
 - Fase 1 (2–6s): cámara se aleja para encuadre completo (calcular distancia: ajustar para que R proyectado ocupe ≤45% de alto). Easing: easeOutCubic.
   - Implementación actual: 2.5s de zoom con framing heurístico (distancia = max(distActual, 4×radio + 40u)). Bloquea inputs durante la fase.
 - Fase 2 (6–8s): activar wrapper (alpha 0→0.6), jitter de cámara sutil.
-- Fase 3 (8–13s): escala planeta 1→0, partículas outward; al final: eliminar objeto planeta de la escena y de catálogos/servicios.
-- Fase 4 (13–23s): instanciar Portal; escalar 0→R_planeta (el símbolo crece, el ojo mantiene escala); pentagrama+círculo opacos; ojo clon del planeta.
+- Fase 3 (extendida ~15s): escala planeta 1→≈0.00001 con easing; fade de renderOpacity; storm shell paramétrico; eliminación del planeta al final (excluido de snapshot origin).
+- Fase 4 (13–23s): instanciar Portal; escalar 0→R_planeta; ojo desactivado; pentagrama+círculo con rampa de opacity.
 - Cámara Fase 4: órbita limitada a ~45° y pitch +15°; la nave no se desplaza (solo reorientada al portal).
- - Fase 5 (23–26s): Tránsito. El Ojo fija la mirada en la nave; la nave atraviesa el portal.
- - Fase 6 (26–28s): Bola de plasma (~2–3s). Al salir por la otra cara del portal (en el sistema destino) la nave se muestra como esfera energética; fade to black en la segunda mitad.
- - Fase 7: System Swap y reaparición. Se aplica el snapshot generado con portal destino emparejado; la nave aparece a ~1000u del portal destino, orientada a mirarlo. Se retiran fades y se reanuda el control.
+ - Fase 5 (23–26.5s): Travelling de cámara hacia pose tipo cámara 0; sin streaks ni aceleración.
+- Fase 6 (post-travelling): Aceleración doblada (+20u/s^2) + streaks; cruce → fade (0.5s) → System Swap.
+- Fase 7: Reaparición a ~1000u + rear view y frenada hasta ~1u/s estable; recarga void energy al alcanzar estabilidad (speed y |velocity| ≈1u/s); luego control libre.
 
 ## Datos y serialización (revisión)
 
@@ -191,7 +171,7 @@ Al realizar el swap:
 - [x] 3. Colapso + borrado real del planeta (pendiente partículas outward)
 - [x] 4. Símbolo Arcano + Ojo básico (pentagrama + círculo + reutilización núcleo planeta + párpado + blink)
 - [x] 5. Gaze tracking + cámara órbita limitada 45°
-- [x] 6. Tránsito + bola de plasma + fade
+- [x] 6. Tránsito + fade directo (sin fase de plasma)
 - [x] 7. Portal pairing + System Swap + bidireccionalidad básica
 - [x] 8. SolarSystemService + generador ampliado (variedad: soles opcionales, planetas 5–13, nubes de asteroides y trail)
 - [x] 9. Persistencia avanzada (PortalSnapshot con `linkedPortalId`, snapshots origen/destino) + travel runtime
@@ -230,8 +210,7 @@ El símbolo arcano final estará compuesto por:
 - [x] Blink + smoothing de mirada.
 - [x] Aplicación de snapshot nuevo al finalizar tránsito con portal destino emparejado.
 - [x] Nave reubicada a ~1000u del portal destino y cámara encuadrando.
-- [x] Fade-to-black durante fase de plasma.
-- [ ] Pulir “plasma ball” (shader/efecto dedicado) y añadir desaturación.
+- [x] Fade-to-black tras cruce (sin fase de plasma).
 
 ### Viaje bidireccional (Runtime Portal Traversal)
 
@@ -243,10 +222,9 @@ Implementado un manejador en `GameEngine` que cada frame:
 5. Aplica un cooldown de 3s (`portalTraversalCooldownSec`) para evitar rebote inmediato.
 
 Limitaciones actuales / TODO:
-- Falta interpolar fade (se hace fade instantáneo a negro y regreso). Mejorar con rampa 200–300ms.
 - Eje +Z fijo para spawn: ajustar según normal local futura del portal.
-- HUD: no se muestra aún un indicador de “Portal Linked / Cooldown”.
-- No se serializa `voidEnergy` ni estado transitorio de la nave (solo su nueva colocación tras swap).
+- No se serializa `voidEnergy` (se fuerza refill en la secuencia del rito) ni estado transitorio de la nave, sólo colocación y desaceleración.
+- Ojo y gaze tracking pendientes de reinstauración.
 
 ### Política de exclusión del planeta colapsado
 
@@ -255,26 +233,28 @@ El snapshot `gate-origin-linked-*` NO debe incluir el planeta original colapsado
 - Asegurar que la persistencia reutiliza el snapshot modificado (sin planeta) y no uno previo.
 - Confirmar que al volver se aplica el snapshot correcto (log de `applySolarSystemSnapshot` + conteo de planetas esperado).
 
-### Variedad procedural añadida
+### Variedad procedural (versión actual destino Gate Rite)
 - Sistemas ahora pueden tener 1–2 soles (25% binario por defecto si no se fuerza).
 - Planetas: 5–13, tipos variados (Rocky, Terrestrial, Giant, Ringed, Gaseous, Dwarf, Protoplanet) con radios por rango.
 - Órbitas multi-plano con normales perturbadas y ejes principales aleatorios.
-- Clusters: trail anclado a una órbita + nubes (“clouds”) dispersas de asteroides con derivas suaves.
+- Clusters: trail deshabilitado (disableTrail); clouds agrupadas (cada grupo 10–20 clusters + 1–3 mega) en elipse 300×500u escalada globalmente por `cloudGroupScale=0.1`; todos estáticos (staticClouds).
 - Nombres híbridos: mezcla de catálogo (Kepler/TRAPPIST/Gliese…) y generador silábico (Ka/Lo/Xe + rin/dus/mos…).
 - Vida: probabilidad base 8% para planetas “excepcionales” (≥30% life), resto escalado por tipo.
 
 ### Cooldowns relevantes
-- Gate Rite (animación): bloqueo completo de inputs hasta fase final (PlasmaBall completa).
+- Gate Rite: bloqueo inputs durante todas las fases hasta `Completed`.
 - Portal traversal runtime: 3s tras cruce exitoso.
-- Blink ocular: 2.5–6.5s aleatorio.
+- (Blink ocular suspendido mientras ojo desactivado.)
 
 ---
 Notas añadidas tras integración bidireccional y clouds.
 
-## Próximos pasos inmediatos
-1. Pulir “plasma ball” con shader dedicado y opcional motion blur/FOV.
-2. Persistir `eyeState` completo y reforzar HUD de estado de portal (ready/linked/countdown).
-3. Documentar timings definitivos y añadir capturas.
+## Próximos pasos inmediatos (refinamientos menores)
+1. Reintroducir ojo + tracking con gating opcional y sin flash.
+2. FX adicionales de colapso (partículas outward, distorsión de campo).
+3. Shader dedicado para streak con aberración cromática leve.
+4. Ajustar spawn orientation según normal real del portal destino (no eje +Z fijo).
+5. Balancear generación destino (variedad de paleta vs. override heredado).
 
 ---
 

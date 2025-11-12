@@ -87,4 +87,14 @@ export interface GenerationOptions {
   lifeChancePct?: number; // probability of planets with >30% habitability
   maxOrbitSemiMajor?: number;
   minOrbitSpacingPct?: number; // minimal spacing between orbits
+  // New extended options for refined generation control
+  disableTrail?: boolean; // true => no asteroid trail clusters
+  minClouds?: number; // ensure at least this many cloud clusters
+  staticClouds?: boolean; // clouds have speed=0 & direction=(0,0,0)
+  cloudSuperPct?: number; // probability (0..1) each cloud includes super asteroids
+  allowCanonicalNames?: boolean; // false => avoid canonical planet names entirely
+  maxGiantRadius?: number; // hard cap for any giant/gaseous/ringed planet radius
+  colorPaletteOverride?: string[]; // allowed baseColorName palette for planets
+  // New: scale number of cloud GROUPS relative to default (e.g., 0.1 -> one tenth)
+  cloudGroupScale?: number;
 }

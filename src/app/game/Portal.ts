@@ -89,8 +89,15 @@ export class Portal extends GameObject implements ITargetable {
   const starR = 1.0; // radio relativo dentro del disco unitario (circunscrito)
     const starPoints: Array<[number, number]> = [];
     for (let i = 0; i < 5; i++) {
-      const ang = (-Math.PI / 2) + i * 2 * Math.PI / 5;
-      starPoints.push([Math.cos(ang) * starR, Math.sin(ang) * starR]);
+      // Pentagrama: una punta hacia arriba. Ajuste de espejado corregido.
+      // Nota: visualmente se observaba un espejo lateral (izq↔der) porque el plano del portal
+      // está orientado de forma que el eje X del espacio local corresponde al vertical en pantalla.
+      // Para lograr un espejo verdaderamente vertical (arriba↔abajo) en la proyección final,
+      // debemos invertir el eje X en lugar del Y en el espacio local.
+      const ang = (-Math.PI / 2) + i * 2 * Math.PI / 5; // mantiene una punta arriba
+      const x = -Math.cos(ang) * starR; // invertir X para espejo vertical percibido
+      const y = Math.sin(ang) * starR;  // mantener Y sin invertir
+      starPoints.push([x, y]);
     }
     const starOrder = [0, 2, 4, 1, 3, 0];
     const starVerts: number[] = [];
@@ -188,30 +195,10 @@ export class Portal extends GameObject implements ITargetable {
     }
     // Crear geometría del ojo (esfera low-poly) si no existe
     if (this._eyeEnabled && !this._eyeVBO) {
-      const latBands = 12, lonBands = 12;
-      const verts: number[] = []; const norms: number[] = []; const idx: number[] = [];
-      for (let lat=0; lat<=latBands; lat++) {
-        const theta = (lat * Math.PI) / latBands; const sinT = Math.sin(theta); const cosT = Math.cos(theta);
-        for (let lon=0; lon<=lonBands; lon++) {
-          const phi = (lon * 2 * Math.PI) / lonBands; const sinP = Math.sin(phi); const cosP = Math.cos(phi);
-          const x = cosP * sinT; const y = cosT; const z = sinP * sinT;
-          verts.push(x, y, z); norms.push(x, y, z);
-        }
-      }
-      for (let lat=0; lat<latBands; lat++) {
-        for (let lon=0; lon<lonBands; lon++) {
-          const first = lat * (lonBands + 1) + lon;
-          const second = first + lonBands + 1;
-          idx.push(first, second, first + 1, second, second + 1, first + 1);
-        }
-      }
-      this._eyeVertices = new Float32Array(verts);
-      this._eyeNormals = new Float32Array(norms);
-      this._eyeIndices = new Uint16Array(idx);
-      // Buffers
-      this._eyeVBO = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this._eyeVBO); gl.bufferData(gl.ARRAY_BUFFER, this._eyeVertices, gl.STATIC_DRAW);
-      this._eyeNBO = gl.createBuffer(); gl.bindBuffer(gl.ARRAY_BUFFER, this._eyeNBO); gl.bufferData(gl.ARRAY_BUFFER, this._eyeNormals, gl.STATIC_DRAW);
-      this._eyeIBO = gl.createBuffer(); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._eyeIBO); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, this._eyeIndices, gl.STATIC_DRAW);
+      // Ojo deshabilitado: reservar espacio vacío (sin geometría) para evitar condicionales en render futuro
+      this._eyeVertices = new Float32Array();
+      this._eyeNormals = new Float32Array();
+      this._eyeIndices = new Uint16Array();
     }
 
     // Crear quad para llama en pupila si no existe

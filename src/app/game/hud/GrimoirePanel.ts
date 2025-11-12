@@ -111,6 +111,13 @@ export class GrimoirePanel {
       }
     });
   }
+  /** Clear any current selection completely (external casting can call this). */
+  public clearSelection(): void {
+    this.selectedSpell = null;
+    (['speed','longjump','gaterite'] as const).forEach(k => {
+      if (this.spellStates[k] !== 'locked') this.spellStates[k] = 'available';
+    });
+  }
   public setSpellState(t: 'speed'|'longjump'|'gaterite', state: 'locked'|'available'|'equipped'): void {
     this.spellStates[t] = state;
     if (state !== 'equipped' && this.selectedSpell === t) this.selectedSpell = null;

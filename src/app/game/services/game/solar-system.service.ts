@@ -102,7 +102,7 @@ export class SolarSystemService {
     for (const p of snapshot.planets) {
       try {
         const kind = String(p.kind || '').toLowerCase();
-        const color: any = pickColor(kind);
+        const color: any = p.baseColorName || pickColor(kind);
         const pos = { ...p.position };
         const radius = p.radius;
         let obj: Planet;
