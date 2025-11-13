@@ -542,7 +542,7 @@ export class SolarSystemPanel {
         const prettyKey = (k: string) => k.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
         const prettyVal = (v: any) => (typeof v === 'number') ? (Number.isFinite(v) ? v.toFixed(2) : String(v)) : (Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v)));
         const pushDetail = (text: string) => { if (text && detailLines.length < 12) detailLines.push(text); };
-        const albedo = d['albedo']; if (typeof albedo === 'number') pushDetail(`Albedo(Refl.): ${Math.max(0, Math.min(100, Math.round(albedo * 100)))}%`);
+        // Albedo eliminado: no mostrar
         const hpPct = ((): number | null => {
           if (typeof d['healthPct'] === 'number') return Math.max(0, Math.min(100, Math.round(d['healthPct'])));
           const hc = typeof d['healthCurrent'] === 'number' ? d['healthCurrent'] as number : NaN;
@@ -563,7 +563,7 @@ export class SolarSystemPanel {
         // Generic remaining keys (skip internal ones and already shown)
         for (const [k, v] of Object.entries(d)) {
           const lk = k.toLowerCase();
-          if (lk === 'albedo' || lk === 'healthpct' || lk === 'healthcurrent' || lk === 'healthmax' || lk === 'volumemu' || lk === 'volumegu' || lk === 'voidmassunits' || lk === 'probabilityoflifepct' || lk === 'previewstatus' || lk === 'type' || lk === 'name') continue;
+          if (lk === 'healthpct' || lk === 'healthcurrent' || lk === 'healthmax' || lk === 'volumemu' || lk === 'volumegu' || lk === 'voidmassunits' || lk === 'probabilityoflifepct' || lk === 'previewstatus' || lk === 'type' || lk === 'name') continue; // albedo removido
           pushDetail(`${prettyKey(k)}: ${prettyVal(v)}`);
         }
 

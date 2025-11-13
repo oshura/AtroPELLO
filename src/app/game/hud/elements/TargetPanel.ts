@@ -188,12 +188,7 @@ export class TargetPanel {
     let voidMassLine: string | null = null;
     for (const [key, value] of Object.entries(details)) {
       if (key === 'previewStatus' || key === 'type' || key === 'name') continue; // ocultar internos y evitar duplicar nombre
-      // Renombrar 'albedo' a 'Albedo(Refl.)' y mostrar en %
-      if (key.toLowerCase() === 'albedo') {
-        const pct = Math.max(0, Math.min(100, Math.round(Number(value) * 100)));
-        lines.push(`Albedo(Refl.): ${pct}%`);
-        continue;
-      }
+      // Albedo eliminado: no procesar
       // Mostrar salud como porcentaje si viene explícita
       if (key === 'healthPct') {
         const pct = Math.max(0, Math.min(100, Math.round(Number(value))));

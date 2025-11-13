@@ -842,6 +842,15 @@ export class GateRiteAnimation implements GameAnimation {
             }
           } catch {}
           if (ship._gateRiteOriginalDecel !== undefined) { ship.deceleration = ship._gateRiteOriginalDecel; delete ship._gateRiteOriginalDecel; }
+          // Clear any lingering speed input flags (avoid phantom brake after rite)
+          try {
+            if (ship.controls) {
+              ship.controls.speedDown = false;
+              ship.controls.speedUp = false; // release accelerate to let player re-engage cleanly
+            }
+          } catch {}
+          // If targetSpeed was anchored low (e.g., 1), sync to currentSpeed to prevent immediate forced decel
+          try { if (ship.targetSpeed < ship.currentSpeed) ship.targetSpeed = ship.currentSpeed; } catch {}
           this.phase = GateRitePhase.Completed;
           this.finished = true;
           return;

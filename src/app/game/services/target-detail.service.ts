@@ -4,7 +4,7 @@ import { ITargetable, TargetType } from '../types/targeting.types';
 export interface AsteroidInfo {
   composition: 'iron' | 'silicate' | 'carbonaceous' | 'nickel' | 'mixed';
   massTons?: number;
-  albedo?: number;
+  // albedo eliminado
 }
 
 export interface ShipInfo {
@@ -35,7 +35,6 @@ export class TargetDetailService {
           type: TargetType.ASTEROID,
           data: {
             composition: (target as any).composition ?? 'mixed',
-            albedo: (target as any).albedo ?? Number((0.4 + Math.random() * 0.2).toFixed(2)),
             massTons: (target as any).massTons ?? (50 + Math.floor(Math.random() * 101)),
           }
         };
@@ -44,7 +43,6 @@ export class TargetDetailService {
           type: TargetType.ASTEROID,
           data: {
             composition: (target as any).composition ?? 'mixed',
-            albedo: (target as any).albedo ?? Number((0.35 + Math.random() * 0.25).toFixed(2)),
             massTons: (target as any).massTons ?? (1500 + Math.floor(Math.random() * 2501)),
           }
         } as any;
@@ -54,7 +52,6 @@ export class TargetDetailService {
           type: TargetType.ASTEROID,
           data: {
             composition: (target as any).composition ?? 'mixed',
-            albedo: (target as any).albedo ?? Number((0.4 + Math.random() * 0.2).toFixed(2)),
             massTons: (target as any).massTons ?? (500 + Math.floor(Math.random() * 501)),
           }
         };

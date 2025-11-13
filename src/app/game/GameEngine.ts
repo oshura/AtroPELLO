@@ -1204,7 +1204,7 @@ export class GameEngine {
             // Alinear propiedades físicas con asteroides de cluster
             const compositions = ['iron','silicate','carbonaceous','nickel','mixed'] as const;
             (a as any).composition = compositions[Math.floor(Math.random()*compositions.length)];
-            (a as any).albedo = Number((0.4 + Math.random() * 0.2).toFixed(2)); // 0.40..0.60
+            // Albedo eliminado del modelo: no asignar
             (a as any).massTons = 50 + Math.floor(Math.random() * 101); // 50..150
             // Void mass 2..5u igual que los asteroides normales
             (a as any).voidMassUnits = 2 + Math.floor(Math.random() * 4);
@@ -1788,7 +1788,7 @@ export class GameEngine {
         // No sobreescribir composición/albedo/mass si ya vienen fijados por la factoría
         const data: any = res.data as any;
         data.composition = data.composition ?? (target as any).composition ?? 'mixed';
-        data.albedo = data.albedo ?? (target as any).albedo ?? Number((0.4 + Math.random() * 0.2).toFixed(2));
+        // Albedo eliminado: no incluir en detalles
         data.massTons = data.massTons ?? (target as any).massTons ?? (50 + Math.floor(Math.random() * 101));
         // Incluir masa del vacío si el target la expone
         data.voidMassUnits = (target as any).voidMassUnits ?? 0;
@@ -1837,7 +1837,7 @@ export class GameEngine {
 
   private getFallbackDetails(target: ITargetable) {
     if (target.getTargetType() === TargetType.ASTEROID) {
-      return { composition: 'basalt', albedo: 0.3, massTons: 1200 };
+      return { composition: 'basalt', massTons: 1200 };
     }
     if (target.getTargetType() === TargetType.PLANET) {
       const p: any = target as any;
