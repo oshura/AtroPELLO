@@ -117,6 +117,8 @@ export class GameEngine {
   // Runtime portal traversal state
   private portalTraversalCooldownSec: number = 0; // prevents rapid re-entry
   private portalPrevDistances: Map<string, number> = new Map();
+  // Previous ship position (for segment-plane intersection tests)
+  private lastShipPos: { x: number; y: number; z: number } | null = null;
 
   // Landing minigame removed
   
@@ -203,9 +205,10 @@ export class GameEngine {
   }
 
   /**
-   * Detect crossing into an active portal and traverse to its linked destination system.
-   * Simple criterion: when ship distance to portal center crosses below portal.radius and
-   * a linkedPortalId is set, swap to the snapshot containing the destination portal.
+   * Detect crossing through the pentacle plane of an active portal (not its sphere) and
+   * traverse to its linked destination system. We test segment-plane intersection between
+   * lastShipPos→currentShipPos and the portal's local plane, then check if the hit point
+   * lies within the portal disk (radius R).
    */
   private handlePortalTraversal(deltaTime: number): void {
     try {
@@ -215,17 +218,41 @@ export class GameEngine {
       }
       if (!this.portals || this.portals.length === 0) return;
       const shipPos = this.spaceship.position;
+      const prevShip = this.lastShipPos || { ...shipPos };
+      // Portal pentacle is modeled in portal local XY plane; with no dynamic rotation applied,
+      // its world-space normal points along +Z. If rotation is introduced later, adapt this
+      // to extract the rotated Z axis from portal.modelMatrix.
+      const planeNormal = { x: 0, y: 0, z: 1 };
+      const vx = shipPos.x - prevShip.x;
+      const vy = shipPos.y - prevShip.y;
+      const vz = shipPos.z - prevShip.z;
+      const denomBase = vx * planeNormal.x + vy * planeNormal.y + vz * planeNormal.z;
       for (const portal of this.portals) {
-        const dx = shipPos.x - portal.position.x;
-        const dy = shipPos.y - portal.position.y;
-        const dz = shipPos.z - portal.position.z;
-        const dist = Math.hypot(dx, dy, dz);
-        const prev = this.portalPrevDistances.get(portal.id) ?? Infinity;
-        this.portalPrevDistances.set(portal.id, dist);
-        // Entering transition: previously outside, now within portal radius
+        // Segment-plane intersection (plane through portal.position with normal +Z)
+        const C = portal.position;
+        const n = planeNormal;
+        const d0 = (prevShip.x - C.x) * n.x + (prevShip.y - C.y) * n.y + (prevShip.z - C.z) * n.z;
+        const d1 = (shipPos.x - C.x) * n.x + (shipPos.y - C.y) * n.y + (shipPos.z - C.z) * n.z;
+        // Store latest signed distance for debug/reference (repurpose map)
+        this.portalPrevDistances.set(portal.id, d1);
+        const denom = denomBase; // same for all portals given fixed n
+        // Crossed the plane this frame?
+        const crossedPlane = (denom !== 0) && ((d0 === 0) || (d1 === 0) || (d0 < 0 && d1 > 0) || (d0 > 0 && d1 < 0));
+        if (!crossedPlane) continue;
+        // Intersection point along the segment
+        const t = d0 / (d0 - d1);
+        if (t < 0 || t > 1) continue;
+        const ix = prevShip.x + (shipPos.x - prevShip.x) * t;
+        const iy = prevShip.y + (shipPos.y - prevShip.y) * t;
+        const iz = prevShip.z + (shipPos.z - prevShip.z) * t; // should be ~C.z if plane is z=C.z
+        // Must lie within the portal disk radius in-plane
         const R = Math.max(1, portal.radius || (portal as any)?.boundingSphere?.radius || 200);
-        const entering = prev > R && dist <= R;
-        if (!entering) continue;
+        const rx = ix - C.x;
+        const ry = iy - C.y;
+        const rz = iz - C.z; // should be ~0 on the plane
+        const radial = Math.hypot(rx, ry); // in-plane distance (XY for n=+Z)
+        if (radial > R) continue;
+        // Also respect traversal cooldown
         if (this.portalTraversalCooldownSec > 0) continue;
         // Must have a link
         const destId = portal.linkedPortalId;
@@ -265,6 +292,8 @@ export class GameEngine {
         this.portalTraversalCooldownSec = 3.0;
         // Reset previous distances to avoid mis-detection in the new system
         this.portalPrevDistances.clear();
+        // Reset lastShipPos so next frame starts clean at new location
+        this.lastShipPos = { ...this.spaceship.position };
         // Only process one portal per frame
         break;
       }
@@ -1168,6 +1197,8 @@ export class GameEngine {
   // Tick del HUD para transiciones (fade-in/out)
   try { if (this.hudManager && (this.hudManager as any).tick) (this.hudManager as any).tick(deltaTime); } catch {}
 
+  // Capture ship position before integration for portal plane crossing tests
+  try { this.lastShipPos = { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }; } catch {}
   this.spaceship.update(deltaTime);
 
     // ============================
