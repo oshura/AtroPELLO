@@ -101,6 +101,10 @@ export class GameEngine {
   // Objetos del juego
   private spaceship!: Spaceship;
   private asteroids: Asteroid[] = [];
+  // Asteroides efímeros (spawn aleatorio cerca de la nave)
+  private ephemeralAsteroids: Asteroid[] = [];
+  private ephemeralSpawnCounter: number = 0;
+  private nextEphemeralCheckMs: number = 0; // próxima comprobación de spawn (cada 10s)
   private superAsteroids: SuperAsteroid[] = [];
   private planets: Planet[] = [];
   // Persistent portals (created by Gate Rite); survive system transitions
@@ -1165,6 +1169,71 @@ export class GameEngine {
 
   this.spaceship.update(deltaTime);
 
+    // ============================
+    // Spawn y mantenimiento de asteroides efímeros
+    // ============================
+    try {
+      const nowMs = performance.now();
+      if (nowMs >= this.nextEphemeralCheckMs) {
+        this.nextEphemeralCheckMs = nowMs + 10000; // siguiente ventana en 10s
+        // 5% de probabilidad de aparición
+        if (Math.random() < 0.05 && this.spaceship) {
+          const toSpawn = 1 + Math.floor(Math.random() * 3); // 1..3
+          for (let i=0;i<toSpawn;i++) {
+            // Dirección aleatoria sobre esfera
+            let dx = (Math.random() - 0.5) * 2;
+            let dy = (Math.random() - 0.5) * 2;
+            let dz = (Math.random() - 0.5) * 2;
+            const len = Math.hypot(dx,dy,dz) || 1; dx/=len; dy/=len; dz/=len;
+            // Posición a 500u de la nave
+            const spawnPos = {
+              x: this.spaceship.position.x + dx * 500,
+              y: this.spaceship.position.y + dy * 500,
+              z: this.spaceship.position.z + dz * 500,
+            };
+            // Dirección del asteroide orientada a pasar cerca de la nave (apuntar hacia posición actual de la nave)
+            const dirToShip = { x: -dx, y: -dy, z: -dz }; // apunta de spawnPos hacia la nave
+            const dirLen = Math.hypot(dirToShip.x, dirToShip.y, dirToShip.z) || 1;
+            dirToShip.x/=dirLen; dirToShip.y/=dirLen; dirToShip.z/=dirLen;
+            const id = `temp-ast-${this.ephemeralSpawnCounter++}`;
+            const size = 0.6 + Math.random()*0.9; // 0.6..1.5
+            const a = new Asteroid(id, spawnPos, size, dirToShip);
+            // Marcar como temporal para filtros futuros (flag opcional)
+            (a as any).isEphemeral = true;
+            // Alinear propiedades físicas con asteroides de cluster
+            const compositions = ['iron','silicate','carbonaceous','nickel','mixed'] as const;
+            (a as any).composition = compositions[Math.floor(Math.random()*compositions.length)];
+            (a as any).albedo = Number((0.4 + Math.random() * 0.2).toFixed(2)); // 0.40..0.60
+            (a as any).massTons = 50 + Math.floor(Math.random() * 101); // 50..150
+            // Void mass 2..5u igual que los asteroides normales
+            (a as any).voidMassUnits = 2 + Math.floor(Math.random() * 4);
+            this.ephemeralAsteroids.push(a);
+            // Inicializar buffers si GL listo
+            try { if (this.gl && !a.vertexBuffer) a.initBuffers(this.gl); } catch {}
+          }
+        }
+      }
+      // Actualizar y filtrar asteroides efímeros
+      if (this.spaceship && this.ephemeralAsteroids.length) {
+        const shipPos = this.spaceship.position;
+        const updated: Asteroid[] = [];
+        for (const a of this.ephemeralAsteroids) {
+          try { a.update(deltaTime); } catch {}
+          const dx = a.position.x - shipPos.x;
+          const dy = a.position.y - shipPos.y;
+          const dz = a.position.z - shipPos.z;
+          const dist = Math.hypot(dx,dy,dz);
+          if (dist <= 1000) {
+            updated.push(a);
+          } else {
+            // Liberar recursos gráficos al eliminar
+            try { if (this.gl && a.vertexBuffer) this.gl.deleteBuffer(a.vertexBuffer); } catch {}
+          }
+        }
+        this.ephemeralAsteroids = updated;
+      }
+    } catch {}
+
     // Runtime portal traversal (outside Gate Rite cinematic)
     this.handlePortalTraversal(deltaTime);
 
@@ -1429,6 +1498,25 @@ export class GameEngine {
 
     // Actualizar sistema de targeting con objetos disponibles (catálogo genérico)
   let availableTargets = this.targetCatalog.getAllTargets();
+  // Incluir asteroides efímeros como targets adicionales (tipo ASTEROID)
+  try {
+    if (this.ephemeralAsteroids.length) {
+      const ephemeralsActive = this.ephemeralAsteroids.filter(a => a.isActive && a.isActive());
+      if (ephemeralsActive.length) {
+        // Registrar en catálogo si no están ya
+        const existing = this.targetCatalog.getByType(TargetType.ASTEROID).map(t => t.id);
+        const toAdd = ephemeralsActive.filter(a => !existing.includes(a.id));
+        if (toAdd.length) {
+          const merged = [...this.targetCatalog.getByType(TargetType.ASTEROID), ...toAdd];
+          this.targetCatalog.register(TargetType.ASTEROID, merged as ITargetable[]);
+        }
+      }
+      // Añadir a lista de disponibles sin duplicar
+      for (const a of ephemeralsActive) {
+        if (!availableTargets.some(t => t.id === a.id)) availableTargets.push(a as ITargetable);
+      }
+    }
+  } catch {}
   // Excluir completamente los clusters (proxies y miembros) si su centro está a >20,000u de la nave
   try {
     const farClusterIds = new Set<string>();
@@ -1660,6 +1748,33 @@ export class GameEngine {
     }
     // Landing mechanic removed
   // Landing windows cleanup call removed
+  }
+
+  // Ensure display-friendly properties exist synchronously to avoid one-frame stale labels
+  private prepareDisplayPropsForTarget(target: ITargetable): void {
+    try {
+      const tt = target.getTargetType?.();
+      if (tt === TargetType.PLANET) {
+        const p: any = target as any;
+        if (!(typeof p.voidMassUnits === 'number' && isFinite(p.voidMassUnits) && p.voidMassUnits > 0)) {
+          p.voidMassUnits = 2000 + Math.floor(Math.random() * 3001);
+        }
+        if (!p.customName) {
+          p.customName = this.generatePlanetName();
+        }
+        if (p && p.scale && typeof p.scale.x === 'number' && p.scale.x > 0 && (typeof p.volumeMu !== 'number' || !isFinite(p.volumeMu))) {
+          const r = Number(p.scale.x);
+          const vol = (4.0 / 3.0) * Math.PI * Math.pow(r, 3);
+          p.volumeMu = Number((vol / 1e6).toFixed(2));
+        }
+      } else if (tt && String(tt).toLowerCase().includes('asteroid')) {
+        const a: any = target as any;
+        if (!(typeof a.voidMassUnits === 'number' && isFinite(a.voidMassUnits) && a.voidMassUnits > 0)) {
+          // Align with normal asteroid 2–5u by default
+          a.voidMassUnits = 2 + Math.floor(Math.random() * 4);
+        }
+      }
+    } catch {}
   }
 
   private async fetchAndCacheTargetDetails(target: ITargetable) {
@@ -1931,6 +2046,12 @@ export class GameEngine {
           }
         }
       });
+      // Append ephemeral asteroids (always smalls)
+      if (this.ephemeralAsteroids.length) {
+        for (const a of this.ephemeralAsteroids) {
+          smalls.push(a);
+        }
+      }
       this.instancedRenderer.renderBatches(
         smalls,
         supers,
@@ -1987,6 +2108,13 @@ export class GameEngine {
           }
         }
       });
+      // Render ephemeral asteroids in non-instanced path
+      if (this.ephemeralAsteroids.length) {
+        for (const a of this.ephemeralAsteroids) {
+          this.shaderManager.setLitOpacity(1.0);
+          this.renderObject(a);
+        }
+      }
     }
 
   // Renderizar planetas después de asteroides
@@ -2065,6 +2193,13 @@ export class GameEngine {
           this.mapIdToTarget.set(d.obj.id, d.obj as unknown as ITargetable);
         }
       }
+        // Ephemeral asteroids también se muestran como 'debris' (temporales)
+        if (this.ephemeralAsteroids.length) {
+          for (const ea of this.ephemeralAsteroids) {
+            debris.push({ id: ea.id, pos: { x: ea.position.x, y: ea.position.y, z: ea.position.z }, label: ea.getDisplayName?.() || ea.id });
+            this.mapIdToTarget.set(ea.id, ea as unknown as ITargetable);
+          }
+        }
       const ship = this.spaceship ? { pos: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }, label: 'Ship' } : undefined;
       if (this.spaceship) {
         // Allow selecting the player's ship as an ally from the map

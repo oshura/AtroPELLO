@@ -463,6 +463,56 @@ export class SolarSystemPanel {
     c.lineWidth = 2; c.strokeRect(1, 1, W - 2, H - 2);
     c.restore();
 
+    // 5.b) Scale bar (bottom-right). Prefers 1000u at initial zoom if it fits; adapts with zoom.
+    try {
+      const s = this.fitScale * this.zoomScale; // pixels per world unit
+      const pad = 12;
+      const minPx = 80, maxPx = 180;
+      const prefer = 1000; // prefer at initial zoom if feasible
+      let dist = prefer;
+      const pxPrefer = prefer * s;
+      const niceList: number[] = [];
+      // Build nice sequence 1,2,5 * 10^k from 0.01..100000
+      for (let k = -2; k <= 5; k++) {
+        const base = Math.pow(10, k);
+        niceList.push(1 * base, 2 * base, 5 * base);
+      }
+      // Choose distance: try prefer first if within bounds; otherwise closest nice within bounds, else closest overall
+      const within = (px: number) => px >= minPx && px <= maxPx;
+      if (!within(pxPrefer)) {
+        let best = prefer; let bestScore = Infinity;
+        for (const v of niceList) {
+          const px = v * s;
+          const score = within(px) ? 0 : Math.min(Math.abs(px - minPx), Math.abs(px - maxPx));
+          const tieBreak = Math.abs(Math.log10(v/1000));
+          const total = score * 10 + tieBreak; // prefer in-range; then closer to 1000u
+          if (total < bestScore) { bestScore = total; best = v; }
+        }
+        dist = best;
+      }
+      const pxLen = Math.max(1, dist * s);
+      // Draw the scale bar: two end bands and a connecting line, with label
+      const barX2 = W - pad;
+      const barX1 = Math.max(pad + 40, barX2 - Math.min(pxLen, maxPx + 40));
+      const y = H - pad - 18; // a bit above bottom border
+      const bandH = 10; const bandW = 3;
+      c.save();
+      c.strokeStyle = 'rgba(255,255,255,0.85)';
+      c.fillStyle = 'rgba(255,255,255,0.85)';
+      c.lineWidth = 2;
+      // End bands
+      c.fillRect(barX1 - bandW, y - bandH/2, bandW, bandH);
+      c.fillRect(barX2, y - bandH/2, bandW, bandH);
+      // Main line
+      c.beginPath(); c.moveTo(barX1, y); c.lineTo(barX2, y); c.stroke();
+      // Label
+      c.font = '12px Segoe UI, Roboto, sans-serif';
+      c.textAlign = 'right'; c.textBaseline = 'bottom';
+      const label = `${(dist >= 1 ? dist : Number(dist.toFixed(2)))} u`;
+      c.fillText(label, barX2 + bandW + 2, y - 2);
+      c.restore();
+    } catch {}
+
     // 6) Info panel (Tipo Nombre ------- distancia) + optional details (from HUD TargetPanel)
     {
       const active = (this.selectedId && this.items.find(i => i.id === this.selectedId))

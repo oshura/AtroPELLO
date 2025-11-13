@@ -62,6 +62,10 @@ export class Asteroid extends GameObject implements ITargetable {
   this.healthCurrent = this.healthMax;
 
   // Masa del vacío se establecerá desde la factoría (cluster o spawner)
+  // Fallback: si no se establece externamente, usar 2..5u para todos los asteroides normales
+  if (typeof (this as any).voidMassUnits !== 'number' || !isFinite((this as any).voidMassUnits) || (this as any).voidMassUnits <= 0) {
+    (this as any).voidMassUnits = 2 + Math.floor(Math.random() * 4);
+  }
   }
 
   /**

@@ -33,8 +33,8 @@ export class AsteroidFactoryService {
   (a as any).composition = opts?.composition ?? 'mixed';
     // Masa (50..150 tons)
     (a as any).massTons = opts?.massTons ?? (50 + Math.floor(Math.random() * 101));
-    // Void mass fija 1u para asteroide normal
-    (a as any).voidMassUnits = 1;
+    // Void mass 2..5u para asteroide normal
+    (a as any).voidMassUnits = 2 + Math.floor(Math.random() * 4);
     // Albedo 0.40..0.60
     (a as any).albedo = Number((0.4 + Math.random() * 0.2).toFixed(2));
     return a;
@@ -68,8 +68,8 @@ export class AsteroidFactoryService {
   (sa as any).composition = opts?.composition ?? 'mixed';
     // Masa super (500..1000 tons)
     (sa as any).massTons = 500 + Math.floor(Math.random() * 501);
-    // Void mass 5..10u para super
-    (sa as any).voidMassUnits = 5 + Math.floor(Math.random() * 6);
+    // Void mass 10..20u para super (doble del rango anterior 5..10)
+    (sa as any).voidMassUnits = 10 + Math.floor(Math.random() * 11);
     // Albedo 0.40..0.60
     (sa as any).albedo = Number((0.4 + Math.random() * 0.2).toFixed(2));
     return sa;
