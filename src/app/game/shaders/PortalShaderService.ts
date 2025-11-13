@@ -59,7 +59,7 @@ export class PortalShaderService {
     this.circleCount = seg;
 
     // Círculo grueso: anillo (outer R=1.0, inner R=1.0 - t)
-  const t = 0.045; // grosor relativo (reducido a la mitad)
+  const t = 0.09; // grosor relativo del anillo (sin cambios respecto al diseño previo)
     const innerR = Math.max(0.0001, 1.0 - t);
     const ringVerts: number[] = [];
     for (let i=0;i<=seg;i++) { // <= para cerrar tira
@@ -79,11 +79,12 @@ export class PortalShaderService {
     const starR = 1.0;
     const starPts: Array<[number, number]> = [];
     for (let i=0;i<5;i++) {
-      const ang = (-Math.PI/2) + i * 2*Math.PI/5;
+      // Orientación corregida: una punta hacia ARRIBA en el espacio local del portal (Y+)
+      const ang = (Math.PI/2) + i * 2*Math.PI/5;
       starPts.push([Math.cos(ang)*starR, Math.sin(ang)*starR]);
     }
     const order = [0,2,4,1,3,0];
-  const halfW = 0.035; // grosor relativo del trazo del pentáculo (reducido a la mitad)
+  const halfW = 0.0175; // grosor relativo del trazo del pentáculo (mitad del valor previo)
     const triVerts: number[] = [];
     for (let i=0;i<order.length-1;i++) {
       const ia = order[i], ib = order[i+1];

@@ -83,30 +83,9 @@ export class Portal extends GameObject implements ITargetable {
     this.normals = new Float32Array(haloNormals);
     this.uvs = new Float32Array(haloUVs);
 
-    // 2. Pentáculo (líneas) ---------------------------------------------------
-    // Estrella de 5 puntas inscrita en círculo (misma que cursor GrimoirePanel) usando orden 0,2,4,1,3,0.
-  // Estrella circunscrita gigante: radio completo (1.0) para tocar el círculo exterior del portal
-  const starR = 1.0; // radio relativo dentro del disco unitario (circunscrito)
-    const starPoints: Array<[number, number]> = [];
-    for (let i = 0; i < 5; i++) {
-      // Pentagrama: una punta hacia arriba. Ajuste de espejado corregido.
-      // Nota: visualmente se observaba un espejo lateral (izq↔der) porque el plano del portal
-      // está orientado de forma que el eje X del espacio local corresponde al vertical en pantalla.
-      // Para lograr un espejo verdaderamente vertical (arriba↔abajo) en la proyección final,
-      // debemos invertir el eje X en lugar del Y en el espacio local.
-      const ang = (-Math.PI / 2) + i * 2 * Math.PI / 5; // mantiene una punta arriba
-      const x = -Math.cos(ang) * starR; // invertir X para espejo vertical percibido
-      const y = Math.sin(ang) * starR;  // mantener Y sin invertir
-      starPoints.push([x, y]);
-    }
-    const starOrder = [0, 2, 4, 1, 3, 0];
-    const starVerts: number[] = [];
-    for (let i = 0; i < starOrder.length; i++) {
-      const idx = starOrder[i];
-      starVerts.push(starPoints[idx][0], starPoints[idx][1], 0);
-    }
-    this._pentacleVertexArray = new Float32Array(starVerts);
-    this._pentacleVertexCount = starOrder.length;
+    // Pentáculo: eliminado de la geometría del Portal.
+    // NOTA: el pentáculo visible lo genera y dibuja PortalShaderService (triangulado con grosor),
+    // para evitar múltiples fuentes de verdad. Mantener aquí solo la malla base/halo como proxy.
   }
 
   public override update(deltaTime: number): void {
@@ -187,12 +166,7 @@ export class Portal extends GameObject implements ITargetable {
 
   // Blank portal: no extra buffers to initialize
   public initExtraBuffers(gl: WebGL2RenderingContext): void {
-    // Crear buffer para pentáculo (líneas) si no existe
-    if (this._pentacleVertexArray && !this._pentacleBuffer) {
-      this._pentacleBuffer = gl.createBuffer();
-      gl.bindBuffer(gl.ARRAY_BUFFER, this._pentacleBuffer);
-      gl.bufferData(gl.ARRAY_BUFFER, this._pentacleVertexArray, gl.STATIC_DRAW);
-    }
+    // Pentáculo: sin buffers en Portal; se genera en PortalShaderService.
     // Crear geometría del ojo (esfera low-poly) si no existe
     if (this._eyeEnabled && !this._eyeVBO) {
       // Ojo deshabilitado: reservar espacio vacío (sin geometría) para evitar condicionales en render futuro
@@ -228,15 +202,11 @@ export class Portal extends GameObject implements ITargetable {
   public getTargetType(): TargetType { return TargetType.PORTAL; }
   public isActive(): boolean { return this.active && this.visible; }
 
-  // ===== Sub-geometry (pentáculo) =====
-  private _pentacleVertexArray: Float32Array | null = null;
-  private _pentacleBuffer: WebGLBuffer | null = null;
-  private _pentacleVertexCount: number = 0;
+  // ===== Pentáculo =====
+  // Eliminado en Portal (se renderiza desde PortalShaderService para grosor/anillo consistentes)
   // Referencia al color base del planeta original (capturada durante Gate Rite)
   public planetColorRef?: { r:number; g:number; b:number; a?:number };
-  /** Expuesto para renderizador especializado */
-  public getPentacleBuffer(): WebGLBuffer | null { return this._pentacleBuffer; }
-  public getPentacleVertexCount(): number { return this._pentacleVertexCount; }
+  /** El pentáculo no expone buffers desde Portal; usar PortalShaderService.renderPentacle */
   public getEyeBuffers(): { v: WebGLBuffer | null; n: WebGLBuffer | null; i: WebGLBuffer | null; count: number } {
     return { v: this._eyeVBO, n: this._eyeNBO, i: this._eyeIBO, count: this._eyeIndices ? this._eyeIndices.length : 0 };
   }

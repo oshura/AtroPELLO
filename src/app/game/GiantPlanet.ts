@@ -6,8 +6,8 @@ import { Planet, PlanetType, PlanetColorName } from './Planet';
  */
 export class GiantPlanet extends Planet {
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
-    // Multiply radius by 10 when creating
-    super(id, colorName, radius * 10, initialPos);
+    // Use provided radius directly; generator already enforces size ranges/caps
+    super(id, colorName, radius, initialPos);
     this.planetType = PlanetType.Giant;
     // If no void mass set elsewhere, initialize with 10x the baseline range
     if (!this.voidMassUnits || this.voidMassUnits <= 0) {

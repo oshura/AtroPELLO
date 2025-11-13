@@ -40,6 +40,10 @@ export class SolarSystemPanel {
   private hoveredId: string | null = null;
   private cursorPx: number | null = null;
   private cursorPy: number | null = null;
+  // Filtering state
+  private visibleCategories: Set<string> = new Set(['center','planet','cluster','debris','portal','ship']);
+  private showOrbits: boolean = true;
+  private filterButtons: Array<{ cat: string; x: number; y: number; w: number; h: number; active: boolean; label: string }> = [];
 
   constructor(gl: WebGL2RenderingContext, width: number = 1024, height: number = 1024) {
     this.gl = gl;
@@ -64,6 +68,16 @@ export class SolarSystemPanel {
     this.cursorPx = (x / viewportW) * this.canvas.width;
     this.cursorPy = (y / viewportH) * this.canvas.height;
   }
+
+  public toggleCategory(cat: string): void {
+    if (cat === 'orbits') {
+      this.showOrbits = !this.showOrbits; return;
+    }
+    if (this.visibleCategories.has(cat)) this.visibleCategories.delete(cat); else this.visibleCategories.add(cat);
+  }
+
+  public isCategoryVisible(cat: string): boolean { return this.visibleCategories.has(cat); }
+  public areOrbitsVisible(): boolean { return this.showOrbits; }
 
   /** Reset view to initial fit (no pan, no zoom) */
   public resetView(): void {
@@ -166,6 +180,7 @@ export class SolarSystemPanel {
    */
   public updateMap(data: {
     center: Vector3;
+    centerLabel?: string;
     planets: Array<{
       id: string;
       pos: Vector3;
@@ -222,10 +237,55 @@ export class SolarSystemPanel {
     c.fillStyle = '#05060a'; // deep dark
     c.fillRect(0, 0, W, H);
 
-    // 3) Draw orbits as ellipses
-    c.strokeStyle = 'rgba(160,180,220,0.55)';
-    c.lineWidth = 1;
-    for (const p of data.planets) {
+    // Build filter buttons (top-left) based on present categories
+    this.filterButtons = [];
+    const present: string[] = [];
+    if (data.planets.length) present.push('planet');
+    if (data.clusters.length) present.push('cluster');
+    if (data.debris.length) present.push('debris');
+    if ((data.portals||[]).length) present.push('portal');
+    if (data.ship) present.push('ship');
+    if (data.centerLabel) present.unshift('center');
+    const btnSize = 22; const pad = 6; let bx = pad; const by = pad;
+    const iconFor = (cat: string) => {
+      switch(cat) {
+        case 'center': return '*';
+        case 'planet': return 'P';
+        case 'cluster': return 'C';
+        case 'debris': return 'D';
+        case 'portal': return 'Po';
+        case 'ship': return 'S';
+        case 'orbits': return 'Orb';
+        default: return '?';
+      }
+    };
+    for (const cat of present) {
+      this.filterButtons.push({ cat, x: bx, y: by, w: btnSize, h: btnSize, active: this.visibleCategories.has(cat), label: iconFor(cat) });
+      bx += btnSize + 4;
+    }
+    // Orbits toggle button
+    this.filterButtons.push({ cat: 'orbits', x: bx, y: by, w: btnSize+14, h: btnSize, active: this.showOrbits, label: iconFor('orbits') });
+    // Draw buttons
+    c.save();
+    c.font = '11px Segoe UI, Roboto, sans-serif';
+    c.textAlign = 'center'; c.textBaseline = 'middle';
+    for (const b of this.filterButtons) {
+      c.beginPath();
+      c.fillStyle = b.active ? 'rgba(255,255,255,0.18)' : 'rgba(255,255,255,0.06)';
+      c.strokeStyle = b.active ? 'rgba(255,255,255,0.55)' : 'rgba(255,255,255,0.25)';
+      c.lineWidth = 1;
+      c.rect(b.x, b.y, b.w, b.h);
+      c.fill(); c.stroke();
+      c.fillStyle = b.active ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.5)';
+      c.fillText(b.label, b.x + b.w/2, b.y + b.h/2 + 1);
+    }
+    c.restore();
+
+    // 3) Draw orbits as ellipses (conditionally)
+    if (this.showOrbits && this.visibleCategories.has('planet')) {
+      c.strokeStyle = 'rgba(160,180,220,0.55)';
+      c.lineWidth = 1;
+      for (const p of data.planets) {
       const segs = 256;
       if (p.orbit3d) {
         const oc = p.orbit3d.center; const a = p.orbit3d.a; const b = p.orbit3d.b; const ang = p.orbit3d.orient || 0;
@@ -268,6 +328,7 @@ export class SolarSystemPanel {
         }
         c.stroke();
       }
+      }
     }
 
     // 4) Draw objects and accumulate interactive items with screen positions
@@ -289,19 +350,30 @@ export class SolarSystemPanel {
     };
 
     // Sun/center
-  pushItem('center', 'Sol', 'center', data.center, 5, '#ffe08a');
+  if (data.centerLabel && this.visibleCategories.has('center')) {
+    const starLabel = data.centerLabel;
+    pushItem('center', starLabel, 'center', data.center, 5, '#ffe08a');
+  }
     // Planets
-    for (const p of data.planets) {
-      pushItem(p.id, p.label ?? p.id, 'planet', p.pos, 3, planetColor);
+    if (this.visibleCategories.has('planet')) {
+      for (const p of data.planets) {
+        pushItem(p.id, p.label ?? p.id, 'planet', p.pos, 3, planetColor);
+      }
     }
     // Debris
-    for (const d of data.debris) pushItem(d.id, d.label ?? d.id, 'debris', d.pos, 1.5, megaColor);
+    if (this.visibleCategories.has('debris')) {
+      for (const d of data.debris) pushItem(d.id, d.label ?? d.id, 'debris', d.pos, 1.5, megaColor);
+    }
     // Clusters (always included)
-    for (const cl of data.clusters) pushItem(cl.id, cl.label ?? cl.id, 'cluster', cl.center, 2.5, megaColor);
+    if (this.visibleCategories.has('cluster')) {
+      for (const cl of data.clusters) pushItem(cl.id, cl.label ?? cl.id, 'cluster', cl.center, 2.5, megaColor);
+    }
     // Portals (arcane purple)
-    for (const p of (data.portals || [])) pushItem(p.id, p.label ?? p.id, 'portal', p.pos, 3.2, portalColor);
+    if (this.visibleCategories.has('portal')) {
+      for (const p of (data.portals || [])) pushItem(p.id, p.label ?? p.id, 'portal', p.pos, 3.2, portalColor);
+    }
   // Ship (friendly green)
-  if (data.ship) pushItem('ship', data.ship.label ?? 'Ship', 'ship', data.ship.pos, 3.5, shipColor);
+  if (data.ship && this.visibleCategories.has('ship')) pushItem('ship', data.ship.label ?? 'Ship', 'ship', data.ship.pos, 3.5, shipColor);
 
     // 4.b) Simple outliner: draw circle stroke + label based on rules
     c.font = '12px Segoe UI, Roboto, sans-serif';
@@ -509,7 +581,7 @@ export class SolarSystemPanel {
   }
 
   /** Map a viewport click to the nearest item id within tolerance (in pixels) */
-  public hitTestViewport(clientX: number, clientY: number, canvasRect: DOMRect, viewportW: number, viewportH: number): string | null {
+  public hitTestViewport(clientX: number, clientY: number, canvasRect: DOMRect, viewportW: number, viewportH: number, eventType: 'move' | 'click' = 'move'): string | null {
     if (!this.enabled || this.items.length === 0) return null;
     // Convert client coords to canvas pixel coords
     const x = ((clientX - canvasRect.left) / Math.max(1, canvasRect.width)) * viewportW;
@@ -517,6 +589,15 @@ export class SolarSystemPanel {
     // Map to internal map canvas space (texture covers full viewport)
     const mapX = (x / viewportW) * this.canvas.width;
     const mapY = (y / viewportH) * this.canvas.height;
+    // Check filter buttons first: only toggle on click, ignore on move
+    if (eventType === 'click') {
+      for (const b of this.filterButtons) {
+        if (mapX >= b.x && mapX <= b.x + b.w && mapY >= b.y && mapY <= b.y + b.h) {
+          this.toggleCategory(b.cat);
+          return null; // Do not treat as item selection
+        }
+      }
+    }
     // Find nearest item within radius+padding
     let bestId: string | null = null;
     let bestD = Infinity;

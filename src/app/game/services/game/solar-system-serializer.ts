@@ -45,7 +45,7 @@ export class SolarSystemSerializer {
       name: state.sun.name,
       position: { ...state.sun.position },
       radius: state.sun.radius ?? state.sun.scale?.x ?? 1800
-    } : { id: 'sol', name: 'Sol', position: vec(0,0,0), radius: 1800 };
+    } : { id: 'sol', position: vec(0,0,0), radius: 1800 };
 
     const planets: PlanetSnapshot[] = state.planets.map(p => ({
       id: p.id,

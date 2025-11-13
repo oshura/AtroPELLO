@@ -16,7 +16,6 @@ export class Sun extends Planet {
     // Color name isn't used for shaders here; pick a warm palette base
     super(id, 'rojo_carmesi' as PlanetColorName, radius, initialPos);
     this.planetType = PlanetType.Sun;
-    this.customName = 'Sol';
     // Make the core more yellow
     (this as any).color = { r: 1.0, g: 0.92, b: 0.55, a: 1.0 };
     // Also mark object type as SUN for systems that read objectType directly
@@ -32,6 +31,11 @@ export class Sun extends Planet {
   // Classify Sun separately from generic PLANET for targeting/HUD
   public override getTargetType(): TargetType {
     return TargetType.SUN;
+  }
+
+  // Prefer generator-provided name; otherwise fall back to id
+  public override getDisplayName(): string {
+    return this.customName ?? this.id;
   }
 
   /** Additive billboard glow drawn after the main planet pass */

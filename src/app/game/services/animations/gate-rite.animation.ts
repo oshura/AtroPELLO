@@ -45,6 +45,7 @@ export class GateRiteAnimation implements GameAnimation {
   private fadeDuration = 0.5; // seconds fade to switch systems & camera
   private arrivalElapsed = 0;
   private arrivalDuration = 7.5; // (tripled) seconds to decelerate to 0 after spawn for a more cinematic slow glide
+  private arrivalStartSpeed = 0; // capture speed at start of arrival to interpolate down to 1u/s
   private portalInstance: Portal | null = null;
   private generator: SystemGeneratorService | null = null; // lazy resolved from engine injector if needed
   // Speed streaks (void-jump style) during pre-cross travelling
@@ -53,6 +54,7 @@ export class GateRiteAnimation implements GameAnimation {
   private streakFarZ = 100;
   private streakBaseSpeed = 20;
   private streakMaxBoost = 220;
+  
   private speedCapPreCross = 180; // u/s cap before crossing
   private accelActive = false; // start acceleration only after travelling completes
   private lockedHeading = false; // fijar orientación durante el tránsito para evitar micro-oscilaciones
@@ -524,6 +526,8 @@ export class GateRiteAnimation implements GameAnimation {
     this.phase = GateRitePhase.Transit;
     this.transitElapsed = 0;
     try { (engine as any).showPlaceholderText?.('Gate Rite: Transit', 800); } catch {}
+    // Use non-smoothed transit camera to avoid flicker and lag
+    this.camTransitSmoothing = false;
     // Lazy resolve generator via Angular injector pattern (fallback new)
     try { this.generator = (engine as any)['systemGeneratorService'] || this.generator || null; } catch {}
     // Preparar: situar nave a 1000u del portal, orientar al centro; preparar travelling y streaks
@@ -581,43 +585,7 @@ export class GateRiteAnimation implements GameAnimation {
         const center = this.portalInstance.position;
   // Mantener rumbo al centro una sola vez (enterTransit); evitar micro-ajustes por frame
   if (!this.lockedHeading && typeof ship.lookAt === 'function') ship.lookAt(center);
-        // Suavizado de cámara durante travelling: interpolar manual camera hacia objetivo final aunque k<1
-        try {
-          const cam: any = (engine as any).camera;
-          if (cam && this.camTravelStart) {
-            const shipQ = ship.getOrientationQuaternion?.();
-            const rotVec = (v:{x:number;y:number;z:number}) => {
-              if (!shipQ) return v;
-              const qx = shipQ[0], qy = shipQ[1], qz = shipQ[2], qw = shipQ[3];
-              const qx2=qx*qx,qy2=qy*qy,qz2=qz*qz,qw2=qw*qw;
-              return {
-                x: v.x * (qx2 - qy2 - qz2 + qw2) + v.y * (2 * qx * qy - 2 * qz * qw) + v.z * (2 * qx * qz + 2 * qy * qw),
-                y: v.x * (2 * qx * qy + 2 * qz * qw) + v.y * (-qx2 + qy2 - qz2 + qw2) + v.z * (2 * qy * qz - 2 * qx * qw),
-                z: v.x * (2 * qx * qz - 2 * qy * qw) + v.y * (2 * qy * qz + 2 * qx * qw) + v.z * (-qx2 - qy2 + qz2 + qw2)
-              };
-            };
-            const offset = { x: 0, y: 2.3, z: -(cam.getZoomDistance?.() ? cam.getZoomDistance() * 2.0 : 9.0) };
-            const offW = rotVec(offset);
-            const fwdW = rotVec({ x: 0, y: 0, z: 3.0 });
-            const upW = rotVec({ x: 0, y: 1, z: 0 });
-            const endPos = { x: ship.position.x + offW.x, y: ship.position.y + offW.y, z: ship.position.z + offW.z };
-            const endTarget = { x: endPos.x + fwdW.x, y: endPos.y + fwdW.y, z: endPos.z + fwdW.z };
-            const endUp = upW;
-            const easeK = 1 - Math.pow(1 - k, 3);
-            // Aplicar interpolación adicional con leve amortiguación exponencial para reducir jitter
-            const damp = 1 - Math.exp(-dt * 12);
-            cam.position.x += (this.camTravelStart.pos.x + (endPos.x - this.camTravelStart.pos.x) * easeK - cam.position.x) * damp;
-            cam.position.y += (this.camTravelStart.pos.y + (endPos.y - this.camTravelStart.pos.y) * easeK - cam.position.y) * damp;
-            cam.position.z += (this.camTravelStart.pos.z + (endPos.z - this.camTravelStart.pos.z) * easeK - cam.position.z) * damp;
-            cam.target.x += (this.camTravelStart.target.x + (endTarget.x - this.camTravelStart.target.x) * easeK - cam.target.x) * damp;
-            cam.target.y += (this.camTravelStart.target.y + (endTarget.y - this.camTravelStart.target.y) * easeK - cam.target.y) * damp;
-            cam.target.z += (this.camTravelStart.target.z + (endTarget.z - this.camTravelStart.target.z) * easeK - cam.target.z) * damp;
-            cam.up.x += (this.camTravelStart.up.x + (endUp.x - this.camTravelStart.up.x) * easeK - cam.up.x) * damp;
-            cam.up.y += (this.camTravelStart.up.y + (endUp.y - this.camTravelStart.up.y) * easeK - cam.up.y) * damp;
-            cam.up.z += (this.camTravelStart.up.z + (endUp.z - this.camTravelStart.up.z) * easeK - cam.up.z) * damp;
-            cam.markDirty?.();
-          }
-        } catch {}
+        // Eliminado bloque de suavizado duplicado para evitar flicker por desincronización
         // Activar aceleración solo tras finalizar travelling (k >= 1)
         if (k >= 1 && !this.accelActive) {
           this.accelActive = true;
@@ -630,34 +598,47 @@ export class GateRiteAnimation implements GameAnimation {
         // Travelling de cámara manual hacia pose tipo cámara 0 detrás de la nave con ligera inclinación
         const cam: any = (engine as any).camera;
         if (cam && this.camTravelStart && !this.camTransitSmoothing) {
-          const offset = { x: 0, y: 2.3, z: -(cam.getZoomDistance?.() ? cam.getZoomDistance() * 2.0 : 9.0) };
+          // Durante travelling (antes de accelActive) aún interpolamos; tras accelActive anclamos rígido
           const shipQ = ship.getOrientationQuaternion?.();
           const rotVec = (v:{x:number;y:number;z:number}) => {
             if (!shipQ) return v;
             const qx = shipQ[0], qy = shipQ[1], qz = shipQ[2], qw = shipQ[3];
             const qx2=qx*qx,qy2=qy*qy,qz2=qz*qz,qw2=qw*qw;
             return {
-              x: v.x * (qx2 - qy2 - qz2 + qw2) + v.y * (2 * qx * qy - 2 * qz * qw) + v.z * (2 * qx * qz + 2 * qy * qw),
-              y: v.x * (2 * qx * qy + 2 * qz * qw) + v.y * (-qx2 + qy2 - qz2 + qw2) + v.z * (2 * qy * qz - 2 * qx * qw),
-              z: v.x * (2 * qx * qz - 2 * qy * qw) + v.y * (2 * qy * qz + 2 * qx * qw) + v.z * (-qx2 - qy2 + qz2 + qw2)
+              x: v.x * (qx2 - qy2 - qz2 + qw2) + v.y * (2*qx*qy - 2*qz*qw) + v.z * (2*qx*qz + 2*qy*qw),
+              y: v.x * (2*qx*qy + 2*qz*qw) + v.y * (-qx2 + qy2 - qz2 + qw2) + v.z * (2*qy*qz - 2*qx*qw),
+              z: v.x * (2*qx*qz - 2*qy*qw) + v.y * (2*qy*qz + 2*qx*qw) + v.z * (-qx2 - qy2 + qz2 + qw2)
             };
           };
-          const offW = rotVec(offset);
-          const fwdW = rotVec({ x: 0, y: 0, z: 3.0 });
-          const upW = rotVec({ x: 0, y: 1, z: 0 });
-          const endPos = { x: ship.position.x + offW.x, y: ship.position.y + offW.y, z: ship.position.z + offW.z };
-          const endTarget = { x: endPos.x + fwdW.x, y: endPos.y + fwdW.y, z: endPos.z + fwdW.z };
-          const endUp = upW;
-          const ease = (x:number)=>1 - Math.pow(1-x,3);
-          cam.position.x = this.camTravelStart.pos.x + (endPos.x - this.camTravelStart.pos.x) * ease(k);
-          cam.position.y = this.camTravelStart.pos.y + (endPos.y - this.camTravelStart.pos.y) * ease(k);
-          cam.position.z = this.camTravelStart.pos.z + (endPos.z - this.camTravelStart.pos.z) * ease(k);
-          cam.target.x = this.camTravelStart.target.x + (endTarget.x - this.camTravelStart.target.x) * ease(k);
-          cam.target.y = this.camTravelStart.target.y + (endTarget.y - this.camTravelStart.target.y) * ease(k);
-          cam.target.z = this.camTravelStart.target.z + (endTarget.z - this.camTravelStart.target.z) * ease(k);
-          cam.up.x = this.camTravelStart.up.x + (endUp.x - this.camTravelStart.up.x) * ease(k);
-          cam.up.y = this.camTravelStart.up.y + (endUp.y - this.camTravelStart.up.y) * ease(k);
-          cam.up.z = this.camTravelStart.up.z + (endUp.z - this.camTravelStart.up.z) * ease(k);
+          const baseOffset = { x: 0, y: 2.3, z: -(cam.getZoomDistance?.() ? cam.getZoomDistance() * 2.0 : 9.0) };
+          const fwdRef = { x: 0, y: 0, z: 3.0 };
+          const upRef = { x: 0, y: 1, z: 0 };
+          const offW = rotVec(baseOffset);
+          const fwdW = rotVec(fwdRef);
+          const upW = rotVec(upRef);
+          if (!this.accelActive) {
+            const ease = (x:number)=>1 - Math.pow(1-x,3);
+            const endPos = { x: ship.position.x + offW.x, y: ship.position.y + offW.y, z: ship.position.z + offW.z };
+            const endTarget = { x: endPos.x + fwdW.x, y: endPos.y + fwdW.y, z: endPos.z + fwdW.z };
+            cam.position.x = this.camTravelStart.pos.x + (endPos.x - this.camTravelStart.pos.x) * ease(k);
+            cam.position.y = this.camTravelStart.pos.y + (endPos.y - this.camTravelStart.pos.y) * ease(k);
+            cam.position.z = this.camTravelStart.pos.z + (endPos.z - this.camTravelStart.pos.z) * ease(k);
+            cam.target.x = this.camTravelStart.target.x + (endTarget.x - this.camTravelStart.target.x) * ease(k);
+            cam.target.y = this.camTravelStart.target.y + (endTarget.y - this.camTravelStart.target.y) * ease(k);
+            cam.target.z = this.camTravelStart.target.z + (endTarget.z - this.camTravelStart.target.z) * ease(k);
+            cam.up.x = this.camTravelStart.up.x + (upW.x - this.camTravelStart.up.x) * ease(k);
+            cam.up.y = this.camTravelStart.up.y + (upW.y - this.camTravelStart.up.y) * ease(k);
+            cam.up.z = this.camTravelStart.up.z + (upW.z - this.camTravelStart.up.z) * ease(k);
+          } else {
+            // Anclaje rígido: cámara directamente detrás de la nave, sin interpolación para evitar flicker
+            cam.position.x = ship.position.x + offW.x;
+            cam.position.y = ship.position.y + offW.y;
+            cam.position.z = ship.position.z + offW.z;
+            cam.target.x = cam.position.x + fwdW.x;
+            cam.target.y = cam.position.y + fwdW.y;
+            cam.target.z = cam.position.z + fwdW.z;
+            cam.up.x = upW.x; cam.up.y = upW.y; cam.up.z = upW.z;
+          }
           cam.markDirty?.();
         }
         // Actualizar streaks
@@ -816,6 +797,10 @@ export class GateRiteAnimation implements GameAnimation {
   private enterArrivalDecel(_engine: GameEngine) {
     this.phase = GateRitePhase.ArrivalDecel;
     this.arrivalElapsed = 0;
+    try {
+      const ship: any = (_engine as any)['spaceship'];
+      if (ship) this.arrivalStartSpeed = Number(ship.currentSpeed) || 0;
+    } catch { this.arrivalStartSpeed = 0; }
   }
 
   private updateArrivalDecel(engine: GameEngine, dt: number) {
@@ -823,21 +808,23 @@ export class GateRiteAnimation implements GameAnimation {
     try {
       const ship: any = (engine as any)['spaceship'];
       if (ship) {
-        // Objetivo final 1u/s durante la fase
-        ship.targetSpeed = 1;
-        // Estabilidad: velocidad cerca de 1 y movimiento real cercano a 1u/s
+        // Interpolar velocidad lineal (o con easing suave) desde arrivalStartSpeed hasta 1u/s a lo largo de arrivalDuration
         const targetStable = 1;
-        const speedError = Math.abs((ship.currentSpeed ?? 0) - targetStable);
-        const speedOk = speedError <= 0.08;
+        const k = Math.min(1, this.arrivalElapsed / Math.max(0.0001, this.arrivalDuration));
+        // Usar ease-out suave para que la pérdida de velocidad sea perceptible desde el inicio
+        const easeOut = (x:number)=>1 - Math.pow(1 - x, 2.5);
+        const ke = easeOut(k);
+        const start = this.arrivalStartSpeed > targetStable ? this.arrivalStartSpeed : targetStable;
+        const desiredSpeed = start + (targetStable - start) * ke; // va descendiendo hacia 1
+        ship.currentSpeed = desiredSpeed;
+        ship.targetSpeed = targetStable; // mantener objetivo final en 1
+        // Comprobar estabilidad cerca de la meta
+        const speedError = Math.abs(desiredSpeed - targetStable);
         const vel = ship.velocity || { x: 0, y: 0, z: 0 };
         const velMag = Math.hypot(vel.x || 0, vel.y || 0, vel.z || 0);
-        const motionOk = Math.abs(velMag - targetStable) <= 0.06;
-        // Si se excede un tiempo razonable, forzar freno más fuerte pero no recargar aún hasta motionOk
-        if (this.arrivalElapsed >= this.arrivalDuration && !motionOk) {
-          // Si aún no se detuvo tras el tiempo objetivo, incrementar suavemente la deceleración
-          ship.deceleration = Math.min(Math.max(ship.deceleration * 1.25, 10), 48);
-        }
-        if (speedOk && motionOk) {
+        const motionOk = Math.abs(velMag - targetStable) <= 0.06 && speedError <= 0.08;
+        // Finalizar sólo al completar easing y estar dentro del umbral
+        if (k >= 1 && motionOk) {
           // Anclar a 1u/s para estabilidad
           ship.currentSpeed = targetStable;
           // Reactivar y rellenar Void Energy al 100%
@@ -854,10 +841,7 @@ export class GateRiteAnimation implements GameAnimation {
               (engine as any).hudManager.startFadeIn(0.32); // 320ms dentro del rango solicitado
             }
           } catch {}
-          if (ship._gateRiteOriginalDecel !== undefined) {
-            ship.deceleration = ship._gateRiteOriginalDecel;
-            delete ship._gateRiteOriginalDecel;
-          }
+          if (ship._gateRiteOriginalDecel !== undefined) { ship.deceleration = ship._gateRiteOriginalDecel; delete ship._gateRiteOriginalDecel; }
           this.phase = GateRitePhase.Completed;
           this.finished = true;
           return;

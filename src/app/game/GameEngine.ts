@@ -72,6 +72,9 @@ export class GameEngine {
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   // Runtime toggle to enable/disable the 2D outliner overlay for performance testing
   private outlinerEnabled: boolean = true;
+  // Cooldowns to prevent immediate reopen of panels after closing
+  private mapReopenAllowedAtMs: number = 0;
+  private grimoireReopenAllowedAtMs: number = 0;
   // Landing overlay removed
   private domCanvas: HTMLCanvasElement | null = null;
   private mapIdToTarget: Map<string, ITargetable> = new Map();
@@ -2015,7 +2018,10 @@ export class GameEngine {
       if (this.primarySun) {
         this.mapIdToTarget.set('center', this.primarySun as unknown as ITargetable);
       }
-  const planets = this.planets.map(p => {
+  const planets = this.planets
+        // Exclude the primary sun from the map's planet list to avoid blue dot + label
+        .filter(p => !(this.primarySun && p.id === this.primarySun.id))
+        .map(p => {
         // Prefer Planet.getDisplayName() which already returns customName if present
         const label = (p.getDisplayName?.() || (p as any).customName || p.id);
         this.mapIdToTarget.set(p.id, p as unknown as ITargetable);
@@ -2094,7 +2100,9 @@ export class GameEngine {
         }
       } catch {}
 
-  this.systemPanel.updateMap({ center, planets, clusters, debris, ship, portals, marginPx: 48, details });
+  // Only show center label when the star has an explicit customName; do not fallback to id
+  const centerLabel = this.primarySun ? ((this.primarySun as any).customName || undefined) : undefined;
+  this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, ship, portals, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.HUD, 'SolarSystemPanel render failed', e);
@@ -2155,7 +2163,6 @@ export class GameEngine {
     sun.orbitCenter = { ...center };
     sun.semiMajor = 0; sun.semiMinor = 0; sun.orbitAngularSpeed = 0; sun.orbitAngle = 0;
     sun.angularVelocity.y = 0.0005; // leve rotación visual
-    sun.customName = 'Sol';
     this.planets.push(sun);
     this.primarySun = sun;
   const count = 9;
@@ -3552,6 +3559,12 @@ export class GameEngine {
    * Maneja eventos de teclado
    */
   public handleKeyDown(key: string): void {
+    // Block most inputs during animations/pre-cast delay; allow Escape to close panels
+    if (this.animationManager && this.animationManager.isBlockingInputs && this.animationManager.isBlockingInputs()) {
+      if (key.toLowerCase() !== 'escape') {
+        return;
+      }
+    }
     // Manejo de cambio de modos de cámara
     if (key === '0') {
       this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
@@ -3574,13 +3587,25 @@ export class GameEngine {
     // Toggle panel de mapa del sistema con tecla 'M'
     if (key.toLowerCase() === 'm') {
       if (this.systemPanel) {
+        const now = performance.now();
         const next = !this.systemPanel.isEnabled();
-        this.systemPanel.setEnabled(next);
-        // Ensure mutual exclusivity with Grimoire
-        if (next && this.grimoirePanel) {
-          try { this.grimoirePanel.setEnabled(false); } catch {}
-        }
         if (next) {
+          // Opening: respect reopen cooldown
+          if (now < this.mapReopenAllowedAtMs) {
+            this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Map reopen blocked by cooldown', { remainingMs: Math.round(this.mapReopenAllowedAtMs - now) });
+            return;
+          }
+          this.systemPanel.setEnabled(true);
+        } else {
+          // Closing: arm cooldown
+          this.systemPanel.setEnabled(false);
+          this.mapReopenAllowedAtMs = now + 1000;
+        }
+        // Ensure mutual exclusivity with Grimoire
+        if (this.systemPanel.isEnabled() && this.grimoirePanel) {
+          try { this.grimoirePanel.setEnabled(false); this.grimoireReopenAllowedAtMs = performance.now() + 1000; } catch {}
+        }
+        if (this.systemPanel.isEnabled()) {
           try { this.systemPanel.resetView(); } catch {}
           // Preselect current target in the map when opening (prefer adaptive selection)
           try {
@@ -3602,13 +3627,23 @@ export class GameEngine {
     // Toggle Grimoire (ancient book) with 'L'
     if (key.toLowerCase() === 'l') {
       if (this.grimoirePanel) {
+        const now = performance.now();
         const next = !this.grimoirePanel.isEnabled();
-        this.grimoirePanel.setEnabled(next);
-        // Ensure map is closed when grimoire opens
-        if (next && this.systemPanel) {
-          try { this.systemPanel.setEnabled(false); } catch {}
+        if (next) {
+          if (now < this.grimoireReopenAllowedAtMs) {
+            this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Grimoire reopen blocked by cooldown', { remainingMs: Math.round(this.grimoireReopenAllowedAtMs - now) });
+            return;
+          }
+          this.grimoirePanel.setEnabled(true);
+        } else {
+          this.grimoirePanel.setEnabled(false);
+          this.grimoireReopenAllowedAtMs = now + 1000;
         }
-        if (!next) {
+        // Ensure map is closed when grimoire opens
+        if (this.grimoirePanel.isEnabled() && this.systemPanel) {
+          try { this.systemPanel.setEnabled(false); this.mapReopenAllowedAtMs = performance.now() + 1000; } catch {}
+        }
+        if (!this.grimoirePanel.isEnabled()) {
           // Closing grimoire: clear selection
           this.clearTargetSelection();
         }
@@ -3622,6 +3657,7 @@ export class GameEngine {
     if (key.toLowerCase() === 'escape') {
       if (this.systemPanel && this.systemPanel.isEnabled()) {
         this.systemPanel.setEnabled(false);
+        this.mapReopenAllowedAtMs = performance.now() + 1000;
         try { this.updateMapClickBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
         // Mantener selección actual al cerrar mapa con Escape
@@ -3629,6 +3665,7 @@ export class GameEngine {
       }
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
         this.grimoirePanel.setEnabled(false);
+        this.grimoireReopenAllowedAtMs = performance.now() + 1000;
         try { this.updateGrimoirePointerBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
         // Mantener selección actual al cerrar grimorio con Escape
@@ -4358,6 +4395,9 @@ export class GameEngine {
       const hovered = this.adaptiveTargeting.getHoveredTarget?.();
       if (!selected && !hovered) return;
 
+      // During animations (and pre-cast blocking delay), suppress hover overlays for a clean view
+      const blockHover = !!this.animationManager?.isBlockingInputs?.();
+
       const dpr = (this.webglService.getState().devicePixelRatio || 1);
 
       // Helper: build render data from TargetDisplayInfo and optionally dim the color
@@ -4398,7 +4438,7 @@ export class GameEngine {
       };
 
       // Render hovered (slightly brighter than before) if present and different from selected
-      if (hovered && (!selected || hovered.id !== selected.id)) {
+      if (!blockHover && hovered && (!selected || hovered.id !== selected.id)) {
         const hData = buildData(hovered);
         if (hData) {
           // Use full color and control perceived brightness via intensity + thickness
@@ -4410,7 +4450,7 @@ export class GameEngine {
       }
 
       // Render selected (intense) on top
-      if (selected) {
+      if (!blockHover && selected) {
         const sData = buildData(selected);
         if (sData) {
           // Slightly bolder selected
@@ -4443,7 +4483,8 @@ export class GameEngine {
             e.clientY,
             rect,
             (this.gl!.canvas as HTMLCanvasElement).width,
-            (this.gl!.canvas as HTMLCanvasElement).height
+            (this.gl!.canvas as HTMLCanvasElement).height,
+            'click'
           );
           if (id) {
             // No permitir selección de la nave en el mapa (solo hover outline)
@@ -4480,7 +4521,8 @@ export class GameEngine {
             e.clientY,
             rect,
             (this.gl!.canvas as HTMLCanvasElement).width,
-            (this.gl!.canvas as HTMLCanvasElement).height
+            (this.gl!.canvas as HTMLCanvasElement).height,
+            'move'
           );
           try { this.systemPanel!.setHoveredId(id); } catch {}
         };
