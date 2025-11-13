@@ -314,7 +314,8 @@ export class TargetOutline2DRenderer {
       // Per-channel throttle: avoid creating/uploading a new texture more often than minUploadIntervalMs
       const lastUp = this.lastGlobalUploadMsByChannel.get(ch) || 0;
       const lastKey = this.lastRenderedKeyByChannel.get(ch) || null;
-      if (now - lastUp >= this.minUploadIntervalMs || lastKey === null) {
+      // IMPORTANT: If content key changed (new selection/hover), bypass throttle to avoid stale frame
+      if ((now - lastUp >= this.minUploadIntervalMs) || lastKey === null || lastKey !== key) {
         const gl: any = this.gl;
         const tex = gl.createTexture();
         gl.bindTexture(gl.TEXTURE_2D, tex);

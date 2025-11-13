@@ -333,7 +333,8 @@ export class GameEngine {
           this.targetOutline2D = null;
         }
   // Increase redraw rate for smoother motion (~8Hz)
-  try { (this.targetOutline2D as any).setMinUploadInterval?.(120); } catch {}
+  // Lower throttle so outline texture updates can track selection without visible lag
+  try { (this.targetOutline2D as any).setMinUploadInterval?.(16); } catch {}
       } catch (e) {
         this.logger.log(LogLevel.WARN, LogCategory.HUD, 'Error inicializando TargetOutline2DRenderer', e);
         this.targetOutline2D = null;
@@ -2214,7 +2215,9 @@ export class GameEngine {
         if (this.pendingMapSelectId) {
           const pendingTgt = this.mapIdToTarget.get(this.pendingMapSelectId);
           if (pendingTgt && this.adaptiveTargeting) {
+            try { this.prepareDisplayPropsForTarget(pendingTgt as ITargetable); } catch {}
             try { this.adaptiveTargeting.selectTarget(pendingTgt); } catch {}
+            try { this.fetchAndCacheTargetDetails(pendingTgt as ITargetable); } catch {}
             try { this.systemPanel.setSelectedId(this.pendingMapSelectId); } catch {}
           }
           this.pendingMapSelectId = null;
@@ -4590,7 +4593,8 @@ export class GameEngine {
         return {
           x: info.screenPosition.x * dpr,
           y: info.screenPosition.y * dpr,
-          name: info.name || (t.getDisplayName?.() || t.id),
+          // Prefer live target name to avoid 1-frame stale snapshots
+          name: (t.getDisplayName?.() || info.name || t.id),
           typeLabel,
           distanceEdge: info.distanceToEdge ?? 0,
           color: info.accentColor || '#60a5fa',
@@ -4654,7 +4658,9 @@ export class GameEngine {
             }
             const target = this.mapIdToTarget.get(id);
             if (target && this.adaptiveTargeting) {
+              try { this.prepareDisplayPropsForTarget(target as unknown as ITargetable); } catch {}
               try { this.adaptiveTargeting.selectTarget(target); } catch {}
+              try { this.fetchAndCacheTargetDetails(target as unknown as ITargetable); } catch {}
               try { this.systemPanel!.setSelectedId(id); } catch {}
             } else {
               // Defer selection until id->target mapping is rebuilt in the first render pass
@@ -4829,6 +4835,14 @@ export class GameEngine {
       }
       if (!this.adaptiveTargeting) return;
       this.adaptiveTargeting.handleClick();
+      // After selection via 3D click, ensure display props are ready and warm target details
+      try {
+        const sel = this.adaptiveTargeting.getCurrentTarget?.();
+        if (sel) {
+          this.prepareDisplayPropsForTarget(sel);
+          this.fetchAndCacheTargetDetails(sel);
+        }
+      } catch {}
     };
 
     canvas.addEventListener('click', handleClick);
