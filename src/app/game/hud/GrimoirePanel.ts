@@ -77,6 +77,12 @@ export class GrimoirePanel {
     }
   }
   public isEnabled(): boolean { return this.enabled; }
+  /**
+   * Panel interactivo (recibe clicks) solo mientras está completamente abierto.
+   * Durante la animación de cierre mantenemos render pero desactivamos interacción
+   * para no interceptar clicks destinados al mapa u otros HUDs.
+   */
+  public isInteractive(): boolean { return this.enabled && !this.animClosingPendingDisable; }
   public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
     // Convert to canvas pixel coords (texture covers full viewport)
     const x = ((clientX - rect.left) / Math.max(1, rect.width)) * viewportW;

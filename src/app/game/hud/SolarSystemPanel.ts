@@ -44,6 +44,13 @@ export class SolarSystemPanel {
   private visibleCategories: Set<string> = new Set(['center','planet','cluster','debris','portal','ship']);
   private showOrbits: boolean = true;
   private filterButtons: Array<{ cat: string; x: number; y: number; w: number; h: number; active: boolean; label: string }> = [];
+  // Fine-grained planet-type filters
+  private visiblePlanetKinds: Set<string> = new Set(['giant','dwarf','protoplanet','gaseous','tierra','ringed','planetoid']);
+
+  private togglePlanetKind(kind: string): void {
+    const k = kind.toLowerCase();
+    if (this.visiblePlanetKinds.has(k)) this.visiblePlanetKinds.delete(k); else this.visiblePlanetKinds.add(k);
+  }
 
   constructor(gl: WebGL2RenderingContext, width: number = 1024, height: number = 1024) {
     this.gl = gl;
@@ -185,6 +192,7 @@ export class SolarSystemPanel {
       id: string;
       pos: Vector3;
       label?: string;
+      kind?: string; // normalized lowercase kind: giant|dwarf|protoplanet|gaseous|tierra|ringed|planetoid
       orbit?: { center: Vector3; a: number; b: number; orient: number };
       orbit3d?: { center: Vector3; a: number; b: number; u: Vector3; n: Vector3; orient: number };
     }>;
@@ -265,6 +273,38 @@ export class SolarSystemPanel {
     }
     // Orbits toggle button
     this.filterButtons.push({ cat: 'orbits', x: bx, y: by, w: btnSize+14, h: btnSize, active: this.showOrbits, label: iconFor('orbits') });
+    // Planet-type fine-grained filters (only shown if planets present)
+    if (data.planets.length && this.visibleCategories.has('planet')) {
+      const kindsPresent = new Set<string>();
+      for (const p of data.planets) {
+        const k = (p.kind || '').toLowerCase();
+        if (k) kindsPresent.add(k);
+      }
+      const kindOrder = ['tierra','rocky','planetoid','ringed','gaseous','giant','dwarf','protoplanet'];
+      const kindIcon = (k: string) => {
+        switch (k) {
+          case 'tierra': return 'Te';
+          case 'rocky': return 'Ro';
+          case 'planetoid': return 'Pl';
+          case 'ringed': return 'Ri';
+          case 'gaseous': return 'Ga';
+          case 'giant': return 'Gi';
+          case 'dwarf': return 'Dw';
+          case 'protoplanet': return 'Pr';
+          default: return k.slice(0,2).toUpperCase();
+        }
+      };
+      // New row for kinds
+      const byKinds = by + btnSize + 6;
+      bx = pad;
+      for (const k of kindOrder) {
+        if (!kindsPresent.has(k)) continue;
+        const active = this.visiblePlanetKinds.has(k);
+        const w = btnSize + 6;
+        this.filterButtons.push({ cat: `kind:${k}`, x: bx, y: byKinds, w, h: btnSize, active, label: kindIcon(k) });
+        bx += w + 4;
+      }
+    }
     // Draw buttons
     c.save();
     c.font = '11px Segoe UI, Roboto, sans-serif';
@@ -281,8 +321,8 @@ export class SolarSystemPanel {
     }
     c.restore();
 
-    // 3) Draw orbits as ellipses (conditionally)
-    if (this.showOrbits && this.visibleCategories.has('planet')) {
+    // 3) Draw orbits as ellipses (independent from planet visibility)
+    if (this.showOrbits) {
       c.strokeStyle = 'rgba(160,180,220,0.55)';
       c.lineWidth = 1;
       for (const p of data.planets) {
@@ -342,10 +382,13 @@ export class SolarSystemPanel {
       category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center' | 'portal',
       pos: Vector3,
       rPx: number,
-      color: string
+      color: string,
+      kind?: string
     ) => {
       const { px, py } = project(pos);
-      this.items.push({ id, label, category, pos, px, py, rPx: Math.max(1, rPx), color });
+      const item: any = { id, label, category, pos, px, py, rPx: Math.max(1, rPx), color };
+      if (kind) item.kind = kind.toLowerCase();
+      this.items.push(item);
       c.beginPath(); c.fillStyle = color; c.arc(px, py, Math.max(1, rPx), 0, Math.PI * 2); c.fill();
     };
 
@@ -357,7 +400,10 @@ export class SolarSystemPanel {
     // Planets
     if (this.visibleCategories.has('planet')) {
       for (const p of data.planets) {
-        pushItem(p.id, p.label ?? p.id, 'planet', p.pos, 3, planetColor);
+        const k = (p.kind || '').toLowerCase();
+        // If a kind is provided, respect fine-grained filters
+        if (k && !this.visiblePlanetKinds.has(k)) continue;
+        pushItem(p.id, p.label ?? p.id, 'planet', p.pos, 3, planetColor, k);
       }
     }
     // Debris
@@ -582,7 +628,7 @@ export class SolarSystemPanel {
 
   /** Map a viewport click to the nearest item id within tolerance (in pixels) */
   public hitTestViewport(clientX: number, clientY: number, canvasRect: DOMRect, viewportW: number, viewportH: number, eventType: 'move' | 'click' = 'move'): string | null {
-    if (!this.enabled || this.items.length === 0) return null;
+    if (!this.enabled) return null;
     // Convert client coords to canvas pixel coords
     const x = ((clientX - canvasRect.left) / Math.max(1, canvasRect.width)) * viewportW;
     const y = ((clientY - canvasRect.top) / Math.max(1, canvasRect.height)) * viewportH;
@@ -593,11 +639,17 @@ export class SolarSystemPanel {
     if (eventType === 'click') {
       for (const b of this.filterButtons) {
         if (mapX >= b.x && mapX <= b.x + b.w && mapY >= b.y && mapY <= b.y + b.h) {
-          this.toggleCategory(b.cat);
+          if (b.cat.startsWith('kind:')) {
+            this.togglePlanetKind(b.cat.slice('kind:'.length));
+          } else {
+            this.toggleCategory(b.cat);
+          }
           return null; // Do not treat as item selection
         }
       }
     }
+    // If no items are present, there's nothing to select/hover
+    if (this.items.length === 0) return null;
     // Find nearest item within radius+padding
     let bestId: string | null = null;
     let bestD = Infinity;

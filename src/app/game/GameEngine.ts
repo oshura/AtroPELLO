@@ -2024,11 +2024,27 @@ export class GameEngine {
         .map(p => {
         // Prefer Planet.getDisplayName() which already returns customName if present
         const label = (p.getDisplayName?.() || (p as any).customName || p.id);
+          // Normalize planet kind to lowercase for map filters
+          const kindRaw = String((p as any).planetType || '').toLowerCase();
+          const kind = ((): string | undefined => {
+            if (!kindRaw) return undefined;
+            // Map enum labels to filter keys
+            if (kindRaw === 'tierra') return 'tierra';
+            if (kindRaw === 'ringed') return 'ringed';
+            if (kindRaw === 'gaseous') return 'gaseous';
+            if (kindRaw === 'giant') return 'giant';
+            if (kindRaw === 'dwarf') return 'dwarf';
+            if (kindRaw === 'protoplanet') return 'protoplanet';
+            if (kindRaw === 'planetoid') return 'planetoid';
+            if (kindRaw === 'rocky' || kindRaw === 'terrestrial') return 'rocky';
+            return kindRaw;
+          })();
         this.mapIdToTarget.set(p.id, p as unknown as ITargetable);
         return {
           id: p.id,
           label,
           pos: { x: p.position.x, y: p.position.y, z: p.position.z },
+            kind,
           orbit: (p.semiMajor && p.semiMajor > 0)
             ? { center: { x: p.orbitCenter.x, y: p.orbitCenter.y, z: p.orbitCenter.z }, a: p.semiMajor, b: p.semiMinor, orient: p.orbitOrientation }
             : undefined,
@@ -3628,7 +3644,9 @@ export class GameEngine {
     if (key.toLowerCase() === 'l') {
       if (this.grimoirePanel) {
         const now = performance.now();
-        const next = !this.grimoirePanel.isEnabled();
+        // Considerar el estado interactivo (evita que "cerrando" cuente como abierto)
+        const currentlyOpen = (this.grimoirePanel as any).isInteractive?.() ?? this.grimoirePanel.isEnabled();
+        const next = !currentlyOpen;
         if (next) {
           if (now < this.grimoireReopenAllowedAtMs) {
             this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Grimoire reopen blocked by cooldown', { remainingMs: Math.round(this.grimoireReopenAllowedAtMs - now) });
@@ -3761,8 +3779,16 @@ export class GameEngine {
         if (!selected) return;
         // Immediately clear selection upon pressing 'h'
         try { (this.grimoirePanel as any)?.clearSelection?.(); } catch {}
+        // Capturar target antes de cerrar mapa (si abierto) para Void Jump / Gate Rite
         const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
-        // Cambiar cámara y ejecutar tras 2s, igual que cuando se castea desde el grimorio
+        // Si el mapa está abierto, cerrarlo y aplicar cooldown igual que con escape
+        if (this.systemPanel && this.systemPanel.isEnabled()) {
+          this.systemPanel.setEnabled(false);
+          this.mapReopenAllowedAtMs = performance.now() + 1000;
+          try { this.updateMapClickBinding(); } catch {}
+          try { this.updateCanvasCursor(); } catch {}
+        }
+        // Cambiar cámara y ejecutar tras 2s, igual que cuando se castea desde el grimorio (modo externo inmóvil)
         if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
           this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
         }
@@ -4581,7 +4607,8 @@ export class GameEngine {
     const el = this.domCanvas;
     const moveHandler = (this as any)._grimoireMoveHandler as ((e: MouseEvent) => void) | undefined;
     const clickHandler = (this as any)._grimoireClickHandler as ((e: MouseEvent) => void) | undefined;
-    const enabled = this.grimoirePanel.isEnabled();
+    // Usar estado interactivo (cierra handlers inmediatamente al iniciar animación de cierre)
+    const enabled = (this.grimoirePanel as any).isInteractive?.() ?? this.grimoirePanel.isEnabled();
     if (enabled) {
       if (!moveHandler) {
         const mh = (e: MouseEvent) => {

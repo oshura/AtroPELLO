@@ -1,0 +1,5 @@
+Quiero que al abrir un portal haya una posibilidad por minuto del 3% de que entre un primigenio a través del portal.
+Si pegas un salto void jump, automaticamente hay una posibilidad del 33% de que entre 1 y 3 primigenios aparezcan en el sistema.
+Los primigenios siempre tienen animosidad 'enemy'. Pueden entrar en combate con la nave o aterrizar en un planeta. 
+Si aterrizas en un planeta con primigenio, habrás que luchar con él en el planeta. 
+Y puede haber convertido la poblacion en fanaticos, ojo.
