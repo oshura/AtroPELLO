@@ -1,0 +1,37 @@
+<div class="dialog-overlay" (click)="onOverlayClick($event)">
+  <div class="dialog-container" (click)="$event.stopPropagation()">
+    <!-- Header -->
+    <div class="dialog-header">
+      <h1 class="dialog-title">The Old & Only One</h1>
+    </div>
+
+    <!-- Body -->
+    <div class="dialog-body">
+      <p class="death-quote">
+        "No está muerto lo que puede yacer eternamente,<br>
+        y con el paso de extraños eones,<br>
+        incluso la muerte puede morir..."
+      </p>
+    </div>
+
+    <!-- Actions -->
+    <div class="dialog-actions">
+      <button 
+        class="dialog-button primary" 
+        (click)="onRestart()"
+        [disabled]="processing">
+        <span class="button-icon">🔄</span>
+        <span>Reiniciar Sistema</span>
+      </button>
+      
+      <button 
+        *ngIf="isAuthenticated"
+        class="dialog-button secondary" 
+        (click)="onLoadSave()"
+        [disabled]="processing">
+        <span class="button-icon">💾</span>
+        <span>Cargar Partida</span>
+      </button>
+    </div>
+  </div>
+</div>

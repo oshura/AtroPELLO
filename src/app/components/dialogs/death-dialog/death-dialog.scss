@@ -1,0 +1,94 @@
+@use '../dialog-shared' as shared;
+
+.dialog-overlay {
+  @include shared.dialog-overlay;
+}
+
+.dialog-container {
+  @include shared.dialog-container;
+  max-width: 600px;
+  background: linear-gradient(135deg, rgba(10, 15, 25, 0.98), rgba(5, 10, 20, 0.98));
+  border: 2px solid rgba(150, 0, 0, 0.6);
+  box-shadow: 0 0 40px rgba(150, 0, 0, 0.4), 0 0 80px rgba(100, 0, 0, 0.2);
+}
+
+.dialog-header {
+  @include shared.dialog-header;
+  border-bottom: 1px solid rgba(150, 0, 0, 0.4);
+  
+  .dialog-title {
+    color: rgba(200, 0, 0, 0.95);
+    text-shadow: 0 0 20px rgba(200, 0, 0, 0.6);
+    font-size: 2.2rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+  }
+}
+
+.dialog-body {
+  @include shared.dialog-body;
+  padding: 3rem 2rem;
+  text-align: center;
+  
+  .death-quote {
+    color: rgba(180, 180, 200, 0.95);
+    font-size: 1.3rem;
+    line-height: 1.8;
+    font-style: italic;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.6);
+    margin: 0;
+    font-family: 'Georgia', 'Times New Roman', serif;
+  }
+}
+
+.dialog-actions {
+  @include shared.dialog-actions;
+  gap: 1rem;
+  padding: 1.5rem;
+  border-top: 1px solid rgba(150, 0, 0, 0.3);
+  
+  .dialog-button {
+    @include shared.dialog-button;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    font-size: 1.1rem;
+    padding: 1rem 1.5rem;
+    
+    .button-icon {
+      font-size: 1.5rem;
+      display: inline-block;
+    }
+    
+    &.primary {
+      background: linear-gradient(135deg, rgba(150, 0, 0, 0.3), rgba(100, 0, 0, 0.3));
+      border-color: rgba(200, 0, 0, 0.6);
+      color: rgba(255, 100, 100, 0.95);
+      
+      &:hover:not(:disabled) {
+        background: linear-gradient(135deg, rgba(180, 0, 0, 0.4), rgba(130, 0, 0, 0.4));
+        border-color: rgba(255, 0, 0, 0.8);
+        box-shadow: 0 0 20px rgba(200, 0, 0, 0.4);
+      }
+    }
+    
+    &.secondary {
+      background: linear-gradient(135deg, rgba(0, 100, 150, 0.3), rgba(0, 60, 100, 0.3));
+      border-color: rgba(0, 150, 200, 0.6);
+      color: rgba(100, 200, 255, 0.95);
+      
+      &:hover:not(:disabled) {
+        background: linear-gradient(135deg, rgba(0, 130, 180, 0.4), rgba(0, 80, 130, 0.4));
+        border-color: rgba(0, 180, 255, 0.8);
+        box-shadow: 0 0 20px rgba(0, 150, 200, 0.4);
+      }
+    }
+    
+    &:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+  }
+}

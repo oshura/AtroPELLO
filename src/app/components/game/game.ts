@@ -1,6 +1,7 @@
 ﻿import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, HostListener, PLATFORM_ID, Inject } from '@angular/core';
-import { isPlatformBrowser } from '@angular/common';
+import { isPlatformBrowser, CommonModule } from '@angular/common';
 import { Modal } from '../modal/modal';
+import { DeathDialogComponent, DeathDialogAction } from '../dialogs/death-dialog/death-dialog';
 import { GameStateManager, GameState } from '../../services/game/game-state.service';
 import { GameInputHandler } from '../../services/game/game-input.service';
 import { GameInitializer } from '../../services/game/game-initializer.service';
@@ -9,7 +10,7 @@ import { LoggingService, LogCategory } from '../../services/logging.service';
 
 @Component({
   selector: 'app-game',
-  imports: [Modal],
+  imports: [CommonModule, Modal, DeathDialogComponent],
   templateUrl: './game.html',
   styleUrl: './game.scss'
 })
@@ -20,6 +21,9 @@ export class Game implements AfterViewInit, OnDestroy {
   get gameState() { return this.stateManager.getCurrentState(); }
   get isGameRunning() { return this.gameState === GameState.RUNNING; }
   get isGameReady() { return this.gameState === GameState.READY; }
+  
+  // Death dialog state
+  public showDeathDialog = false;
 
   constructor(
     private stateManager: GameStateManager,
@@ -28,7 +32,10 @@ export class Game implements AfterViewInit, OnDestroy {
     private uiManager: GameUIManager,
     @Inject(PLATFORM_ID) private platformId: Object,
     private logger: LoggingService
-  ) {}
+  ) {
+    // Expose this instance globally for GameEngine access
+    (globalThis as any).GameComponentInstance = this;
+  }
 
   async ngAfterViewInit() {
   this.logger.info(LogCategory.GAME_INITIALIZATION, 'Game component view init start');
@@ -48,6 +55,10 @@ export class Game implements AfterViewInit, OnDestroy {
   }
 
   ngOnDestroy() {
+    // Clean up global reference
+    if ((globalThis as any).GameComponentInstance === this) {
+      (globalThis as any).GameComponentInstance = null;
+    }
     this.cleanup();
   }
 
@@ -280,6 +291,45 @@ export class Game implements AfterViewInit, OnDestroy {
         this.logger.info(LogCategory.GAME_LOOP, 'Game resumed');
       }
     }
+  }
+
+  /**
+   * Handle death dialog actions
+   */
+  handleDeathAction(action: DeathDialogAction): void {
+    this.showDeathDialog = false;
+    const gameEngine = this.gameInitializer.getGameEngine();
+    
+    if (!gameEngine) {
+      this.logger.error(LogCategory.GAME_LOOP, 'GameEngine not available for death action');
+      return;
+    }
+    
+    if (action === 'restart') {
+      // Full solar system respawn
+      try {
+        (gameEngine as any).respawnGame?.();
+        this.logger.info(LogCategory.GAME_LOOP, 'System respawned after death');
+      } catch (e) {
+        this.logger.error(LogCategory.GAME_LOOP, 'Failed to respawn game', e);
+      }
+    } else if (action === 'load') {
+      // Load saved game: restore ship near portal with full health and void energy
+      try {
+        (gameEngine as any).loadSaveAfterDeath?.();
+        this.logger.info(LogCategory.GAME_LOOP, 'Saved game loaded after death');
+      } catch (e) {
+        this.logger.error(LogCategory.GAME_LOOP, 'Failed to load save', e);
+      }
+    }
+  }
+
+  /**
+   * Public method exposed to GameEngine to show death dialog
+   */
+  public triggerDeathDialog(): void {
+    this.showDeathDialog = true;
+    this.logger.info(LogCategory.GAME_LOOP, 'Death dialog triggered');
   }
 
   /**

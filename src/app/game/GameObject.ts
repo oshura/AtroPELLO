@@ -19,8 +19,17 @@ export abstract class GameObject {
   public renderOpacity: number = 1.0;
 
   // Sistema de salud básico común a todos los objetos espaciales
-  public healthCurrent: number;
+  protected _healthCurrent: number; // Backing field
   public healthMax: number;
+  
+  // Getter/setter básico para healthCurrent (puede ser overridden en subclases)
+  public get healthCurrent(): number {
+    return this._healthCurrent;
+  }
+  
+  public set healthCurrent(value: number) {
+    this._healthCurrent = value;
+  }
 
   // Masa del vacío disponible para conversión (unidades hipotéticas)
   public voidMassUnits: number;
@@ -63,7 +72,7 @@ export abstract class GameObject {
 
   // Salud por defecto (se puede sobreescribir en subclases después de super())
   this.healthMax = 100;
-  this.healthCurrent = this.healthMax;
+  this._healthCurrent = this.healthMax;
 
   // Por defecto, sin masa del vacío (las subclases pueden asignar)
   this.voidMassUnits = 0;

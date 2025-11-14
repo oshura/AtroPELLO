@@ -10,7 +10,8 @@ import { LoggingService, LogCategory, LogLevel } from '../services/logging.servi
  */
 export class Portal extends GameObject implements ITargetable {
   // Health: portals are magical constructs, very durable but can be destroyed
-  public override healthCurrent: number = 5000;
+  // Override with simple setter to initialize backing field
+  protected override _healthCurrent: number = 5000;
   public override healthMax: number = 5000;
   public radius: number; // radio visual/base para targeting
   // Blank portal: no custom sub-geometry; keep only core disk for targeting proxy

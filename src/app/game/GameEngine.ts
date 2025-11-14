@@ -759,6 +759,21 @@ export class GameEngine {
     try {
       // Crear nave del jugador en el origen
       this.spaceship = new Spaceship({ x: 0, y: 0, z: 0 });
+      
+      // Registrar callback reactivo para verificación automática de muerte
+      this.spaceship.setHealthChangeCallback((newHealth: number, oldHealth: number) => {
+        this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Ship health changed', { 
+          old: Math.round(oldHealth), 
+          new: Math.round(newHealth) 
+        });
+        
+        // Verificar condición de muerte reactivamente
+        if (newHealth <= 0 && oldHealth > 0) {
+          this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Ship destroyed - triggering death dialog (reactive)');
+          this.triggerDeathDialog();
+        }
+      });
+      
       this.logger.log(LogLevel.INFO, LogCategory.GAME_INITIALIZATION, 'Spaceship created successfully', { position: this.spaceship.position });
     } catch (error) {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_INITIALIZATION, 'Error creating spaceship', error);
@@ -2073,12 +2088,7 @@ export class GameEngine {
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Ship damage', { source: obj.id, amount, prev, now: this.spaceship.healthCurrent });
       // Simple HUD feedback: add marquee message
       try { this.hudManager?.addMarqueeMessage?.(`Impacto: -${amount}u (${this.spaceship.healthCurrent}/${this.spaceship.healthMax})`); } catch {}
-      if (this.spaceship.healthCurrent <= 0) {
-        // Fatal: full solar system reset
-        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Ship destroyed - regenerating solar system');
-        this.respawnGame();
-        return; // Exit collision loop after respawn
-      }
+      // Death verification is now handled reactively by healthCurrent setter
     };
     // Aggregate potential collision sources (clusters members, super, mega, planets, sun, ephemerals)
     const sources: any[] = [];
@@ -2526,7 +2536,188 @@ export class GameEngine {
   /**
    * Complete game reset: destroys all objects, regenerates solar system from scratch
    */
-  private respawnGame(): void {
+  /**
+   * Trigger death dialog (called from collision system when ship health <= 0)
+   */
+  private triggerDeathDialog(): void {
+    // Pause game
+    this.isRunning = false;
+    
+    // Call game component to show death dialog
+    try {
+      const gameComponent = (globalThis as any).GameComponentInstance;
+      if (gameComponent && typeof gameComponent.triggerDeathDialog === 'function') {
+        gameComponent.triggerDeathDialog();
+      } else {
+        // Fallback: immediate respawn if dialog not available
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Death dialog not available - falling back to immediate respawn');
+        this.respawnGame();
+      }
+    } catch (e) {
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Failed to trigger death dialog', e);
+      this.respawnGame();
+    }
+  }
+
+  /**
+   * Full solar system respawn (called from death dialog "Restart" button)
+   */
+  public respawnGame(): void {
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn initiated - regenerating solar system');
+    
+    // Stop game loop temporarily
+    const wasRunning = this.isRunning;
+    this.isRunning = false;
+
+    try {
+      // Clear all game objects
+      this.asteroids = [];
+      this.ephemeralAsteroids = [];
+      this.superAsteroids = [];
+      this.independentAsteroids = [];
+      this.planets = [];
+      this.portals = [];
+      this.primarySun = null;
+      this.planetDebris.clear();
+      
+      // Clear cluster service (will be repopulated by createGameObjects)
+      // Note: AsteroidClusterService doesn't have clear() method, objects will be replaced
+      
+      // Clear collision cooldowns
+      this.collisionDamageCooldown.clear();
+      
+      // Clear doppler cues
+      this.dopplerCues.clear();
+      this.lastObjPos.clear();
+      
+      // Reset camera effects
+      this.impactVignetteLevel = 0;
+      this.collisionSlide = null;
+      
+      // Reset portal state
+      this.portalTraversalCooldownSec = 0;
+      this.portalPrevDistances.clear();
+      this.lastShipPos = null;
+      
+      // Recreate all game objects (solar system + spaceship)
+      this.createGameObjects();
+      
+      // Camera will automatically follow spaceship (target is set in camera update logic)
+      
+      // Clear all target selections (HUD, outliner, adaptive targeting, reticle)
+      try { this.clearTargetSelection(); } catch {}
+      
+      // Display marquee
+      try { this.hudManager?.addMarqueeMessage?.('Sistema solar regenerado'); } catch {}
+      
+      // Restart game loop
+      this.isRunning = true;
+      this.lastFrameTime = performance.now();
+      
+      // Explicitly restart the game loop
+      requestAnimationFrame(() => this.gameLoop());
+      
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn complete - game loop restarted');
+    } catch (e) {
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Respawn failed', e);
+      // Try to restart anyway
+      this.isRunning = true;
+      this.lastFrameTime = performance.now();
+      requestAnimationFrame(() => this.gameLoop());
+    }
+  }
+
+  /**
+   * Load saved game after death (called from death dialog "Load Save" button)
+   * Restores ship near a portal with full health and void energy
+   */
+  public loadSaveAfterDeath(): void {
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Loading save after death');
+    
+    if (!this.spaceship) {
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Cannot load save: spaceship not available');
+      return;
+    }
+
+    try {
+      // Find nearest portal
+      let nearestPortal: any = null;
+      let minDist = Infinity;
+      
+      for (const portal of this.portals) {
+        const dx = portal.position.x - this.spaceship.position.x;
+        const dy = portal.position.y - this.spaceship.position.y;
+        const dz = portal.position.z - this.spaceship.position.z;
+        const dist = Math.hypot(dx, dy, dz);
+        
+        if (dist < minDist) {
+          minDist = dist;
+          nearestPortal = portal;
+        }
+      }
+
+      // If no portal found, use primary sun as fallback
+      if (!nearestPortal && this.primarySun) {
+        nearestPortal = this.primarySun;
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'No portal found - using sun as spawn point');
+      }
+
+      if (nearestPortal) {
+        // Position ship 1000u away from portal
+        const offset = 1000;
+        this.spaceship.position.x = nearestPortal.position.x + offset;
+        this.spaceship.position.y = nearestPortal.position.y;
+        this.spaceship.position.z = nearestPortal.position.z;
+        
+        // Reset velocity
+        this.spaceship.velocity = { x: 0, y: 0, z: 0 } as any;
+        this.spaceship.currentSpeed = 0;
+        this.spaceship.targetSpeed = 0;
+        
+        // Restore full health
+        this.spaceship.healthCurrent = this.spaceship.healthMax;
+        
+        // Restore full void energy
+        this.spaceship.voidEnergyCurrent = this.spaceship.voidEnergyMax;
+        
+        // Clear collision cooldowns
+        this.collisionDamageCooldown.clear();
+        
+        // Reset camera effects
+        this.impactVignetteLevel = 0;
+        this.collisionSlide = null;
+        
+        // Clear all target selections (HUD, outliner, adaptive targeting, reticle)
+        try { this.clearTargetSelection(); } catch {}
+        
+        // Display marquee
+        try { this.hudManager?.addMarqueeMessage?.('Partida cargada - Sistema restaurado'); } catch {}
+        
+        // Restart game loop
+        this.isRunning = true;
+        this.lastFrameTime = performance.now();
+        
+        // Explicitly restart the game loop
+        requestAnimationFrame(() => this.gameLoop());
+        
+        this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Save loaded - game loop restarted', { 
+          position: { ...this.spaceship.position },
+          health: this.spaceship.healthCurrent,
+          voidEnergy: this.spaceship.voidEnergyCurrent
+        });
+      } else {
+        this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Cannot load save: no spawn point found');
+        // Fallback to full respawn
+        this.respawnGame();
+      }
+    } catch (e) {
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Load save failed', e);
+      // Fallback to full respawn
+      this.respawnGame();
+    }
+  }
+
+  private oldRespawnGame(): void {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn initiated - regenerating solar system');
     
     // Stop game loop temporarily
@@ -4513,7 +4704,7 @@ export class GameEngine {
     // Fase 2: lanzar hechizo con 'h' (desde el grimorio o recordando el seleccionado)
     if (key.toLowerCase() === 'h') {
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|null;
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|'eternalrite'|null;
         const spell = selected; // Do not fall back to hovered; require explicit selection
         if (!spell) {
           // Nada seleccionado: no hacer nada
@@ -4586,13 +4777,23 @@ export class GameEngine {
             // Limpiar selección de target para que la cinemática se vea limpia
             try { this.clearTargetSelection(); } catch {}
             try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
+          } else if (spell === 'eternalrite') {
+            // Eternal Rite: ritual suicide - show animation then reduce health to 0
+            this.showPlaceholderText('ETERNAL RITE - EMBRACING THE VOID', 2000);
+            // Wait for animation placeholder to finish, then apply death
+            setTimeout(() => {
+              if (this.spaceship) {
+                this.spaceship.healthCurrent = 0; // Setter reactivo disparará triggerDeathDialog automáticamente
+                this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Eternal Rite cast - health reduced to 0');
+              }
+            }, 2200); // Slightly after the placeholder text
           }
         }, 2000);
         return;
       }
       // Si el grimorio no está abierto: usar el hechizo seleccionado persistente (si existe)
       if (this.grimoirePanel) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|null;
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|'eternalrite'|null;
         if (!selected) return;
         // Immediately clear selection upon pressing 'h'
         try { (this.grimoirePanel as any)?.clearSelection?.(); } catch {}
@@ -4650,6 +4851,15 @@ export class GameEngine {
             if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
             try { this.clearTargetSelection(); } catch {}
             try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
+          } else if (selected === 'eternalrite') {
+            // Eternal Rite: ritual suicide
+            this.showPlaceholderText('ETERNAL RITE - EMBRACING THE VOID', 2000);
+            setTimeout(() => {
+              if (this.spaceship) {
+                this.spaceship.healthCurrent = 0; // Setter reactivo disparará triggerDeathDialog automáticamente
+                this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Eternal Rite cast - health reduced to 0');
+              }
+            }, 2200);
           }
         }, 2000);
         return;

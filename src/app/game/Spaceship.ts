@@ -63,6 +63,9 @@ export class Spaceship extends GameObject {
   // Armamento disponible (por ahora vacío)
   public weapons: any[] = [];
   
+  // Callback para notificar cambios de salud (patrón reactivo)
+  private onHealthChangeCallback: ((newHealth: number, oldHealth: number) => void) | null = null;
+  
   // Control de entrada
   public controls = {
     forward: false,
@@ -77,13 +80,35 @@ export class Spaceship extends GameObject {
     rollRight: false  // F key - Roll hacia la derecha
   };
 
+  // Override healthCurrent con getter/setter reactivo
+  public override get healthCurrent(): number {
+    return this._healthCurrent;
+  }
+  
+  public override set healthCurrent(value: number) {
+    const oldValue = this._healthCurrent;
+    this._healthCurrent = value;
+    
+    // Notificar cambio si hay callback registrado y el valor cambió
+    if (oldValue !== value && this.onHealthChangeCallback) {
+      this.onHealthChangeCallback(value, oldValue);
+    }
+  }
+  
+  /**
+   * Registrar callback para notificación reactiva de cambios de salud
+   */
+  public setHealthChangeCallback(callback: (newHealth: number, oldHealth: number) => void): void {
+    this.onHealthChangeCallback = callback;
+  }
+
   constructor(position: Vector3 = { x: 0, y: 0, z: 0 }) {
     super('player-ship', position);
     this.color = { r: 0.7, g: 0.75, b: 0.8, a: 1.0 }; // Color metálico plateado base
 
     // Salud inicial de la nave (podrá equilibrarse luego)
     this.healthMax = 540; // valor de referencia mencionado
-    this.healthCurrent = this.healthMax;
+    this._healthCurrent = this.healthMax; // Usar backing field directamente en constructor
     
     // Inicializar matriz de orientación como identidad
     this.initializeOrientationMatrix();

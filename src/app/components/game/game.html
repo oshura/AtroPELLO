@@ -55,6 +55,12 @@
   </div>
 </app-modal>
 
+<!-- Death dialog: appears when ship is destroyed -->
+<app-death-dialog 
+  *ngIf="showDeathDialog"
+  (action)="handleDeathAction($event)">
+</app-death-dialog>
+
 <!-- Pause dialog: minimal content and continue button -->
 <app-modal 
   [isVisible]="gameState === 'paused'" 

@@ -36,8 +36,8 @@ export class GrimoirePanel {
   private pageWrinkles: Array<Array<{ x:number; y:number }>> = [];
   private hoveredIconIndex: number = -1;
   // Spell states and selection
-  private spellStates: Record<string, 'locked'|'available'|'equipped'> = { speed: 'available', longjump: 'available', gaterite: 'available' };
-  private selectedSpell: 'speed' | 'longjump' | 'gaterite' | null = null;
+  private spellStates: Record<string, 'locked'|'available'|'equipped'> = { speed: 'available', longjump: 'available', gaterite: 'available', eternalrite: 'available' };
+  private selectedSpell: 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | null = null;
   // Reading mode animation (zoom + slight tilt)
   private animStartMs: number = performance.now();
   private animDurMs: number = 320;
@@ -92,13 +92,13 @@ export class GrimoirePanel {
   }
 
   // Expose hovered spell type for casting
-  public getHoveredSpellType(): 'speed' | 'longjump' | 'gaterite' | null {
+  public getHoveredSpellType(): 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | null {
     if (this.hoveredIconIndex < 0) return null;
     const t = this.iconPlacements[this.hoveredIconIndex]?.type;
-    return (t === 'speed' || t === 'longjump' || t === 'gaterite') ? t : null;
+    return (t === 'speed' || t === 'longjump' || t === 'gaterite' || t === 'eternalrite') ? t : null;
   }
-  public getSelectedSpellType(): 'speed' | 'longjump' | 'gaterite' | null { return this.selectedSpell; }
-  public setSelectedSpellType(t: 'speed'|'longjump'|'gaterite'|null): void {
+  public getSelectedSpellType(): 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | null { return this.selectedSpell; }
+  public setSelectedSpellType(t: 'speed'|'longjump'|'gaterite'|'eternalrite'|null): void {
     // Toggle off if the same glyph is clicked again
     if (t && this.selectedSpell === t) {
       this.selectedSpell = null;
@@ -425,10 +425,21 @@ export class GrimoirePanel {
           this.drawGateRiteRune(c, p.x, p.y, p.r*0.9);
         }
       }
+      else if (p.type === 'eternalrite') {
+        if (state === 'equipped') {
+          c.save();
+          const pulse = 0.75 + 0.25 * (0.5 + 0.5 * Math.sin(this.t * 2.8));
+          c.shadowColor = `rgba(139,0,0,${pulse.toFixed(3)})`; // dark crimson
+          c.shadowBlur = 28;
+          this.drawEternalRite(c, p.x, p.y, p.r*0.9, '#8b0000');
+          c.restore();
+        } else {
+          this.drawEternalRite(c, p.x, p.y, p.r*0.9);
+        }
+      }
       else if (p.type === 'eye') this.drawEye(c, p.x, p.y, p.r*1.0);
       else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, p.r*0.7);
       else if (p.type === 'ignis') this.drawIgnis(c, p.x, p.y, p.r*0.85);
-      else if (p.type === 'umbra') this.drawUmbra(c, p.x, p.y, p.r*0.9);
       else if (p.type === 'lux') this.drawLux(c, p.x, p.y, p.r*0.85);
       else if (p.type === 'vinculum') this.drawVinculum(c, p.x, p.y, p.r*0.85);
       else if (p.type === 'tempus') this.drawTempus(c, p.x, p.y, p.r*0.85);
@@ -550,20 +561,20 @@ export class GrimoirePanel {
   this.iconPlacements.push({ type: 'longjump', x: ljX, y: ljY, s: 1.0, r: ljR });
   this.iconPlacements.push({ type: 'gaterite', x: grX, y: grY, s: 1.0, r: grR });
 
-    // Add five invented, locked glyphs distributed across both pages
+    // Add five invented glyphs: eternalrite (available), four locked
     const lp = this.leftPage, rp = this.rightPage;
     const rL = Math.min(lp.w, lp.h) * 0.095;
     const rR = Math.min(rp.w, rp.h) * 0.085;
-    // Left page: ignis (top), umbra (middle), lux (bottom)
+    // Left page: ignis (top), eternalrite (middle - AVAILABLE), lux (bottom)
     this.iconPlacements.push({ type: 'ignis', x: lp.x + lp.w*0.72, y: lp.y + lp.h*0.26, s: 1.0, r: rL });
-    this.iconPlacements.push({ type: 'umbra', x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.52, s: 1.0, r: rL*0.95 });
+    this.iconPlacements.push({ type: 'eternalrite', x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.52, s: 1.0, r: rL*0.95 });
     this.iconPlacements.push({ type: 'lux',   x: lp.x + lp.w*0.58, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
     // Right page (spare spaces): vinculum (upper-left), tempus (lower-left)
     this.iconPlacements.push({ type: 'vinculum', x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
     this.iconPlacements.push({ type: 'tempus',   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
 
-    // Ensure new glyphs default to locked state
-    ['ignis','umbra','lux','vinculum','tempus'].forEach(t => { if (!(t in this.spellStates)) this.spellStates[t] = 'locked'; });
+    // Ensure new glyphs default to locked state (except eternalrite which is available)
+    ['ignis','lux','vinculum','tempus'].forEach(t => { if (!(t in this.spellStates)) this.spellStates[t] = 'locked'; });
   }
 
   // Mulberry32 PRNG
@@ -633,6 +644,39 @@ export class GrimoirePanel {
     c.strokeStyle = '#3b2b1f'; c.lineWidth = 2;
     c.beginPath(); c.arc(0,0, r, -Math.PI/2, Math.PI/2, false); c.stroke();
     c.beginPath(); c.arc(r*0.35, 0, r*0.85, -Math.PI/2, Math.PI/2, false); c.stroke();
+    c.restore();
+  }
+
+  private drawEternalRite(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    // Stylized skull: circle head + eye sockets + nose triangle + jaw line
+    c.save(); c.translate(x,y);
+    const col = color || '#3b2b1f';
+    c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 2;
+    // Skull outline (oval, taller than wide)
+    c.beginPath();
+    c.ellipse(0, 0, r*0.75, r*0.95, 0, 0, Math.PI*2);
+    c.stroke();
+    // Eye sockets (two dark filled circles)
+    c.beginPath();
+    c.arc(-r*0.35, -r*0.25, r*0.22, 0, Math.PI*2);
+    c.arc(r*0.35, -r*0.25, r*0.22, 0, Math.PI*2);
+    c.fill();
+    // Nose (inverted triangle)
+    c.beginPath();
+    c.moveTo(0, -r*0.05);
+    c.lineTo(-r*0.15, r*0.25);
+    c.lineTo(r*0.15, r*0.25);
+    c.closePath();
+    c.fill();
+    // Jaw teeth (simple vertical lines at bottom)
+    c.lineWidth = 1.5;
+    for (let i = -2; i <= 2; i++) {
+      const tx = i * r*0.18;
+      c.beginPath();
+      c.moveTo(tx, r*0.5);
+      c.lineTo(tx, r*0.75);
+      c.stroke();
+    }
     c.restore();
   }
 
@@ -890,6 +934,9 @@ export class GrimoirePanel {
     } else if (type === 'gaterite') {
       title = 'Gate Rite';
       desc = 'Rend a planet; birth an arcane portal to a new system.';
+    } else if (type === 'eternalrite') {
+      title = 'Eternal Rite';
+      desc = 'Embrace the void. Let the end become the beginning.';
     } else {
       const cap = type.charAt(0).toUpperCase() + type.slice(1);
       title = `Sigillum ${cap}`;
