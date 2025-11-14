@@ -1,6 +1,6 @@
 # Gate Rite — Diseño y Plan de Implementación
 
-Última actualización: 2025-11-12 (post pulido cinematográfico: eliminación plasma, ojo central, wrapper suave, travelling + streak gating, llegada a 1u/s)
+Última actualización: 2025-11-14 (eliminación de eye/blink/flame, sin partículas de colapso, cruce por plano del pentáculo)
 
 Este documento define el diseño funcional y técnico del nuevo rito “Gate Rite” y su integración completa con el motor, UI/Grimorio, animaciones y el ciclo de sistemas solares.
 
@@ -14,13 +14,13 @@ Este documento define el diseño funcional y técnico del nuevo rito “Gate Rit
 ## Cambios confirmados / Decisiones (estado actual)
 
 - Portal persistente targeteable (TargetType.PORTAL).
-- Ojo central DESACTIVADO/REMOVIDO (la fase ocular y tracking se posponen; el núcleo colapsado no genera ojo visible).
+- Ojo central desactivado/REMOVIDO (sin fase ocular ni tracking; no se visualiza ojo).
 - Eliminación real del planeta tras colapso (excluido del snapshot final de origen).
-- Símbolo arcano reducido a pentagrama + círculo carmesí (sin geometría ocular, sin párpados).
+- Símbolo arcano: pentagrama + círculo carmesí (sin geometría ocular ni párpados).
 - Eliminada completamente la fase “bola de plasma” (flujo simplificado).
 - Secuencia: travelling de cámara (3.5s) SIN streaks; solo tras completar travelling se activa aceleración y las líneas de velocidad.
 - Aceleración durante tránsito doblada (de +10u/s^2 a +20u/s^2) hasta el cruce del portal.
-- Cruce dispara fade inmediato (0.5s) y swap de sistema.
+- Cruce detectado por intersección segmento‑plano del pentáculo dentro del disco del portal; dispara fade inmediato (0.5s) y swap de sistema.
 - Llegada: nave reaparece a ~1000u y desacelera cinematográficamente hasta estabilizarse en ~1u/s (no se busca 0 absoluto) y solo entonces recarga Void Energy al 100%.
 - Void energy pausada durante todo el rito y hasta completar desaceleración de llegada.
 - Generación destino con restricciones: sin trail (disableTrail), nubes agrupadas (cloudGroupScale=0.1, grupos con 10–20 clusters + 1–3 mega asteroides), tamaños máximos para gigantes/gaseosos, nombres únicos no canónicos, paleta cromática heredada como `colorPaletteOverride`.
@@ -34,7 +34,7 @@ Este documento define el diseño funcional y técnico del nuevo rito “Gate Rit
 2) Pre-Focus (2s): cámara 0 y bloqueo de inputs.
 3) Camera Zoom-Out (zoom extendido ~7.5s total por factor ×3 sobre base 2.5s) encuadra el planeta.
 4) Planet Wrapper (2s): efectos de envolvente suaves.
-5) Planet Collapse (~15s por factor ×5 sobre base 3s): contracción a casi 0, fade y storm shell.
+5) Planet Collapse (~15s por factor ×5 sobre base 3s): contracción a casi 0, fade y storm shell (sin partículas outward).
 6) Portal Manifest (10s): portal crece; ojo desactivado; nave reorientada al portal; sin órbita de cámara.
 7) Camera Reframe (~1.6s): posiciona cámara para travelling.
 8) Transit travelling (3.5s): cámara avanza a pose “cámara 0”; SIN streaks y SIN aceleración.
@@ -113,20 +113,15 @@ Próximos cambios planificados:
 - Campos ambientales en `PlanetSnapshot` (albedo, lifeStage, voidMass).
 - Metadatos de generación (`generationOptions`) para reproducibilidad.
 
-### Portales enlazados y estado del Ojo
+### Portales enlazados
 
-Se añade persistencia de portales y enlace bidireccional:
+Persistencia de portales y enlace bidireccional:
 ```ts
 interface PortalSnapshot {
   id: string;
   position: Vector3;
   radius: number;
   linkedPortalId?: string; // para viajes de ida y vuelta
-  eyeState?: {
-    gazeTarget?: 'ship' | Vector3;
-    eyelidOpen?: number; // 0..1
-    intensity?: number;  // 0..1
-  };
 }
 
 interface SolarSystemSnapshot {
@@ -168,7 +163,7 @@ Al realizar el swap:
 - [x] 1. Wiring inicial (anim + manager + portal + grimoire)
 - [x] 1. Wiring inicial (anim + manager + portal + grimoire)
 - [x] 2. Zoom-Out + Wrapper básico
-- [x] 3. Colapso + borrado real del planeta (pendiente partículas outward)
+- [x] 3. Colapso + borrado real del planeta (partículas outward descartadas)
 - [x] 4. Símbolo Arcano + Ojo básico (pentagrama + círculo + reutilización núcleo planeta + párpado + blink)
 - [x] 5. Gaze tracking + cámara órbita limitada 45°
 - [x] 6. Tránsito + fade directo (sin fase de plasma)
@@ -177,49 +172,25 @@ Al realizar el swap:
 - [x] 9. Persistencia avanzada (PortalSnapshot con `linkedPortalId`, snapshots origen/destino) + travel runtime
 - [ ] 10. Pulido FX (plasma avanzado, shader llama, HUD portal enriquecido)
 
-## Nuevo plan visual del portal (desde cero)
+## Visual del portal
 
-El símbolo arcano final estará compuesto por:
-- Pentagrama carmesí inscrito en un círculo carmesí (idéntico al puntero del Grimorio, a escala planetaria).
-- Ojo central: la esfera remanente del planeta colapsado (núcleo) pasa a ser el ojo.
-- Párpados: apertura horizontal (banda ecuatorial transparente que crece con `eyelidOpen`).
-- Iris/Pupila: círculos concéntricos visibles a través de la apertura; la pupila alberga una llama.
-- Venas: una esfera interior un poco más pequeña con textura fija tipo venas carmesí sobre base blanco‑amarillenta.
-
-### Fases de implementación
-1) Fase 1 — Fundaciones (esta iteración)
-  - Eliminar halo existente; dibujar Pentagrama+círculo (LINE_STRIP/LINE_LOOP) con brillo carmesí.
-  - Ojo: dos esferas low‑poly (interna de venas y esfera “cáscara” con párpados por alpha mask).
-  - Shader del ojo (interna): sclera amarillenta + iris/pupila por anillos concéntricos, sin llama todavía.
-  - Shader de párpado: alpha en banda ecuatorial controlada por `u_eyelidOpen`.
-  - Animación: durante PortalManifest, `eyelidOpen` 0→1, escala del portal 0→R_planeta, mirada simple hacia la nave.
-2) Fase 2 — Pupil Flame + Gaze Tracking
-  - Llama en la pupila (billboard/shader procedural), blink ocasional, smoothing de mirada y límites.
-3) Fase 3 — Tránsito y Plasma Ball
-  - Aceleración, cruce, bola de plasma (2–3s), fade/desaturación y swap de sistema.
-4) Fase 4 — Persistencia y HUD
-  - PortalSnapshot extendido (eyeState completo), pairing robusto y elementos HUD.
+El símbolo arcano está compuesto por:
+- Pentagrama carmesí inscrito en un círculo carmesí.
+- Sin ojo central ni párpados.
 
 ### Estado de progreso
-- [x] Halo eliminado; pentagrama + círculo dibujados con color carmesí.
-- [x] Shader del ojo interno con iris/pupila básicos.
-- [x] Esfera interna de venas implementada con `stormShellProgram` (ruidos + estrías carmesí, alpha baja aditiva).
-- [x] Párpado implementado como máscara horizontal (alpha) en la cáscara externa.
-- [x] Apertura animada en PortalManifest y color del ojo heredado del planeta colapsado.
-- [x] Llama en la pupila (billboard procedural) con blending aditivo y oclusión por párpado.
-- [x] Blink + smoothing de mirada.
-- [x] Aplicación de snapshot nuevo al finalizar tránsito con portal destino emparejado.
-- [x] Nave reubicada a ~1000u del portal destino y cámara encuadrando.
-- [x] Fade-to-black tras cruce (sin fase de plasma).
+- [x] Pentagrama + círculo dibujados con color carmesí.
+- [x] Anti‑flash aplicado en manifest.
+- [x] Fade‑to‑black tras cruce.
 
 ### Viaje bidireccional (Runtime Portal Traversal)
 
-Implementado un manejador en `GameEngine` que cada frame:
-1. Calcula la distancia nave→portal.
-2. Detecta cruce (transición de fuera→dentro del radio del portal).
+El manejador en `GameEngine` cada frame:
+1. Evalúa intersección del segmento de movimiento de la nave (posición anterior→actual) con el plano del pentáculo del portal.
+2. Verifica que el punto de intersección esté dentro del disco del portal (radio válido).
 3. Si el portal tiene `linkedPortalId` y existe un snapshot que contiene ese portal destino, aplica ese snapshot.
-4. Reposiciona la nave en el CENTRO del portal destino y conserva velocidad/orientación previas (sin offset). El offset ~1000u solo aplica en la animación del rito.
-5. Aplica un cooldown de 3s (`portalTraversalCooldownSec`) para evitar rebote inmediato.
+4. Reposiciona la nave a ~1000u delante de la normal del portal destino y alinea rumbo; desaceleración cinematográfica posterior.
+5. Aplica un cooldown de 2–3s (`portalTraversalCooldownSec`) para evitar re‑entrada inmediata.
 
 Limitaciones actuales / TODO:
 - Eje +Z fijo para spawn: ajustar según normal local futura del portal.
@@ -244,7 +215,6 @@ El snapshot `gate-origin-linked-*` NO debe incluir el planeta original colapsado
 ### Cooldowns relevantes
 - Gate Rite: bloqueo inputs durante todas las fases hasta `Completed`.
 - Portal traversal runtime: 3s tras cruce exitoso.
-- (Blink ocular suspendido mientras ojo desactivado.)
 
 ---
 Notas añadidas tras integración bidireccional y clouds.

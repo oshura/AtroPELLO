@@ -6,7 +6,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 
 - Tecnología: Angular 20 (SPA con SSR y zoneless), WebGL2 para renderizado 3D, Canvas 2D para HUD proyectado a textura.
 - Núcleo: `GameEngine` orquesta el bucle de update/render, administra objetos (nave, asteroides, planetas), shaders, texturas y la UI de cabina.
-- Objetivo jugable en curso: minijuego de aterrizaje sobre planetas mediante “ventanas” en la superficie.
+ 
 
 ## Sistemas principales implementados
 
@@ -31,37 +31,12 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - `MusicDirectorService`: escenas musicales con crossfades y ducking temporal.
   - Integración: `GameEngine.enableAudio()` desbloquea audio en el primer gesto y arranca música; por frame se actualiza el oyente a partir de la cámara y el thruster se modula con el estado de la nave.
 
-## Minijuego de aterrizaje (estado actual)
-
-Requisitos acordados:
-- Dos “ventanas” en la superficie del planeta visible en HUD:
-  1) Ventana de impacto actual (dirección de avance de la nave).
-  2) Ventana “ideal”, desplazada +30° a lo largo de la tangente.
-- Activación de ventanas solo cuando la nave está a ≤ 250u de la superficie del planeta.
-- Aterrizaje válido: cruzar de fuera→dentro del planeta atravesando la ventana ideal con velocidad relativa ≤ 5u. Si no, se considera choque y respawn.
-- Color de la ventana ideal: verde (≤ 5u) o roja (> 5u).
-
-Implementación:
-- Cálculo en `GameEngine.updateLandingSystem(...)`:
-  - Intersección rayo-esfera para encontrar el punto de impacto frontal.
-  - Base tangente en la superficie (t1: proyección de la dirección hacia delante; t2: n × t1).
-  - Centro ideal a +30° con respecto a la normal n en la dirección t1.
-  - Quads de las dos ventanas, proyectados a NDC con `worldToNDC`, enviados al HUD para su dibujo.
-  - Validación de entrada al cruzar el radio del planeta: proyección del punto de cruce sobre la base de la ventana ideal y verificación de límites + velocidad.
-- Visualización en HUD: actualmente se dibuja sobre el HUD principal. Próximo paso es moverlo a una capa “background HUD” a pantalla completa detrás del HUD de cabina para que siempre sean visibles al mirar al planeta.
-- Tamaños: se acordó hacer ambas ventanas más pequeñas y que la “ideal” sea mayor que la de impacto. Los factores están en ajuste fino.
-
 ## Próximos pasos inmediatos
 
-- Capa HUD de fondo a pantalla completa
-  - Objetivo: mantener visibles las ventanas incluso cuando el HUD de cabina cubre parte de la vista.
-  - En curso: creación de `LandingOverlay` (Canvas2D → textura WebGL) y uso de `ScreenOverlayRenderer` para dibujarla fullscreen detrás del HUD. Falta completar el “cableado” en `GameEngine` para usarla en lugar de `HUDManager.setLandingWindows(...)`.
-
-- Tuning de tamaños de ventanas
-  - Hacer ambas ventanas más pequeñas en general y que la ventana ideal sea más grande que la de impacto. Ajustar clamps/escala por radio del planeta.
-
-- Afinar validación de velocidad (opcional)
-  - Si se desea, medir la componente tangencial relativa a la ventana en lugar de la magnitud completa.
+- Redefinir presentación de salud en HUD (diseño eliminado; nueva propuesta pendiente).
+- Eliminar definitivamente overlay de portal (ya retirado) y evaluar si se necesita indicador textual de cooldown.
+- Outliner adaptativo según FPS para subir texturas 2D.
+- Revisión adicional Gate Rite (ya sin partículas de colapso ni elementos oculares): validar estabilidad y tiempos.
 
 ## Grimorio y Hechizos
 
@@ -88,7 +63,6 @@ Implementación:
 - HUD: `src/app/game/hud/HUDManager.ts`
 - Retícula y outlines: `src/app/game/targeting/core/ReticleManager.ts`, `src/app/game/targeting/rendering/OutlineRenderer.ts`
 - Shaders: `src/app/game/shaders/*`
-- Minijuego aterrizaje: lógica en `GameEngine.updateLandingSystem(...)`
 - Audio (arquitectura): `documentacion/Audio_Sistema_Arquitectura.md`
 - Audio (assets y formatos): `documentacion/Audio_Assets_Guia.md`
 

@@ -102,8 +102,11 @@ export class HUDManager {
     position?: { x: number; y: number; z: number };
     voidEnergy?: { current: number; max: number; pct: number };
     weapons?: any[];
+    shipHealth?: { current: number; max: number; pct: number };
     // Optional: remaining seconds for active speed rite (Double Phased Time Rite)
     speedRiteRemainingSec?: number | null;
+    // Optional: portal traversal cooldown seconds remaining
+    portalCooldownSec?: number | null; // ignored (wireframe removed)
   }): void {
     // Actualizar elementos individuales
     if (typeof gameData.maxSpeed === 'number' && !Number.isNaN(gameData.maxSpeed)) {
@@ -138,6 +141,9 @@ export class HUDManager {
     (this as any)._voidEnergyHUD = gameData.voidEnergy;
     // Guardar armas de la nave para panel izquierdo
     (this as any)._weaponsHUD = gameData.weapons || [];
+    // Guardar salud de la nave para barras de arco
+    (this as any)._shipHealthHUD = gameData.shipHealth || null;
+    // Portal cooldown HUD removed
     this.renderToTexture();
   }
 
@@ -452,6 +458,8 @@ export class HUDManager {
       y: 200  // Bajada adicional para evitar solaparse con el marquee
     };
     this.compass.render(ctx, compassPos);
+
+    // Salud y portal wireframe eliminados (diseño pendiente de redefinición)
 
     // === VOID ENERGY METER (top-right, adjusted thickness + legend) ===
     const vem = (this as any)._voidEnergyHUD as { current: number; max: number; pct: number } | undefined;

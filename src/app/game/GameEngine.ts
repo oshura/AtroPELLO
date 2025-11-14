@@ -119,6 +119,8 @@ export class GameEngine {
   private portalPrevDistances: Map<string, number> = new Map();
   // Previous ship position (for segment-plane intersection tests)
   private lastShipPos: { x: number; y: number; z: number } | null = null;
+  // Collision damage cooldown tracking (object id -> next allowed timestamp ms)
+  private collisionDamageCooldown: Map<string, number> = new Map();
 
   // Landing minigame removed
   
@@ -1954,14 +1956,56 @@ export class GameEngine {
    * Detecta colisiones entre objetos
    */
   private checkCollisions(): void {
-    // Colisiones nave-asteroides
-    this.asteroids.forEach((asteroid, index) => {
-      if (this.spaceship.checkCollision(asteroid)) {
-        this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Collision detected');
-        // Por ahora solo registrar la colisión
-        // TODO: Implementar lógica de daño/reinicio
+    if (!this.spaceship) return;
+    const now = performance.now();
+    // Helper to apply damage with cooldown per object
+    const applyDamage = (obj: any, amount: number): void => {
+      if (!obj || !obj.id) return;
+      const nextAllowed = this.collisionDamageCooldown.get(obj.id) || 0;
+      if (now < nextAllowed) return; // still in cooldown
+      this.collisionDamageCooldown.set(obj.id, now + 500); // 0.5s cooldown per source
+      // Portal is ethereal: ignore negative/zero damage
+      if (amount <= 0) return;
+      const prev = this.spaceship.healthCurrent;
+      this.spaceship.healthCurrent = Math.max(0, this.spaceship.healthCurrent - amount);
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Ship damage', { source: obj.id, amount, prev, now: this.spaceship.healthCurrent });
+      // Simple HUD feedback: add marquee message
+      try { this.hudManager?.addMarqueeMessage?.(`Impacto: -${amount}u (${this.spaceship.healthCurrent}/${this.spaceship.healthMax})`); } catch {}
+      if (this.spaceship.healthCurrent <= 0) {
+        // Fatal: respawn/reset
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Ship destroyed - initiating respawn');
+        this.resetAfterCrash();
+        // Restore health to max after crash for continued play
+        this.spaceship.healthCurrent = this.spaceship.healthMax;
       }
-    });
+    };
+    // Aggregate potential collision sources (clusters members, super, mega, planets, sun, ephemerals)
+    const sources: any[] = [];
+    try { this.asteroidClusterService.getClusters().forEach(c => { if (c.lodMode === 'full') c.objects.forEach(o => sources.push(o)); else if (c.lodMode === 'proxy' && c.proxy) sources.push(c.proxy); }); } catch {}
+    try { this.ephemeralAsteroids.forEach(a => sources.push(a)); } catch {}
+    try { this.planets.forEach(p => sources.push(p)); } catch {}
+    try { if (this.primarySun) sources.push(this.primarySun); } catch {}
+    try { this.portals.forEach(p => sources.push(p)); } catch {}
+    // Mega asteroides en planetDebris
+    try { for (const arr of this.planetDebris.values()) { for (const d of arr) sources.push(d.obj); } } catch {}
+    for (const obj of sources) {
+      try {
+        if (this.spaceship.checkCollision(obj)) {
+          // Determine damage based on type/class name
+          const name = (obj as any)?.constructor?.name || 'Unknown';
+          let dmg = 0;
+          if (name === 'Asteroid') dmg = 10;
+          else if (name === 'SuperAsteroid') dmg = 75;
+          else if (name === 'MegaAsteroid') dmg = 150;
+          else if (name === 'Planet' || name === 'RingedPlanet' || name === 'GaseousPlanet' || name === 'GiantPlanet' || name === 'DwarfPlanet' || name === 'Protoplanet' || name === 'EarthSplitPlanet') dmg = 100000;
+          else if (name === 'Sun') dmg = 100000;
+          else if (name === 'Portal') dmg = 0; // ethereal
+          // Proxy cluster object (ClusterObject) treat like small asteroid
+          else if (name === 'ClusterObject') dmg = 10;
+          if (dmg > 0) applyDamage(obj, dmg);
+        }
+      } catch {}
+    }
   }
 
   /**
@@ -4464,10 +4508,16 @@ export class GameEngine {
         max: this.spaceship.voidEnergyMax,
         pct: (this.spaceship.voidEnergyCurrent / this.spaceship.voidEnergyMax) * 100
       },
+      shipHealth: {
+        current: this.spaceship.healthCurrent,
+        max: this.spaceship.healthMax,
+        pct: (this.spaceship.healthCurrent / Math.max(1, this.spaceship.healthMax)) * 100
+      },
       weapons: this.spaceship.weapons,
       // Pasar posición de la nave para cálculo de bearing/elevación en brújula
       position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z },
-      speedRiteRemainingSec: riteActive ? Math.max(0, Math.floor((this.speedRiteUntilMs! - performance.now()) / 1000)) : null
+      speedRiteRemainingSec: riteActive ? Math.max(0, Math.floor((this.speedRiteUntilMs! - performance.now()) / 1000)) : null,
+      // Portal cooldown HUD removido (no se expone)
     };
 
     // Sincronizar el target actual del sistema de retícula con el HUD
