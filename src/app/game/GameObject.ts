@@ -22,13 +22,31 @@ export abstract class GameObject {
   protected _healthCurrent: number; // Backing field
   public healthMax: number;
   
+  // Callback para notificación reactiva de destrucción (cuando salud <= 0)
+  private onDestroyedCallback: ((obj: GameObject) => void) | null = null;
+  
   // Getter/setter básico para healthCurrent (puede ser overridden en subclases)
   public get healthCurrent(): number {
     return this._healthCurrent;
   }
   
   public set healthCurrent(value: number) {
+    const oldValue = this._healthCurrent;
     this._healthCurrent = value;
+    
+    // Verificar condición de destrucción reactivamente
+    if (value <= 0 && oldValue > 0 && this.onDestroyedCallback) {
+      // Llamar al callback registrado (GameEngine se encarga de la limpieza)
+      this.onDestroyedCallback(this);
+    }
+  }
+  
+  /**
+   * Registrar callback para notificación reactiva de destrucción
+   * El GameEngine usa esto para limpiar el objeto automáticamente
+   */
+  public setDestroyedCallback(callback: (obj: GameObject) => void): void {
+    this.onDestroyedCallback = callback;
   }
 
   // Masa del vacío disponible para conversión (unidades hipotéticas)

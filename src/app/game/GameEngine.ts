@@ -645,6 +645,8 @@ export class GameEngine {
         } catch {}
         if (gl && !planetObj.vertexBuffer) planetObj.initBuffers(gl as WebGL2RenderingContext);
         this.planets.push(planetObj);
+        // Register reactive destruction callback
+        this.registerDestructionCallback(planetObj);
         // Saturn debris belt similar to legacy if available
         if (p.id === 'planet-saturn') {
           try {
@@ -675,6 +677,8 @@ export class GameEngine {
         });
         if (gl) { for (const o of inst.objects) if (!o.vertexBuffer) o.initBuffers(gl as WebGL2RenderingContext); }
         for (const o of inst.objects) {
+          // Register reactive destruction callback for each asteroid
+          this.registerDestructionCallback(o);
           const name = (o as any)?.constructor?.name;
             if (name === 'SuperAsteroid') supers.push(o as any); else normals.push(o as any);
         }
@@ -696,6 +700,8 @@ export class GameEngine {
         portal.applyEyeState(p.eyeState);
         if (gl && !portal.vertexBuffer) portal.initBuffers(gl as WebGL2RenderingContext);
         this.portals.push(portal);
+        // Register reactive destruction callback
+        this.registerDestructionCallback(portal);
         this.targetCatalog.add(TargetType.PORTAL, portal as any);
         createdPortals.push(p);
       }
@@ -720,6 +726,8 @@ export class GameEngine {
             existing.push({ obj, local: { ...d.localOffset } });
           this.planetDebris.set(d.planetId, existing as any);
           if (gl && !obj.vertexBuffer) obj.initBuffers(gl as WebGL2RenderingContext);
+          // Register reactive destruction callback
+          this.registerDestructionCallback(obj);
           try { this.targetCatalog.add(TargetType.MEGA_ASTEROID, obj as any); } catch {}
         }
       }
@@ -1319,6 +1327,8 @@ export class GameEngine {
             // Void mass 2..5u igual que los asteroides normales
             (a as any).voidMassUnits = 2 + Math.floor(Math.random() * 4);
             this.ephemeralAsteroids.push(a);
+            // Register reactive destruction callback
+            this.registerDestructionCallback(a);
             // Inicializar buffers si GL listo
             try { if (this.gl && !a.vertexBuffer) a.initBuffers(this.gl); } catch {}
           }
@@ -2280,15 +2290,8 @@ export class GameEngine {
       willDestroy: obj.healthCurrent <= 0
     });
     
-    // Destroy object if health depleted
-    if (obj.healthCurrent <= 0) {
-      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object health depleted - initiating destruction', { 
-        id: obj.id, 
-        type: obj.constructor?.name,
-        rawType: obj.constructor?.name
-      });
-      this.destroyObject(obj);
-    }
+    // Destruction is now handled reactively by GameObject.healthCurrent setter
+    // No need for manual check here - the callback will fire automatically
   }
 
   /**
@@ -2437,6 +2440,22 @@ export class GameEngine {
   }
 
   /**
+   * Register reactive destruction callback for any GameObject
+   * When object health reaches 0, it will be automatically destroyed
+   */
+  private registerDestructionCallback(obj: GameObject): void {
+    if (!obj || typeof obj.setDestroyedCallback !== 'function') return;
+    
+    obj.setDestroyedCallback((destroyedObj: GameObject) => {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object destruction triggered reactively', { 
+        id: destroyedObj.id, 
+        type: destroyedObj.constructor?.name 
+      });
+      this.destroyObject(destroyedObj);
+    });
+  }
+
+  /**
    * Eject asteroid from its cluster and convert to independent object with individual motion
    */
   private makeAsteroidIndependent(obj: any): void {
@@ -2470,6 +2489,9 @@ export class GameEngine {
     
     // Add to independent asteroids array
     this.independentAsteroids.push(obj);
+    
+    // Register reactive destruction callback (if not already registered)
+    this.registerDestructionCallback(obj);
     
     // Mark spawn time for culling
     (obj as any)._independentSince = performance.now();

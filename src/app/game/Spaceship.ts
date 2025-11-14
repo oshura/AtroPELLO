@@ -93,6 +93,19 @@ export class Spaceship extends GameObject {
     if (oldValue !== value && this.onHealthChangeCallback) {
       this.onHealthChangeCallback(value, oldValue);
     }
+    
+    // IMPORTANTE: Llamar también al setter del padre para verificación de destrucción
+    // GameObject.healthCurrent setter verifica si value <= 0 y llama onDestroyedCallback
+    // Pero como estamos overriding, necesitamos hacerlo manualmente:
+    if (value <= 0 && oldValue > 0) {
+      // GameObject maneja la destrucción vía su callback
+      // El setter de GameObject ya no se ejecuta porque lo estamos overriding
+      // Así que llamamos directamente a getDestroyedCallback si existe
+      const destroyCallback = (this as any).onDestroyedCallback;
+      if (destroyCallback) {
+        destroyCallback(this);
+      }
+    }
   }
   
   /**
