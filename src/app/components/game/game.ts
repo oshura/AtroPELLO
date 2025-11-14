@@ -1,4 +1,4 @@
-﻿import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, HostListener, PLATFORM_ID, Inject } from '@angular/core';
+﻿import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, HostListener, PLATFORM_ID, Inject, ChangeDetectorRef } from '@angular/core';
 import { isPlatformBrowser, CommonModule } from '@angular/common';
 import { Modal } from '../modal/modal';
 import { DeathDialogComponent, DeathDialogAction } from '../dialogs/death-dialog/death-dialog';
@@ -31,7 +31,8 @@ export class Game implements AfterViewInit, OnDestroy {
     private gameInitializer: GameInitializer,
     private uiManager: GameUIManager,
     @Inject(PLATFORM_ID) private platformId: Object,
-    private logger: LoggingService
+    private logger: LoggingService,
+    private cdr: ChangeDetectorRef
   ) {
     // Expose this instance globally for GameEngine access
     (globalThis as any).GameComponentInstance = this;
@@ -329,7 +330,10 @@ export class Game implements AfterViewInit, OnDestroy {
    */
   public triggerDeathDialog(): void {
     this.showDeathDialog = true;
-    this.logger.info(LogCategory.GAME_LOOP, 'Death dialog triggered');
+    // Forzar detección de cambios manualmente ya que este método
+    // se llama desde el game loop (fuera del ciclo normal de Angular)
+    this.cdr.detectChanges();
+    this.logger.info(LogCategory.GAME_LOOP, 'Death dialog triggered (change detection forced)');
   }
 
   /**

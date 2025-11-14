@@ -1529,6 +1529,7 @@ export class GameEngine {
   // Actualizar efectos de partículas
   this.particleEffects.updateAmbientDust(this.spaceship, deltaTime);
     this.particleEffects.updateThrusterEffect(this.spaceship, deltaTime);
+    this.particleEffects.updateDestructionDebris(this.camera, deltaTime);
 
     // Actualizar cámara con nueva posición
     this.camera.update(this.spaceship, deltaTime);
@@ -2295,10 +2296,44 @@ export class GameEngine {
   }
 
   /**
+   * Get debris particle color based on object type
+   */
+  private getObjectDebrisColor(obj: GameObject): { r: number; g: number; b: number } {
+    const typeName = obj.constructor?.name || '';
+    
+    // Asteroids: gris-marrón rocoso
+    if (typeName.includes('Asteroid')) {
+      return { r: 0.7, g: 0.5, b: 0.3 };
+    }
+    
+    // Planets: tonos azulados/verdosos
+    if (typeName.includes('Planet')) {
+      return { r: 0.3, g: 0.6, b: 0.8 };
+    }
+    
+    // Portals: púrpura místico
+    if (typeName === 'Portal') {
+      return { r: 0.8, g: 0.3, b: 0.9 };
+    }
+    
+    // Default: gris neutro
+    return { r: 0.6, g: 0.6, b: 0.6 };
+  }
+
+  /**
    * Remove an object from the game world permanently
    */
   private destroyObject(obj: any): void {
     if (!obj || !obj.id) return;
+    
+    // Create destruction debris particles at object's position
+    if (this.particleEffects && obj.position) {
+      // Calculate approximate size for particle generation
+      const size = obj.size || 1.0;
+      // Generate particles (color based on object type)
+      const color = this.getObjectDebrisColor(obj);
+      this.particleEffects.createDestructionDebris(obj.position, size, color);
+    }
     
     // Mark as inactive immediately to prevent targeting/rendering
     obj.active = false;

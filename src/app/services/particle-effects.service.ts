@@ -14,6 +14,15 @@ export interface ParticleEffect {
   life: number; // 0.0 to 1.0
 }
 
+export interface DebrisParticle {
+  position: { x: number; y: number; z: number };
+  velocity: { x: number; y: number; z: number };
+  size: number;
+  brightness: number;
+  life: number; // 0.0 to 1.0, decays over time
+  maxLife: number; // tiempo inicial de vida
+}
+
 /**
  * Servicio para manejar efectos de partículas del juego
  */
@@ -48,6 +57,10 @@ export class ParticleEffectsService {
   private ambientSideX = 90;  // dispersión lateral
   private ambientSideY = 60;  // dispersión vertical
   private ambientBaseDrift = 0; // sin deriva base: quieto en reposo
+
+  // Destruction debris particles (explosion remnants)
+  private destructionDebris: DebrisParticle[] = [];
+  private maxDebrisParticles = 500; // límite para rendimiento
 
   constructor(private webglService: WebGLService, private logger: LoggingService) {}
 
@@ -135,6 +148,101 @@ export class ParticleEffectsService {
         particle.color.g *= fadeMultiplier;
         particle.color.b *= fadeMultiplier;
       });
+    }
+  }
+
+  /**
+   * Actualiza las partículas de debris de destrucción
+   * Se eliminan cuando su vida llega a 0 o cuando se alejan demasiado de la cámara
+   */
+  public updateDestructionDebris(camera: Camera, deltaTime: number): void {
+    if (!camera) return;
+    
+    const cameraPos = camera.position;
+    const maxDistance = 200; // Distancia máxima antes de eliminar (similar a ambientFar)
+    
+    // Limpiar debris sin vida o demasiado lejos
+    this.destructionDebris = this.destructionDebris.filter(d => {
+      if (d.life <= 0) return false;
+      
+      // Calcular distancia a la cámara
+      const dx = d.position.x - cameraPos.x;
+      const dy = d.position.y - cameraPos.y;
+      const dz = d.position.z - cameraPos.z;
+      const distance = Math.hypot(dx, dy, dz);
+      
+      return distance <= maxDistance;
+    });
+    
+    // Actualizar cada partícula de debris
+    this.destructionDebris.forEach(debris => {
+      // Mover según velocidad
+      debris.position.x += debris.velocity.x * deltaTime;
+      debris.position.y += debris.velocity.y * deltaTime;
+      debris.position.z += debris.velocity.z * deltaTime;
+      
+      // Aplicar fricción espacial leve (desaceleración gradual)
+      const friction = 0.92;
+      debris.velocity.x *= friction;
+      debris.velocity.y *= friction;
+      debris.velocity.z *= friction;
+      
+      // Decrementar vida basado en maxLife
+      debris.life -= deltaTime / debris.maxLife;
+      debris.life = Math.max(0, debris.life);
+      
+      // Fade out: reducir brillo según vida restante
+      debris.brightness *= (0.98 + 0.02 * debris.life);
+    });
+  }
+
+  /**
+   * Crea partículas de debris cuando un objeto se destruye
+   * @param position Posición del objeto destruido
+   * @param size Tamaño aproximado del objeto (para calcular cantidad de partículas)
+   * @param color Color del debris (basado en tipo de objeto)
+   */
+  public createDestructionDebris(
+    position: { x: number; y: number; z: number },
+    size: number,
+    color?: { r: number; g: number; b: number }
+  ): void {
+    // Calcular cantidad de partículas basado en tamaño del objeto (min 10, max 40)
+    const particleCount = Math.min(40, Math.max(10, Math.floor(size * 20)));
+    
+    // Color por defecto: gris-naranja (asteroides/rocas)
+    const debrisColor = color || { r: 0.7, g: 0.5, b: 0.3 };
+    
+    for (let i = 0; i < particleCount; i++) {
+      // Limitar número total de partículas
+      if (this.destructionDebris.length >= this.maxDebrisParticles) break;
+      
+      // Velocidad inicial aleatoria en todas direcciones (explosión)
+      const speed = 2 + Math.random() * 8; // velocidad entre 2 y 10
+      const theta = Math.random() * Math.PI * 2; // ángulo horizontal
+      const phi = Math.random() * Math.PI; // ángulo vertical
+      
+      const vx = speed * Math.sin(phi) * Math.cos(theta);
+      const vy = speed * Math.sin(phi) * Math.sin(theta);
+      const vz = speed * Math.cos(phi);
+      
+      // Tiempo de vida: 2-5 segundos
+      const maxLife = 2 + Math.random() * 3;
+      
+      const debris: DebrisParticle = {
+        position: {
+          x: position.x + (Math.random() - 0.5) * size * 0.5, // pequeña dispersión inicial
+          y: position.y + (Math.random() - 0.5) * size * 0.5,
+          z: position.z + (Math.random() - 0.5) * size * 0.5
+        },
+        velocity: { x: vx, y: vy, z: vz },
+        size: 0.15 + Math.random() * 0.25, // tamaño entre 0.15 y 0.4
+        brightness: 0.4 + Math.random() * 0.4,
+        life: 1.0,
+        maxLife: maxLife
+      };
+      
+      this.destructionDebris.push(debris);
     }
   }
 
@@ -296,6 +404,13 @@ export class ParticleEffectsService {
       }
     }
 
+    // Renderizar partículas de debris de destrucción
+    if (this.destructionDebris.length) {
+      this.destructionDebris.forEach(debris => {
+        this.renderDebrisParticle(debris, camera);
+      });
+    }
+
     // Renderizar partículas del thruster
     if (this.thrusterParticles.length) {
       this.thrusterParticles.forEach(particle => {
@@ -390,6 +505,57 @@ export class ParticleEffectsService {
       this.respawnAmbientParticleAhead(d, spaceship);
       this.ambientDust.push(d);
     }
+  }
+
+  /**
+   * Renderiza una partícula de debris de destrucción
+   */
+  private renderDebrisParticle(debris: DebrisParticle, camera: Camera): void {
+    if (!this.gl || !this.shaderManager || !this.particleVertexBuffer) return;
+    const gl = this.gl;
+    
+    // Color cálido (gris-naranja) con fade out
+    const fadeAlpha = debris.life * debris.brightness;
+    const r = 0.7 * fadeAlpha;
+    const g = 0.5 * fadeAlpha;
+    const b = 0.3 * fadeAlpha;
+    
+    // Más brillante en el centro
+    const colors = new Float32Array([
+      r * 0.7, g * 0.7, b * 0.7,
+      r * 0.7, g * 0.7, b * 0.7,
+      r, g, b,
+      r * 0.7, g * 0.7, b * 0.7,
+      r, g, b,
+      r, g, b,
+    ]);
+    
+    if (!this.particleColorBuffer) {
+      this.particleColorBuffer = gl.createBuffer();
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+
+    const program = this.shaderManager.basicProgram!;
+    const positionLocation = this.shaderManager.basicAttributes['position'];
+    const colorLocation = this.shaderManager.basicAttributes['color'];
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVertexBuffer);
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
+    gl.enableVertexAttribArray(colorLocation);
+    gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+
+    // Crear matriz de modelo (simple traslación y escala)
+    const modelMatrix = new Float32Array(16);
+    this.createIdentityMatrix(modelMatrix);
+    this.translateMatrix(modelMatrix, debris.position.x, debris.position.y, debris.position.z);
+    this.scaleMatrix(modelMatrix, debris.size, debris.size, debris.size);
+    
+    this.shaderManager.setBasicMatrices(modelMatrix, camera.viewMatrix, camera.projectionMatrix);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.disableVertexAttribArray(positionLocation);
+    gl.disableVertexAttribArray(colorLocation);
   }
 
   private renderAmbientDustParticle(d: { position: {x:number;y:number;z:number}; size:number; brightness:number }, camera: Camera): void {
@@ -513,6 +679,8 @@ export class ParticleEffectsService {
     }
     
     this.thrusterParticles = [];
+    this.destructionDebris = [];
+    this.ambientDust = [];
     this.gl = null;
     this.shaderManager = null;
     
