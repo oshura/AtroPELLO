@@ -2,48 +2,32 @@
   [isVisible]="isVisible" 
   [title]="'Bienvenido a The Old & Only One'" 
   [closeOnBackdrop]="false"
-  (onClose)="onStart()">
+  (onClose)="onContinue()">
   
   <div class="welcome-content">
     <div class="welcome-icon">
       <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <circle cx="32" cy="32" r="32" fill="url(#gameGradient)"/>
+        <circle cx="32" cy="32" r="32" fill="url(#welcomeGradient)"/>
         <path d="M32 16L40 32L32 48L24 32Z" fill="white"/>
         <defs>
-          <linearGradient id="gameGradient" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#667eea"/>
-            <stop offset="100%" stop-color="#764ba2"/>
+          <linearGradient id="welcomeGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+            <stop offset="0%" stop-color="#10b981"/>
+            <stop offset="100%" stop-color="#059669"/>
           </linearGradient>
         </defs>
       </svg>
     </div>
     <p class="welcome-text">Prepárate para una experiencia de juego increíble en el universo de H.P. Lovecraft con tu navegador.</p>
-    
-    <div class="controls-info">
-      <h4>Controles de Vuelo Básicos</h4>
-      <div class="controls-grid">
-        <span>W/S: ↓/↑</span>
-        <span>A/D: ←/→</span>
-        <span>Q/E: ↺/↻</span>
-        <span>+/-: Thrust</span>
-        <span>M: Mapa</span>
-        <span>L: Libro</span>
-        <span>H: Hechizo</span>
-        <span>8: HUD</span>
-      </div>
-      <div class="controls-note">
-        <small>Cuida tu cordura...</small>
-        <small>Pulsa espacio para comenzar</small>
-      </div>
-    </div>
+    <p class="welcome-text">Cuida tu cordura...</p>
   </div>
 
   <div slot="footer">
-    <button class="start-button" (click)="startGame()">
-      <span>Comenzar Aventura</span>
+    <button class="start-button" (click)="onContinue()">
+      <span>Continuar</span>
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
         <path d="M6 12L10 8L6 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
     </button>
   </div>
 </app-modal>
+

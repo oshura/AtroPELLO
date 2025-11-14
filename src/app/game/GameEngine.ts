@@ -188,6 +188,16 @@ export class GameEngine {
   private speedRiteOriginalAccel: number | null = null;
   private speedRiteOriginalDecel: number | null = null;
 
+  // Material Disruption Rite beam animation
+  private disruptionBeam: {
+    active: boolean;
+    startPos: { x: number; y: number; z: number };
+    endPos: { x: number; y: number; z: number };
+    target: any;
+    startTime: number;
+    duration: number; // milliseconds
+  } | null = null;
+
   constructor(
     private webglService: WebGLService,
     private particleEffectsService: ParticleEffectsService,
@@ -1530,6 +1540,9 @@ export class GameEngine {
   this.particleEffects.updateAmbientDust(this.spaceship, deltaTime);
     this.particleEffects.updateThrusterEffect(this.spaceship, deltaTime);
     this.particleEffects.updateDestructionDebris(this.camera, deltaTime);
+
+    // Update disruption beam if active
+    this.updateDisruptionBeam();
 
     // Actualizar cámara con nueva posición
     this.camera.update(this.spaceship, deltaTime);
@@ -2882,6 +2895,12 @@ export class GameEngine {
     // Renderizar efectos de partículas en programa básico (usa additive blending)
     // Asegurar que el estado de la nave/asteroides no se contamine
     this.particleEffects.render(this.camera);
+    
+    // Renderizar haz de disrupción si está activo
+    if (this.disruptionBeam && this.disruptionBeam.active) {
+      this.renderDisruptionBeam();
+    }
+    
     // Reforzar de nuevo programa lit y su iluminación tras partículas
     this.shaderManager.useLitProgram();
     this.shaderManager.setLighting(
@@ -4761,7 +4780,7 @@ export class GameEngine {
     // Fase 2: lanzar hechizo con 'h' (desde el grimorio o recordando el seleccionado)
     if (key.toLowerCase() === 'h') {
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|'eternalrite'|null;
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|'eternalrite'|'disrupt'|null;
         const spell = selected; // Do not fall back to hovered; require explicit selection
         if (!spell) {
           // Nada seleccionado: no hacer nada
@@ -4844,13 +4863,32 @@ export class GameEngine {
                 this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Eternal Rite cast - health reduced to 0');
               }
             }, 2200); // Slightly after the placeholder text
+          } else if (spell === 'disrupt') {
+            // Material Disruption Rite: beam attack to destroy target asteroid
+            this.showPlaceholderText('MATERIAL DISRUPTION RITE', 2000);
+            if (target && this.spaceship) {
+              const anyT: any = target as any;
+              const targetPos = anyT.boundingSphere?.center ? { ...anyT.boundingSphere.center } : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : null);
+              if (targetPos) {
+                const dx = targetPos.x - this.spaceship.position.x;
+                const dy = targetPos.y - this.spaceship.position.y;
+                const dz = targetPos.z - this.spaceship.position.z;
+                const dist = Math.hypot(dx, dy, dz);
+                if (dist <= 50) {
+                  // Start beam animation
+                  this.startDisruptionBeam(targetPos, target);
+                } else {
+                  this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
+                }
+              }
+            }
           }
         }, 2000);
         return;
       }
       // Si el grimorio no está abierto: usar el hechizo seleccionado persistente (si existe)
       if (this.grimoirePanel) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|'eternalrite'|null;
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|'eternalrite'|'disrupt'|null;
         if (!selected) return;
         // Immediately clear selection upon pressing 'h'
         try { (this.grimoirePanel as any)?.clearSelection?.(); } catch {}
@@ -4917,6 +4955,24 @@ export class GameEngine {
                 this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Eternal Rite cast - health reduced to 0');
               }
             }, 2200);
+          } else if (selected === 'disrupt') {
+            // Material Disruption Rite
+            this.showPlaceholderText('MATERIAL DISRUPTION RITE', 2000);
+            if (target && this.spaceship) {
+              const anyT: any = target as any;
+              const targetPos = anyT.boundingSphere?.center ? { ...anyT.boundingSphere.center } : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : null);
+              if (targetPos) {
+                const dx = targetPos.x - this.spaceship.position.x;
+                const dy = targetPos.y - this.spaceship.position.y;
+                const dz = targetPos.z - this.spaceship.position.z;
+                const dist = Math.hypot(dx, dy, dz);
+                if (dist <= 50) {
+                  this.startDisruptionBeam(targetPos, target);
+                } else {
+                  this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
+                }
+              }
+            }
           }
         }, 2000);
         return;
@@ -4928,6 +4984,165 @@ export class GameEngine {
     if (this.spaceship && !this.animationManager.isBlockingInputs()) {
       this.updateShipControls(key, false);
     }
+  }
+
+  /**
+   * Start the Material Disruption Rite beam animation
+   */
+  private startDisruptionBeam(targetPos: { x: number; y: number; z: number }, target: any): void {
+    if (!this.spaceship) return;
+    
+    // Get ship's cockpit position (forward from center)
+    const shipPos = { ...this.spaceship.position };
+    
+    this.disruptionBeam = {
+      active: true,
+      startPos: shipPos,
+      endPos: targetPos,
+      target: target,
+      startTime: performance.now(),
+      duration: 1500 // 1.5 seconds beam duration
+    };
+    
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Disruption beam started', { 
+      distance: Math.hypot(targetPos.x - shipPos.x, targetPos.y - shipPos.y, targetPos.z - shipPos.z) 
+    });
+  }
+
+  /**
+   * Update disruption beam animation and apply damage
+   */
+  private updateDisruptionBeam(): void {
+    if (!this.disruptionBeam || !this.disruptionBeam.active) return;
+    
+    const now = performance.now();
+    const elapsed = now - this.disruptionBeam.startTime;
+    
+    if (elapsed >= this.disruptionBeam.duration) {
+      // Beam finished - destroy target if it's an asteroid
+      const target = this.disruptionBeam.target;
+      const typeName = target?.constructor?.name || '';
+      
+      if (typeName.includes('Asteroid')) {
+        // Reduce health to 0 (reactive system will handle destruction)
+        if (target.healthCurrent !== undefined) {
+          target.healthCurrent = 0;
+          this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Disruption beam destroyed asteroid', { 
+            type: typeName, 
+            id: target.id 
+          });
+        }
+      }
+      
+      // Deactivate beam
+      this.disruptionBeam = null;
+    }
+  }
+
+  /**
+   * Render disruption beam (purple line from ship to target)
+   */
+  private renderDisruptionBeam(): void {
+    if (!this.gl || !this.disruptionBeam || !this.disruptionBeam.active) return;
+    
+    const gl = this.gl;
+    const beam = this.disruptionBeam;
+    
+    // Calculate animation progress (0 to 1)
+    const elapsed = performance.now() - beam.startTime;
+    const progress = Math.min(1, elapsed / beam.duration);
+    
+    // Pulsing intensity
+    const pulse = 0.7 + 0.3 * Math.sin(elapsed * 0.01);
+    
+    // Use basic shader for the beam
+    this.shaderManager.useBasicProgram();
+    
+    // Create beam geometry (thick line with triangles)
+    const thickness = 0.15 * pulse;
+    const start = beam.startPos;
+    const end = beam.endPos;
+    
+    // Direction vector
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const dz = end.z - start.z;
+    const length = Math.hypot(dx, dy, dz);
+    
+    if (length < 0.01) return;
+    
+    // Perpendicular vectors for quad
+    const right = { x: -dy, y: dx, z: 0 };
+    const rightLen = Math.hypot(right.x, right.y, right.z);
+    if (rightLen > 0.01) {
+      right.x /= rightLen;
+      right.y /= rightLen;
+      right.z /= rightLen;
+    }
+    
+    // Beam quad vertices
+    const vertices = new Float32Array([
+      start.x - right.x * thickness, start.y - right.y * thickness, start.z - right.z * thickness,
+      start.x + right.x * thickness, start.y + right.y * thickness, start.z + right.z * thickness,
+      end.x - right.x * thickness, end.y - right.y * thickness, end.z - right.z * thickness,
+      end.x + right.x * thickness, end.y + right.y * thickness, end.z + right.z * thickness
+    ]);
+    
+    // Purple/magenta color with fade
+    const alpha = progress < 0.1 ? (progress / 0.1) : (progress > 0.9 ? (1 - progress) / 0.1 : 1);
+    const r = 0.8 * alpha * pulse;
+    const g = 0.4 * alpha * pulse;
+    const b = 1.0 * alpha * pulse;
+    
+    const colors = new Float32Array([
+      r, g, b,
+      r, g, b,
+      r*0.7, g*0.7, b*0.7,
+      r*0.7, g*0.7, b*0.7
+    ]);
+    
+    // Create temporary buffers
+    const vbo = gl.createBuffer();
+    const cbo = gl.createBuffer();
+    
+    if (!vbo || !cbo) return;
+    
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+    
+    const posLoc = this.shaderManager.basicAttributes['position'];
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
+    
+    gl.bindBuffer(gl.ARRAY_BUFFER, cbo);
+    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+    
+    const colorLoc = this.shaderManager.basicAttributes['color'];
+    gl.enableVertexAttribArray(colorLoc);
+    gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
+    
+    // Set matrices
+    const identity = new Float32Array(16);
+    identity[0] = identity[5] = identity[10] = identity[15] = 1;
+    this.shaderManager.setBasicMatrices(identity, this.camera.viewMatrix, this.camera.projectionMatrix);
+    
+    // Enable blending for transparency
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive for glow effect
+    gl.depthMask(false);
+    
+    // Draw beam
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    
+    // Restore state
+    gl.depthMask(true);
+    gl.disable(gl.BLEND);
+    gl.disableVertexAttribArray(posLoc);
+    gl.disableVertexAttribArray(colorLoc);
+    
+    // Cleanup temporary buffers
+    gl.deleteBuffer(vbo);
+    gl.deleteBuffer(cbo);
   }
 
   /** Apply the Double Phased Time Rite: doubles maxSpeed for a duration (default 2 minutes) */

@@ -2,6 +2,8 @@
 import { isPlatformBrowser, CommonModule } from '@angular/common';
 import { Modal } from '../modal/modal';
 import { DeathDialogComponent, DeathDialogAction } from '../dialogs/death-dialog/death-dialog';
+import { WelcomeDialogComponent } from '../dialogs/welcome-dialog/welcome-dialog';
+import { ControlsDialogComponent } from '../dialogs/controls-dialog/controls-dialog';
 import { GameStateManager, GameState } from '../../services/game/game-state.service';
 import { GameInputHandler } from '../../services/game/game-input.service';
 import { GameInitializer } from '../../services/game/game-initializer.service';
@@ -10,7 +12,7 @@ import { LoggingService, LogCategory } from '../../services/logging.service';
 
 @Component({
   selector: 'app-game',
-  imports: [CommonModule, Modal, DeathDialogComponent],
+  imports: [CommonModule, Modal, DeathDialogComponent, WelcomeDialogComponent, ControlsDialogComponent],
   templateUrl: './game.html',
   styleUrl: './game.scss'
 })
@@ -22,8 +24,9 @@ export class Game implements AfterViewInit, OnDestroy {
   get isGameRunning() { return this.gameState === GameState.RUNNING; }
   get isGameReady() { return this.gameState === GameState.READY; }
   
-  // Death dialog state
+  // Dialog states
   public showDeathDialog = false;
+  public showControlsDialog = false;
 
   constructor(
     private stateManager: GameStateManager,
@@ -44,6 +47,9 @@ export class Game implements AfterViewInit, OnDestroy {
     // Solo inicializar en el navegador, no en SSR
     // FORZAR inicialización para depuración (desactivando detección SSR temporalmente)
   this.logger.debug(LogCategory.DEBUG, 'Force init - bypassing SSR detection for debugging');
+    
+    // Añadir listener global para desbloquear audio con cualquier click
+    this.setupAudioUnlockListener();
     
     // Añadir un pequeño delay para asegurar que el DOM esté completamente listo
     setTimeout(async () => {
@@ -121,6 +127,9 @@ export class Game implements AfterViewInit, OnDestroy {
         // Cambiar a estado listo
         this.stateManager.setState(GameState.READY);
         this.logger.info(LogCategory.GAME_INITIALIZATION, 'Game initialized successfully', result);
+        
+        // Intentar iniciar música de menú
+        this.tryStartMenuMusic();
       } else {
         this.stateManager.setState(GameState.ERROR);
         this.uiManager.showError(result.error || 'Unknown initialization error');
@@ -138,6 +147,46 @@ export class Game implements AfterViewInit, OnDestroy {
       this.uiManager.showError(error instanceof Error ? error.message : 'Initialization error');
       this.logger.error(LogCategory.GAME_INITIALIZATION, 'Game initialization error', error);
     }
+  }
+
+  /**
+   * Intenta iniciar la música de menú (requiere gesto del usuario en algunos navegadores)
+   */
+  private async tryStartMenuMusic(): Promise<void> {
+    try {
+      const gameEngine = this.gameInitializer.getGameEngine();
+      if (!gameEngine) return;
+      
+      const audio = (gameEngine as any).audio;
+      const music = (gameEngine as any).music;
+      
+      if (audio && music) {
+        audio.ensureContext();
+        const unlocked = await audio.unlock();
+        if (unlocked) {
+          await music.setScene('menu', 900);
+          this.logger.info(LogCategory.AUDIO, 'Menu music started');
+        }
+      }
+    } catch (e) {
+      this.logger.warn(LogCategory.AUDIO, 'Could not start menu music (will retry on user interaction)', e);
+    }
+  }
+
+  /**
+   * Configura listener global para desbloquear audio con cualquier interacción
+   */
+  private setupAudioUnlockListener(): void {
+    const unlockAudio = async () => {
+      await this.tryStartMenuMusic();
+      // Remover listener después del primer intento exitoso
+      document.removeEventListener('click', unlockAudio);
+      document.removeEventListener('keydown', unlockAudio);
+    };
+    
+    // Escuchar click o tecla en cualquier parte de la página
+    document.addEventListener('click', unlockAudio, { once: true });
+    document.addEventListener('keydown', unlockAudio, { once: true });
   }
 
   /**
@@ -238,6 +287,9 @@ export class Game implements AfterViewInit, OnDestroy {
         throw new Error('Game engine not available');
       }
 
+      // Cerrar diálogo de controles
+      this.showControlsDialog = false;
+      
       this.stateManager.setState(GameState.RUNNING);
       this.uiManager.resetGameStats();
       gameEngine.start();
@@ -249,6 +301,13 @@ export class Game implements AfterViewInit, OnDestroy {
       this.stateManager.setState(GameState.ERROR);
       this.uiManager.showError(error instanceof Error ? error.message : 'Failed to start game');
     }
+  }
+
+  /**
+   * Maneja el evento de continuar desde el diálogo de bienvenida
+   */
+  onWelcomeContinue(): void {
+    this.showControlsDialog = true;
   }
 
   /**
@@ -278,6 +337,11 @@ export class Game implements AfterViewInit, OnDestroy {
         const gameEngine = this.gameInitializer.getGameEngine();
         if (gameEngine) {
           gameEngine.stop(); // GameEngine no tiene pause, usa stop
+          // Cambiar a música de menú al pausar
+          try {
+            const music = (gameEngine as any).music;
+            if (music) music.setScene('menu', 800);
+          } catch {}
         }
         this.stateManager.setState(GameState.PAUSED);
         this.logger.info(LogCategory.GAME_LOOP, 'Game paused');
@@ -287,6 +351,11 @@ export class Game implements AfterViewInit, OnDestroy {
         const gameEngine = this.gameInitializer.getGameEngine();
         if (gameEngine) {
           gameEngine.start();
+          // Volver a música de exploración al reanudar
+          try {
+            const music = (gameEngine as any).music;
+            if (music) music.setScene('exploration', 800);
+          } catch {}
         }
         this.stateManager.setState(GameState.RUNNING);
         this.logger.info(LogCategory.GAME_LOOP, 'Game resumed');
@@ -310,6 +379,9 @@ export class Game implements AfterViewInit, OnDestroy {
       // Full solar system respawn
       try {
         (gameEngine as any).respawnGame?.();
+        // Volver a música de exploración
+        const music = (gameEngine as any).music;
+        if (music) music.setScene('exploration', 1000);
         this.logger.info(LogCategory.GAME_LOOP, 'System respawned after death');
       } catch (e) {
         this.logger.error(LogCategory.GAME_LOOP, 'Failed to respawn game', e);
@@ -318,6 +390,9 @@ export class Game implements AfterViewInit, OnDestroy {
       // Load saved game: restore ship near portal with full health and void energy
       try {
         (gameEngine as any).loadSaveAfterDeath?.();
+        // Volver a música de exploración
+        const music = (gameEngine as any).music;
+        if (music) music.setScene('exploration', 1000);
         this.logger.info(LogCategory.GAME_LOOP, 'Saved game loaded after death');
       } catch (e) {
         this.logger.error(LogCategory.GAME_LOOP, 'Failed to load save', e);
@@ -330,6 +405,14 @@ export class Game implements AfterViewInit, OnDestroy {
    */
   public triggerDeathDialog(): void {
     this.showDeathDialog = true;
+    // Cambiar a música de menú cuando aparece el diálogo de muerte
+    try {
+      const gameEngine = this.gameInitializer.getGameEngine();
+      if (gameEngine) {
+        const music = (gameEngine as any).music;
+        if (music) music.setScene('menu', 1000);
+      }
+    } catch {}
     // Forzar detección de cambios manualmente ya que este método
     // se llama desde el game loop (fuera del ciclo normal de Angular)
     this.cdr.detectChanges();

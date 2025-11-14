@@ -36,8 +36,8 @@ export class GrimoirePanel {
   private pageWrinkles: Array<Array<{ x:number; y:number }>> = [];
   private hoveredIconIndex: number = -1;
   // Spell states and selection
-  private spellStates: Record<string, 'locked'|'available'|'equipped'> = { speed: 'available', longjump: 'available', gaterite: 'available', eternalrite: 'available' };
-  private selectedSpell: 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | null = null;
+  private spellStates: Record<string, 'locked'|'available'|'equipped'> = { speed: 'available', longjump: 'available', gaterite: 'available', eternalrite: 'available', disrupt: 'available' };
+  private selectedSpell: 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | 'disrupt' | null = null;
   // Reading mode animation (zoom + slight tilt)
   private animStartMs: number = performance.now();
   private animDurMs: number = 320;
@@ -92,13 +92,13 @@ export class GrimoirePanel {
   }
 
   // Expose hovered spell type for casting
-  public getHoveredSpellType(): 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | null {
+  public getHoveredSpellType(): 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | 'disrupt' | null {
     if (this.hoveredIconIndex < 0) return null;
     const t = this.iconPlacements[this.hoveredIconIndex]?.type;
-    return (t === 'speed' || t === 'longjump' || t === 'gaterite' || t === 'eternalrite') ? t : null;
+    return (t === 'speed' || t === 'longjump' || t === 'gaterite' || t === 'eternalrite' || t === 'disrupt') ? t : null;
   }
-  public getSelectedSpellType(): 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | null { return this.selectedSpell; }
-  public setSelectedSpellType(t: 'speed'|'longjump'|'gaterite'|'eternalrite'|null): void {
+  public getSelectedSpellType(): 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | 'disrupt' | null { return this.selectedSpell; }
+  public setSelectedSpellType(t: 'speed'|'longjump'|'gaterite'|'eternalrite'|'disrupt'|null): void {
     // Toggle off if the same glyph is clicked again
     if (t && this.selectedSpell === t) {
       this.selectedSpell = null;
@@ -437,6 +437,18 @@ export class GrimoirePanel {
           this.drawEternalRite(c, p.x, p.y, p.r*0.9);
         }
       }
+      else if (p.type === 'disrupt') {
+        if (state === 'equipped') {
+          c.save();
+          const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 3.2));
+          c.shadowColor = `rgba(200,100,255,${pulse.toFixed(3)})`; // purple/magenta
+          c.shadowBlur = 24;
+          this.drawDisruptRune(c, p.x, p.y, p.r*0.9, '#c864ff');
+          c.restore();
+        } else {
+          this.drawDisruptRune(c, p.x, p.y, p.r*0.9);
+        }
+      }
       else if (p.type === 'eye') this.drawEye(c, p.x, p.y, p.r*1.0);
       else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, p.r*0.7);
       else if (p.type === 'ignis') this.drawIgnis(c, p.x, p.y, p.r*0.85);
@@ -565,15 +577,16 @@ export class GrimoirePanel {
     const lp = this.leftPage, rp = this.rightPage;
     const rL = Math.min(lp.w, lp.h) * 0.095;
     const rR = Math.min(rp.w, rp.h) * 0.085;
-    // Left page: ignis (top), eternalrite (middle - AVAILABLE), lux (bottom)
+    // Left page: ignis (top), eternalrite (middle), disrupt (AVAILABLE - lower middle), lux (bottom)
     this.iconPlacements.push({ type: 'ignis', x: lp.x + lp.w*0.72, y: lp.y + lp.h*0.26, s: 1.0, r: rL });
-    this.iconPlacements.push({ type: 'eternalrite', x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.52, s: 1.0, r: rL*0.95 });
-    this.iconPlacements.push({ type: 'lux',   x: lp.x + lp.w*0.58, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
+    this.iconPlacements.push({ type: 'eternalrite', x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.45, s: 1.0, r: rL*0.95 });
+    this.iconPlacements.push({ type: 'disrupt', x: lp.x + lp.w*0.68, y: lp.y + lp.h*0.62, s: 1.0, r: rL*0.92 });
+    this.iconPlacements.push({ type: 'lux',   x: lp.x + lp.w*0.38, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
     // Right page (spare spaces): vinculum (upper-left), tempus (lower-left)
     this.iconPlacements.push({ type: 'vinculum', x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
     this.iconPlacements.push({ type: 'tempus',   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
 
-    // Ensure new glyphs default to locked state (except eternalrite which is available)
+    // Ensure new glyphs default to locked state (except eternalrite and disrupt which are available)
     ['ignis','lux','vinculum','tempus'].forEach(t => { if (!(t in this.spellStates)) this.spellStates[t] = 'locked'; });
   }
 
@@ -677,6 +690,45 @@ export class GrimoirePanel {
       c.lineTo(tx, r*0.75);
       c.stroke();
     }
+    c.restore();
+  }
+
+  private drawDisruptRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    // Material Disruption: shattered crystal/lightning bolt pattern
+    c.save(); c.translate(x,y);
+    const col = color || '#3b2b1f';
+    c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 2.5;
+    
+    // Outer circle (containment)
+    c.beginPath();
+    c.arc(0, 0, r*0.95, 0, Math.PI*2);
+    c.stroke();
+    
+    // Central jagged lightning bolt (vertical zigzag)
+    c.lineWidth = 3;
+    c.beginPath();
+    c.moveTo(0, -r*0.8);
+    c.lineTo(r*0.25, -r*0.3);
+    c.lineTo(-r*0.15, -r*0.1);
+    c.lineTo(r*0.2, r*0.3);
+    c.lineTo(-r*0.1, r*0.5);
+    c.lineTo(0, r*0.8);
+    c.stroke();
+    
+    // Radiating cracks from center (8 lines)
+    c.lineWidth = 1.5;
+    for (let i = 0; i < 8; i++) {
+      const angle = (i / 8) * Math.PI * 2;
+      const x1 = Math.cos(angle) * r * 0.3;
+      const y1 = Math.sin(angle) * r * 0.3;
+      const x2 = Math.cos(angle) * r * 0.7;
+      const y2 = Math.sin(angle) * r * 0.7;
+      c.beginPath();
+      c.moveTo(x1, y1);
+      c.lineTo(x2, y2);
+      c.stroke();
+    }
+    
     c.restore();
   }
 
@@ -887,6 +939,9 @@ export class GrimoirePanel {
     } else if (type === 'gaterite') {
       title = 'Gate Rite';
       desc = 'Rend a planet; birth an arcane portal to a new system.';
+    } else if (type === 'disrupt') {
+      title = 'Material Disruption Rite';
+      desc = 'Unleash a beam of pure entropy. Asteroids within 50u crumble.';
     } else {
       const cap = type.charAt(0).toUpperCase() + type.slice(1);
       title = `Sigillum ${cap}`;
@@ -937,6 +992,9 @@ export class GrimoirePanel {
     } else if (type === 'eternalrite') {
       title = 'Eternal Rite';
       desc = 'Embrace the void. Let the end become the beginning.';
+    } else if (type === 'disrupt') {
+      title = 'Material Disruption Rite';
+      desc = 'Unleash a beam of pure entropy. Asteroids within 50u crumble.';
     } else {
       const cap = type.charAt(0).toUpperCase() + type.slice(1);
       title = `Sigillum ${cap}`;

@@ -13,7 +13,7 @@ export class MusicDirectorService {
   private current: { scene: MusicScene; handle: PlayingHandle | null } = { scene: 'silence', handle: null };
   private next: { scene: MusicScene; handle: PlayingHandle | null } | null = null;
   private library: Record<MusicScene, TrackDef[]> = {
-    menu: [{ name: 'music_menu', volume: 0.5 }],
+    menu: [{ name: 'music_entree', volume: 0.5 }],
     exploration: [{ name: 'music_explore_a', volume: 0.6 }],
     planet_approach: [{ name: 'music_planet', volume: 0.65 }],
     combat: [{ name: 'music_combat', volume: 0.7 }],
