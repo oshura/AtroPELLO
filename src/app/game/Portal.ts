@@ -9,8 +9,9 @@ import { LoggingService, LogCategory, LogLevel } from '../services/logging.servi
  * Targeteable, con geometría circular de runas y ojo central (placeholder en esta fase).
  */
 export class Portal extends GameObject implements ITargetable {
-  public override healthCurrent: number = 1; // no relevante
-  public override healthMax: number = 1;
+  // Health: portals are magical constructs, very durable but can be destroyed
+  public override healthCurrent: number = 5000;
+  public override healthMax: number = 5000;
   public radius: number; // radio visual/base para targeting
   // Blank portal: no custom sub-geometry; keep only core disk for targeting proxy
   public manifestTime = 0; // tiempo de vida para animación
@@ -200,7 +201,7 @@ export class Portal extends GameObject implements ITargetable {
   // ITargetable implementation
   public getDisplayName(): string { return `Portal ${this.id}`; }
   public getTargetType(): TargetType { return TargetType.PORTAL; }
-  public isActive(): boolean { return this.active && this.visible; }
+  public override isActive(): boolean { return this.active && this.visible; }
 
   // ===== Pentáculo =====
   // Eliminado en Portal (se renderiza desde PortalShaderService para grosor/anillo consistentes)

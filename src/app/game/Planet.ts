@@ -42,8 +42,11 @@ export class Planet extends GameObject implements ITargetable {
     const c = PLANET_COLORS[colorName];
     this.color = { r: c[0], g: c[1], b: c[2], a: 1 } as any;
     this.objectType = TargetType.PLANET;
-    this.healthMax = 1;
-    this.healthCurrent = 1;
+    
+    // Health: planets are nearly indestructible (200-400 hits from ship)
+    this.healthMax = 12000;
+    this.healthCurrent = this.healthMax;
+    
     // Importante: regenerar colores por vértice después de asignar this.color
     // (GameObject llama a generateVertexColors() antes de que Planet asigne su color base)
     this.generateVertexColors();
@@ -51,7 +54,7 @@ export class Planet extends GameObject implements ITargetable {
 
   public getDisplayName(): string { return this.customName ?? `Planet ${this.baseColorName}`; }
   public getTargetType(): TargetType { return TargetType.PLANET; }
-  public isActive(): boolean { return this.active; }
+  public override isActive(): boolean { return this.active; }
 
   /**
    * Override: include axial tilt before applying dynamic rotations (X→Y→Z).

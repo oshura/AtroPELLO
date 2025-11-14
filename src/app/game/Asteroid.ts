@@ -36,6 +36,10 @@ export class Asteroid extends GameObject implements ITargetable {
   this.objectType = TargetType.ASTEROID;
     this.color = { r: 0.6, g: 0.5, b: 0.4, a: 1.0 }; // Color gris-marrón rocoso
 
+    // Health: small asteroids are fragile (1-3 hits from ship)
+    this.healthMax = 100;
+    this.healthCurrent = this.healthMax;
+
     // Dirección de movimiento (si no se especifica, aleatoria)
     this.direction = direction || this.getRandomDirection();
     
@@ -343,7 +347,7 @@ export class Asteroid extends GameObject implements ITargetable {
   /**
    * Verifica si el asteroide está activo (siempre true para asteroides)
    */
-  public isActive(): boolean {
+  public override isActive(): boolean {
     // Considerar activo solo si el objeto está marcado como activo y visible
     return this.active && this.visible;
   }

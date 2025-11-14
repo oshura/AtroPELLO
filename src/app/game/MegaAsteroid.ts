@@ -10,6 +10,11 @@ export class MegaAsteroid extends SuperAsteroid {
     // Make MegaAsteroids 5x larger than before (was x5 vs base, now x25 vs base)
     super(id, position, baseSize * 25, direction);
     (this as any).objectType = TargetType.MEGA_ASTEROID;
+    
+    // Health: extremely durable (40-60 hits from ship)
+    this.healthMax = 2500;
+    this.healthCurrent = this.healthMax;
+    
     // Assign void mass proportional to size multiplier over SuperAsteroid base
     // SuperAsteroid baseline ~100 per unit size; MegaAsteroid now forces x25
     // Use baseSize to scale so larger megas carry more void mass

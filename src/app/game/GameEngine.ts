@@ -84,6 +84,10 @@ export class GameEngine {
   // Central logger
   public readonly logger: LoggingService;
   
+  // HUD health update throttle (update every 250ms instead of every frame)
+  private lastHealthUpdateTime: number = 0;
+  private healthUpdateInterval: number = 250; // ms
+  
   // Audio
   private audio: AudioEngineService | null = null;
   private music: MusicDirectorService | null = null;
@@ -106,6 +110,8 @@ export class GameEngine {
   private ephemeralSpawnCounter: number = 0;
   private nextEphemeralCheckMs: number = 0; // próxima comprobación de spawn (cada 10s)
   private superAsteroids: SuperAsteroid[] = [];
+  // Independent asteroids (ejected from clusters after collision, have individual motion)
+  private independentAsteroids: Asteroid[] = [];
   private planets: Planet[] = [];
   // Persistent portals (created by Gate Rite); survive system transitions
   private portals: Portal[] = [];
@@ -121,6 +127,12 @@ export class GameEngine {
   private lastShipPos: { x: number; y: number; z: number } | null = null;
   // Collision damage cooldown tracking (object id -> next allowed timestamp ms)
   private collisionDamageCooldown: Map<string, number> = new Map();
+  // Impact camera effect (red vignette) 0..1
+  private impactVignetteLevel: number = 0;
+  // Smooth lateral displacement after large-object collisions
+  private collisionSlide: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number }; t: number; duration: number } | null = null;
+  // Collision debug logging throttle
+  private _lastCollisionLogSec: number = 0;
 
   // Landing minigame removed
   
@@ -444,6 +456,28 @@ export class GameEngine {
       try {
         const w = (globalThis as any);
         w.Debug = w.Debug || {};
+        // Helper to enable/disable log categories from console
+        w.Debug.enableLog = (cat: string) => {
+          const category = (LogCategory as any)[cat];
+          if (category) {
+            this.logger.enableCategory(category);
+            console.log(`✓ Enabled logging for ${cat}`);
+          } else {
+            console.warn(`Unknown category: ${cat}. Available: ${Object.keys(LogCategory).join(', ')}`);
+          }
+        };
+        w.Debug.disableLog = (cat: string) => {
+          const category = (LogCategory as any)[cat];
+          if (category) {
+            this.logger.disableCategory(category);
+            console.log(`✗ Disabled logging for ${cat}`);
+          }
+        };
+        w.Debug.showLogCategories = () => {
+          const enabled = this.logger.getEnabledCategories();
+          console.log('Enabled log categories:', enabled);
+          console.log('Available categories:', Object.keys(LogCategory));
+        };
         w.Debug.setOutlinerEnabled = (v: boolean) => {
           this.outlinerEnabled = !!v;
           this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Outliner enabled', { value: this.outlinerEnabled });
@@ -1041,6 +1075,7 @@ export class GameEngine {
       this.audio.ensureContext();
       const ok = await this.audio.unlock();
       this.audioUnlocked = ok;
+      console.log(`\u{1F50A} Audio unlocked: ${ok}, audioUnlocked flag: ${this.audioUnlocked}`);
       if (ok && this.music) {
         // Start exploration by default
         await this.music.setScene('exploration', 900);
@@ -1053,6 +1088,7 @@ export class GameEngine {
       }
       this.logger.log(LogLevel.INFO, LogCategory.AUDIO, 'Audio enabled', { ok });
     } catch (e) {
+      console.error('\u{1F534} Audio enable failed:', e);
       this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Audio enable failed', e);
     }
   }
@@ -1202,6 +1238,32 @@ export class GameEngine {
   // Capture ship position before integration for portal plane crossing tests
   try { this.lastShipPos = { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }; } catch {}
   this.spaceship.update(deltaTime);
+
+    // Update independent asteroids (ejected from clusters after collision)
+    this.updateIndependentAsteroids(deltaTime);
+
+    // Apply ongoing collision slide (lateral reposition over ~1s)
+    if (this.collisionSlide) {
+      this.collisionSlide.t += deltaTime;
+      const k = Math.max(0, Math.min(1, this.collisionSlide.t / Math.max(1e-6, this.collisionSlide.duration)));
+      // Smoothstep easing
+      const s = k * k * (3 - 2 * k);
+      const nx = this.collisionSlide.start.x + (this.collisionSlide.end.x - this.collisionSlide.start.x) * s;
+      const ny = this.collisionSlide.start.y + (this.collisionSlide.end.y - this.collisionSlide.start.y) * s;
+      const nz = this.collisionSlide.start.z + (this.collisionSlide.end.z - this.collisionSlide.start.z) * s;
+      this.spaceship.position.x = nx;
+      this.spaceship.position.y = ny;
+      this.spaceship.position.z = nz;
+      this.spaceship.updateModelMatrix();
+      try { if (this.spaceship.boundingSphere) this.spaceship.boundingSphere.center = { ...this.spaceship.position }; } catch {}
+      if (k >= 1) this.collisionSlide = null;
+    }
+
+    // Decay impact vignette
+    if (this.impactVignetteLevel > 0) {
+      const DECAY_PER_SEC = 1.6; // fades to 0 in ~0.6s from 1.0
+      this.impactVignetteLevel = Math.max(0, this.impactVignetteLevel - DECAY_PER_SEC * deltaTime);
+    }
 
     // ============================
     // Spawn y mantenimiento de asteroides efímeros
@@ -1551,6 +1613,25 @@ export class GameEngine {
       }
     }
   } catch {}
+  // Incluir asteroides independientes (eyectados de clusters) como targets adicionales
+  try {
+    if (this.independentAsteroids.length) {
+      const independentsActive = this.independentAsteroids.filter(a => a.isActive && a.isActive());
+      if (independentsActive.length) {
+        // Registrar en catálogo si no están ya
+        const existing = this.targetCatalog.getByType(TargetType.ASTEROID).map(t => t.id);
+        const toAdd = independentsActive.filter(a => !existing.includes(a.id));
+        if (toAdd.length) {
+          const merged = [...this.targetCatalog.getByType(TargetType.ASTEROID), ...toAdd];
+          this.targetCatalog.register(TargetType.ASTEROID, merged as ITargetable[]);
+        }
+      }
+      // Añadir a lista de disponibles sin duplicar
+      for (const a of independentsActive) {
+        if (!availableTargets.some(t => t.id === a.id)) availableTargets.push(a as ITargetable);
+      }
+    }
+  } catch {}
   // Excluir completamente los clusters (proxies y miembros) si su centro está a >20,000u de la nave
   try {
     const farClusterIds = new Set<string>();
@@ -1716,7 +1797,20 @@ export class GameEngine {
                     : undefined),
           }
         : {};
-      const details = { ...baseDetails, ...planetHints, type: typeLabel, previewStatus: (this.targetPreview as any).getStatus?.(), voidMassUnits: voidMass } as any;
+      // Update health values only every 250ms to reduce overhead
+      const now = performance.now();
+      const shouldUpdateHealth = (now - this.lastHealthUpdateTime) >= this.healthUpdateInterval;
+      const healthData = shouldUpdateHealth ? {
+        healthCurrent: (selected as any).healthCurrent ?? (baseDetails as any)?.healthCurrent ?? 100,
+        healthMax: (selected as any).healthMax ?? (baseDetails as any)?.healthMax ?? 100,
+        healthPct: ((selected as any).healthCurrent && (selected as any).healthMax) 
+          ? Math.round(((selected as any).healthCurrent / (selected as any).healthMax) * 100) 
+          : 100
+      } : {};
+      if (shouldUpdateHealth) {
+        this.lastHealthUpdateTime = now;
+      }
+      const details = { ...baseDetails, ...planetHints, ...healthData, type: typeLabel, previewStatus: (this.targetPreview as any).getStatus?.(), voidMassUnits: voidMass } as any;
 
       this.hudManager.updateTargetPanel({
         name: selected.getDisplayName(),
@@ -1958,6 +2052,14 @@ export class GameEngine {
   private checkCollisions(): void {
     if (!this.spaceship) return;
     const now = performance.now();
+    // Debug: log ship bounding sphere status once per second
+    if (Math.floor(now / 1000) % 5 === 0 && !this._lastCollisionLogSec || Math.floor(now / 1000) !== this._lastCollisionLogSec) {
+      this._lastCollisionLogSec = Math.floor(now / 1000);
+      const shipBS = this.spaceship.boundingSphere;
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Collision check', { 
+        shipBS: shipBS ? { r: shipBS.radius.toFixed(1), pos: `(${shipBS.center.x.toFixed(0)}, ${shipBS.center.y.toFixed(0)}, ${shipBS.center.z.toFixed(0)})` } : 'null'
+      });
+    }
     // Helper to apply damage with cooldown per object
     const applyDamage = (obj: any, amount: number): void => {
       if (!obj || !obj.id) return;
@@ -1972,27 +2074,42 @@ export class GameEngine {
       // Simple HUD feedback: add marquee message
       try { this.hudManager?.addMarqueeMessage?.(`Impacto: -${amount}u (${this.spaceship.healthCurrent}/${this.spaceship.healthMax})`); } catch {}
       if (this.spaceship.healthCurrent <= 0) {
-        // Fatal: respawn/reset
-        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Ship destroyed - initiating respawn');
-        this.resetAfterCrash();
-        // Restore health to max after crash for continued play
-        this.spaceship.healthCurrent = this.spaceship.healthMax;
+        // Fatal: full solar system reset
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Ship destroyed - regenerating solar system');
+        this.respawnGame();
+        return; // Exit collision loop after respawn
       }
     };
     // Aggregate potential collision sources (clusters members, super, mega, planets, sun, ephemerals)
     const sources: any[] = [];
-    try { this.asteroidClusterService.getClusters().forEach(c => { if (c.lodMode === 'full') c.objects.forEach(o => sources.push(o)); else if (c.lodMode === 'proxy' && c.proxy) sources.push(c.proxy); }); } catch {}
-    try { this.ephemeralAsteroids.forEach(a => sources.push(a)); } catch {}
-    try { this.planets.forEach(p => sources.push(p)); } catch {}
-    try { if (this.primarySun) sources.push(this.primarySun); } catch {}
-    try { this.portals.forEach(p => sources.push(p)); } catch {}
+    try {
+      this.asteroidClusterService.getClusters().forEach(c => {
+        // Include ALL cluster objects regardless of LOD mode to ensure SuperAsteroids are checked
+        c.objects.forEach(o => { if (o.isActive && o.isActive()) sources.push(o); });
+        // Also include proxy if present (avoid duplicates via lodMode check)
+        if (c.lodMode === 'proxy' && c.proxy && !c.representativeId && c.proxy.isActive && c.proxy.isActive()) sources.push(c.proxy);
+      });
+    } catch {}
+    try { this.ephemeralAsteroids.forEach(a => { if (a.isActive && a.isActive()) sources.push(a); }); } catch {}
+    try { this.independentAsteroids.forEach(a => { if (a.isActive && a.isActive()) sources.push(a); }); } catch {}
+    try { this.planets.forEach(p => { if (p.isActive && p.isActive()) sources.push(p); }); } catch {}
+    try { if (this.primarySun && this.primarySun.isActive && this.primarySun.isActive()) sources.push(this.primarySun); } catch {}
+    try { this.portals.forEach(p => { if (p.isActive && p.isActive()) sources.push(p); }); } catch {}
     // Mega asteroides en planetDebris
-    try { for (const arr of this.planetDebris.values()) { for (const d of arr) sources.push(d.obj); } } catch {}
+    try { for (const arr of this.planetDebris.values()) { for (const d of arr) { if (d.obj.isActive && d.obj.isActive()) sources.push(d.obj); } } } catch {}
+    // Debug: log sources count periodically
+    if (this._lastCollisionLogSec && Math.floor(now / 1000) === this._lastCollisionLogSec) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Collision sources', { count: sources.length });
+    }
     for (const obj of sources) {
       try {
-        if (this.spaceship.checkCollision(obj)) {
-          // Determine damage based on type/class name
-          const name = (obj as any)?.constructor?.name || 'Unknown';
+        const collided = this.spaceship.checkCollision(obj);
+        if (collided) {
+          // Determine damage based on type/class name (handle underscore prefix from minification)
+          const rawName = (obj as any)?.constructor?.name || 'Unknown';
+          const name = rawName.startsWith('_') ? rawName.substring(1) : rawName;
+          // Debug: log collision detected
+          this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Collision detected!', { name, rawName, id: obj.id });
           let dmg = 0;
           if (name === 'Asteroid') dmg = 10;
           else if (name === 'SuperAsteroid') dmg = 75;
@@ -2002,9 +2119,472 @@ export class GameEngine {
           else if (name === 'Portal') dmg = 0; // ethereal
           // Proxy cluster object (ClusterObject) treat like small asteroid
           else if (name === 'ClusterObject') dmg = 10;
-          if (dmg > 0) applyDamage(obj, dmg);
+          if (dmg > 0) {
+            // Physics response before applying potential fatal damage
+            this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Calling handleCollisionResponse', { name, dmg, audioUnlocked: this.audioUnlocked });
+            try { 
+              this.handleCollisionResponse(obj, name, dmg); 
+            } catch (e) {
+              this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'handleCollisionResponse failed', e);
+            }
+            applyDamage(obj, dmg);
+            
+            // Apply mutual damage: ship deals 50 damage to the object
+            this.applyDamageToObject(obj, 50);
+          }
         }
       } catch {}
+    }
+  }
+
+  /** Handle physical response, camera effect and audio for a collision */
+  private handleCollisionResponse(obj: any, name: string, dmg: number): void {
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'handleCollisionResponse start', { name, dmg, audioUnlocked: this.audioUnlocked });
+    if (!this.spaceship) return;
+    // Compute collision normal assuming spherical source
+    const C = obj.position || { x: 0, y: 0, z: 0 };
+    const S = this.spaceship.position;
+    let nx = S.x - C.x, ny = S.y - C.y, nz = S.z - C.z;
+    const nl = Math.hypot(nx, ny, nz) || 1;
+    nx /= nl; ny /= nl; nz /= nl;
+
+    const v = this.spaceship.velocity;
+    const vDotN = v.x * nx + v.y * ny + v.z * nz;
+    const reflect = (e: number) => {
+      // v' = v - (1+e)*(v·n) n
+      const f = (1 + Math.max(0, Math.min(1.2, e))) * vDotN;
+      v.x = v.x - f * nx;
+      v.y = v.y - f * ny;
+      v.z = v.z - f * nz;
+    };
+
+    // Choose behavior by object scale/type
+    if (name === 'Asteroid' || name === 'ClusterObject') {
+      // Rebound for small asteroids: partial elastic reflection, clamp minimal push-out
+      reflect(0.4);
+      // Nudge position outwards slightly to avoid sticking
+      const R = Math.max(1, (obj.boundingSphere?.radius ?? 5));
+      this.spaceship.position.x = C.x + nx * (R + 3);
+      this.spaceship.position.y = C.y + ny * (R + 3);
+      this.spaceship.position.z = C.z + nz * (R + 3);
+      this.spaceship.updateModelMatrix();
+      // Update bounding sphere center immediately
+      try { if (this.spaceship.boundingSphere) this.spaceship.boundingSphere.center = { ...this.spaceship.position }; } catch {}
+      
+      // Apply impulse to asteroid to change its trajectory (Newton's 3rd law)
+      if (obj.velocity) {
+        const shipMass = 100; // Ship is much heavier than small asteroid
+        const asteroidMass = 1;
+        const totalMass = shipMass + asteroidMass;
+        // Compute relative velocity before collision
+        const relVx = v.x - (obj.velocity.x || 0);
+        const relVy = v.y - (obj.velocity.y || 0);
+        const relVz = v.z - (obj.velocity.z || 0);
+        const relVdotN = relVx * nx + relVy * ny + relVz * nz;
+        // Impulse magnitude (simplified collision response)
+        const impulseMag = -(1 + 0.4) * relVdotN / (1/asteroidMass + 1/shipMass);
+        // Apply impulse to asteroid (light object gets big velocity change)
+        obj.velocity.x = (obj.velocity.x || 0) + (impulseMag * nx) / asteroidMass;
+        obj.velocity.y = (obj.velocity.y || 0) + (impulseMag * ny) / asteroidMass;
+        obj.velocity.z = (obj.velocity.z || 0) + (impulseMag * nz) / asteroidMass;
+        this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Asteroid impulse applied', { 
+          id: obj.id, 
+          impulse: impulseMag.toFixed(2),
+          newVel: `(${obj.velocity.x.toFixed(1)}, ${obj.velocity.y.toFixed(1)}, ${obj.velocity.z.toFixed(1)})`
+        });
+        
+        // Eject asteroid from cluster and make it independent
+        this.makeAsteroidIndependent(obj);
+      }
+    } else if (name === 'SuperAsteroid' || name === 'MegaAsteroid' || name === 'Planet' || name === 'RingedPlanet' || name === 'GaseousPlanet' || name === 'GiantPlanet' || name === 'DwarfPlanet' || name === 'Protoplanet' || name === 'EarthSplitPlanet') {
+      // Smooth lateral displacement over 300ms to avoid repeated damage while feeling less abrupt
+      // Project forward direction onto tangent plane to choose slide direction
+      const fwd = this.normalize({ ...this.spaceship.forwardDirection });
+      const fDotN = fwd.x * nx + fwd.y * ny + fwd.z * nz;
+      let tx = fwd.x - fDotN * nx;
+      let ty = fwd.y - fDotN * ny;
+      let tz = fwd.z - fDotN * nz;
+      const tl = Math.hypot(tx, ty, tz) || 1;
+      tx /= tl; ty /= tl; tz /= tl;
+      // Compute slide distance proportional to object radius
+      const R = Math.max(10, (obj.boundingSphere?.radius ?? 200));
+      const slide = Math.max(30, Math.min(250, R * 0.1));
+      const start = { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z };
+      const end = { x: start.x + tx * slide + nx * 5, y: start.y + ty * slide + ny * 5, z: start.z + tz * slide + nz * 5 };
+      this.collisionSlide = { start, end, t: 0, duration: 0.3 }; // 300ms smooth displacement
+      // Remove inward radial component to avoid re-penetration
+      if (vDotN < 0) {
+        v.x = v.x - vDotN * nx;
+        v.y = v.y - vDotN * ny;
+        v.z = v.z - vDotN * nz;
+      }
+    } else {
+      // Default: mild reflection
+      reflect(0.2);
+    }
+
+    // Camera impact vignette bump
+    const bump = Math.min(0.9, 0.08 + (dmg / 250));
+    this.impactVignetteLevel = Math.max(this.impactVignetteLevel, Math.min(1, this.impactVignetteLevel + bump));
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Vignette effect triggered', { bump, impactVignetteLevel: this.impactVignetteLevel });
+
+    // Audio cue (light/heavy)
+    try {
+      if (this.audio && this.audioUnlocked) {
+        const heavy = dmg >= 80;
+        const desired = heavy ? 'sfx_collision_heavy' : 'sfx_collision_light';
+        const clip = this.audio.has(desired) ? desired : (heavy ? 'sfx_whoosh' : 'ui_select');
+        const vol = Math.max(0.2, Math.min(0.9, 0.25 + dmg / 180));
+        this.audio.play(clip, { bus: 'sfx', volume: vol, fadeInMs: 0 });
+      } else if (!this.audioUnlocked) {
+        this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Collision sound skipped - audio not unlocked');
+      }
+    } catch {}
+
+    // Debug marquee for collision (throttled by damage cooldown outside)
+    try { this.hudManager?.addMarqueeMessage?.(`Colisión: ${name} dmg=${dmg}`); } catch {}
+  }
+
+  /**
+   * Apply damage to a game object and destroy it if health depletes
+   */
+  private applyDamageToObject(obj: any, damage: number): void {
+    if (!obj || typeof obj.healthCurrent !== 'number' || typeof obj.healthMax !== 'number') {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Cannot apply damage - invalid health properties', { 
+        id: obj?.id, 
+        hasHealthCurrent: typeof obj?.healthCurrent === 'number',
+        hasHealthMax: typeof obj?.healthMax === 'number'
+      });
+      return;
+    }
+    
+    const prevHealth = obj.healthCurrent;
+    obj.healthCurrent = Math.max(0, obj.healthCurrent - damage);
+    
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object damaged', { 
+      id: obj.id, 
+      damage, 
+      prevHealth: prevHealth.toFixed(0), 
+      newHealth: obj.healthCurrent.toFixed(0),
+      healthMax: obj.healthMax,
+      willDestroy: obj.healthCurrent <= 0
+    });
+    
+    // Destroy object if health depleted
+    if (obj.healthCurrent <= 0) {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object health depleted - initiating destruction', { 
+        id: obj.id, 
+        type: obj.constructor?.name,
+        rawType: obj.constructor?.name
+      });
+      this.destroyObject(obj);
+    }
+  }
+
+  /**
+   * Remove an object from the game world permanently
+   */
+  private destroyObject(obj: any): void {
+    if (!obj || !obj.id) return;
+    
+    // Mark as inactive immediately to prevent targeting/rendering
+    obj.active = false;
+    obj.visible = false;
+    
+    const objId = obj.id;
+    const typeName = obj.constructor?.name || 'Unknown';
+    let removed = false;
+    
+    // Remove from appropriate array based on type
+    if (typeName === 'Asteroid' || typeName === '_Asteroid') {
+      // Check regular asteroids array
+      const idx = this.asteroids.findIndex(a => a.id === objId);
+      if (idx >= 0) {
+        this.asteroids.splice(idx, 1);
+        removed = true;
+      }
+      // Check ephemeral asteroids
+      const ephIdx = this.ephemeralAsteroids.findIndex(a => a.id === objId);
+      if (ephIdx >= 0) {
+        this.ephemeralAsteroids.splice(ephIdx, 1);
+        removed = true;
+      }
+      // Check independent asteroids
+      const indIdx = this.independentAsteroids.findIndex(a => a.id === objId);
+      if (indIdx >= 0) {
+        this.independentAsteroids.splice(indIdx, 1);
+        removed = true;
+      }
+      // Check if it's in a cluster
+      if (!removed) {
+        try {
+          this.asteroidClusterService.getClusters().forEach(cluster => {
+            const clusterIdx = cluster.objects.findIndex(o => o.id === objId);
+            if (clusterIdx >= 0) {
+              cluster.objects.splice(clusterIdx, 1);
+              removed = true;
+              this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Asteroid removed from cluster', { 
+                asteroidId: objId, 
+                clusterId: cluster.id,
+                remainingInCluster: cluster.objects.length
+              });
+            }
+          });
+        } catch {}
+      }
+    } else if (typeName === 'SuperAsteroid' || typeName === '_SuperAsteroid') {
+      const idx = this.superAsteroids.findIndex(a => a.id === objId);
+      if (idx >= 0) {
+        this.superAsteroids.splice(idx, 1);
+        removed = true;
+      }
+      // Also remove from cluster service if it's part of a cluster
+      try {
+        this.asteroidClusterService.getClusters().forEach(cluster => {
+          const clusterIdx = cluster.objects.findIndex(o => o.id === objId);
+          if (clusterIdx >= 0) {
+            cluster.objects.splice(clusterIdx, 1);
+            removed = true;
+            this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'SuperAsteroid removed from cluster', { 
+              asteroidId: objId, 
+              clusterId: cluster.id,
+              remainingInCluster: cluster.objects.length
+            });
+          }
+        });
+      } catch {}
+    } else if (typeName === 'MegaAsteroid' || typeName === '_MegaAsteroid') {
+      // Remove from planet debris
+      for (const [planetId, debris] of this.planetDebris.entries()) {
+        const idx = debris.findIndex(d => d.obj.id === objId);
+        if (idx >= 0) {
+          debris.splice(idx, 1);
+          removed = true;
+          if (debris.length === 0) this.planetDebris.delete(planetId);
+          break;
+        }
+      }
+    } else if (typeName.includes('Planet') && !typeName.includes('Dwarf') && !typeName.includes('Proto')) {
+      const idx = this.planets.findIndex(p => p.id === objId);
+      if (idx >= 0) {
+        this.planets.splice(idx, 1);
+        removed = true;
+      }
+    } else if (typeName === 'Portal') {
+      const idx = this.portals.findIndex(p => p.id === objId);
+      if (idx >= 0) {
+        this.portals.splice(idx, 1);
+        removed = true;
+      }
+    }
+    
+    if (!removed) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Object not found in any array for destruction', { id: objId, type: typeName });
+    }
+    
+    // Clear from targeting system
+    try {
+      // Force ReticleManager to clear this object if it's currently targeted or hovered
+      if (this.reticleManager) {
+        const reticleState = (this.reticleManager as any).state;
+        if (reticleState) {
+          if (reticleState.currentTarget?.id === objId) {
+            (this.reticleManager as any).clearTarget?.();
+            this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Cleared destroyed object from current target', { id: objId });
+          }
+          if (reticleState.hoveredTarget?.id === objId) {
+            reticleState.hoveredTarget = null;
+            this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Cleared destroyed object from hovered target', { id: objId });
+          }
+        }
+      }
+      // Clear from AdaptiveTargeting system
+      if (this.adaptiveTargeting) {
+        const currentTarget = this.adaptiveTargeting.getCurrentTarget?.();
+        const hoveredTarget = this.adaptiveTargeting.getHoveredTarget?.();
+        if (currentTarget?.id === objId) {
+          this.adaptiveTargeting.selectTarget?.(null);
+          this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Cleared destroyed object from AdaptiveTargeting currentTarget', { id: objId });
+        }
+        if (hoveredTarget?.id === objId) {
+          // AdaptiveTargeting doesn't have a clearHover method, but it will be filtered next frame
+          this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Destroyed object was hovered in AdaptiveTargeting (will be filtered next frame)', { id: objId });
+        }
+      }
+      // Clear HUD target panel if showing this object
+      if (this.hudManager) {
+        this.hudManager.clearTargetPanel();
+        this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Cleared HUD target panel', { id: objId });
+      }
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to clear from targeting system', e);
+    }
+    
+    // Visual feedback
+    try { this.hudManager?.addMarqueeMessage?.(`${typeName} destruido`); } catch {}
+    
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object removed from world', { id: objId, type: typeName, removed });
+  }
+
+  /**
+   * Eject asteroid from its cluster and convert to independent object with individual motion
+   */
+  private makeAsteroidIndependent(obj: any): void {
+    if (!obj || !obj.id) return;
+    
+    const objId = obj.id;
+    
+    // Check if already independent
+    if (this.independentAsteroids.find(a => a.id === objId)) return;
+    
+    // Remove from cluster
+    let removedFromCluster = false;
+    try {
+      this.asteroidClusterService.getClusters().forEach(cluster => {
+        const idx = cluster.objects.findIndex(o => o.id === objId);
+        if (idx >= 0) {
+          cluster.objects.splice(idx, 1);
+          removedFromCluster = true;
+          this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Asteroid ejected from cluster', { 
+            asteroidId: objId, 
+            clusterId: cluster.id,
+            remainingInCluster: cluster.objects.length
+          });
+        }
+      });
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to remove from cluster', e);
+    }
+    
+    if (!removedFromCluster) return; // Not in a cluster, skip
+    
+    // Add to independent asteroids array
+    this.independentAsteroids.push(obj);
+    
+    // Mark spawn time for culling
+    (obj as any)._independentSince = performance.now();
+    
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Asteroid now independent', { 
+      id: objId, 
+      velocity: `(${obj.velocity.x.toFixed(1)}, ${obj.velocity.y.toFixed(1)}, ${obj.velocity.z.toFixed(1)})`,
+      totalIndependent: this.independentAsteroids.length
+    });
+  }
+
+  /**
+   * Update independent asteroids: apply motion and cull by distance
+   */
+  private updateIndependentAsteroids(deltaTime: number): void {
+    if (!this.spaceship || this.independentAsteroids.length === 0) return;
+    
+    const shipPos = this.spaceship.position;
+    const CULLING_DISTANCE = 25000; // Remove if farther than 25km
+    const now = performance.now();
+    const MIN_LIFETIME_MS = 5000; // Keep at least 5s before culling
+    
+    // Update and cull
+    for (let i = this.independentAsteroids.length - 1; i >= 0; i--) {
+      const ast = this.independentAsteroids[i];
+      
+      // Apply velocity
+      ast.position.x += ast.velocity.x * deltaTime;
+      ast.position.y += ast.velocity.y * deltaTime;
+      ast.position.z += ast.velocity.z * deltaTime;
+      
+      // Apply rotation
+      if ((ast as any).rotationRate) {
+        const rate = (ast as any).rotationRate;
+        ast.rotation.x += rate.x * deltaTime;
+        ast.rotation.y += rate.y * deltaTime;
+        ast.rotation.z += rate.z * deltaTime;
+      }
+      
+      ast.updateModelMatrix();
+      if (ast.boundingSphere) {
+        ast.boundingSphere.center = { ...ast.position };
+      }
+      
+      // Check distance for culling
+      const dx = ast.position.x - shipPos.x;
+      const dy = ast.position.y - shipPos.y;
+      const dz = ast.position.z - shipPos.z;
+      const distance = Math.hypot(dx, dy, dz);
+      
+      const lifetime = now - ((ast as any)._independentSince || 0);
+      
+      if (distance > CULLING_DISTANCE && lifetime > MIN_LIFETIME_MS) {
+        this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Independent asteroid culled', { 
+          id: ast.id, 
+          distance: distance.toFixed(0),
+          lifetime: (lifetime / 1000).toFixed(1) + 's'
+        });
+        this.independentAsteroids.splice(i, 1);
+      }
+    }
+  }
+
+  /**
+   * Complete game reset: destroys all objects, regenerates solar system from scratch
+   */
+  private respawnGame(): void {
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn initiated - regenerating solar system');
+    
+    // Stop game loop temporarily
+    const wasRunning = this.isRunning;
+    this.isRunning = false;
+
+    try {
+      // Clear all game objects
+      this.asteroids = [];
+      this.ephemeralAsteroids = [];
+      this.superAsteroids = [];
+      this.independentAsteroids = [];
+      this.planets = [];
+      this.portals = [];
+      this.primarySun = null;
+      this.planetDebris.clear();
+      
+      // Clear cluster service (will be repopulated by createGameObjects)
+      // Note: AsteroidClusterService doesn't have clear() method, objects will be replaced
+      
+      // Clear collision cooldowns
+      this.collisionDamageCooldown.clear();
+      
+      // Clear doppler cues
+      this.dopplerCues.clear();
+      this.lastObjPos.clear();
+      
+      // Reset camera effects
+      this.impactVignetteLevel = 0;
+      this.collisionSlide = null;
+      
+      // Reset portal state
+      this.portalTraversalCooldownSec = 0;
+      this.portalPrevDistances.clear();
+      this.lastShipPos = null;
+      
+      // Recreate all game objects (solar system + spaceship)
+      this.createGameObjects();
+      
+      // Camera will automatically follow spaceship (target is set in camera update logic)
+      
+      // Display marquee
+      try { this.hudManager?.addMarqueeMessage?.('Sistema solar regenerado'); } catch {}
+      
+      // Restart game loop
+      if (wasRunning) {
+        this.isRunning = true;
+        this.lastFrameTime = performance.now();
+      }
+      
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn complete');
+    } catch (e) {
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Respawn failed', e);
+      // Try to restart anyway
+      if (wasRunning) {
+        this.isRunning = true;
+        this.lastFrameTime = performance.now();
+      }
     }
   }
 
@@ -2125,7 +2705,13 @@ export class GameEngine {
       // Append ephemeral asteroids (always smalls)
       if (this.ephemeralAsteroids.length) {
         for (const a of this.ephemeralAsteroids) {
-          smalls.push(a);
+          if (a.isActive()) smalls.push(a);
+        }
+      }
+      // Append independent asteroids (always smalls)
+      if (this.independentAsteroids.length) {
+        for (const a of this.independentAsteroids) {
+          if (a.isActive()) smalls.push(a);
         }
       }
       this.instancedRenderer.renderBatches(
@@ -2187,8 +2773,19 @@ export class GameEngine {
       // Render ephemeral asteroids in non-instanced path
       if (this.ephemeralAsteroids.length) {
         for (const a of this.ephemeralAsteroids) {
-          this.shaderManager.setLitOpacity(1.0);
-          this.renderObject(a);
+          if (a.isActive()) {
+            this.shaderManager.setLitOpacity(1.0);
+            this.renderObject(a);
+          }
+        }
+      }
+      // Render independent asteroids in non-instanced path
+      if (this.independentAsteroids.length) {
+        for (const a of this.independentAsteroids) {
+          if (a.isActive()) {
+            this.shaderManager.setLitOpacity(1.0);
+            this.renderObject(a);
+          }
         }
       }
     }
@@ -2370,6 +2967,13 @@ export class GameEngine {
         if (this.gl && this._placeholderOverlay.tex) this.gl.deleteTexture(this._placeholderOverlay.tex);
         this._placeholderOverlay = null;
       }
+    }
+  } catch {}
+
+  // Draw red impact vignette last (on top)
+  try {
+    if (this.overlayRenderer && this.impactVignetteLevel > 0) {
+      this.overlayRenderer.drawVignette([1, 0, 0], Math.min(0.85, this.impactVignetteLevel), 0.58, 0.4);
     }
   } catch {}
   }

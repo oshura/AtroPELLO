@@ -17,6 +17,10 @@ export class SuperAsteroid extends Asteroid {
     // Usar el tamaño proporcionado directamente (la factoría decide el multiplicador)
     super(id, position, baseSize, direction);
     (this as any).objectType = TargetType.SUPER_ASTEROID;
+    
+    // Health: much tougher than regular asteroids (10-20 hits from ship)
+    this.healthMax = 800;
+    this.healthCurrent = this.healthMax;
   }
 
   // getTargetType heredado delega a objectType

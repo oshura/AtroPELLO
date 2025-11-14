@@ -94,5 +94,5 @@ export class ClusterObject extends GameObject implements ITargetable {
 
   public getDisplayName(): string { return 'Cluster'; }
   public getTargetType(): TargetType { return this.objectType; }
-  public isActive(): boolean { return this.active && this.visible; }
+  public override isActive(): boolean { return this.active && this.visible; }
 }

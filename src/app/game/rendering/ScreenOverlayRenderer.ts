@@ -9,6 +9,7 @@ export class ScreenOverlayRenderer {
   private uTex: WebGLUniformLocation | null = null;
   private uUvScale: WebGLUniformLocation | null = null;
   private uUvOffset: WebGLUniformLocation | null = null;
+  private uParams: WebGLUniformLocation | null = null; // generic params per mode
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -32,22 +33,31 @@ export class ScreenOverlayRenderer {
     const fs = `#version 300 es\n
     precision highp float;\n
     in vec2 v_uv;\n
-    uniform int u_mode; // 0 = solid, 1 = texture\n
-    uniform vec4 u_color; // rgb + alpha for solid; rgb tint for texture (alpha ignored)\n
+    uniform int u_mode; // 0 = solid, 1 = texture, 2 = vignette\n
+    uniform vec4 u_color; // solid rgba or tint rgb + alpha\n
     uniform sampler2D u_tex;\n
     uniform vec2 u_uvScale;\n
     uniform vec2 u_uvOffset;\n
+    uniform vec4 u_params; // x=radius (0..1), y=softness (0..1), z,w=unused\n
     out vec4 fragColor;\n
     void main(){\n
       if (u_mode == 0) {\n
         fragColor = u_color;\n
-      } else {\n
+      } else if (u_mode == 1) {\n
         vec2 uv = (v_uv - 0.5) * u_uvScale + 0.5 + u_uvOffset;\n
         vec4 c = texture(u_tex, uv);\n
-        // Apply tint color's alpha as overall opacity, multiply RGB by tint.rgb\n
         vec3 rgb = c.rgb * u_color.rgb;\n
         float a = c.a * u_color.a;\n
         fragColor = vec4(rgb, a);\n
+      } else {\n
+        // Vignette: alpha shaped by distance to center using smoothstep\n
+        float r = clamp(u_params.x, 0.0, 1.5);\n
+        float s = clamp(u_params.y, 0.0001, 1.0);\n
+        float d = distance(v_uv, vec2(0.5));\n
+        // At center (d=0) alpha ~ 0; grows towards edges; r is inner radius, s is softness\n
+        float edge = smoothstep(r, max(r - s, 0.0), d);\n
+        float a = clamp(u_color.a, 0.0, 1.0) * edge;\n
+        fragColor = vec4(u_color.rgb, a);\n
       }\n
     }`;
     const vsh = gl.createShader(gl.VERTEX_SHADER)!; gl.shaderSource(vsh, vs); gl.compileShader(vsh);
@@ -72,6 +82,7 @@ export class ScreenOverlayRenderer {
     this.uTex = gl.getUniformLocation(prog, 'u_tex');
     this.uUvScale = gl.getUniformLocation(prog, 'u_uvScale');
     this.uUvOffset = gl.getUniformLocation(prog, 'u_uvOffset');
+    this.uParams = gl.getUniformLocation(prog, 'u_params');
   }
 
   public drawSolid(color: [number, number, number], alpha: number): void {
@@ -139,6 +150,28 @@ export class ScreenOverlayRenderer {
     gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, tex);
     if (this.uTex) gl.uniform1i(this.uTex, 0);
     if (this.uUvScale) gl.uniform2f(this.uUvScale, scaleX, scaleY);
+    if (this.uUvOffset) gl.uniform2f(this.uUvOffset, 0.0, 0.0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (!wasBlend) gl.disable(gl.BLEND);
+    if (wasCull) gl.enable(gl.CULL_FACE);
+    if (wasDepth) gl.enable(gl.DEPTH_TEST);
+  }
+
+  /** Draw a colored vignette with center transparent and edges tinted.
+   * radius: inner radius (0..1) where effect starts near center; softness: edge softness (0..1)
+   */
+  public drawVignette(color: [number, number, number], intensity: number, radius: number = 0.55, softness: number = 0.35): void {
+    if (!this.program) return;
+    const gl = this.gl;
+    const wasDepth = gl.isEnabled(gl.DEPTH_TEST); if (wasDepth) gl.disable(gl.DEPTH_TEST);
+    const wasCull = gl.isEnabled(gl.CULL_FACE); if (wasCull) gl.disable(gl.CULL_FACE);
+    const wasBlend = gl.isEnabled(gl.BLEND); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(this.program);
+    if (this.uMode) gl.uniform1i(this.uMode, 2);
+    const a = Math.max(0, Math.min(1, intensity || 0));
+    if (this.uColor) gl.uniform4f(this.uColor, color[0], color[1], color[2], a);
+    if (this.uParams) gl.uniform4f(this.uParams, Math.max(0, Math.min(1.2, radius)), Math.max(0.001, Math.min(1, softness)), 0, 0);
+    if (this.uUvScale) gl.uniform2f(this.uUvScale, 1.0, 1.0);
     if (this.uUvOffset) gl.uniform2f(this.uUvOffset, 0.0, 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);
     if (!wasBlend) gl.disable(gl.BLEND);

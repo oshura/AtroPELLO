@@ -96,6 +96,11 @@ export abstract class GameObject {
   public getObjectType(): TargetType { return this.objectType; }
 
   /**
+   * Verifica si el objeto está activo (para filtering en targeting)
+   */
+  public isActive(): boolean { return this.active; }
+
+  /**
    * Genera colores por vértice basados en el color del objeto
    */
   protected generateVertexColors(): void {

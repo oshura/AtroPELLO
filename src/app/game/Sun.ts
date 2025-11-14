@@ -16,6 +16,11 @@ export class Sun extends Planet {
     // Color name isn't used for shaders here; pick a warm palette base
     super(id, 'rojo_carmesi' as PlanetColorName, radius, initialPos);
     this.planetType = PlanetType.Sun;
+    
+    // Health: the Sun is virtually indestructible (1000+ hits)
+    this.healthMax = 50000;
+    this.healthCurrent = this.healthMax;
+    
     // Make the core more yellow
     (this as any).color = { r: 1.0, g: 0.92, b: 0.55, a: 1.0 };
     // Also mark object type as SUN for systems that read objectType directly

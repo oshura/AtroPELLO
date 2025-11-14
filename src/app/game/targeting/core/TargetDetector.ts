@@ -84,7 +84,8 @@ export class TargetDetector implements ITargetDetector {
    */
   public updateAvailableTargets(targets: ITargetable[]): void {
     const filteredTargets = targets.filter(target => 
-      this.config.targetTypes.includes(target.getTargetType())
+      this.config.targetTypes.includes(target.getTargetType()) &&
+      target.isActive() // Only include active objects
     );
     
     // Debug FORZADO hasta que funcione
