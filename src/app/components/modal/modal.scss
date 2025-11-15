@@ -27,6 +27,7 @@
   overflow: hidden;
   animation: slideIn 0.3s ease-out;
   border: 1px solid rgba(255, 255, 255, 0.1);
+  user-select: none;        /* Prevenir selección de texto */
 }
 
 .modal-header {

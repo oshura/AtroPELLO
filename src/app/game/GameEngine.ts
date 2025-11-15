@@ -2644,6 +2644,18 @@ export class GameEngine {
     this.isRunning = false;
 
     try {
+      // Reset audio: stop thruster and ambient loop to prevent sounds carrying over
+      try {
+        if (this.thrusterCtl) {
+          this.thrusterCtl.stop(150); // fade out thruster
+        }
+        if (this.audio) {
+          this.audio.stopAmbientLoop(200); // fade out ambient
+        }
+      } catch (e) {
+        this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to reset audio during respawn', e);
+      }
+      
       // Clear all game objects
       this.asteroids = [];
       this.ephemeralAsteroids = [];
@@ -2675,6 +2687,18 @@ export class GameEngine {
       
       // Recreate all game objects (solar system + spaceship)
       this.createGameObjects();
+      
+      // Restart audio: ambient loop and thruster (at idle volume)
+      try {
+        if (this.audioUnlocked && this.audio) {
+          this.audio.startAmbientLoop('sfx_logdark');
+        }
+        if (this.audioUnlocked && this.thrusterCtl) {
+          this.thrusterCtl.start(0.0); // start at silent, will update based on ship state
+        }
+      } catch (e) {
+        this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to restart audio after respawn', e);
+      }
       
       // Camera will automatically follow spaceship (target is set in camera update logic)
       
@@ -2714,6 +2738,18 @@ export class GameEngine {
     }
 
     try {
+      // Reset audio: stop thruster and ambient loop to prevent sounds carrying over
+      try {
+        if (this.thrusterCtl) {
+          this.thrusterCtl.stop(150); // fade out thruster
+        }
+        if (this.audio) {
+          this.audio.stopAmbientLoop(200); // fade out ambient
+        }
+      } catch (e) {
+        this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to reset audio during load save', e);
+      }
+      
       // Find nearest portal
       let nearestPortal: any = null;
       let minDist = Infinity;
@@ -2760,6 +2796,18 @@ export class GameEngine {
         // Reset camera effects
         this.impactVignetteLevel = 0;
         this.collisionSlide = null;
+        
+        // Restart audio: ambient loop and thruster (at idle volume)
+        try {
+          if (this.audioUnlocked && this.audio) {
+            this.audio.startAmbientLoop('sfx_logdark');
+          }
+          if (this.audioUnlocked && this.thrusterCtl) {
+            this.thrusterCtl.start(0.0); // start at silent, will update based on ship state
+          }
+        } catch (e) {
+          this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to restart audio after load save', e);
+        }
         
         // Clear all target selections (HUD, outliner, adaptive targeting, reticle)
         try { this.clearTargetSelection(); } catch {}
@@ -3708,6 +3756,7 @@ export class GameEngine {
 
       if (isSun) {
         // Distancia cámara-Sol para decidir magma
+        // Usar flat color hasta muy cerca (20ku) para evitar flickering por aliasing de textura
         const magma = this.textureManager.getTexture('magma');
         if (distCam < 20000 && magma && this.shaderManager.unlitTexProgram) {
           // Sun core con textura de magma (self-lit, sin iluminación)
@@ -3717,7 +3766,7 @@ export class GameEngine {
           this.shaderManager.setUnlitDiffuseTexture(magma);
           p.render(this.gl, this.shaderManager.unlitTexProgram!, cam.viewMatrix, cam.projectionMatrix);
         } else {
-          // Sun core: self-lit, flat color
+          // Sun core: self-lit, flat color (estable a grandes distancias)
           this.shaderManager.useBasicProgram();
           this.calculateNormalMatrix(p.modelMatrix);
           this.shaderManager.setBasicMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
