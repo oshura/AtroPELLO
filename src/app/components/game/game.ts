@@ -48,9 +48,6 @@ export class Game implements AfterViewInit, OnDestroy {
     // FORZAR inicialización para depuración (desactivando detección SSR temporalmente)
   this.logger.debug(LogCategory.DEBUG, 'Force init - bypassing SSR detection for debugging');
     
-    // Añadir listener global para desbloquear audio con cualquier click
-    this.setupAudioUnlockListener();
-    
     // Añadir un pequeño delay para asegurar que el DOM esté completamente listo
     setTimeout(async () => {
       try {
@@ -127,9 +124,6 @@ export class Game implements AfterViewInit, OnDestroy {
         // Cambiar a estado listo
         this.stateManager.setState(GameState.READY);
         this.logger.info(LogCategory.GAME_INITIALIZATION, 'Game initialized successfully', result);
-        
-        // Intentar iniciar música de menú
-        this.tryStartMenuMusic();
       } else {
         this.stateManager.setState(GameState.ERROR);
         this.uiManager.showError(result.error || 'Unknown initialization error');
@@ -149,45 +143,7 @@ export class Game implements AfterViewInit, OnDestroy {
     }
   }
 
-  /**
-   * Intenta iniciar la música de menú (requiere gesto del usuario en algunos navegadores)
-   */
-  private async tryStartMenuMusic(): Promise<void> {
-    try {
-      const gameEngine = this.gameInitializer.getGameEngine();
-      if (!gameEngine) return;
-      
-      const audio = (gameEngine as any).audio;
-      const music = (gameEngine as any).music;
-      
-      if (audio && music) {
-        audio.ensureContext();
-        const unlocked = await audio.unlock();
-        if (unlocked) {
-          await music.setScene('menu', 900);
-          this.logger.info(LogCategory.AUDIO, 'Menu music started');
-        }
-      }
-    } catch (e) {
-      this.logger.warn(LogCategory.AUDIO, 'Could not start menu music (will retry on user interaction)', e);
-    }
-  }
 
-  /**
-   * Configura listener global para desbloquear audio con cualquier interacción
-   */
-  private setupAudioUnlockListener(): void {
-    const unlockAudio = async () => {
-      await this.tryStartMenuMusic();
-      // Remover listener después del primer intento exitoso
-      document.removeEventListener('click', unlockAudio);
-      document.removeEventListener('keydown', unlockAudio);
-    };
-    
-    // Escuchar click o tecla en cualquier parte de la página
-    document.addEventListener('click', unlockAudio, { once: true });
-    document.addEventListener('keydown', unlockAudio, { once: true });
-  }
 
   /**
    * Manejador de teclas usando GameInputHandler
@@ -293,8 +249,14 @@ export class Game implements AfterViewInit, OnDestroy {
       this.stateManager.setState(GameState.RUNNING);
       this.uiManager.resetGameStats();
       gameEngine.start();
-      // Unlock and start audio scene on user start gesture
-      try { (gameEngine as any).enableAudio?.(); } catch {}
+      
+      // Cambiar a música de exploración
+      try {
+        const music = (gameEngine as any).music;
+        if (music) {
+          music.setScene('exploration', 1500);
+        }
+      } catch {}
       
       this.logger.info(LogCategory.GAME_LOOP, 'Game started');
     } catch (error) {

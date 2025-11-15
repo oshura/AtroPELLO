@@ -187,14 +187,10 @@ export class TargetPanel {
     const lines: string[] = [];
     let voidMassLine: string | null = null;
     for (const [key, value] of Object.entries(details)) {
-      if (key === 'previewStatus' || key === 'type' || key === 'name') continue; // ocultar internos y evitar duplicar nombre
+      // Filtrar claves internas y datos de salud (se muestran en la barra)
+      if (key === 'previewStatus' || key === 'type' || key === 'name') continue;
+      if (key === 'healthPct' || key === 'healthCurrent' || key === 'healthMax') continue; // Salud solo en barra
       // Albedo eliminado: no procesar
-      // Mostrar salud como porcentaje si viene explícita
-      if (key === 'healthPct') {
-        const pct = Math.max(0, Math.min(100, Math.round(Number(value))));
-        lines.push(`Salud: ${pct}%`);
-        continue;
-      }
         // Volume en Mu con etiqueta fija
         if (key === 'volumeMu') {
           const v = Number(value);

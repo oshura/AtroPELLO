@@ -45,7 +45,11 @@ export class Sun extends Planet {
 
   /** Additive billboard glow drawn after the main planet pass */
   public renderGlow(gl: WebGL2RenderingContext, shaderManager: any, camera: any): void {
-    if (!shaderManager?.glowProgram) return;
+    console.log(`[SUN GLOW] renderGlow called for ${this.id} at position:`, this.position);
+    if (!shaderManager?.glowProgram) {
+      console.warn('[SUN GLOW] No glowProgram available');
+      return;
+    }
 
     // Build camera basis
     const camPos = camera.position;
@@ -112,16 +116,17 @@ export class Sun extends Planet {
       gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STREAM_DRAW);
 
-      // Additive blending on top, depth test off so it doesn't get clipped
+      // Additive blending with depth test enabled but depth write disabled
+      // This allows the glow to render behind closer objects without z-fighting
       const wasBlend = gl.isEnabled(gl.BLEND);
-      const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
+      const wasDepthMask = gl.getParameter(gl.DEPTH_WRITEMASK);
       gl.enable(gl.BLEND);
       gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-      if (wasDepth) gl.disable(gl.DEPTH_TEST);
+      gl.depthMask(false); // Don't write to depth buffer, only test against it
 
       gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
 
-      if (wasDepth) gl.enable(gl.DEPTH_TEST);
+      gl.depthMask(wasDepthMask); // Restore depth write state
       if (!wasBlend) gl.disable(gl.BLEND);
 
       gl.disableVertexAttribArray(aPos);

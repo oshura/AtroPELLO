@@ -17,11 +17,13 @@ export class ControlsDialogComponent implements OnChanges {
 
   private gameInitializer = inject(GameInitializer);
   private logger = inject(LoggingService);
-  private musicStarted = false;
 
   ngOnChanges(changes: SimpleChanges): void {
-    if (changes['isVisible'] && this.isVisible && !this.musicStarted) {
-      this.tryStartMenuMusic();
+    if (changes['isVisible']) {
+      if (this.isVisible) {
+        // Siempre intentar habilitar audio cuando el diálogo se muestra (idempotente)
+        this.tryStartMenuMusic();
+      }
     }
   }
 
@@ -30,23 +32,15 @@ export class ControlsDialogComponent implements OnChanges {
       const gameEngine = this.gameInitializer.getGameEngine();
       if (!gameEngine) return;
       
-      const audio = (gameEngine as any).audio;
-      const music = (gameEngine as any).music;
+      // Call enableAudio which handles unlock, thruster init, and ambience
+      // This is idempotent - safe to call multiple times
+      await (gameEngine as any).enableAudio();
       
-      if (audio && music) {
-        audio.ensureContext();
-        const unlocked = await audio.unlock();
-        if (unlocked) {
-          // Aumentar volumen 1.5x para el menú
-          const originalGain = music.musicGain?.gain.value || 1.0;
-          if (music.musicGain) {
-            music.musicGain.gain.value = originalGain * 1.5;
-          }
-          
-          await music.setScene('menu', 900);
-          this.musicStarted = true;
-          this.logger.info(LogCategory.AUDIO, 'Menu music started from controls dialog with 1.5x volume');
-        }
+      // Then switch to menu music (enableAudio defaults to exploration)
+      const music = (gameEngine as any).music;
+      if (music) {
+        await music.setScene('menu', 900);
+        this.logger.info(LogCategory.AUDIO, 'Menu music started from controls dialog');
       }
     } catch (e) {
       this.logger.warn(LogCategory.AUDIO, 'Could not start menu music from controls dialog', e);

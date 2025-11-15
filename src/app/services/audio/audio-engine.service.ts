@@ -177,6 +177,14 @@ export class AudioEngineService {
   public play(name: string, opts: PlayOptions = {}): PlayingHandle | null {
     this.ensureContext();
     if (!this.ctx) return null;
+    
+    // Auto-resume if suspended (browser autoplay policy may require user gesture first)
+    if (this.ctx.state === 'suspended') {
+      this.ctx.resume().catch(() => {
+        GameLogger.warn(LogCategory.AUDIO, 'Auto-resume failed (may need user gesture)', { name });
+      });
+    }
+    
     const buf = this.buffers.get(name);
   if (!buf) { GameLogger.warn(LogCategory.AUDIO, 'Buffer not loaded', { name }); return null; }
 

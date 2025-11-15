@@ -6,19 +6,19 @@ import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 
 export type MusicScene = 'menu' | 'exploration' | 'planet_approach' | 'combat' | 'spell_prep' | 'landing' | 'silence';
 
-interface TrackDef { name: string; volume?: number; }
+interface TrackDef { name: string; volume?: number; loop?: boolean; }
 
 @Injectable({ providedIn: 'root' })
 export class MusicDirectorService {
   private current: { scene: MusicScene; handle: PlayingHandle | null } = { scene: 'silence', handle: null };
   private next: { scene: MusicScene; handle: PlayingHandle | null } | null = null;
   private library: Record<MusicScene, TrackDef[]> = {
-    menu: [{ name: 'music_entree', volume: 0.5 }],
-    exploration: [{ name: 'music_explore_a', volume: 0.6 }],
-    planet_approach: [{ name: 'music_planet', volume: 0.65 }],
-    combat: [{ name: 'music_combat', volume: 0.7 }],
-    spell_prep: [{ name: 'music_spell_prep', volume: 0.55 }],
-    landing: [{ name: 'music_landing', volume: 0.6 }],
+    menu: [{ name: 'music_entree', volume: 0.75, loop: false }],
+    exploration: [{ name: 'music_explore_a', volume: 0.6, loop: true }],
+    planet_approach: [{ name: 'music_planet', volume: 0.65, loop: true }],
+    combat: [{ name: 'music_combat', volume: 0.7, loop: true }],
+    spell_prep: [{ name: 'music_spell_prep', volume: 0.55, loop: true }],
+    landing: [{ name: 'music_landing', volume: 0.6, loop: true }],
     silence: []
   };
 
@@ -37,7 +37,9 @@ export class MusicDirectorService {
       if (!this.audio.has(def.name)) {
         await this.manifest.loadByName(def.name);
       }
-      nextHandle = this.audio.play(def.name, { loop: true, volume: 0, bus: 'music' });
+      // Use loop setting from track definition (default true for backward compatibility)
+      const shouldLoop = def.loop !== undefined ? def.loop : true;
+      nextHandle = this.audio.play(def.name, { loop: shouldLoop, volume: 0, bus: 'music' });
       if (nextHandle && typeof def.volume === 'number') {
         nextHandle.setVolume(0);
       }

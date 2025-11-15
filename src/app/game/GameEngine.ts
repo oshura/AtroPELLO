@@ -1108,11 +1108,8 @@ export class GameEngine {
       this.audio.ensureContext();
       const ok = await this.audio.unlock();
       this.audioUnlocked = ok;
-      console.log(`\u{1F50A} Audio unlocked: ${ok}, audioUnlocked flag: ${this.audioUnlocked}`);
-      if (ok && this.music) {
-        // Start exploration by default
-        await this.music.setScene('exploration', 900);
-      }
+      console.log(`🔊 Audio unlocked: ${ok}, audioUnlocked flag: ${this.audioUnlocked}`);
+      // Don't change music scene here - let caller decide which scene to play
       // Start always-on ambience loop (logdark) once unlocked
       try { if (ok) this.audio.startAmbientLoop('sfx_logdark'); } catch {}
       // Pre-start thruster loop at silence for smooth fade when first needed
@@ -1121,7 +1118,7 @@ export class GameEngine {
       }
       this.logger.log(LogLevel.INFO, LogCategory.AUDIO, 'Audio enabled', { ok });
     } catch (e) {
-      console.error('\u{1F534} Audio enable failed:', e);
+      console.error('🔴 Audio enable failed:', e);
       this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Audio enable failed', e);
     }
   }
@@ -1836,19 +1833,26 @@ export class GameEngine {
                     : undefined),
           }
         : {};
-      // Update health values only every 250ms to reduce overhead
+      // Update health values only every 250ms to reduce overhead (but always include them)
       const now = performance.now();
       const shouldUpdateHealth = (now - this.lastHealthUpdateTime) >= this.healthUpdateInterval;
-      const healthData = shouldUpdateHealth ? {
-        healthCurrent: (selected as any).healthCurrent ?? (baseDetails as any)?.healthCurrent ?? 100,
-        healthMax: (selected as any).healthMax ?? (baseDetails as any)?.healthMax ?? 100,
-        healthPct: ((selected as any).healthCurrent && (selected as any).healthMax) 
-          ? Math.round(((selected as any).healthCurrent / (selected as any).healthMax) * 100) 
-          : 100
-      } : {};
+      
+      // Always get current health values
+      const healthCurrent = (selected as any).healthCurrent ?? (baseDetails as any)?.healthCurrent ?? 100;
+      const healthMax = (selected as any).healthMax ?? (baseDetails as any)?.healthMax ?? 100;
+      
+      // Calculate percentage (either cached or fresh)
+      let healthPct: number;
       if (shouldUpdateHealth) {
+        healthPct = (healthCurrent && healthMax) ? Math.round((healthCurrent / healthMax) * 100) : 100;
         this.lastHealthUpdateTime = now;
+      } else {
+        // Use last calculated value or recalculate if first time
+        healthPct = (healthCurrent && healthMax) ? Math.round((healthCurrent / healthMax) * 100) : 100;
       }
+      
+      const healthData = { healthCurrent, healthMax, healthPct };
+      
       const details = { ...baseDetails, ...planetHints, ...healthData, type: typeLabel, previewStatus: (this.targetPreview as any).getStatus?.(), voidMassUnits: voidMass } as any;
 
       this.hudManager.updateTargetPanel({
@@ -3612,8 +3616,13 @@ export class GameEngine {
     // Asegurar estado de profundidad correcto para planetas
     this.gl.enable(this.gl.DEPTH_TEST);
     this.gl.depthMask(true);
+    
     for (const p of this.planets) {
       const isSun = (p as any).planetType === 'Sun';
+      const isPrimarySun = p === this.primarySun;
+      if (isPrimarySun) {
+        console.log('[RENDER PLANETS] Processing primarySun in loop:', p.id);
+      }
       // Calcular iluminación basada en Sol si existe (direccional desde el sol al objeto)
       let lightDir = this.lightDirection;
       let ambientStrengthLocal = this.ambientStrength;
@@ -3791,11 +3800,28 @@ export class GameEngine {
         }
       }
       // Brillo del Sol (si aplica)
-      if ((p as any).renderGlow) {
+      // Para el primarySun, SIEMPRE renderizar el glow (sin importar frustum/posición)
+      if ((p as any).renderGlow && isPrimarySun) {
+        console.log('[RENDER PLANETS] Calling renderGlow for primarySun in loop');
         try {
           (p as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
         } catch (e) {
-          this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderGlow(sun) failed', e);
+          console.error('[RENDER PLANETS] renderGlow(primary sun) failed:', e);
+          this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderGlow(primary sun) failed', e);
+        }
+      } else if ((p as any).renderGlow && isSun) {
+        // Otros soles (si los hay)
+        try {
+          (p as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
+        } catch (e) {
+          this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderGlow(secondary sun) failed', e);
+        }
+      } else if ((p as any).renderGlow) {
+        // Otros objetos con glow
+        try {
+          (p as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
+        } catch (e) {
+          this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderGlow failed', e);
         }
       }
       // Si el sol está detrás de la cámara, mantener un glow ambiente suave
@@ -3857,6 +3883,20 @@ export class GameEngine {
         }
       } catch {}
     }
+    
+    // GARANTIZAR: Renderizar halo del primarySun SIEMPRE, incluso si el bucle lo saltó
+    // Esto asegura que el brillo solar sea visible sin importar frustum/posición
+    console.log('[RENDER PLANETS] Post-loop check - primarySun exists:', !!this.primarySun, 'has renderGlow:', !!(this.primarySun as any)?.renderGlow);
+    if (this.primarySun && (this.primarySun as any).renderGlow) {
+      console.log('[RENDER PLANETS] Calling renderGlow for primarySun POST-LOOP');
+      try {
+        (this.primarySun as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
+      } catch (e) {
+        console.error('[RENDER PLANETS] renderGlow(primary sun post-loop) failed:', e);
+        this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderGlow(primary sun post-loop) failed', e);
+      }
+    }
+    
     // Renderizar debris asociados a planetas con LOD sencillo
     this.renderPlanetDebris();
     // Desbindeo explícito de texturas usadas por el pase texturizado de planetas
