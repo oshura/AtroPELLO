@@ -2644,18 +2644,6 @@ export class GameEngine {
     this.isRunning = false;
 
     try {
-      // Reset audio: stop thruster and ambient loop to prevent sounds carrying over
-      try {
-        if (this.thrusterCtl) {
-          this.thrusterCtl.stop(150); // fade out thruster
-        }
-        if (this.audio) {
-          this.audio.stopAmbientLoop(200); // fade out ambient
-        }
-      } catch (e) {
-        this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to reset audio during respawn', e);
-      }
-      
       // Clear all game objects
       this.asteroids = [];
       this.ephemeralAsteroids = [];
@@ -2738,18 +2726,6 @@ export class GameEngine {
     }
 
     try {
-      // Reset audio: stop thruster and ambient loop to prevent sounds carrying over
-      try {
-        if (this.thrusterCtl) {
-          this.thrusterCtl.stop(150); // fade out thruster
-        }
-        if (this.audio) {
-          this.audio.stopAmbientLoop(200); // fade out ambient
-        }
-      } catch (e) {
-        this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to reset audio during load save', e);
-      }
-      
       // Find nearest portal
       let nearestPortal: any = null;
       let minDist = Infinity;
