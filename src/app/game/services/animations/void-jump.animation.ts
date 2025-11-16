@@ -156,7 +156,18 @@ export class VoidJumpAnimation implements GameAnimation {
       const aim = this.normalize({ x: lerp(curDir.x, desired.x, k), y: lerp(curDir.y, desired.y, k), z: lerp(curDir.z, desired.z, k) });
       // Move a small temporary point along aim to lookAt
       const aimPoint = { x: ship.position.x + aim.x, y: ship.position.y + aim.y, z: ship.position.z + aim.z };
-      ship.lookAt(aimPoint);
+      
+      // Extraer el vector "up" actual de la nave para preservar el roll
+      // El eje Y local (up) está en la segunda fila de orientationMatrix (índices 4,5,6)
+      const currentUp = {
+        x: ship.orientationMatrix[4],
+        y: ship.orientationMatrix[5],
+        z: ship.orientationMatrix[6]
+      };
+      
+      // Usar el up actual como upHint para que lookAt preserve el roll
+      ship.lookAt(aimPoint, currentUp);
+      
       // Gentle engine visual
       ship.thrusterState = ship.ThrusterState?.ACCELERATING ?? ship.thrusterState;
       ship.targetSpeed = Math.min(ship.maxSpeed, lerp(0, 30, k));
