@@ -16,6 +16,7 @@ import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 import { SolarSystemService } from '../../game/services/game/solar-system.service';
 import { HumanSolarSystemService } from '../../game/services/game/human-solar-system.service';
 import { PortalPersistenceService } from '../../game/services/game/portal-persistence.service';
+import { PortalRegistryService } from '../../game/services/game/portal-registry.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -105,6 +106,7 @@ export class GameInitializer {
     const solarSystemService = this.injector.get(SolarSystemService);
   const humanSolarSystemService = this.injector.get(HumanSolarSystemService);
   const portalPersistenceService = this.injector.get(PortalPersistenceService);
+  const portalRegistry = this.injector.get(PortalRegistryService);
     this.gameEngine = new GameEngine(
       this.webglService,
       this.particleEffectsService,
@@ -119,6 +121,7 @@ export class GameInitializer {
       solarSystemService,
       humanSolarSystemService,
       portalPersistenceService,
+      portalRegistry,
       audioEngine,
       musicDirector
     );

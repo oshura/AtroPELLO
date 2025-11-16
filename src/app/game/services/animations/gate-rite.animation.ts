@@ -129,6 +129,13 @@ export class GateRiteAnimation implements GameAnimation {
           radius: c.radius || 12,
           centerSpeedFactor: c.centerSpeedFactor || 0.5,
         })) || [],
+        portals: engine['portals']?.map((portal: any) => ({
+          id: portal.id,
+          position: { ...portal.position },
+          radius: portal.radius || 100,
+          linkedPortalId: portal.linkedPortalId,
+          eyeState: portal.eyeState || { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
+        })) || [],
         planetDebris: (() => {
           const out: any[] = [];
           try {
@@ -708,12 +715,47 @@ export class GateRiteAnimation implements GameAnimation {
         }
         else if (this.generator) snapshot = this.generator.generate(Date.now());
         if (snapshot && (engine as any).applySolarSystemSnapshot) {
-          // Vincular portal de origen con destino para persistencia
+          // Registrar portales en el PortalRegistryService
+          const registry = (engine as any).portalRegistry;
+          const originSystemId = this.originalSnapshot?.id || 'unknown-origin';
+          const destSystemId = snapshot.id || 'unknown-dest';
+          
+          // Vincular portal de origen con destino
           let dest: any = null;
           try {
             dest = (snapshot.portals && snapshot.portals.length) ? snapshot.portals[snapshot.portals.length - 1] : null;
-            if (dest && this.portalInstance) this.portalInstance.linkedPortalId = dest.id;
+            if (dest && this.portalInstance) {
+              this.portalInstance.linkedPortalId = dest.id;
+              
+              // Registrar par de portales en el registry
+              if (registry) {
+                const originPortalSnap = {
+                  id: this.portalInstance.id,
+                  position: { ...this.portalInstance.position },
+                  radius: this.portalInstance.radius,
+                  linkedPortalId: dest.id,
+                  eyeState: { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
+                };
+                const destPortalSnap = {
+                  id: dest.id,
+                  position: { ...dest.position },
+                  radius: dest.radius || 100,
+                  linkedPortalId: this.portalInstance.id,
+                  eyeState: { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
+                };
+                
+                // Registrar ambos portales
+                registry.registerPortal(originPortalSnap, originSystemId);
+                registry.registerPortal(destPortalSnap, destSystemId);
+                
+                GameLogger.info(LogCategory.PORTAL, 'Gate Rite portal pair registered', {
+                  origin: { systemId: originSystemId, portalId: originPortalSnap.id },
+                  dest: { systemId: destSystemId, portalId: destPortalSnap.id }
+                });
+              }
+            }
           } catch {}
+          
           // Persistir snapshot de origen con planeta colapsado excluido y portal enlazado
           try {
             const persistence: any = (engine as any)['portalPersistenceService'];
@@ -729,7 +771,10 @@ export class GateRiteAnimation implements GameAnimation {
               const filteredPlanets = Array.isArray(this.originalSnapshot.planets)
                 ? this.originalSnapshot.planets.filter((pl: any) => pl?.id !== collapsedId)
                 : [];
-              const originWithPortal = { ...this.originalSnapshot, planets: filteredPlanets, portals: [originPortalSnap] };
+              // Mantener TODOS los portales existentes (capturados en originalSnapshot) más el nuevo
+              const existingPortals = Array.isArray(this.originalSnapshot.portals) ? this.originalSnapshot.portals : [];
+              const allPortals = [...existingPortals, originPortalSnap];
+              const originWithPortal = { ...this.originalSnapshot, planets: filteredPlanets, portals: allPortals };
               persistence.autoLabelAndSave?.('gate-origin-linked', originWithPortal);
             }
           } catch {}

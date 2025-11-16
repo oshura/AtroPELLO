@@ -38,6 +38,13 @@ export class SolarSystemSerializer {
       radius?: number;
       centerSpeedFactor?: number;
     }>;
+    portals?: Array<{
+      id: string;
+      position: Vector3;
+      radius: number;
+      linkedPortalId?: string;
+      eyeState?: any;
+    }>;
     planetDebris?: Array<{ id: string; planetId: string; localOffset: Vector3; size?: number; type?: string }>;
   }): SolarSystemSnapshot {
     const sun: SunSnapshot = state.sun ? {
@@ -105,6 +112,14 @@ export class SolarSystemSerializer {
       type: d.type,
     }));
 
-    return { id: `snapshot-${Date.now()}`, timestamp: Date.now(), sun, planets, clusters, planetDebris };
+    const portals = (state.portals || []).map(p => ({
+      id: p.id,
+      position: { ...p.position },
+      radius: p.radius,
+      linkedPortalId: p.linkedPortalId,
+      eyeState: p.eyeState
+    }));
+
+    return { id: `snapshot-${Date.now()}`, timestamp: Date.now(), sun, planets, clusters, portals, planetDebris };
   }
 }

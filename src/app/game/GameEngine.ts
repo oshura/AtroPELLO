@@ -11,6 +11,7 @@ import { ShaderManager } from './ShaderManager';
 import { SolarSystemService } from './services/game/solar-system.service';
 import { HumanSolarSystemService } from './services/game/human-solar-system.service';
 import { PortalPersistenceService } from './services/game/portal-persistence.service';
+import { PortalRegistryService } from './services/game/portal-registry.service';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
 import { SuperAsteroid } from './SuperAsteroid';
@@ -212,6 +213,7 @@ export class GameEngine {
   private solarSystemService?: SolarSystemService,
   private humanSolarSystemService?: HumanSolarSystemService,
   private portalPersistenceService?: PortalPersistenceService,
+  public portalRegistry?: PortalRegistryService,
     audioEngine?: AudioEngineService,
     musicDirector?: MusicDirectorService
   ) {
