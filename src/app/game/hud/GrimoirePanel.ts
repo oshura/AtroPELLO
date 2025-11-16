@@ -662,7 +662,7 @@ export class GrimoirePanel {
 
   private drawEternalRite(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
     // Stylized skull: circle head + eye sockets + nose triangle + jaw line
-    c.save(); c.translate(x,y);
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
     const col = color || '#3b2b1f';
     c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 2;
     // Skull outline (oval, taller than wide)
@@ -695,7 +695,7 @@ export class GrimoirePanel {
 
   private drawDisruptRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
     // Material Disruption: shattered crystal/lightning bolt pattern
-    c.save(); c.translate(x,y);
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
     const col = color || '#3b2b1f';
     c.strokeStyle = col; c.fillStyle = col; c.lineWidth = 2.5;
     
