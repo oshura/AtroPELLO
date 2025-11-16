@@ -292,6 +292,11 @@ export class GameEngine {
         }
         // Fade out quickly (solid black opaque)
         try { this.overlayRenderer?.drawSolid([0,0,0], 1.0); } catch {}
+        
+        // Pausar consumo de void energy durante el traversal
+        const wasEnergyPaused = this.spaceship.voidEnergyPaused;
+        this.spaceship.voidEnergyPaused = true;
+        
   // Apply destination system
   this.applySolarSystemSnapshot(destSnap);
         // Find the destination portal in the new scene
@@ -312,6 +317,10 @@ export class GameEngine {
             this.spaceship.position.z += fwd.z * eps;
           } catch {}
         }
+        
+        // Reactivar consumo de void energy tras el traversal
+        this.spaceship.voidEnergyPaused = wasEnergyPaused;
+        
         // Quick fade-in to clear
         try { this.overlayRenderer?.drawSolid([0,0,0], 0.0); } catch {}
         // Set cooldown to prevent immediate re-entry
