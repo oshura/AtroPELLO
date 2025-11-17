@@ -3770,9 +3770,12 @@ export class GameEngine {
   // EXCEPCIÓN: el Sol nunca usa sprite para asegurar el glow y la estabilidad de brillo
   if (this.billboardRenderer && distCam >= SPRITE_LOD_DISTANCE && !isSun) {
         // Calcular diámetro en píxeles según tamaño angular geométrico y clamp
-        const Rw = (p as any).scale?.x ?? 1;
+        let Rw = (p as any).scale?.x ?? 1;
+        // Multiplicadores de tamaño: Giant/Ringed x4, todos los demás x2
+        const isGiant = ((p as any)?.planetType === PlanetType.Giant || (p as any)?.planetType === PlanetType.Ringed);
+        Rw = Rw * (isGiant ? 4 : 2);
         let diameterPx = (2 * Rw * viewportH) / (Math.max(1e-3, distCam) * fovV);
-        diameterPx = Math.max(8, Math.min(256, diameterPx));
+        diameterPx = Math.max(8, Math.min(512, diameterPx));
         // Textura: especial para Tierra partida, genérica circular para otros (tint = blanco)
   const isEarthSplit = (p as any).planetType === 'Tierra';
         const tex = isEarthSplit
@@ -3784,12 +3787,12 @@ export class GameEngine {
         const upW = cam.up;
         const right = this.normalize({ x: fwdU.y*upW.z - fwdU.z*upW.y, y: fwdU.z*upW.x - fwdU.x*upW.z, z: fwdU.x*upW.y - fwdU.y*upW.x });
         const upB = { x: right.y*fwdU.z - right.z*fwdU.y, y: right.z*fwdU.x - right.x*fwdU.z, z: right.x*fwdU.y - right.y*fwdU.x };
-        // If planet is Ringed (e.g., Saturn), draw a static ring annulus behind the sphere.
+        // If planet is Ringed (e.g., Saturn), draw ring in two parts: upper half behind, lower half in front
         const isRinged = ((p as any)?.planetType === PlanetType.Ringed || String((p as any)?.planetType||'').toLowerCase()==='ringed');
         if (isRinged) {
-          const ringTex = this.billboardRenderer.getRingTexture('ring-saturn');
+          const ringTexUpper = this.billboardRenderer.getRingTextureUpper('ring-saturn');
           const ringDiameterPx = Math.min(384, diameterPx * 2.2);
-          // Render ring first (behind), then sphere on top
+          // Render upper half of ring first (behind planet)
           this.billboardRenderer.render(
             p.position,
             ringDiameterPx,
@@ -3799,9 +3802,10 @@ export class GameEngine {
             upB,
             right,
             [1,1,1,0.98],
-            ringTex
+            ringTexUpper
           );
         }
+        // Render planet sphere
         this.billboardRenderer.render(
           p.position,
           diameterPx,
@@ -3813,6 +3817,22 @@ export class GameEngine {
           tint,
           tex
         );
+        // If ringed, render lower half of ring in front of planet
+        if (isRinged) {
+          const ringTexLower = this.billboardRenderer.getRingTextureLower('ring-saturn');
+          const ringDiameterPx = Math.min(384, diameterPx * 2.2);
+          this.billboardRenderer.render(
+            p.position,
+            ringDiameterPx,
+            cam.viewMatrix,
+            cam.projectionMatrix,
+            cam.position,
+            upB,
+            right,
+            [1,1,1,0.98],
+            ringTexLower
+          );
+        }
         // Saltar render geométrico y pases especiales (caps/glow) en modo sprite
         continue;
       }

@@ -85,26 +85,135 @@ export class BillboardRenderer {
     return tex;
   }
 
+  /** Get ring texture with only upper half (behind planet) */
+  public getRingTextureUpper(key: string = 'ring-default'): WebGLTexture {
+    const keyUpper = `${key}-upper`;
+    const existing = this.textures.get(keyUpper);
+    if (existing) return existing;
+    const tex = this.createRingTexture('upper');
+    this.textures.set(keyUpper, tex);
+    return tex;
+  }
+
+  /** Get ring texture with only lower half (in front of planet) */
+  public getRingTextureLower(key: string = 'ring-default'): WebGLTexture {
+    const keyLower = `${key}-lower`;
+    const existing = this.textures.get(keyLower);
+    if (existing) return existing;
+    const tex = this.createRingTexture('lower');
+    this.textures.set(keyLower, tex);
+    return tex;
+  }
+
   private createCircleTexture(hex: string): WebGLTexture {
     const gl = this.gl;
-    const size = 128;
+    const size = 128; // Tamaño original para mantener el mismo tamaño visual en pantalla
     const cnv = document.createElement('canvas'); cnv.width = size; cnv.height = size;
     const ctx = cnv.getContext('2d')!;
-    ctx.clearRect(0,0,size,size);
-    const cx = size/2, cy = size/2, r = size*0.46;
-    // Soft edge circle with slight limb darkening and alpha falloff at the rim
-    const grad = ctx.createRadialGradient(cx, cy, r*0.15, cx, cy, r*1.02);
-    // convert hex to rgb
+    ctx.clearRect(0, 0, size, size);
+    
+    const cx = size / 2, cy = size / 2, r = size * 0.50; // Maximizado para mayor cobertura visual (casi llena el canvas)
     const rgb = this.hexToRgb(hex) || { r: 200, g: 200, b: 200 };
-    const c1 = `rgba(${rgb.r},${rgb.g},${rgb.b},1)`;
-    const cMid = `rgba(${Math.round(rgb.r*0.75)},${Math.round(rgb.g*0.75)},${Math.round(rgb.b*0.75)},0.95)`;
-    const cEdge = `rgba(${Math.round(rgb.r*0.6)},${Math.round(rgb.g*0.6)},${Math.round(rgb.b*0.6)},0.0)`;
-    grad.addColorStop(0.0, c1);
-    grad.addColorStop(0.85, cMid);
-    grad.addColorStop(1.0, cEdge);
-    ctx.fillStyle = grad;
-    ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2); ctx.fill();
+    
+    // Luz direccional simulada desde arriba-izquierda
+    const lightX = cx - r * 0.35;
+    const lightY = cy - r * 0.35;
+    
+    // 1. Base esférica con iluminación realista (píxel por píxel)
+    const imgData = ctx.createImageData(size, size);
+    const data = imgData.data;
+    
+    for (let py = 0; py < size; py++) {
+      for (let px = 0; px < size; px++) {
+        const dx = px - cx;
+        const dy = py - cy;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        
+        if (dist <= r) {
+          // Coordenadas normalizadas en la esfera
+          const nx = dx / r;
+          const ny = dy / r;
+          const nz = Math.sqrt(Math.max(0, 1 - nx * nx - ny * ny));
+          
+          // Vector de luz normalizado
+          const lx = (lightX - px) / r;
+          const ly = (lightY - py) / r;
+          const lz = 0.8; // Elevación de la luz
+          const llen = Math.sqrt(lx * lx + ly * ly + lz * lz);
+          const lnx = lx / llen, lny = ly / llen, lnz = lz / llen;
+          
+          // Difuso (Lambertiano)
+          const diffuse = Math.max(0, nx * lnx + ny * lny + nz * lnz);
+          
+          // Especular (Phong-Blinn)
+          const viewZ = 1; // Cámara mirando hacia -Z
+          const hx = lnx, hy = lny, hz = (lnz + viewZ) / Math.sqrt(lnx*lnx + lny*lny + (lnz+viewZ)*(lnz+viewZ));
+          const specular = Math.pow(Math.max(0, nx * hx + ny * hy + nz * hz), 32) * 0.6;
+          
+          // Ambient occlusion (oscurecimiento en los bordes/limb darkening)
+          const edgeDist = dist / r;
+          const ao = Math.pow(1 - edgeDist, 1.8) * 0.3 + 0.7;
+          
+          // Iluminación ambiente
+          const ambient = 0.25;
+          
+          // Combinación final
+          const lighting = (ambient + diffuse * 0.75) * ao + specular;
+          
+          // Aplicar iluminación al color base
+          const idx = (py * size + px) * 4;
+          data[idx + 0] = Math.min(255, Math.round(rgb.r * lighting));
+          data[idx + 1] = Math.min(255, Math.round(rgb.g * lighting));
+          data[idx + 2] = Math.min(255, Math.round(rgb.b * lighting));
+          
+          // Alpha suave en los bordes para anti-aliasing
+          const alpha = Math.min(1, (r - dist) * 2.5);
+          data[idx + 3] = Math.round(alpha * 255);
+        } else {
+          // Transparente fuera del círculo
+          const idx = (py * size + px) * 4;
+          data[idx + 3] = 0;
+        }
+      }
+    }
+    
+    ctx.putImageData(imgData, 0, 0);
+    
+    // 2. Añadir variaciones de superficie sutiles (nubes/continentes simulados con noise)
+    ctx.globalCompositeOperation = 'multiply';
+    ctx.globalAlpha = 0.15;
+    
+    // Generar patrón de noise simple con círculos aleatorios
+    const seed = (rgb.r * 256 + rgb.g) * 256 + rgb.b; // Seed basado en color para consistencia
+    const rng = this.seededRandom(seed);
+    
+    for (let i = 0; i < 180; i++) {
+      const angle = rng() * Math.PI * 2;
+      const radius = rng() * r * 0.85;
+      const px = cx + Math.cos(angle) * radius;
+      const py = cy + Math.sin(angle) * radius;
+      const psize = 3 + rng() * 12;
+      const brightness = 0.7 + rng() * 0.6;
+      
+      ctx.fillStyle = `rgba(${Math.round(brightness*255)},${Math.round(brightness*255)},${Math.round(brightness*255)},0.3)`;
+      ctx.beginPath();
+      ctx.arc(px, py, psize, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    
+    ctx.globalCompositeOperation = 'source-over';
+    ctx.globalAlpha = 1;
+    
     return this.uploadCanvasTexture(cnv);
+  }
+  
+  // Generador de números pseudoaleatorios con seed (para consistencia)
+  private seededRandom(seed: number): () => number {
+    let state = seed;
+    return () => {
+      state = (state * 9301 + 49297) % 233280;
+      return state / 233280;
+    };
   }
 
   private createEarthSplitTexture(): WebGLTexture {
@@ -167,7 +276,7 @@ export class BillboardRenderer {
     return this.uploadCanvasTexture(cnv);
   }
 
-  private createRingTexture(): WebGLTexture {
+  private createRingTexture(half: 'upper' | 'lower' | 'full' = 'full'): WebGLTexture {
     const size = 256; // larger for cleaner edges
     const cnv = document.createElement('canvas'); cnv.width = size; cnv.height = size;
     const ctx = cnv.getContext('2d')!;
@@ -240,6 +349,22 @@ export class BillboardRenderer {
     }
     ctx.putImageData(img, 0, 0);
     ctx.restore();
+    
+    // Aplicar máscara para mitad superior o inferior si es necesario
+    if (half === 'upper' || half === 'lower') {
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.fillStyle = 'rgba(255,255,255,1)';
+      if (half === 'upper') {
+        // Solo mitad superior (y <= size/2), incluye línea central
+        ctx.fillRect(0, 0, size, size / 2 + 1);
+      } else {
+        // Solo mitad inferior (y >= size/2), incluye línea central
+        ctx.fillRect(0, size / 2, size, size / 2 + 1);
+      }
+      ctx.restore();
+    }
+    
     // Convert to WebGL texture
     return this.uploadCanvasTexture(cnv);
   }
