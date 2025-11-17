@@ -25,7 +25,8 @@ export class AnimationManagerService {
   }
 
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
-    if (this.current) return false; // busy
+    // Allow replacing blocking-delay to avoid 1-frame flash
+    if (this.current && this.current.name !== 'blocking-delay') return false; // busy
     // If cached ctor available, start immediately; else lazy-load with stub
     if (this.cachedVoidJumpCtor) {
       const anim = new this.cachedVoidJumpCtor();
@@ -129,7 +130,8 @@ export class AnimationManagerService {
   }
 
   public startGateRite(engine: GameEngine, target: ITargetable): boolean {
-    if (this.current) return false;
+    // Allow replacing blocking-delay to avoid 1-frame flash
+    if (this.current && this.current.name !== 'blocking-delay') return false;
     if (this.cachedGateRiteCtor) {
       const anim = new this.cachedGateRiteCtor();
       anim.start(engine, target);
