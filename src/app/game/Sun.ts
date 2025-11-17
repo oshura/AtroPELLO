@@ -45,9 +45,7 @@ export class Sun extends Planet {
 
   /** Additive billboard glow drawn after the main planet pass */
   public renderGlow(gl: WebGL2RenderingContext, shaderManager: any, camera: any): void {
-    console.log(`[SUN GLOW] renderGlow called for ${this.id} at position:`, this.position);
     if (!shaderManager?.glowProgram) {
-      console.warn('[SUN GLOW] No glowProgram available');
       return;
     }
 

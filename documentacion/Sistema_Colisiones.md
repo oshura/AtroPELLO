@@ -128,19 +128,186 @@ public healthMax: number;
 ```typescript
 damage_dealt = 50 HP por impacto
 obj.healthCurrent -= damage_dealt
-if (obj.healthCurrent <= 0):
-  destroyObject(obj)
+// La destrucción es manejada automáticamente por el sistema reactivo
 ```
 
-**Logs Generados** (DEBUG):
+**Logs Generados** (INFO):
 ```typescript
 {
   id: "objeto-id",
   damage: 50,
   prevHealth: 800,
   newHealth: 750,
-  healthMax: 800
+  healthMax: 800,
+  willDestroy: false
 }
+```
+
+**Sistema Reactivo de Destrucción**:
+
+El sistema de salud implementa un patrón reactivo donde **no es necesario verificar manualmente** si un objeto debe destruirse. La destrucción ocurre automáticamente mediante callbacks.
+
+#### Arquitectura del Sistema Reactivo
+
+**1. Clase Base `GameObject`** (`GameObject.ts`):
+```typescript
+// Backing field privado
+protected _healthCurrent: number;
+
+// Getter/Setter reactivo
+public get healthCurrent(): number {
+  return this._healthCurrent;
+}
+
+public set healthCurrent(value: number) {
+  const oldValue = this._healthCurrent;
+  this._healthCurrent = value;
+  
+  // Verificación reactiva automática
+  if (value <= 0 && oldValue > 0 && this.onDestroyedCallback) {
+    this.onDestroyedCallback(this);
+  }
+}
+
+// Callback registrable
+private onDestroyedCallback: ((obj: GameObject) => void) | null = null;
+
+public setDestroyedCallback(callback: (obj: GameObject) => void): void {
+  this.onDestroyedCallback = callback;
+}
+```
+
+**Características clave**:
+- El setter detecta transiciones de `> 0` a `≤ 0`
+- Llama automáticamente al callback registrado
+- No requiere verificaciones manuales en código de daño
+
+**2. Registro Universal en `GameEngine`**:
+
+Al crear cada objeto, el GameEngine registra el callback de destrucción:
+
+```typescript
+// Ejemplo: creación de asteroides
+const asteroid = new Asteroid(id, position);
+asteroid.setDestroyedCallback((obj) => {
+  this.destroyObject(obj);
+});
+this.asteroids.push(asteroid);
+```
+
+Este patrón se aplica a:
+- Asteroides (regulares, super, mega)
+- Planetas (todas las variantes)
+- Portales
+- Debris planetarios
+- Asteroides independizados de clusters
+
+**3. Caso Especial: `Spaceship`** (`Spaceship.ts`):
+
+La nave tiene un **doble callback** ya que sobreescribe el setter:
+
+```typescript
+public override set healthCurrent(value: number) {
+  const oldValue = this._healthCurrent;
+  this._healthCurrent = value;
+  
+  // Callback 1: Cambios de salud (efectos, logging)
+  if (this.onHealthChangeCallback) {
+    this.onHealthChangeCallback(value, oldValue);
+  }
+  
+  // Callback 2: Muerte del jugador (death dialog)
+  if (value <= 0 && oldValue > 0 && this.onDeathCallback) {
+    this.onDeathCallback();
+  }
+}
+
+// Dos métodos de registro separados
+public setHealthChangeCallback(callback: (current: number, previous: number) => void): void {
+  this.onHealthChangeCallback = callback;
+}
+
+public setDeathCallback(callback: () => void): void {
+  this.onDeathCallback = callback;
+}
+```
+
+**GameEngine registra ambos**:
+```typescript
+this.spaceship.setHealthChangeCallback((current, prev) => {
+  // Efectos visuales, logging, etc.
+});
+
+this.spaceship.setDeathCallback(() => {
+  this.triggerDeathDialog(); // Modal de muerte
+});
+```
+
+**4. Independización de Asteroides en Clusters**:
+
+Cuando un asteroide en cluster recibe daño, se independiza reactivamente:
+
+```typescript
+// En makeAsteroidIndependent()
+const independent = new Asteroid(asteroid.id, asteroid.position);
+independent.velocity = newVelocity;
+
+// Registrar callback de destrucción para el asteroide independiente
+independent.setDestroyedCallback((obj) => {
+  this.destroyObject(obj);
+});
+
+this.independentAsteroids.push(independent);
+```
+
+#### Flujo Completo Reactivo
+
+```
+1. Colisión detectada
+   └─> applyDamageToObject(obj, 50)
+       └─> obj.healthCurrent -= 50
+           └─> Setter activado automáticamente
+               ├─> Verificación: healthCurrent <= 0?
+               │   └─> SÍ: onDestroyedCallback(obj)
+               │       └─> GameEngine.destroyObject(obj)
+               │           ├─> Elimina de arrays
+               │           ├─> Limpia targeting
+               │           ├─> Limpia HUD
+               │           ├─> Marca inactivo
+               │           └─> Log INFO: "Objeto destruido"
+               └─> NO: Objeto continúa activo
+```
+
+**Ventajas del Sistema Reactivo**:
+- ✅ **Sin verificaciones manuales**: El código de daño solo modifica `healthCurrent`
+- ✅ **Centralizado**: Toda destrucción pasa por `destroyObject()`
+- ✅ **Consistente**: Funciona igual para todos los objetos
+- ✅ **Mantenible**: Añadir nuevos objetos solo requiere registrar callback
+- ✅ **Debug-friendly**: Breakpoints en el setter capturan todas las destrucciones
+- ✅ **Thread-safe**: Un único punto de entrada para destrucción
+
+#### Ejemplos de Uso
+
+**Daño por colisión** (automático):
+```typescript
+// En checkCollisions()
+this.applyDamageToObject(asteroid, 50);
+// Si healthCurrent llega a 0, se destruye automáticamente
+```
+
+**Hechizo Disruption Rite** (manual):
+```typescript
+// En updateDisruptionBeam()
+const damage = target.healthMax; // Suficiente para destruir
+this.applyDamageToObject(target, damage);
+// El sistema reactivo maneja la destrucción
+```
+
+**Hechizo Eternal Rite** (suicidio):
+```typescript
+// En EternalRiteAnimation.update()
+engine.spaceship.healthCurrent = 0;
+// Dispara automáticamente triggerDeathDialog()
 ```
 
 ### 5. Destrucción de Objetos (`destroyObject()`)
