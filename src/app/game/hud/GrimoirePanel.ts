@@ -107,7 +107,7 @@ export class GrimoirePanel {
     }
     // Update states based on the current selectedSpell (not the incoming param), so deselect works properly
     const sel = this.selectedSpell;
-  (['speed','longjump','gaterite'] as const).forEach(k => {
+  (['speed','longjump','gaterite','eternalrite','disrupt'] as const).forEach(k => {
       if (!sel) {
         if (this.spellStates[k] !== 'locked') this.spellStates[k] = 'available';
       } else if (k === sel) {
@@ -120,7 +120,7 @@ export class GrimoirePanel {
   /** Clear any current selection completely (external casting can call this). */
   public clearSelection(): void {
     this.selectedSpell = null;
-    (['speed','longjump','gaterite'] as const).forEach(k => {
+    (['speed','longjump','gaterite','eternalrite','disrupt'] as const).forEach(k => {
       if (this.spellStates[k] !== 'locked') this.spellStates[k] = 'available';
     });
   }
@@ -428,10 +428,10 @@ export class GrimoirePanel {
       else if (p.type === 'eternalrite') {
         if (state === 'equipped') {
           c.save();
-          const pulse = 0.75 + 0.25 * (0.5 + 0.5 * Math.sin(this.t * 2.8));
-          c.shadowColor = `rgba(139,0,0,${pulse.toFixed(3)})`; // dark crimson
-          c.shadowBlur = 28;
-          this.drawEternalRite(c, p.x, p.y, p.r*0.9, '#8b0000');
+          const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 2.8));
+          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
+          c.shadowBlur = 22;
+          this.drawEternalRite(c, p.x, p.y, p.r*0.9, '#00d5ff');
           c.restore();
         } else {
           this.drawEternalRite(c, p.x, p.y, p.r*0.9);
@@ -440,10 +440,10 @@ export class GrimoirePanel {
       else if (p.type === 'disrupt') {
         if (state === 'equipped') {
           c.save();
-          const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 3.2));
-          c.shadowColor = `rgba(200,100,255,${pulse.toFixed(3)})`; // purple/magenta
-          c.shadowBlur = 24;
-          this.drawDisruptRune(c, p.x, p.y, p.r*0.9, '#c864ff');
+          const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.2));
+          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
+          c.shadowBlur = 22;
+          this.drawDisruptRune(c, p.x, p.y, p.r*0.9, '#00d5ff');
           c.restore();
         } else {
           this.drawDisruptRune(c, p.x, p.y, p.r*0.9);
