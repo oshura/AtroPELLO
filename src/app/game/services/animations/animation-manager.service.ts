@@ -10,6 +10,9 @@ export class AnimationManagerService {
   private current: GameAnimation | null = null;
   private cachedVoidJumpCtor: ({ new(): GameAnimation }) | null = null;
   private cachedGateRiteCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedSpeedRiteCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedEternalRiteCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedDisruptionRiteCtor: ({ new(): GameAnimation }) | null = null;
   private flashImages: string[] = [
     '/assets/Athathoth.jpg',
     '/assets/GreatCthulhu.jpg',
@@ -22,6 +25,10 @@ export class AnimationManagerService {
     this.preloadVoidJump();
     // Preload GateRite best-effort
     this.preloadGateRite();
+    // Preload other rites best-effort
+    this.preloadSpeedRite();
+    this.preloadEternalRite();
+    this.preloadDisruptionRite();
   }
 
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
@@ -160,6 +167,114 @@ export class AnimationManagerService {
         const mod = await import('./gate-rite.animation');
         const Anim = (mod as any).GateRiteAnimation as { new(): GameAnimation };
         this.cachedGateRiteCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  public startSpeedRite(engine: GameEngine): boolean {
+    // Allow replacing blocking-delay to avoid 1-frame flash
+    if (this.current && this.current.name !== 'blocking-delay') return false;
+    if (this.cachedSpeedRiteCtor) {
+      const anim = new this.cachedSpeedRiteCtor();
+      anim.start(engine);
+      this.current = anim; 
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./speed-rite.animation');
+        const Anim = (mod as any).SpeedRiteAnimation as { new(): GameAnimation };
+        this.cachedSpeedRiteCtor = Anim;
+        const anim = new Anim();
+        anim.start(engine);
+        this.current = anim;
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load SpeedRiteAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadSpeedRite(): void {
+    (async () => {
+      try {
+        const mod = await import('./speed-rite.animation');
+        const Anim = (mod as any).SpeedRiteAnimation as { new(): GameAnimation };
+        this.cachedSpeedRiteCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  public startEternalRite(engine: GameEngine): boolean {
+    // Allow replacing blocking-delay to avoid 1-frame flash
+    if (this.current && this.current.name !== 'blocking-delay') return false;
+    if (this.cachedEternalRiteCtor) {
+      const anim = new this.cachedEternalRiteCtor();
+      anim.start(engine);
+      this.current = anim; 
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./eternal-rite.animation');
+        const Anim = (mod as any).EternalRiteAnimation as { new(): GameAnimation };
+        this.cachedEternalRiteCtor = Anim;
+        const anim = new Anim();
+        anim.start(engine);
+        this.current = anim;
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load EternalRiteAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadEternalRite(): void {
+    (async () => {
+      try {
+        const mod = await import('./eternal-rite.animation');
+        const Anim = (mod as any).EternalRiteAnimation as { new(): GameAnimation };
+        this.cachedEternalRiteCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  public startDisruptionRite(engine: GameEngine, target?: ITargetable): boolean {
+    // Allow replacing blocking-delay to avoid 1-frame flash
+    if (this.current && this.current.name !== 'blocking-delay') return false;
+    if (this.cachedDisruptionRiteCtor) {
+      const anim = new this.cachedDisruptionRiteCtor();
+      anim.start(engine, target || undefined);
+      this.current = anim; 
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./disruption-rite.animation');
+        const Anim = (mod as any).DisruptionRiteAnimation as { new(): GameAnimation };
+        this.cachedDisruptionRiteCtor = Anim;
+        const anim = new Anim();
+        anim.start(engine, target || undefined);
+        this.current = anim;
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load DisruptionRiteAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadDisruptionRite(): void {
+    (async () => {
+      try {
+        const mod = await import('./disruption-rite.animation');
+        const Anim = (mod as any).DisruptionRiteAnimation as { new(): GameAnimation };
+        this.cachedDisruptionRiteCtor = Anim;
       } catch { /* ignore */ }
     })();
   }

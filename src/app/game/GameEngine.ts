@@ -4954,10 +4954,8 @@ export class GameEngine {
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
             }
           } else if (spell === 'speed') {
-            // Mostrar mock de animación y aplicar buff al instante
-            this.showPlaceholderText('ANIMATION NUMBER 1.', 1200);
-            // Apply 2-minute max speed buff (Double Phased Time Rite)
-            this.applySpeedRite(120000);
+            // Start Speed Rite animation (applies buff internally)
+            try { this.animationManager.startSpeedRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'SpeedRite start error', e); }
           } else if (spell === 'gaterite') {
             // Gate Rite: requiere planeta seleccionado y distancia ≤ 50u a la superficie
             const t = target as any;
@@ -4976,18 +4974,10 @@ export class GameEngine {
             try { this.clearTargetSelection(); } catch {}
             try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
           } else if (spell === 'eternalrite') {
-            // Eternal Rite: ritual suicide - show animation then reduce health to 0
-            this.showPlaceholderText('ETERNAL RITE - EMBRACING THE VOID', 2000);
-            // Wait for animation placeholder to finish, then apply death
-            setTimeout(() => {
-              if (this.spaceship) {
-                this.spaceship.healthCurrent = 0; // Setter reactivo disparará triggerDeathDialog automáticamente
-                this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Eternal Rite cast - health reduced to 0');
-              }
-            }, 2200); // Slightly after the placeholder text
+            // Eternal Rite: ritual suicide animation (reduces health internally)
+            try { this.animationManager.startEternalRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'EternalRite start error', e); }
           } else if (spell === 'disrupt') {
-            // Material Disruption Rite: beam attack to destroy target asteroid
-            this.showPlaceholderText('MATERIAL DISRUPTION RITE', 2000);
+            // Material Disruption Rite: beam attack animation
             if (target && this.spaceship) {
               const anyT: any = target as any;
               const targetPos = anyT.boundingSphere?.center ? { ...anyT.boundingSphere.center } : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : null);
@@ -4997,12 +4987,14 @@ export class GameEngine {
                 const dz = targetPos.z - this.spaceship.position.z;
                 const dist = Math.hypot(dx, dy, dz);
                 if (dist <= 50) {
-                  // Start beam animation
-                  this.startDisruptionBeam(targetPos, target);
+                  // Start disruption rite animation (starts beam internally)
+                  try { this.animationManager.startDisruptionRite(this, target); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'DisruptionRite start error', e); }
                 } else {
                   this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
                 }
               }
+            } else {
+              this.showPlaceholderText('NO VALID TARGET', 1500);
             }
           }
         }, 2000);
@@ -5052,8 +5044,7 @@ export class GameEngine {
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
             }
           } else if (selected === 'speed') {
-            this.showPlaceholderText('ANIMATION NUMBER 1.', 1200);
-            this.applySpeedRite(120000);
+            try { this.animationManager.startSpeedRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'SpeedRite start error', e); }
           } else if (selected === 'gaterite') {
             const t = target as any;
             const isPlanet = typeof t?.getTargetType === 'function' && String(t.getTargetType?.()) === 'planet';
@@ -5069,17 +5060,10 @@ export class GameEngine {
             try { this.clearTargetSelection(); } catch {}
             try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
           } else if (selected === 'eternalrite') {
-            // Eternal Rite: ritual suicide
-            this.showPlaceholderText('ETERNAL RITE - EMBRACING THE VOID', 2000);
-            setTimeout(() => {
-              if (this.spaceship) {
-                this.spaceship.healthCurrent = 0; // Setter reactivo disparará triggerDeathDialog automáticamente
-                this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Eternal Rite cast - health reduced to 0');
-              }
-            }, 2200);
+            // Eternal Rite: ritual suicide animation
+            try { this.animationManager.startEternalRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'EternalRite start error', e); }
           } else if (selected === 'disrupt') {
             // Material Disruption Rite
-            this.showPlaceholderText('MATERIAL DISRUPTION RITE', 2000);
             if (target && this.spaceship) {
               const anyT: any = target as any;
               const targetPos = anyT.boundingSphere?.center ? { ...anyT.boundingSphere.center } : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : null);
@@ -5089,11 +5073,13 @@ export class GameEngine {
                 const dz = targetPos.z - this.spaceship.position.z;
                 const dist = Math.hypot(dx, dy, dz);
                 if (dist <= 50) {
-                  this.startDisruptionBeam(targetPos, target);
+                  try { this.animationManager.startDisruptionRite(this, target); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'DisruptionRite start error', e); }
                 } else {
                   this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
                 }
               }
+            } else {
+              this.showPlaceholderText('NO VALID TARGET', 1500);
             }
           }
         }, 2000);
