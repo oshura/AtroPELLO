@@ -1110,6 +1110,8 @@ export class GameEngine {
     const supers: ITargetable[] = [];
     createdClusters.forEach(c => {
       c.objects.forEach(o => {
+        // Register reactive destruction callback for each asteroid
+        this.registerDestructionCallback(o);
         if ((o as any) instanceof SuperAsteroid) supers.push(o as unknown as ITargetable);
         else smalls.push(o as unknown as ITargetable);
       });
@@ -1120,6 +1122,8 @@ export class GameEngine {
     for (const arr of this.planetDebris.values()) {
       for (const d of arr) {
         if (!d.obj.vertexBuffer) d.obj.initBuffers(this.gl!);
+        // Register reactive destruction callback for mega asteroids
+        this.registerDestructionCallback(d.obj);
         this.targetCatalog.add(TargetType.MEGA_ASTEROID, d.obj as unknown as ITargetable);
       }
     }
@@ -5241,14 +5245,8 @@ export class GameEngine {
       const typeName = target?.constructor?.name || '';
       
       if (typeName.includes('Asteroid')) {
-        // Reduce health to 0 (reactive system will handle destruction)
-        if (target.healthCurrent !== undefined) {
-          target.healthCurrent = 0;
-          this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Disruption beam destroyed asteroid', { 
-            type: typeName, 
-            id: target.id 
-          });
-        }
+        // Apply lethal damage (triggers reactive destruction system)
+        this.applyDamageToObject(target, target.healthMax || 9999);
       }
       
       // Deactivate beam
