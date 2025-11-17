@@ -5226,6 +5226,15 @@ export class GameEngine {
     const now = performance.now();
     const elapsed = now - this.disruptionBeam.startTime;
     
+    // Recalculate beam positions each frame (ship and target move)
+    if (this.spaceship) {
+      this.disruptionBeam.startPos = { ...this.spaceship.position };
+    }
+    
+    if (this.disruptionBeam.target?.position) {
+      this.disruptionBeam.endPos = { ...this.disruptionBeam.target.position };
+    }
+    
     if (elapsed >= this.disruptionBeam.duration) {
       // Beam finished - destroy target if it's an asteroid
       const target = this.disruptionBeam.target;
