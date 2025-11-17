@@ -8,4 +8,5 @@ export interface GameAnimation {
   render(engine: GameEngine): void; // optional overlays
   isBlockingInputs(): boolean;
   cleanup?(engine: GameEngine): void; // optional cleanup method for emergency termination
+  keepOutlinersVisible?: boolean; // if true, outliners remain visible during animation (default: false)
 }

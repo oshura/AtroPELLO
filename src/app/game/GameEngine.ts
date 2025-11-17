@@ -4919,7 +4919,9 @@ export class GameEngine {
     this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
   }
   // Bloquear controles 2s de casteo
-  this.animationManager.startBlockingDelay(2000);
+  // Speed (Double Phased Time Rite) mantiene outliners visibles, otros hechizos los ocultan
+  const keepOutliners = (spell === 'speed');
+  this.animationManager.startBlockingDelay(2000, keepOutliners);
   // Esperar 2 segundos y luego disparar animación/efecto
         setTimeout(() => {
           if (spell === 'longjump') {
@@ -5846,8 +5848,11 @@ export class GameEngine {
       const hovered = this.adaptiveTargeting.getHoveredTarget?.();
       if (!selected && !hovered) return;
 
-      // During animations (and pre-cast blocking delay), suppress hover overlays for a clean view
-      const blockHover = !!this.animationManager?.isBlockingInputs?.();
+      // During animations (and pre-cast blocking delay), suppress overlays for a clean view
+      // UNLESS the animation explicitly wants to keep outliners visible (like void-jump)
+      const currentAnim = (this.animationManager as any).current as any;
+      const keepVisible = currentAnim?.keepOutlinersVisible === true;
+      const blockOverlays = !keepVisible && !!this.animationManager?.isBlockingInputs?.();
 
       const dpr = (this.webglService.getState().devicePixelRatio || 1);
 
@@ -5890,7 +5895,7 @@ export class GameEngine {
       };
 
       // Render hovered (slightly brighter than before) if present and different from selected
-      if (!blockHover && hovered && (!selected || hovered.id !== selected.id)) {
+      if (!blockOverlays && hovered && (!selected || hovered.id !== selected.id)) {
         const hData = buildData(hovered);
         if (hData) {
           // Use full color and control perceived brightness via intensity + thickness
@@ -5902,7 +5907,7 @@ export class GameEngine {
       }
 
       // Render selected (intense) on top
-      if (!blockHover && selected) {
+      if (!blockOverlays && selected) {
         const sData = buildData(selected);
         if (sData) {
           // Slightly bolder selected

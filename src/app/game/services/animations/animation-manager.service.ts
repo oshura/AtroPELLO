@@ -86,7 +86,7 @@ export class AnimationManagerService {
   }
 
   /** Start a simple blocking placeholder animation for a fixed duration. */
-  public startBlockingDelay(durationMs: number): void {
+  public startBlockingDelay(durationMs: number, keepOutlinersVisible: boolean = false): void {
     if (durationMs <= 0) return;
     // If already running something, keep it (do not override a real animation)
     if (this.current) return;
@@ -94,6 +94,7 @@ export class AnimationManagerService {
     const total = Math.max(0.001, durationMs) / 1000;
     this.current = {
       name: 'blocking-delay',
+      keepOutlinersVisible, // Pass through to control outliner visibility
       start: () => {},
       update: (_engine: GameEngine, dt: number) => {
         t += dt;
