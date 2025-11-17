@@ -368,23 +368,8 @@ export class Game implements AfterViewInit, OnDestroy {
   public triggerDeathDialog(): void {
     this.showDeathDialog = true;
     
-    // Reset audio: stop thruster and ambient loop to prevent sounds carrying over
-    try {
-      const gameEngine = this.gameInitializer.getGameEngine();
-      if (gameEngine) {
-        const thrusterCtl = (gameEngine as any).thrusterCtl;
-        const audio = (gameEngine as any).audio;
-        
-        if (thrusterCtl) {
-          thrusterCtl.stop(150); // fade out thruster
-        }
-        if (audio) {
-          audio.stopAmbientLoop(200); // fade out ambient
-        }
-      }
-    } catch (e) {
-      this.logger.warn(LogCategory.AUDIO, 'Failed to reset audio on death', e);
-    }
+    // Audio is already stopped by GameEngine.triggerDeathDialog() before calling this
+    // No need to stop it again here
     
     // Cambiar a música de menú cuando aparece el diálogo de muerte
     try {

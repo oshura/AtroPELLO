@@ -917,6 +917,28 @@ export class GateRiteAnimation implements GameAnimation {
     } catch {}
   }
 
+  cleanup(engine: GameEngine): void {
+    // Emergency cleanup - restore all modified game state
+    try {
+      // Reset flags
+      (engine as any).voidJumpActive = false;
+      (engine as any).collisionsDisabled = false;
+      // Restore void energy
+      if (engine['spaceship']) {
+        engine['spaceship'].voidEnergyPaused = false;
+      }
+      // Restore camera
+      const cam: any = (engine as any).camera;
+      if (cam?.setCameraMode && this.prevCameraMode !== null) {
+        cam.setCameraMode(this.prevCameraMode);
+      }
+      // Clear streaks
+      this.streakSeeds = [];
+    } catch (err) {
+      console.error('[GateRiteAnimation] cleanup() error:', err);
+    }
+  }
+
   render(engine: GameEngine): void {
     // Render speed streaks only once acceleration is active (after travelling completes)
     if (this.phase === GateRitePhase.Transit && this.streakSeeds.length && this.accelActive) {

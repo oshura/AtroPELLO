@@ -72,6 +72,19 @@ export class AnimationManagerService {
     return !!this.current && this.current.isBlockingInputs();
   }
 
+  /** Force-terminate current animation and restore game state (called on player death) */
+  public forceTerminateCurrentAnimation(engine: GameEngine): void {
+    if (!this.current) return;
+    try {
+      if (this.current.cleanup) {
+        this.current.cleanup(engine);
+      }
+    } catch (e) {
+      try { GameLogger.error(LogCategory.ANIMATION, 'Animation cleanup failed', e); } catch {}
+    }
+    this.current = null;
+  }
+
   /** Start a simple blocking placeholder animation for a fixed duration. */
   public startBlockingDelay(durationMs: number): void {
     if (durationMs <= 0) return;

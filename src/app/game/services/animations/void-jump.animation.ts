@@ -238,6 +238,30 @@ export class VoidJumpAnimation implements GameAnimation {
     return false;
   }
 
+  cleanup(engine: GameEngine): void {
+    // Emergency cleanup - restore all modified game state
+    try {
+      // Restore ship dynamics
+      if (engine['spaceship']) {
+        engine['spaceship'].acceleration = this.originalAcceleration;
+        engine['spaceship'].deceleration = this.originalDeceleration;
+        engine['spaceship'].targetSpeed = 0;
+        engine['spaceship'].voidEnergyCurrent = this.savedVoidEnergy;
+        engine['spaceship'].voidEnergyPaused = false;
+      }
+      // Remove all key blockers
+      this.inputBlockers.forEach(fn => fn());
+      this.inputBlockers = [];
+      // Reset flags
+      (engine as any).voidJumpActive = false;
+      (engine as any).collisionsDisabled = false;
+      // Restore camera
+      engine['camera']?.setCameraMode?.(this.prevCameraMode);
+    } catch (err) {
+      console.error('[VoidJumpAnimation] cleanup() error:', err);
+    }
+  }
+
   render(engine: GameEngine): void {
     const gl = (engine as any).gl as WebGL2RenderingContext;
     const shaderManager = (engine as any).shaderManager as any;

@@ -94,6 +94,7 @@ export class GameEngine {
   private music: MusicDirectorService | null = null;
   private thrusterCtl: ReturnType<AudioEngineService['createThrusterController']> | null = null;
   private audioUnlocked: boolean = false;
+  private deathInProgress: boolean = false; // Prevents audio updates during death fade-out
   // Doppler cues (near fly-bys)
   private dopplerEnabled: boolean = true;
   private dopplerCues: Map<string, { cue: ReturnType<AudioEngineService['createDopplerCue']>; started: number }>
@@ -1399,7 +1400,7 @@ export class GameEngine {
           this.lastCamPos = { ...this.camera.position };
         } catch {}
       }
-      if (this.audioUnlocked && this.thrusterCtl && this.spaceship) {
+      if (this.audioUnlocked && this.thrusterCtl && this.spaceship && !this.deathInProgress) {
         const state = this.spaceship.thrusterState;
         const speed = this.spaceship.currentSpeed;
         // Use base max (pre-rite) to allow audio to continue 100%→200% during the rite
@@ -2625,23 +2626,41 @@ export class GameEngine {
    * Trigger death dialog (called from collision system when ship health <= 0)
    */
   private triggerDeathDialog(): void {
-    // Pause game
-    this.isRunning = false;
+    // Set flag to prevent gameLoop from restarting thruster during fade
+    this.deathInProgress = true;
     
-    // Call game component to show death dialog
+    // Stop all audio with graceful fade-out BEFORE pausing game loop
     try {
-      const gameComponent = (globalThis as any).GameComponentInstance;
-      if (gameComponent && typeof gameComponent.triggerDeathDialog === 'function') {
-        gameComponent.triggerDeathDialog();
-      } else {
-        // Fallback: immediate respawn if dialog not available
-        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Death dialog not available - falling back to immediate respawn');
-        this.respawnGame();
+      if (this.thrusterCtl) {
+        this.thrusterCtl.stop(200); // 200ms fade out
+      }
+      if (this.audio) {
+        this.audio.stopAmbientLoop(250); // 250ms fade out
       }
     } catch (e) {
-      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Failed to trigger death dialog', e);
-      this.respawnGame();
+      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to stop audio on death', e);
     }
+    
+    // Delay game pause slightly to allow audio fades to complete
+    // This ensures AudioContext can process the fade-out envelope
+    setTimeout(() => {
+      this.isRunning = false;
+      
+      // Now call game component to show death dialog
+      try {
+        const gameComponent = (globalThis as any).GameComponentInstance;
+        if (gameComponent && typeof gameComponent.triggerDeathDialog === 'function') {
+          gameComponent.triggerDeathDialog();
+        } else {
+          // Fallback: immediate respawn if dialog not available
+          this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Death dialog not available - falling back to immediate respawn');
+          this.respawnGame();
+        }
+      } catch (e) {
+        this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Failed to trigger death dialog', e);
+        this.respawnGame();
+      }
+    }, 300); // 300ms delay to allow fades to complete
   }
 
   /**
@@ -2650,6 +2669,16 @@ export class GameEngine {
   public respawnGame(): void {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn initiated - regenerating solar system');
     
+    // Reset death flag
+    this.deathInProgress = false;
+    
+    // Force terminate any active animation before respawning
+    try {
+      this.animationManager?.forceTerminateCurrentAnimation(this);
+    } catch (err) {
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Error terminating animation during respawn', err);
+    }
+
     // Stop game loop temporarily
     const wasRunning = this.isRunning;
     this.isRunning = false;
@@ -2686,6 +2715,18 @@ export class GameEngine {
       
       // Recreate all game objects (solar system + spaceship)
       this.createGameObjects();
+      
+      // Stop any residual audio before restarting (cleanup after animations/previous state)
+      try {
+        if (this.thrusterCtl) {
+          this.thrusterCtl.stop(0);
+        }
+        if (this.audio) {
+          this.audio.stopAmbientLoop(0);
+        }
+      } catch (e) {
+        this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to stop residual audio before respawn', e);
+      }
       
       // Restart audio: ambient loop and thruster (at idle volume)
       try {
@@ -2730,6 +2771,9 @@ export class GameEngine {
    */
   public loadSaveAfterDeath(): void {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Loading save after death');
+    
+    // Reset death flag
+    this.deathInProgress = false;
     
     if (!this.spaceship) {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Cannot load save: spaceship not available');
