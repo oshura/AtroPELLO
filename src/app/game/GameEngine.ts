@@ -526,15 +526,45 @@ export class GameEngine {
         // Panels: Map and Grimoire (ancient book)
         w.Debug.Panels = w.Debug.Panels || {};
         w.Debug.Panels.setMapEnabled = (v: boolean) => {
-          try { this.systemPanel?.setEnabled(!!v); } catch {}
-          if (v) { try { this.grimoirePanel?.setEnabled(false); } catch {} }
+          try { 
+            const wasEnabled = this.systemPanel?.isEnabled();
+            this.systemPanel?.setEnabled(!!v); 
+            // Play appropriate map sound
+            if (this.audio) {
+              if (v && !wasEnabled) {
+                this.audio.play('ui_map_open', { bus: 'ui', volume: 0.6 });
+              } else if (!v && wasEnabled) {
+                this.audio.play('ui_map_close', { bus: 'ui', volume: 0.6 });
+              }
+            }
+          } catch {}
+          if (v) { 
+            try { 
+              this.grimoirePanel?.setEnabled(false);
+              // Play grimoire close sound when auto-closing for map (debug mode)
+              if (this.audio) {
+                this.audio.play('ui_grimoire_close', { bus: 'ui', volume: 0.6 });
+              }
+            } catch {} 
+          }
           this.updateMapClickBinding();
           this.updateGrimoirePointerBinding();
           this.updateCanvasCursor();
           this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Map panel enabled', { value: !!v });
         };
         w.Debug.Panels.setGrimoireEnabled = (v: boolean) => {
-          try { this.grimoirePanel?.setEnabled(!!v); } catch {}
+          try { 
+            const wasEnabled = this.grimoirePanel?.isEnabled();
+            this.grimoirePanel?.setEnabled(!!v); 
+            // Play appropriate sound
+            if (this.audio) {
+              if (v && !wasEnabled) {
+                this.audio.play('ui_grimoire_open', { bus: 'ui', volume: 0.6 });
+              } else if (!v && wasEnabled) {
+                this.audio.play('ui_grimoire_close', { bus: 'ui', volume: 0.6 });
+              }
+            }
+          } catch {}
           if (v) { try { this.systemPanel?.setEnabled(false); } catch {} }
           this.updateMapClickBinding();
           this.updateGrimoirePointerBinding();
@@ -4816,14 +4846,33 @@ export class GameEngine {
             return;
           }
           this.systemPanel.setEnabled(true);
+          // Play map open sound
+          try {
+            if (this.audio) {
+              this.audio.play('ui_map_open', { bus: 'ui', volume: 0.6 });
+            }
+          } catch (e) {
+            this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Map open sound failed', e);
+          }
         } else {
           // Closing: arm cooldown
           this.systemPanel.setEnabled(false);
+          // Play map close sound
+          try {
+            if (this.audio) {
+              this.audio.play('ui_map_close', { bus: 'ui', volume: 0.6 });
+            }
+          } catch (e) {
+            this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Map close sound failed', e);
+          }
           this.mapReopenAllowedAtMs = now + 1000;
         }
         // Ensure mutual exclusivity with Grimoire
         if (this.systemPanel.isEnabled() && this.grimoirePanel) {
-          try { this.grimoirePanel.setEnabled(false); this.grimoireReopenAllowedAtMs = performance.now() + 1000; } catch {}
+          try { 
+            this.grimoirePanel.setEnabled(false); 
+            this.grimoireReopenAllowedAtMs = performance.now() + 1000;
+          } catch {}
         }
         if (this.systemPanel.isEnabled()) {
           try { this.systemPanel.resetView(); } catch {}
@@ -4857,13 +4906,32 @@ export class GameEngine {
             return;
           }
           this.grimoirePanel.setEnabled(true);
+          // Play grimoire open sound
+          try {
+            if (this.audio) {
+              this.audio.play('ui_grimoire_open', { bus: 'ui', volume: 0.6 });
+            }
+          } catch (e) {
+            this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Grimoire open sound failed', e);
+          }
         } else {
           this.grimoirePanel.setEnabled(false);
           this.grimoireReopenAllowedAtMs = now + 1000;
+          // Play grimoire close sound
+          try {
+            if (this.audio) {
+              this.audio.play('ui_grimoire_close', { bus: 'ui', volume: 0.6 });
+            }
+          } catch (e) {
+            this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Grimoire close sound failed', e);
+          }
         }
         // Ensure map is closed when grimoire opens
         if (this.grimoirePanel.isEnabled() && this.systemPanel) {
-          try { this.systemPanel.setEnabled(false); this.mapReopenAllowedAtMs = performance.now() + 1000; } catch {}
+          try { 
+            this.systemPanel.setEnabled(false); 
+            this.mapReopenAllowedAtMs = performance.now() + 1000;
+          } catch {}
         }
         if (!this.grimoirePanel.isEnabled()) {
           // Closing grimoire: clear selection
@@ -4880,6 +4948,14 @@ export class GameEngine {
       if (this.systemPanel && this.systemPanel.isEnabled()) {
         this.systemPanel.setEnabled(false);
         this.mapReopenAllowedAtMs = performance.now() + 1000;
+        // Play map close sound
+        try {
+          if (this.audio) {
+            this.audio.play('ui_map_close', { bus: 'ui', volume: 0.6 });
+          }
+        } catch (e) {
+          this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Map close sound failed', e);
+        }
         try { this.updateMapClickBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
         // Mantener selección actual al cerrar mapa con Escape
@@ -4888,6 +4964,14 @@ export class GameEngine {
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
         this.grimoirePanel.setEnabled(false);
         this.grimoireReopenAllowedAtMs = performance.now() + 1000;
+        // Play grimoire close sound
+        try {
+          if (this.audio) {
+            this.audio.play('ui_grimoire_close', { bus: 'ui', volume: 0.6 });
+          }
+        } catch (e) {
+          this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Grimoire close sound failed', e);
+        }
         try { this.updateGrimoirePointerBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
         // Mantener selección actual al cerrar grimorio con Escape
@@ -4912,6 +4996,14 @@ export class GameEngine {
         const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
         // Cerrar el grimorio y volver a la escena 3D con cámara '0'
         try { this.grimoirePanel.setEnabled(false); } catch {}
+        // Play grimoire close sound when casting spell
+        try {
+          if (this.audio) {
+            this.audio.play('ui_grimoire_close', { bus: 'ui', volume: 0.6 });
+          }
+        } catch (e) {
+          this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Grimoire close sound failed', e);
+        }
         try { this.updateGrimoirePointerBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
   // Ir a cámara 0 si no lo está ya
@@ -4922,6 +5014,14 @@ export class GameEngine {
   // Speed (Double Phased Time Rite) mantiene outliners visibles, otros hechizos los ocultan
   const keepOutliners = (spell === 'speed');
   this.animationManager.startBlockingDelay(2000, keepOutliners);
+  // Reproducir sonido de pre-ritual
+  try {
+    if (this.audio) {
+      this.audio.play('sfx_precast_ritual', { bus: 'sfx', volume: 0.7 });
+    }
+  } catch (e) {
+    this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Pre-cast ritual sound failed', e);
+  }
   // Esperar 2 segundos y luego disparar animación/efecto
         setTimeout(() => {
           if (spell === 'longjump') {

@@ -12,6 +12,7 @@ import { mat4, vec4 } from 'gl-matrix';
 import { WebGLService } from '../../../services/webgl.service';
 import { RelationService, Relation } from '../../../services/relation.service';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
+import { AudioEngineService } from '../../../services/audio/audio-engine.service';
 
 // ===================================
 // TYPES & INTERFACES
@@ -134,6 +135,8 @@ export class AdaptiveTargetingSystem {
   // Current state
   private currentHovered: TargetDisplayInfo | null = null;
   private currentSelected: TargetDisplayInfo | null = null;
+  private previousHoveredId: string | null = null;
+  private previousSelectedId: string | null = null;
   // Sticky hover to avoid flicker on borderline detections
   private stickyHover: { info: TargetDisplayInfo; lastSeenTs: number } | null = null;
   private hoverHoldMs: number = 120; // keep last hover briefly if still within tolerance
@@ -153,7 +156,8 @@ export class AdaptiveTargetingSystem {
   constructor(
     private webglService: WebGLService,
     private relationService: RelationService,
-    private logging: LoggingService
+    private logging: LoggingService,
+    private audio: AudioEngineService
   ) {}
 
   // ===================================
@@ -212,6 +216,22 @@ export class AdaptiveTargetingSystem {
     // 4. Update current state
     this.currentHovered = hoveredTarget;
 
+    // Play audio cue when hover changes
+    const newHoveredId = hoveredTarget?.target.id?.toString() || null;
+    if (newHoveredId !== this.previousHoveredId) {
+      if (newHoveredId !== null) {
+        // Hover appeared
+        try {
+          const clip = this.audio.has('ui_outline_hover') ? 'ui_outline_hover' : 'ui_select';
+          this.audio.play(clip, { bus: 'ui', volume: 0.5 });
+        } catch (e) {
+          this.logging.log(LogLevel.WARN, LogCategory.AUDIO, 'Hover sound failed', e);
+        }
+      }
+      // Note: No sound when hover clears (only when deselecting with click)
+      this.previousHoveredId = newHoveredId;
+    }
+
     // 4.5 Keep selected and hovered target display info fresh every frame (screen pos, distances, category)
     if (this.currentSelected) {
       const selTarget = this.currentSelected.target;
@@ -234,14 +254,34 @@ export class AdaptiveTargetingSystem {
   }
 
   public selectTarget(target: ITargetable | null): void {
+    const newSelectedId = target?.id?.toString() || null;
+    const hadPreviousSelection = this.previousSelectedId !== null;
+    
     if (!target) {
       this.currentSelected = null;
+      // Play deselect sound only if there was a previous selection
+      if (hadPreviousSelection) {
+        try {
+          const clip = this.audio.has('ui_outline_clear') ? 'ui_outline_clear' : 'ui_select';
+          this.audio.play(clip, { bus: 'ui', volume: 0.4 });
+        } catch {}
+      }
+      this.previousSelectedId = null;
       return;
     }
 
     // Convert ITargetable to TargetDisplayInfo
     const displayInfo = this.createTargetDisplayInfo(target);
     this.currentSelected = displayInfo;
+    
+    // Play select sound only if selection actually changed
+    if (newSelectedId !== this.previousSelectedId) {
+      try {
+        const clip = this.audio.has('ui_outline_select') ? 'ui_outline_select' : 'ui_select';
+        this.audio.play(clip, { bus: 'ui', volume: 0.65 });
+      } catch {}
+      this.previousSelectedId = newSelectedId;
+    }
   }
 
   // ===================================

@@ -17,5 +17,10 @@
   "sfx_collision_heavy": "/assets/audio/sfx_collision_heavy.wav",
   "ui_outline_hover": "/assets/audio/ui_outline_hover.wav",
   "ui_outline_select": "/assets/audio/ui_outline_select.wav",
-  "ui_outline_clear": "/assets/audio/ui_outline_clear.wav"
+  "ui_outline_clear": "/assets/audio/ui_outline_clear.wav",
+  "sfx_precast_ritual": "/assets/audio/IaIa.wav",
+  "ui_grimoire_open": "/assets/audio/book-opening.wav",
+  "ui_grimoire_close": "/assets/audio/book-closing.wav",
+  "ui_map_open": "/assets/audio/MapOn.wav",
+  "ui_map_close": "/assets/audio/MapOff.wav"
 }

@@ -28,7 +28,6 @@ import { WebGLService } from '../../../services/webgl.service';
 import { mat4 } from 'gl-matrix';
 import { SpaceshipDebugCollector } from '../../../services/debug/spaceship-debug-collector.service';
 import { RelationService } from '../../../services/relation.service';
-import { AudioEngineService } from '../../../services/audio/audio-engine.service';
 import { TargetingWorkerService, WorkerResult } from '../worker/TargetingWorker.service';
 
 @Injectable({
@@ -88,8 +87,7 @@ export class ReticleManager {
     private debugCollector: SpaceshipDebugCollector,
     workerService: TargetingWorkerService,
     private relationService: RelationService,
-    private logger: LoggingService,
-    private audio: AudioEngineService
+    private logger: LoggingService
   ) {
     this.targetDetector = targetDetector;
     this.inputHandler = inputHandler;
@@ -748,13 +746,6 @@ export class ReticleManager {
         intensity: 0.7,
         color: hoverColor
       });
-      // Audio: hover appear
-      try {
-        const clip = this.audio.has('ui_outline_hover') ? 'ui_outline_hover' : 'ui_select';
-        this.audio.play(clip, { bus: 'sfx', volume: 0.5 });
-      } catch (e) {
-        this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Hover sound failed', e);
-      }
       
       // Remover highlighting del target anterior si existe
       if (previousTarget && previousTarget !== this.state.currentTarget) {
@@ -769,11 +760,6 @@ export class ReticleManager {
         this.targetHighlighter.removeHighlight(previousTarget);
         this.outlineRenderer.removeOutline(previousTarget.id);
       }
-      // Audio: hover cleared
-      try {
-        const clip = this.audio.has('ui_outline_clear') ? 'ui_outline_clear' : 'ui_select';
-        this.audio.play(clip, { bus: 'sfx', volume: 0.4 });
-      } catch {}
       // HUD overlay not used
     }
   }
@@ -807,11 +793,6 @@ export class ReticleManager {
         frequency: 3.0,
         color: selectedColor
       });
-      // Audio: selection
-      try {
-        const clip = this.audio.has('ui_outline_select') ? 'ui_outline_select' : 'ui_select';
-        this.audio.play(clip, { bus: 'sfx', volume: 0.65 });
-      } catch {}
       
       this.events.onTargetLocked(target);
     } else {
@@ -822,11 +803,6 @@ export class ReticleManager {
         this.targetHighlighter.removeHighlight(previousTarget);
         this.outlineRenderer.removeOutline(previousTarget.id);
       }
-      // Audio: selection cleared
-      try {
-        const clip = this.audio.has('ui_outline_clear') ? 'ui_outline_clear' : 'ui_select';
-        this.audio.play(clip, { bus: 'sfx', volume: 0.4 });
-      } catch {}
       
       this.events.onTargetLost();
     }
