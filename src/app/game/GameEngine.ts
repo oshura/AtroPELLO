@@ -3677,6 +3677,7 @@ export class GameEngine {
     options?: { spreadScale?: number; yScale?: number }
   ): Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }> {
     const arr: Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }> = [];
+    // Use originalRadius if available (for RingedPlanet), otherwise use scale.x
     const R = Math.max(1, planet.scale.x);
     // Escalas opcionales: spreadScale comprime el rango radial (rMax-rMin) y la aleatoriedad; yScale comprime el grosor vertical
     const spreadScale = Math.max(0.05, Math.min(1.0, options?.spreadScale ?? 1.0));
