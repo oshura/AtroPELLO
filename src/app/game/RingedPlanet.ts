@@ -7,7 +7,8 @@ import { Planet, PlanetType, PlanetColorName } from './Planet';
  */
 export class RingedPlanet extends Planet {
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
-    super(id, colorName, radius, initialPos);
+    // Multiply radius by 4 to make ringed planets visually massive
+    super(id, colorName, radius * 4, initialPos);
     this.planetType = PlanetType.Ringed;
   }
 }

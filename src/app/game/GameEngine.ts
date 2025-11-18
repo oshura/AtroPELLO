@@ -3770,17 +3770,59 @@ export class GameEngine {
   // EXCEPCIÓN: el Sol nunca usa sprite para asegurar el glow y la estabilidad de brillo
   if (this.billboardRenderer && distCam >= SPRITE_LOD_DISTANCE && !isSun) {
         // Calcular diámetro en píxeles según tamaño angular geométrico y clamp
-        let Rw = (p as any).scale?.x ?? 1;
-        // Multiplicadores de tamaño: Giant/Ringed x4, todos los demás x2
-        const isGiant = ((p as any)?.planetType === PlanetType.Giant || (p as any)?.planetType === PlanetType.Ringed);
-        Rw = Rw * (isGiant ? 4 : 2);
+        const Rw = (p as any).scale?.x ?? 1;
         let diameterPx = (2 * Rw * viewportH) / (Math.max(1e-3, distCam) * fovV);
-        diameterPx = Math.max(8, Math.min(512, diameterPx));
+        diameterPx = Math.max(8, Math.min(256, diameterPx));
         // Textura: especial para Tierra partida, genérica circular para otros (tint = blanco)
   const isEarthSplit = (p as any).planetType === 'Tierra';
+        // Calcular dirección de luz desde el Sol al planeta para iluminación dinámica
+        let lightDir: { x: number; y: number; z: number } | undefined;
+        if (this.primarySun) {
+          // Vector desde planeta hacia Sol (normalizado)
+          const toSunX = this.primarySun.position.x - p.position.x;
+          const toSunY = this.primarySun.position.y - p.position.y;
+          const toSunZ = this.primarySun.position.z - p.position.z;
+          const sunDist = Math.sqrt(toSunX * toSunX + toSunY * toSunY + toSunZ * toSunZ) || 1;
+          const sunDirWorldX = toSunX / sunDist;
+          const sunDirWorldY = toSunY / sunDist;
+          const sunDirWorldZ = toSunZ / sunDist;
+          
+          // Calcular base de cámara para transformar a espacio de vista
+          const camToPlanetX = p.position.x - cam.position.x;
+          const camToPlanetY = p.position.y - cam.position.y;
+          const camToPlanetZ = p.position.z - cam.position.z;
+          const camToPlanetDist = Math.sqrt(camToPlanetX*camToPlanetX + camToPlanetY*camToPlanetY + camToPlanetZ*camToPlanetZ) || 1;
+          // Forward = dirección hacia el planeta (normalizado)
+          const fwdX = camToPlanetX / camToPlanetDist;
+          const fwdY = camToPlanetY / camToPlanetDist;
+          const fwdZ = camToPlanetZ / camToPlanetDist;
+          
+          // Right = forward x up (producto cruz)
+          const upX = cam.up.x, upY = cam.up.y, upZ = cam.up.z;
+          const rightX = fwdY * upZ - fwdZ * upY;
+          const rightY = fwdZ * upX - fwdX * upZ;
+          const rightZ = fwdX * upY - fwdY * upX;
+          const rightLen = Math.sqrt(rightX*rightX + rightY*rightY + rightZ*rightZ) || 1;
+          const rightNormX = rightX / rightLen;
+          const rightNormY = rightY / rightLen;
+          const rightNormZ = rightZ / rightLen;
+          
+          // Up = right x forward (reorthonormalizado)
+          const upNewX = rightNormY * fwdZ - rightNormZ * fwdY;
+          const upNewY = rightNormZ * fwdX - rightNormX * fwdZ;
+          const upNewZ = rightNormX * fwdY - rightNormY * fwdX;
+          
+          // Proyectar dirección del Sol en el espacio de vista del billboard
+          // X = componente a la derecha (right), Y = componente arriba (up), Z = profundidad (forward)
+          const lightViewX = sunDirWorldX * rightNormX + sunDirWorldY * rightNormY + sunDirWorldZ * rightNormZ;
+          const lightViewY = sunDirWorldX * upNewX + sunDirWorldY * upNewY + sunDirWorldZ * upNewZ;
+          const lightViewZ = sunDirWorldX * fwdX + sunDirWorldY * fwdY + sunDirWorldZ * fwdZ;
+          
+          lightDir = { x: lightViewX, y: lightViewY, z: Math.abs(lightViewZ) + 0.5 }; // Asegurar z positivo para visibilidad
+        }
         const tex = isEarthSplit
           ? this.billboardRenderer.getEarthSplitTexture()
-          : this.billboardRenderer.getCircleTexture(this.rgbToHex(p.color.r, p.color.g, p.color.b));
+          : this.billboardRenderer.getCircleTexture(this.rgbToHex(p.color.r, p.color.g, p.color.b), lightDir);
         const tint: [number,number,number,number] = [1,1,1,1];
         // Compute camera basis (forward from target-position; right = forward x up; up re-orthonormalized)
         const fwdU = this.normalize({ x: cam.target.x - cam.position.x, y: cam.target.y - cam.position.y, z: cam.target.z - cam.position.z });

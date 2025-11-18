@@ -14,6 +14,8 @@ export class BillboardRenderer {
   private ibo: WebGLBuffer | null = null;
   private quadVertices: Float32Array = new Float32Array(4 * 5); // x,y,z,u,v for 4 verts
   private textures: Map<string, WebGLTexture> = new Map();
+  private textureTimestamps: Map<string, number> = new Map(); // Para tracking de regeneración
+  private readonly REGENERATE_INTERVAL_MS = 5000; // Regenerar cada 5 segundos
 
   constructor(gl: WebGL2RenderingContext) {
     this.gl = gl;
@@ -56,13 +58,23 @@ export class BillboardRenderer {
     gl.bindVertexArray(null);
   }
 
-  /** Create or get a circular soft-edge texture (keyed by hex color) */
-  public getCircleTexture(hex: string): WebGLTexture {
+  /** Create or get a circular soft-edge texture (keyed by hex color) with dynamic lighting */
+  public getCircleTexture(hex: string, lightDir?: Vector3): WebGLTexture {
     const key = `circle-${hex}`;
+    const now = performance.now();
+    const lastUpdate = this.textureTimestamps.get(key) || 0;
+    const needsRegeneration = (now - lastUpdate) > this.REGENERATE_INTERVAL_MS;
+    
     const existing = this.textures.get(key);
-    if (existing) return existing;
-    const tex = this.createCircleTexture(hex);
+    if (existing && !needsRegeneration) return existing;
+    
+    // Regenerar textura con nueva iluminación
+    if (existing) {
+      this.gl.deleteTexture(existing);
+    }
+    const tex = this.createCircleTexture(hex, lightDir);
     this.textures.set(key, tex);
+    this.textureTimestamps.set(key, now);
     return tex;
   }
 
@@ -105,19 +117,30 @@ export class BillboardRenderer {
     return tex;
   }
 
-  private createCircleTexture(hex: string): WebGLTexture {
+  private createCircleTexture(hex: string, lightDir?: Vector3): WebGLTexture {
     const gl = this.gl;
     const size = 128; // Tamaño original para mantener el mismo tamaño visual en pantalla
     const cnv = document.createElement('canvas'); cnv.width = size; cnv.height = size;
     const ctx = cnv.getContext('2d')!;
     ctx.clearRect(0, 0, size, size);
     
-    const cx = size / 2, cy = size / 2, r = size * 0.50; // Maximizado para mayor cobertura visual (casi llena el canvas)
+    const cx = size / 2, cy = size / 2, r = size * 0.46;
     const rgb = this.hexToRgb(hex) || { r: 200, g: 200, b: 200 };
     
-    // Luz direccional simulada desde arriba-izquierda
-    const lightX = cx - r * 0.35;
-    const lightY = cy - r * 0.35;
+    // Luz direccional basada en posición del Sol (si se proporciona) o default
+    let lightX: number, lightY: number, lightZ: number;
+    if (lightDir) {
+      // lightDir es el vector normalizado desde el planeta hacia el Sol en espacio de cámara
+      // Proyectar a 2D: x->horizontal, y->vertical en canvas
+      lightX = cx - lightDir.x * r * 0.4;
+      lightY = cy - lightDir.y * r * 0.4;
+      lightZ = lightDir.z; // Profundidad (positivo = hacia cámara)
+    } else {
+      // Default: luz desde arriba-izquierda
+      lightX = cx - r * 0.35;
+      lightY = cy - r * 0.35;
+      lightZ = 0.8;
+    }
     
     // 1. Base esférica con iluminación realista (píxel por píxel)
     const imgData = ctx.createImageData(size, size);
@@ -138,7 +161,7 @@ export class BillboardRenderer {
           // Vector de luz normalizado
           const lx = (lightX - px) / r;
           const ly = (lightY - py) / r;
-          const lz = 0.8; // Elevación de la luz
+          const lz = lightZ; // Elevación de la luz (dinámica o default)
           const llen = Math.sqrt(lx * lx + ly * ly + lz * lz);
           const lnx = lx / llen, lny = ly / llen, lnz = lz / llen;
           
