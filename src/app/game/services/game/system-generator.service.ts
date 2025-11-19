@@ -400,7 +400,24 @@ export class SystemGeneratorService {
       }
     }
 
-    const snapshot: SolarSystemSnapshot = { id: `sys-${(seed as any)}`, seed, timestamp: Date.now(), sun, planets, clusters, meta: { optionsUsed: options || null, sunCount, trailDisabled: !!options?.disableTrail } };
+    const snapshot: SolarSystemSnapshot = { 
+      id: `sys-${(seed as any)}`, 
+      seed, 
+      timestamp: Date.now(), 
+      sun, 
+      planets, 
+      clusters, 
+      meta: { optionsUsed: options || null, sunCount, trailDisabled: !!options?.disableTrail },
+      // Configuración de debris efímero con varianza sobre valores base
+      // Base (sistema humano): checkInterval=10000ms, probability=0.05, count=1-3
+      // Varianza: tiempo ±25%, probabilidad ±10%, cantidad ±50%
+      ephemeralDebris: {
+        checkIntervalMs: Math.round(10000 * (1 + (rnd() - 0.5) * 0.5)), // ±25%
+        spawnProbability: Math.max(0.01, Math.min(0.15, 0.05 * (1 + (rnd() - 0.5) * 0.2))), // ±10%, clamp 1-15%
+        spawnCountMin: Math.max(1, Math.round(1 * (1 + (rnd() - 0.5) * 1.0))), // ±50%, min 1
+        spawnCountMax: Math.max(2, Math.round(3 * (1 + (rnd() - 0.5) * 1.0)))  // ±50%, min 2
+      }
+    };
     return snapshot;
   }
 }

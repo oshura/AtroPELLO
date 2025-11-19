@@ -119,7 +119,14 @@ export class HumanSolarSystemService {
       sun,
       planets,
       clusters: [],
-      meta: { handcrafted: true }
+      meta: { handcrafted: true },
+      // Configuración de debris efímero (valores actuales por defecto)
+      ephemeralDebris: {
+        checkIntervalMs: 10000,   // Evaluar cada 10 segundos
+        spawnProbability: 0.05,   // 5% de probabilidad
+        spawnCountMin: 1,         // Mínimo 1 asteroide
+        spawnCountMax: 3          // Máximo 3 asteroides
+      }
     };
     return snapshot;
   }

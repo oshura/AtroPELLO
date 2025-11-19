@@ -119,6 +119,8 @@ export class GameEngine {
   private planetDebris: Map<string, Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }>> = new Map();
   // Track last applied snapshot id (debug)
   private lastAppliedSnapshotId: string | null = null;
+  // Current active solar system snapshot (para acceder a configuración de debris efímero)
+  private currentSnapshot: SolarSystemSnapshot | null = null;
   // Runtime portal traversal state
   private portalTraversalCooldownSec: number = 0; // prevents rapid re-entry
   private portalPrevDistances: Map<string, number> = new Map();
@@ -582,6 +584,9 @@ export class GameEngine {
     if (!snapshot) { this.logger.log(LogLevel.ERROR, LogCategory.SOLAR_SYSTEM_GENERATION, 'applySolarSystemSnapshot: snapshot null'); return { portalsCreated: [] }; }
     const gl = this.gl;
     this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Applying snapshot', { id: snapshot.id, planets: snapshot.planets.length, clusters: snapshot.clusters?.length || 0 });
+    
+    // Guardar snapshot actual para acceder a su configuración
+    this.currentSnapshot = snapshot;
     // IMPORTANT: Do NOT carry over existing portals when applying a new system snapshot.
     // Design: The origin portal remains only in the origin system; the destination portal is part of the new snapshot.
     // Clearing the current portal list avoids duplicates (origin + destination) coexisting in the same context.
@@ -1334,7 +1339,7 @@ export class GameEngine {
 
     // Decay impact vignette
     if (this.impactVignetteLevel > 0) {
-      const DECAY_PER_SEC = 1.6; // fades to 0 in ~0.6s from 1.0
+      const DECAY_PER_SEC = 0.33; // fades to 0 in ~3s from 1.0 (antes: 0.67 = 1.5s, original 1.6 = 0.6s)
       this.impactVignetteLevel = Math.max(0, this.impactVignetteLevel - DECAY_PER_SEC * deltaTime);
     }
 
@@ -1342,12 +1347,21 @@ export class GameEngine {
     // Spawn y mantenimiento de asteroides efímeros
     // ============================
     try {
+      // Obtener configuración del snapshot actual (o valores por defecto)
+      const debrisConfig = this.currentSnapshot?.ephemeralDebris || {
+        checkIntervalMs: 10000,
+        spawnProbability: 0.05,
+        spawnCountMin: 1,
+        spawnCountMax: 3
+      };
+      
       const nowMs = performance.now();
       if (nowMs >= this.nextEphemeralCheckMs) {
-        this.nextEphemeralCheckMs = nowMs + 10000; // siguiente ventana en 10s
-        // 5% de probabilidad de aparición
-        if (Math.random() < 0.05 && this.spaceship) {
-          const toSpawn = 1 + Math.floor(Math.random() * 3); // 1..3
+        this.nextEphemeralCheckMs = nowMs + debrisConfig.checkIntervalMs;
+        // Evaluar probabilidad de aparición
+        if (Math.random() < debrisConfig.spawnProbability && this.spaceship) {
+          const range = debrisConfig.spawnCountMax - debrisConfig.spawnCountMin;
+          const toSpawn = debrisConfig.spawnCountMin + Math.floor(Math.random() * (range + 1));
           for (let i=0;i<toSpawn;i++) {
             // Dirección aleatoria sobre esfera
             let dx = (Math.random() - 0.5) * 2;
@@ -2246,7 +2260,13 @@ export class GameEngine {
 
     // Choose behavior by object scale/type
     if (name === 'Asteroid' || name === 'ClusterObject') {
-      // Rebound for small asteroids: partial elastic reflection, clamp minimal push-out
+      // REBOTE NEWTONIANO: el asteroide rebota como si la nave fuera una pared
+      // Usamos el plano tangente al bounding sphere de la nave en el punto de contacto
+      // La normal 'n' ya apunta desde el centro del asteroide hacia el centro de la nave
+      // Invertimos para obtener la normal del plano de colisión (desde nave hacia asteroide)
+      const wallNx = -nx, wallNy = -ny, wallNz = -nz;
+      
+      // Reflejo elástico parcial para la nave (coef 0.4)
       reflect(0.4);
       // Nudge position outwards slightly to avoid sticking
       const R = Math.max(1, (obj.boundingSphere?.radius ?? 5));
@@ -2257,27 +2277,44 @@ export class GameEngine {
       // Update bounding sphere center immediately
       try { if (this.spaceship.boundingSphere) this.spaceship.boundingSphere.center = { ...this.spaceship.position }; } catch {}
       
-      // Apply impulse to asteroid to change its trajectory (Newton's 3rd law)
+      // Apply NEWTONIAN BOUNCE to asteroid (rebounds off the ship's collision plane)
       if (obj.velocity) {
         const shipMass = 100; // Ship is much heavier than small asteroid
         const asteroidMass = 1;
-        const totalMass = shipMass + asteroidMass;
-        // Compute relative velocity before collision
-        const relVx = v.x - (obj.velocity.x || 0);
-        const relVy = v.y - (obj.velocity.y || 0);
-        const relVz = v.z - (obj.velocity.z || 0);
-        const relVdotN = relVx * nx + relVy * ny + relVz * nz;
-        // Impulse magnitude (simplified collision response)
-        const impulseMag = -(1 + 0.4) * relVdotN / (1/asteroidMass + 1/shipMass);
-        // Apply impulse to asteroid (light object gets big velocity change)
-        obj.velocity.x = (obj.velocity.x || 0) + (impulseMag * nx) / asteroidMass;
-        obj.velocity.y = (obj.velocity.y || 0) + (impulseMag * ny) / asteroidMass;
-        obj.velocity.z = (obj.velocity.z || 0) + (impulseMag * nz) / asteroidMass;
-        this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Asteroid impulse applied', { 
-          id: obj.id, 
-          impulse: impulseMag.toFixed(2),
-          newVel: `(${obj.velocity.x.toFixed(1)}, ${obj.velocity.y.toFixed(1)}, ${obj.velocity.z.toFixed(1)})`
-        });
+        
+        // Velocidad relativa del asteroide respecto a la nave
+        const relVx = (obj.velocity.x || 0) - v.x;
+        const relVy = (obj.velocity.y || 0) - v.y;
+        const relVz = (obj.velocity.z || 0) - v.z;
+        
+        // Componente de velocidad relativa en dirección de la normal del "muro" (nave)
+        const relVdotWall = relVx * wallNx + relVy * wallNy + relVz * wallNz;
+        
+        // Solo aplicar rebote si el asteroide se está acercando (velocidad hacia la nave)
+        if (relVdotWall < 0) {
+          // Coeficiente de restitución (elasticidad del rebote): 0.6 para rebote newtoniano semi-elástico
+          const restitution = 0.6;
+          
+          // Impulso newtoniano: j = -(1+e) * v_rel·n / (1/m1 + 1/m2)
+          const impulseMag = -(1 + restitution) * relVdotWall / (1/asteroidMass + 1/shipMass);
+          
+          // Aplicar impulso al asteroide (en dirección de la normal del muro)
+          const impulseX = (impulseMag * wallNx) / asteroidMass;
+          const impulseY = (impulseMag * wallNy) / asteroidMass;
+          const impulseZ = (impulseMag * wallNz) / asteroidMass;
+          
+          obj.velocity.x = (obj.velocity.x || 0) + impulseX;
+          obj.velocity.y = (obj.velocity.y || 0) + impulseY;
+          obj.velocity.z = (obj.velocity.z || 0) + impulseZ;
+          
+          this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Asteroid newtonian bounce', { 
+            id: obj.id,
+            impulseMag: impulseMag.toFixed(2),
+            wallNormal: `(${wallNx.toFixed(2)}, ${wallNy.toFixed(2)}, ${wallNz.toFixed(2)})`,
+            oldVel: `(${((obj.velocity.x || 0) - impulseX).toFixed(1)}, ${((obj.velocity.y || 0) - impulseY).toFixed(1)}, ${((obj.velocity.z || 0) - impulseZ).toFixed(1)})`,
+            newVel: `(${obj.velocity.x.toFixed(1)}, ${obj.velocity.y.toFixed(1)}, ${obj.velocity.z.toFixed(1)})`
+          });
+        }
         
         // Eject asteroid from cluster and make it independent
         this.makeAsteroidIndependent(obj);

@@ -52,6 +52,13 @@ export interface SolarSystemSnapshot {
   portals?: PortalSnapshot[];
   planetDebris?: PlanetDebrisSnapshot[]; // optional serialized debris linked to planets
   meta?: Record<string, any>;
+  // Parámetros de asteroides efímeros (debris independientes)
+  ephemeralDebris?: {
+    checkIntervalMs: number;  // Cada cuánto se evalúa probabilidad (default: 10000ms)
+    spawnProbability: number; // Probabilidad 0-1 de spawn en cada check (default: 0.05 = 5%)
+    spawnCountMin: number;    // Mínimo de asteroides por evento (default: 1)
+    spawnCountMax: number;    // Máximo de asteroides por evento (default: 3)
+  };
 }
 
 // Eye state for the portal's central eye (Ojo)
