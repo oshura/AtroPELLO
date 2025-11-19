@@ -71,6 +71,7 @@ export interface CollisionInput {
   providedIn: 'root'
 })
 export class CollisionPhysicsService {
+  private _collisionLogCount = 0; // Throttle logs
   
   /**
    * Calcula el resultado de una colisión inelástica entre dos esferas
@@ -82,6 +83,19 @@ export class CollisionPhysicsService {
     const { position1, velocity1, mass1, radius1, position2, velocity2, mass2, radius2 } = input;
     const restitution = input.restitution ?? 0.0; // Por defecto totalmente inelástico
     
+    // Log de entrada (solo primeras 10 colisiones)
+    if (!this._collisionLogCount) this._collisionLogCount = 0;
+    if (this._collisionLogCount < 10) {
+      console.log('[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT:', {
+        v1: `(${velocity1.x.toFixed(2)}, ${velocity1.y.toFixed(2)}, ${velocity1.z.toFixed(2)})`,
+        v2: `(${velocity2.x.toFixed(2)}, ${velocity2.y.toFixed(2)}, ${velocity2.z.toFixed(2)})`,
+        mass1,
+        mass2,
+        restitution
+      });
+      this._collisionLogCount++;
+    }
+    
     // 1. Calcular normal de colisión (de objeto 1 hacia objeto 2)
     const normal = this.calculateNormal(position1, position2);
     
@@ -91,9 +105,19 @@ export class CollisionPhysicsService {
     // 3. Componente de velocidad relativa en dirección de la normal
     const relativeVelocityNormal = this.dot(relativeVelocity, normal);
     
-    // 4. Si los objetos se están separando, no aplicar impulso
-    if (relativeVelocityNormal > 0) {
+    // 4. Si los objetos se están separando (velocidad relativa negativa), no aplicar impulso
+    // Normal apunta de obj1 hacia obj2, entonces:
+    // - Si v_rel·n < 0: objetos se alejan → no aplicar impulso
+    // - Si v_rel·n > 0: objetos se acercan → APLICAR impulso
+    if (relativeVelocityNormal < 0) {
       // Ya se están alejando, solo separar posiciones
+      if (this._collisionLogCount <= 10) {
+        console.log('[COLLISION_PHYSICS] ⚠️ Objects SEPARATING - no impulse applied', {
+          relativeVelocityNormal: relativeVelocityNormal.toFixed(4),
+          relativeVel: `(${relativeVelocity.x.toFixed(2)}, ${relativeVelocity.y.toFixed(2)}, ${relativeVelocity.z.toFixed(2)})`,
+          normal: `(${normal.x.toFixed(2)}, ${normal.y.toFixed(2)}, ${normal.z.toFixed(2)})`
+        });
+      }
       const separationVector = this.calculateSeparation(position1, position2, radius1, radius2);
       return {
         velocity1: { ...velocity1 },
@@ -108,9 +132,18 @@ export class CollisionPhysicsService {
     // j = -(1 + e) * v_rel·n / (1/m1 + 1/m2)
     const impulseMagnitude = -(1 + restitution) * relativeVelocityNormal / (1/mass1 + 1/mass2);
     
+    if (this._collisionLogCount <= 10) {
+      console.log('[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED', {
+        relativeVelocityNormal: relativeVelocityNormal.toFixed(4),
+        impulseMagnitude: impulseMagnitude.toFixed(4),
+        restitution
+      });
+    }
+    
     // 6. Aplicar impulso a ambos objetos
-    // Δv1 = -j*n/m1 (objeto 1 recibe impulso opuesto a la normal)
-    // Δv2 = +j*n/m2 (objeto 2 recibe impulso en dirección de la normal)
+    // Δv1 = -j*n/m1 (nave recibe impulso opuesto a la normal - retrocede)
+    // Δv2 = -j*n/m2 (asteroide recibe impulso en dirección OPUESTA a la normal - sale despedido)
+    // Nota: Como j es negativo, -j es positivo, así que el asteroide sale EN dirección de la normal (alejándose)
     const newVelocity1 = {
       x: velocity1.x - (impulseMagnitude * normal.x) / mass1,
       y: velocity1.y - (impulseMagnitude * normal.y) / mass1,
@@ -118,9 +151,9 @@ export class CollisionPhysicsService {
     };
     
     const newVelocity2 = {
-      x: velocity2.x + (impulseMagnitude * normal.x) / mass2,
-      y: velocity2.y + (impulseMagnitude * normal.y) / mass2,
-      z: velocity2.z + (impulseMagnitude * normal.z) / mass2
+      x: velocity2.x - (impulseMagnitude * normal.x) / mass2,  // Cambiado de + a -
+      y: velocity2.y - (impulseMagnitude * normal.y) / mass2,  // Cambiado de + a -
+      z: velocity2.z - (impulseMagnitude * normal.z) / mass2   // Cambiado de + a -
     };
     
     // 7. Calcular vector de separación para resolver interpenetración

@@ -137,6 +137,7 @@ export class GameEngine {
   private collisionSlide: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number }; t: number; duration: number } | null = null;
   // Collision debug logging throttle
   private _lastCollisionLogSec: number = 0;
+  private _lastIndependentLogTime: number = 0; // Throttle para logs de asteroides independientes
 
   // Landing minigame removed
   
@@ -2271,6 +2272,56 @@ export class GameEngine {
     
     if (isSmallAsteroid) {
       // ASTEROIDES PEQUEÑOS: Física de colisión inelástica 3D realista
+      this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🎯 Small asteroid collision detected', {
+        asteroidId: obj.id,
+        objType,
+        position: `(${obj.position.x.toFixed(0)}, ${obj.position.y.toFixed(0)}, ${obj.position.z.toFixed(0)})`,
+        velocityBefore: `(${obj.velocity.x.toFixed(2)}, ${obj.velocity.y.toFixed(2)}, ${obj.velocity.z.toFixed(2)})`
+      });
+      
+      // Para asteroides de cluster, necesitamos detectar si HAY approach (acercamiento)
+      // Si la nave está quieta pero el asteroide se mueve, debemos usar la velocidad del asteroide
+      const isClusterMember = !this.independentAsteroids.some(a => a.id === obj.id) && 
+                              !this.ephemeralAsteroids.some(a => a.id === obj.id);
+      
+      let asteroidVelocity: { x: number, y: number, z: number };
+      
+      if (isClusterMember) {
+        // Calcular si hay acercamiento: vector del asteroide hacia la nave
+        const dx = this.spaceship.position.x - obj.position.x;
+        const dy = this.spaceship.position.y - obj.position.y;
+        const dz = this.spaceship.position.z - obj.position.z;
+        const dist = Math.hypot(dx, dy, dz) || 1;
+        const normal = { x: dx / dist, y: dy / dist, z: dz / dist };
+        
+        // Velocidad del asteroide en el cluster
+        const asteroidClusterVel = obj.velocity;
+        
+        // Componente de velocidad del asteroide hacia la nave (relativo)
+        const approachSpeed = -(asteroidClusterVel.x * normal.x + 
+                                asteroidClusterVel.y * normal.y + 
+                                asteroidClusterVel.z * normal.z);
+        
+        // Si el asteroide se acerca (approachSpeed > 0), usamos velocidad relativa del cluster
+        // Si no (nave chocó con asteroide estático), usamos velocidad cero
+        if (approachSpeed > 0.01) {
+          // Asteroide acercándose: usar velocidad real para calcular impulso correcto
+          asteroidVelocity = { ...asteroidClusterVel };
+        } else {
+          // Nave chocó con asteroide: usar velocidad cero (correcto)
+          asteroidVelocity = { x: 0, y: 0, z: 0 };
+        }
+      } else {
+        // Independent/ephemeral: usa velocidad real
+        asteroidVelocity = { ...obj.velocity };
+      }
+      
+      this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🔧 Velocity calculation', {
+        asteroidId: obj.id,
+        isClusterMember,
+        velocityUsed: `(${asteroidVelocity.x.toFixed(2)}, ${asteroidVelocity.y.toFixed(2)}, ${asteroidVelocity.z.toFixed(2)})`
+      });
+      
       const response = this.collisionResponseService.calculateShipCollisionResponse(
         {
           position: this.spaceship.position,
@@ -2279,12 +2330,31 @@ export class GameEngine {
         },
         {
           position: obj.position || { x: 0, y: 0, z: 0 },
-          velocity: obj.velocity,
+          velocity: asteroidVelocity, // Usar velocidad calculada
           boundingSphere: obj.boundingSphere,
           id: obj.id
         },
         name
       );
+      
+      this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '📊 Physics response calculated', {
+        asteroidId: obj.id,
+        newVelocity: response.targetNewVelocity ? 
+          `(${response.targetNewVelocity.x.toFixed(2)}, ${response.targetNewVelocity.y.toFixed(2)}, ${response.targetNewVelocity.z.toFixed(2)})` : 'null',
+        shouldEject: response.targetEjected,
+        impulseMagnitude: response.targetNewVelocity ? 
+          Math.hypot(response.targetNewVelocity.x, response.targetNewVelocity.y, response.targetNewVelocity.z).toFixed(2) : '0'
+      });
+      
+      // IMPORTANTE: Marcar como independiente ANTES de aplicar velocidad para evitar sobreescritura
+      // Incluso con impulso pequeño, el asteroide debe mantener su velocidad de colisión
+      if (response.impulseMagnitude > 0.1) { // Cualquier impulso significa colisión real
+        (obj as any)._isIndependent = true;
+        this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '📌 Asteroid marked as independent (preserves velocity)', {
+          asteroidId: obj.id,
+          impulse: response.impulseMagnitude.toFixed(2)
+        });
+      }
       
       // Aplicar resultado a la nave
       this.spaceship.position = response.newPosition;
@@ -2300,6 +2370,10 @@ export class GameEngine {
       
       // Eyectar de cluster PRIMERO si es necesario (antes de modificar velocidad)
       if (response.targetEjected) {
+        this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🚀 Ejecting asteroid from cluster', {
+          asteroidId: obj.id,
+          reason: 'High impulse from collision'
+        });
         this.makeAsteroidIndependent(obj);
       }
       
@@ -2309,6 +2383,13 @@ export class GameEngine {
         obj.velocity.x = response.targetNewVelocity.x;
         obj.velocity.y = response.targetNewVelocity.y;
         obj.velocity.z = response.targetNewVelocity.z;
+        
+        this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '✅ Velocity applied to asteroid', {
+          asteroidId: obj.id,
+          velocityAfter: `(${obj.velocity.x.toFixed(2)}, ${obj.velocity.y.toFixed(2)}, ${obj.velocity.z.toFixed(2)})`,
+          isIndependent: this.independentAsteroids.some(a => a.id === obj.id),
+          hasPendingEjection: !!(obj as any)._pendingEjection
+        });
       }
       
     } else if (isLargeAsteroid || isMassiveObject) {
@@ -2619,9 +2700,19 @@ export class GameEngine {
     
     // Mark as pending ejection immediately to prevent cluster service from overwriting position
     (obj as any)._pendingEjection = true;
+    (obj as any)._isIndependent = true; // Flag para que Asteroid.update() no sobreescriba velocidad
+    
+    this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🔧 makeAsteroidIndependent START', {
+      asteroidId: objId,
+      currentVelocity: obj.velocity ? `(${obj.velocity.x.toFixed(2)}, ${obj.velocity.y.toFixed(2)}, ${obj.velocity.z.toFixed(2)})` : 'null',
+      position: `(${obj.position.x.toFixed(0)}, ${obj.position.y.toFixed(0)}, ${obj.position.z.toFixed(0)})`
+    });
     
     // Check if already independent
-    if (this.independentAsteroids.find(a => a.id === objId)) return;
+    if (this.independentAsteroids.find(a => a.id === objId)) {
+      this.logger.log(LogLevel.WARN, LogCategory.COLLISION_PHYSICS, '⚠️ Asteroid already independent', { asteroidId: objId });
+      return;
+    }
     
     // Remove from cluster
     let removedFromCluster = false;
@@ -2639,10 +2730,13 @@ export class GameEngine {
         }
       });
     } catch (e) {
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to remove from cluster', e);
+      this.logger.log(LogLevel.WARN, LogCategory.COLLISION_PHYSICS, '⚠️ Failed to remove from cluster', e);
     }
     
-    if (!removedFromCluster) return; // Not in a cluster, skip
+    if (!removedFromCluster) {
+      this.logger.log(LogLevel.WARN, LogCategory.COLLISION_PHYSICS, '⚠️ Asteroid not in cluster, cannot eject', { asteroidId: objId });
+      return; // Not in a cluster, skip
+    }
     
     // Add to independent asteroids array
     this.independentAsteroids.push(obj);
@@ -2653,10 +2747,12 @@ export class GameEngine {
     // Mark spawn time for culling
     (obj as any)._independentSince = performance.now();
     
-    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Asteroid now independent', { 
-      id: objId, 
-      velocity: `(${obj.velocity.x.toFixed(1)}, ${obj.velocity.y.toFixed(1)}, ${obj.velocity.z.toFixed(1)})`,
-      totalIndependent: this.independentAsteroids.length
+    this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '✅ makeAsteroidIndependent COMPLETE', { 
+      asteroidId: objId, 
+      velocity: `(${obj.velocity.x.toFixed(2)}, ${obj.velocity.y.toFixed(2)}, ${obj.velocity.z.toFixed(2)})`,
+      position: `(${obj.position.x.toFixed(0)}, ${obj.position.y.toFixed(0)}, ${obj.position.z.toFixed(0)})`,
+      totalIndependent: this.independentAsteroids.length,
+      pendingEjection: !!(obj as any)._pendingEjection
     });
   }
 
@@ -2670,6 +2766,20 @@ export class GameEngine {
     const CULLING_DISTANCE = 25000; // Remove if farther than 25km
     const now = performance.now();
     const MIN_LIFETIME_MS = 5000; // Keep at least 5s before culling
+    
+    // Log periódico (cada 5s) para ver estado de asteroides independientes
+    if (!this._lastIndependentLogTime || now - this._lastIndependentLogTime > 5000) {
+      this._lastIndependentLogTime = now;
+      if (this.independentAsteroids.length > 0) {
+        const sample = this.independentAsteroids[0];
+        this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🔄 Updating independent asteroids', {
+          count: this.independentAsteroids.length,
+          sampleId: sample.id,
+          sampleVelocity: `(${sample.velocity.x.toFixed(2)}, ${sample.velocity.y.toFixed(2)}, ${sample.velocity.z.toFixed(2)})`,
+          samplePosition: `(${sample.position.x.toFixed(0)}, ${sample.position.y.toFixed(0)}, ${sample.position.z.toFixed(0)})`
+        });
+      }
+    }
     
     // Update and cull
     for (let i = this.independentAsteroids.length - 1; i >= 0; i--) {

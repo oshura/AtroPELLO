@@ -1,0 +1,116 @@
+[19:40:35.212Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
+Object { count: 1, sampleId: "trail-4-38-a4", sampleVelocity: "(5.67, -0.72, 0.10)", samplePosition: "(14215, 3506, -60136)" }
+chunk-NIVGOFW2.js:136:23
+[19:40:40.242Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
+Object { count: 1, sampleId: "trail-4-38-a4", sampleVelocity: "(5.67, -0.72, 0.10)", samplePosition: "(14244, 3502, -60136)" }
+chunk-NIVGOFW2.js:136:23
+[19:40:45.262Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
+Object { count: 1, sampleId: "trail-4-38-a4", sampleVelocity: "(5.67, -0.72, 0.10)", samplePosition: "(14272, 3498, -60135)" }
+chunk-NIVGOFW2.js:136:23
+Navega a http://localhost:4200/
+[vite] connecting... client:733:9
+[vite] connected. client:827:12
+NG0505: Angular hydration was requested on the client, but there was no serialized information present in the server response, thus hydration was not enabled. Make sure the `provideClientHydration()` is included into the list of providers in the server part of the application configuration. Find more at https://v20.angular.dev/errors/NG0505 chunk-JX3OTR4Z.js:14652:13
+Se ha impedido que un AudioContext se inicie automáticamente. Debe crearse o reanudarse después de un gesto del usuario en la página. main.js:808:16
+Angular is running in development mode. chunk-JX3OTR4Z.js:14648:13
+🔊 Audio unlocked: true, audioUnlocked flag: true main.js:23500:15
+[19:42:07.625Z][INFO][COLLISION_PHYSICS] 🎯 Small asteroid collision detected 
+Object { asteroidId: "trail-3-58-a2", objType: "ASTEROID", position: "(12310, 3629, -60249)", velocityBefore: "(-0.74, -0.07, -0.13)" }
+chunk-NIVGOFW2.js:136:23
+[19:42:07.626Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { asteroidId: "trail-3-58-a2", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(-6.37, -2.65, -0.23)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 1, restitution: 0.3 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "6.8960", impulseMagnitude: "-8.8760", restitution: 0.3 }
+main.js:21070:15
+[COLLISION_PHYSICS] 📦 Ejection check: impulse=8.88, threshold=2, eject=true main.js:21319:15
+[19:42:07.626Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "trail-3-58-a2", newVelocity: "(-8.27, -3.23, 0.08)", shouldEject: true, impulseMagnitude: "8.88" }
+chunk-NIVGOFW2.js:136:23
+[19:42:07.626Z][INFO][COLLISION_PHYSICS] 📌 Asteroid marked as independent (preserves velocity) 
+Object { asteroidId: "trail-3-58-a2", impulse: "8.88" }
+chunk-NIVGOFW2.js:136:23
+[19:42:07.626Z][INFO][COLLISION_PHYSICS] 🚀 Ejecting asteroid from cluster 
+Object { asteroidId: "trail-3-58-a2", reason: "High impulse from collision" }
+chunk-NIVGOFW2.js:136:23
+[19:42:07.626Z][INFO][COLLISION_PHYSICS] 🔧 makeAsteroidIndependent START 
+Object { asteroidId: "trail-3-58-a2", currentVelocity: "(-0.74, -0.07, -0.13)", position: "(12310, 3629, -60249)" }
+chunk-NIVGOFW2.js:136:23
+[19:42:07.626Z][INFO][COLLISION_PHYSICS] ✅ makeAsteroidIndependent COMPLETE 
+Object { asteroidId: "trail-3-58-a2", velocity: "(-0.74, -0.07, -0.13)", position: "(12310, 3629, -60249)", totalIndependent: 1, pendingEjection: true }
+chunk-NIVGOFW2.js:136:23
+[19:42:07.626Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "trail-3-58-a2", velocityAfter: "(-8.27, -3.23, 0.08)", isIndependent: true, hasPendingEjection: true }
+chunk-NIVGOFW2.js:136:23
+[19:42:07.627Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
+Object { count: 1, sampleId: "trail-3-58-a2", sampleVelocity: "(-8.27, -3.23, 0.08)", samplePosition: "(12310, 3629, -60249)" }
+chunk-NIVGOFW2.js:136:23
+[19:42:12.629Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
+Object { count: 1, sampleId: "trail-3-58-a2", sampleVelocity: "(-8.27, -3.23, 0.08)", samplePosition: "(12269, 3613, -60249)" }
+chunk-NIVGOFW2.js:136:23
+[19:42:17.630Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
+Object { count: 1, sampleId: "trail-3-58-a2", sampleVelocity: "(-8.27, -3.23, 0.08)", samplePosition: "(12228, 3596, -60249)" }
+chunk-NIVGOFW2.js:136:23
+[19:42:18.930Z][INFO][COLLISION_PHYSICS] 🎯 Small asteroid collision detected 
+Object { asteroidId: "trail-3-58-a7", objType: "ASTEROID", position: "(12288, 3621, -60275)", velocityBefore: "(-0.74, -0.07, -0.13)" }
+chunk-NIVGOFW2.js:136:23
+[19:42:18.930Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { asteroidId: "trail-3-58-a7", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(-0.04, -0.01, -0.09)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 1, restitution: 0.3 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "0.0456", impulseMagnitude: "-0.0587", restitution: 0.3 }
+main.js:21070:15
+[COLLISION_PHYSICS] 📦 Ejection check: impulse=0.06, threshold=2, eject=false main.js:21319:15
+[19:42:18.930Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "trail-3-58-a7", newVelocity: "(0.03, 0.02, -0.05)", shouldEject: false, impulseMagnitude: "0.06" }
+chunk-NIVGOFW2.js:136:23
+[19:42:18.930Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "trail-3-58-a7", velocityAfter: "(0.03, 0.02, -0.05)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[19:42:19.435Z][INFO][COLLISION_PHYSICS] 🎯 Small asteroid collision detected 
+Object { asteroidId: "trail-3-58-a7", objType: "ASTEROID", position: "(12287, 3621, -60275)", velocityBefore: "(-0.74, -0.07, -0.13)" }
+chunk-NIVGOFW2.js:136:23
+[19:42:19.435Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { asteroidId: "trail-3-58-a7", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(0.00, 0.00, 0.00)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 1, restitution: 0.3 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "0.0000", impulseMagnitude: "0.0000", restitution: 0.3 }
+main.js:21070:15
+[COLLISION_PHYSICS] 📦 Ejection check: impulse=0.00, threshold=2, eject=false main.js:21319:15
+[19:42:19.435Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "trail-3-58-a7", newVelocity: "(0.00, 0.00, 0.00)", shouldEject: false, impulseMagnitude: "0.00" }
+chunk-NIVGOFW2.js:136:23
+[19:42:19.435Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "trail-3-58-a7", velocityAfter: "(0.00, 0.00, 0.00)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[19:42:20.070Z][INFO][COLLISION_PHYSICS] 🎯 Small asteroid collision detected 
+Object { asteroidId: "trail-3-58-a7", objType: "ASTEROID", position: "(12287, 3621, -60275)", velocityBefore: "(-0.74, -0.07, -0.13)" }
+chunk-NIVGOFW2.js:136:23
+[19:42:20.071Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { asteroidId: "trail-3-58-a7", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(0.00, 0.00, 0.00)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 1, restitution: 0.3 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "0.0000", impulseMagnitude: "0.0000", restitution: 0.3 }
+main.js:21070:15
+[COLLISION_PHYSICS] 📦 Ejection check: impulse=0.00, threshold=2, eject=false main.js:21319:15
+[19:42:20.071Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "trail-3-58-a7", newVelocity: "(0.00, 0.00, 0.00)", shouldEject: false, impulseMagnitude: "0.00" }
+chunk-NIVGOFW2.js:136:23
+[19:42:20.071Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "trail-3-58-a7", velocityAfter: "(0.00, 0.00, 0.00)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[19:42:22.633Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
+Object { count: 1, sampleId: "trail-3-58-a2", sampleVelocity: "(-8.27, -3.23, 0.08)", samplePosition: "(12187, 3580, -60248)" }
+chunk-NIVGOFW2.js:136:23

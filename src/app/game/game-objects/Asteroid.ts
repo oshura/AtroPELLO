@@ -167,10 +167,22 @@ export class Asteroid extends GameObject implements ITargetable {
    * Actualiza el asteroide
    */
   public override update(deltaTime: number): void {
-    // Mantener velocidad constante en la dirección
-    this.velocity.x = this.direction.x * this.driftSpeed;
-    this.velocity.y = this.direction.y * this.driftSpeed;
-    this.velocity.z = this.direction.z * this.driftSpeed;
+    // Si es independiente (eyectado de cluster), NO sobreescribir su velocidad calculada por física
+    const isIndependent = (this as any)._isIndependent;
+    
+    // Log solo primera vez que se detecta como independiente
+    if (isIndependent && !(this as any)._loggedIndependent) {
+      console.log(`[COLLISION_PHYSICS] 🎯 Asteroid ${this.id} is INDEPENDENT - preserving collision velocity`);
+      (this as any)._loggedIndependent = true;
+    }
+    
+    if (!isIndependent) {
+      // Asteroides de cluster: mantener velocidad constante en la dirección
+      this.velocity.x = this.direction.x * this.driftSpeed;
+      this.velocity.y = this.direction.y * this.driftSpeed;
+      this.velocity.z = this.direction.z * this.driftSpeed;
+    }
+    // else: asteroides independientes mantienen su velocidad de colisión
 
     // Mantener rotación constante
     this.angularVelocity = { ...this.rotationRate };

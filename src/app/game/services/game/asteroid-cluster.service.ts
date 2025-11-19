@@ -409,7 +409,14 @@ export class AsteroidClusterService {
         // En modo 'full' todos los miembros siguen al centro + offset y rotan individualmente
         for (const obj of cluster.objects) {
           // Skip asteroides marcados como independientes (están siendo eyectados)
-          if ((obj as any)._pendingEjection) continue;
+          if ((obj as any)._pendingEjection) {
+            // Log solo primera vez que se detecta
+            if (!(obj as any)._loggedPendingEjection) {
+              console.log(`[COLLISION_PHYSICS] ⏭️ Skipping asteroid ${obj.id} - pending ejection`);
+              (obj as any)._loggedPendingEjection = true;
+            }
+            continue;
+          }
           
           const off = cluster.memberOffsets.get(obj.id);
           if (off) {

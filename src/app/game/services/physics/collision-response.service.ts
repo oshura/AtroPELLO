@@ -204,7 +204,12 @@ export class CollisionResponseService {
    */
   private shouldEjectFromCluster(objectType: string, impulseMagnitude: number): boolean {
     const isSmallAsteroid = objectType === 'Asteroid' || objectType === 'ClusterObject';
-    const significantImpulse = impulseMagnitude > 5; // Umbral de impulso
+    const significantImpulse = impulseMagnitude > 2; // Umbral reducido para facilitar eyección
+    
+    if (isSmallAsteroid) {
+      console.log(`[COLLISION_PHYSICS] 📦 Ejection check: impulse=${impulseMagnitude.toFixed(2)}, threshold=2, eject=${significantImpulse}`);
+    }
+    
     return isSmallAsteroid && significantImpulse;
   }
   

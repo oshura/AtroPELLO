@@ -30,7 +30,8 @@ export enum LogCategory {
   INPUT = 'INPUT',
   LANDING = 'LANDING',
   TEXTURE = 'TEXTURE',
-  PARTICLES = 'PARTICLES'
+  PARTICLES = 'PARTICLES',
+  COLLISION_PHYSICS = 'COLLISION_PHYSICS'  // Nueva categoría para física de colisiones
 }
 
 export interface LogEntry {
