@@ -1,6 +1,6 @@
 import { Vector3, Color } from '../types/game.types';
 import { TargetType } from './types/targeting.types';
-import { GameObjectType, GameObjectCategory, getCategory } from './types/game-object.types';
+import { GameObjectType, GameObjectCategory, GameObjectSize, getCategory, getPhysicsSize } from './types/game-object.types';
 
 /**
  * Clase base para todos los objetos 3D del juego.
@@ -145,6 +145,13 @@ export abstract class GameObject {
    */
   public getCategory(): GameObjectCategory {
     return getCategory(this.gameObjectType);
+  }
+  
+  /**
+   * Obtiene el tamaño físico del GameObject (para física de colisiones)
+   */
+  public getPhysicsSize(): GameObjectSize {
+    return getPhysicsSize(this.gameObjectType);
   }
   
   /**

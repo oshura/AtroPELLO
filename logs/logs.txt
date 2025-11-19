@@ -1,116 +1,312 @@
-[19:40:35.212Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
-Object { count: 1, sampleId: "trail-4-38-a4", sampleVelocity: "(5.67, -0.72, 0.10)", samplePosition: "(14215, 3506, -60136)" }
+Navega a http://localhost:4200/
+[vite] connecting... client:733:9
+[vite] connected. client:827:12
+NG0505: Angular hydration was requested on the client, but there was no serialized information present in the server response, thus hydration was not enabled. Make sure the `provideClientHydration()` is included into the list of providers in the server part of the application configuration. Find more at https://v20.angular.dev/errors/NG0505 chunk-JX3OTR4Z.js:14652:13
+Se ha impedido que un AudioContext se inicie automáticamente. Debe crearse o reanudarse después de un gesto del usuario en la página. main.js:809:16
+Angular is running in development mode. chunk-JX3OTR4Z.js:14648:13
+[20:03:04.730Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "trail-1-36-a7", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: true }
 chunk-NIVGOFW2.js:136:23
-[19:40:40.242Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
-Object { count: 1, sampleId: "trail-4-38-a4", sampleVelocity: "(5.67, -0.72, 0.10)", samplePosition: "(14244, 3502, -60136)" }
+[20:03:04.731Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "trail-1-36-a7", isClusterMember: true, velocityUsed: "(-0.74, -0.07, -0.12)" }
 chunk-NIVGOFW2.js:136:23
-[19:40:45.262Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
-Object { count: 1, sampleId: "trail-4-38-a4", sampleVelocity: "(5.67, -0.72, 0.10)", samplePosition: "(14272, 3498, -60135)" }
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(-10.25, 0.44, -9.26)", v2: "(-0.74, -0.07, -0.12)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "12.6288", impulseMagnitude: "-137.7690", restitution: 0.2 }
+main.js:21070:15
+[20:03:04.731Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "trail-1-36-a7", newVelocity: "(-9.96, -3.54, -9.74)", shouldEject: false, impulseMagnitude: "137.77" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🎯 Asteroid trail-1-36-a7 is INDEPENDENT - preserving collision velocity main.js:3134:15
+[20:03:05.257Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "trail-1-36-a7", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: true }
+chunk-NIVGOFW2.js:136:23
+[20:03:05.257Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "trail-1-36-a7", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(-10.25, 0.44, -9.26)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ⚠️ Objects SEPARATING - no impulse applied 
+Object { relativeVelocityNormal: "-13.1603", relativeVel: "(-10.25, 0.44, -9.26)", normal: "(0.71, -0.33, 0.62)" }
+main.js:21053:17
+[20:03:05.257Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "trail-1-36-a7", newVelocity: "(0.00, 0.00, 0.00)", shouldEject: false, impulseMagnitude: "0.00" }
+chunk-NIVGOFW2.js:136:23
+[20:03:15.550Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "trail-1-36-a0", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: true }
+chunk-NIVGOFW2.js:136:23
+[20:03:15.550Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "trail-1-36-a0", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(1.62, -0.65, -0.19)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "1.6868", impulseMagnitude: "-18.4014", restitution: 0.2 }
+main.js:21070:15
+[20:03:15.551Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "trail-1-36-a0", newVelocity: "(1.44, -1.10, -0.29)", shouldEject: false, impulseMagnitude: "18.40" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🎯 Asteroid trail-1-36-a0 is INDEPENDENT - preserving collision velocity main.js:3134:15
+[20:03:16.055Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "trail-1-36-a0", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: true }
+chunk-NIVGOFW2.js:136:23
+[20:03:16.056Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "trail-1-36-a0", isClusterMember: true, velocityUsed: "(1.44, -1.10, -0.29)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(1.62, -0.65, -0.19)", v2: "(1.44, -1.10, -0.29)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ⚠️ Objects SEPARATING - no impulse applied 
+Object { relativeVelocityNormal: "-0.2799", relativeVel: "(0.17, 0.46, 0.10)", normal: "(0.58, -0.78, -0.23)" }
+main.js:21053:17
+[20:03:16.056Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "trail-1-36-a0", newVelocity: "(1.44, -1.10, -0.29)", shouldEject: false, impulseMagnitude: "0.00" }
 chunk-NIVGOFW2.js:136:23
 Navega a http://localhost:4200/
 [vite] connecting... client:733:9
 [vite] connected. client:827:12
 NG0505: Angular hydration was requested on the client, but there was no serialized information present in the server response, thus hydration was not enabled. Make sure the `provideClientHydration()` is included into the list of providers in the server part of the application configuration. Find more at https://v20.angular.dev/errors/NG0505 chunk-JX3OTR4Z.js:14652:13
-Se ha impedido que un AudioContext se inicie automáticamente. Debe crearse o reanudarse después de un gesto del usuario en la página. main.js:808:16
+Se ha impedido que un AudioContext se inicie automáticamente. Debe crearse o reanudarse después de un gesto del usuario en la página. main.js:809:16
 Angular is running in development mode. chunk-JX3OTR4Z.js:14648:13
-🔊 Audio unlocked: true, audioUnlocked flag: true main.js:23500:15
-[19:42:07.625Z][INFO][COLLISION_PHYSICS] 🎯 Small asteroid collision detected 
-Object { asteroidId: "trail-3-58-a2", objType: "ASTEROID", position: "(12310, 3629, -60249)", velocityBefore: "(-0.74, -0.07, -0.13)" }
+[20:07:02.963Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "trail-5-19-a0", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: true }
 chunk-NIVGOFW2.js:136:23
-[19:42:07.626Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
-Object { asteroidId: "trail-3-58-a2", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
-chunk-NIVGOFW2.js:136:23
-[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
-Object { v1: "(-6.37, -2.65, -0.23)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 1, restitution: 0.3 }
-main.js:21039:15
-[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
-Object { relativeVelocityNormal: "6.8960", impulseMagnitude: "-8.8760", restitution: 0.3 }
-main.js:21070:15
-[COLLISION_PHYSICS] 📦 Ejection check: impulse=8.88, threshold=2, eject=true main.js:21319:15
-[19:42:07.626Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
-Object { asteroidId: "trail-3-58-a2", newVelocity: "(-8.27, -3.23, 0.08)", shouldEject: true, impulseMagnitude: "8.88" }
-chunk-NIVGOFW2.js:136:23
-[19:42:07.626Z][INFO][COLLISION_PHYSICS] 📌 Asteroid marked as independent (preserves velocity) 
-Object { asteroidId: "trail-3-58-a2", impulse: "8.88" }
-chunk-NIVGOFW2.js:136:23
-[19:42:07.626Z][INFO][COLLISION_PHYSICS] 🚀 Ejecting asteroid from cluster 
-Object { asteroidId: "trail-3-58-a2", reason: "High impulse from collision" }
-chunk-NIVGOFW2.js:136:23
-[19:42:07.626Z][INFO][COLLISION_PHYSICS] 🔧 makeAsteroidIndependent START 
-Object { asteroidId: "trail-3-58-a2", currentVelocity: "(-0.74, -0.07, -0.13)", position: "(12310, 3629, -60249)" }
-chunk-NIVGOFW2.js:136:23
-[19:42:07.626Z][INFO][COLLISION_PHYSICS] ✅ makeAsteroidIndependent COMPLETE 
-Object { asteroidId: "trail-3-58-a2", velocity: "(-0.74, -0.07, -0.13)", position: "(12310, 3629, -60249)", totalIndependent: 1, pendingEjection: true }
-chunk-NIVGOFW2.js:136:23
-[19:42:07.626Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
-Object { asteroidId: "trail-3-58-a2", velocityAfter: "(-8.27, -3.23, 0.08)", isIndependent: true, hasPendingEjection: true }
-chunk-NIVGOFW2.js:136:23
-[19:42:07.627Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
-Object { count: 1, sampleId: "trail-3-58-a2", sampleVelocity: "(-8.27, -3.23, 0.08)", samplePosition: "(12310, 3629, -60249)" }
-chunk-NIVGOFW2.js:136:23
-[19:42:12.629Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
-Object { count: 1, sampleId: "trail-3-58-a2", sampleVelocity: "(-8.27, -3.23, 0.08)", samplePosition: "(12269, 3613, -60249)" }
-chunk-NIVGOFW2.js:136:23
-[19:42:17.630Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
-Object { count: 1, sampleId: "trail-3-58-a2", sampleVelocity: "(-8.27, -3.23, 0.08)", samplePosition: "(12228, 3596, -60249)" }
-chunk-NIVGOFW2.js:136:23
-[19:42:18.930Z][INFO][COLLISION_PHYSICS] 🎯 Small asteroid collision detected 
-Object { asteroidId: "trail-3-58-a7", objType: "ASTEROID", position: "(12288, 3621, -60275)", velocityBefore: "(-0.74, -0.07, -0.13)" }
-chunk-NIVGOFW2.js:136:23
-[19:42:18.930Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
-Object { asteroidId: "trail-3-58-a7", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
+[20:07:02.964Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "trail-5-19-a0", isClusterMember: true, velocityUsed: "(-0.74, -0.07, -0.13)" }
 chunk-NIVGOFW2.js:136:23
 [COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
-Object { v1: "(-0.04, -0.01, -0.09)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 1, restitution: 0.3 }
+Object { v1: "(-6.56, 0.46, 7.03)", v2: "(-0.74, -0.07, -0.13)", mass1: 100, mass2: 10, restitution: 0.2 }
 main.js:21039:15
 [COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
-Object { relativeVelocityNormal: "0.0456", impulseMagnitude: "-0.0587", restitution: 0.3 }
+Object { relativeVelocityNormal: "9.1588", impulseMagnitude: "-99.9143", restitution: 0.2 }
 main.js:21070:15
-[COLLISION_PHYSICS] 📦 Ejection check: impulse=0.06, threshold=2, eject=false main.js:21319:15
-[19:42:18.930Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
-Object { asteroidId: "trail-3-58-a7", newVelocity: "(0.03, 0.02, -0.05)", shouldEject: false, impulseMagnitude: "0.06" }
+[20:07:02.964Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "trail-5-19-a0", newVelocity: "(-7.99, 0.94, 6.66)", shouldEject: false, impulseMagnitude: "99.91" }
 chunk-NIVGOFW2.js:136:23
-[19:42:18.930Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
-Object { asteroidId: "trail-3-58-a7", velocityAfter: "(0.03, 0.02, -0.05)", isIndependent: false, hasPendingEjection: false }
+[20:07:02.965Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "trail-5-19-a0", newVelocity: "(-7.99, 0.94, 6.66)", shouldEject: false, impulseMagnitude: "99.91" }
 chunk-NIVGOFW2.js:136:23
-[19:42:19.435Z][INFO][COLLISION_PHYSICS] 🎯 Small asteroid collision detected 
-Object { asteroidId: "trail-3-58-a7", objType: "ASTEROID", position: "(12287, 3621, -60275)", velocityBefore: "(-0.74, -0.07, -0.13)" }
+[20:07:02.965Z][INFO][COLLISION_PHYSICS] 📌 Asteroid marked as independent (preserves velocity) 
+Object { asteroidId: "trail-5-19-a0", impulse: "99.91" }
 chunk-NIVGOFW2.js:136:23
-[19:42:19.435Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
-Object { asteroidId: "trail-3-58-a7", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
+[20:07:02.965Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "trail-5-19-a0", velocityAfter: "(-7.99, 0.94, 6.66)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🎯 Asteroid trail-5-19-a0 is INDEPENDENT - preserving collision velocity main.js:3134:15
+[20:07:03.492Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "trail-5-19-a0", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: true }
+chunk-NIVGOFW2.js:136:23
+[20:07:03.493Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "trail-5-19-a0", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
 chunk-NIVGOFW2.js:136:23
 [COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
-Object { v1: "(0.00, 0.00, 0.00)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 1, restitution: 0.3 }
+Object { v1: "(-5.13, 0.36, 5.49)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 10, restitution: 0.2 }
 main.js:21039:15
-[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
-Object { relativeVelocityNormal: "0.0000", impulseMagnitude: "0.0000", restitution: 0.3 }
-main.js:21070:15
-[COLLISION_PHYSICS] 📦 Ejection check: impulse=0.00, threshold=2, eject=false main.js:21319:15
-[19:42:19.435Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
-Object { asteroidId: "trail-3-58-a7", newVelocity: "(0.00, 0.00, 0.00)", shouldEject: false, impulseMagnitude: "0.00" }
+[COLLISION_PHYSICS] ⚠️ Objects SEPARATING - no impulse applied 
+Object { relativeVelocityNormal: "-6.7633", relativeVel: "(-5.13, 0.36, 5.49)", normal: "(0.30, 0.05, -0.95)" }
+main.js:21053:17
+[20:07:03.493Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "trail-5-19-a0", newVelocity: "(0.00, 0.00, 0.00)", shouldEject: false, impulseMagnitude: "0.00" }
 chunk-NIVGOFW2.js:136:23
-[19:42:19.435Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
-Object { asteroidId: "trail-3-58-a7", velocityAfter: "(0.00, 0.00, 0.00)", isIndependent: false, hasPendingEjection: false }
+[20:07:03.493Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "trail-5-19-a0", newVelocity: "(0.00, 0.00, 0.00)", shouldEject: false, impulseMagnitude: "0.00" }
 chunk-NIVGOFW2.js:136:23
-[19:42:20.070Z][INFO][COLLISION_PHYSICS] 🎯 Small asteroid collision detected 
-Object { asteroidId: "trail-3-58-a7", objType: "ASTEROID", position: "(12287, 3621, -60275)", velocityBefore: "(-0.74, -0.07, -0.13)" }
+[20:07:03.493Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "trail-5-19-a0", velocityAfter: "(0.00, 0.00, 0.00)", isIndependent: false, hasPendingEjection: false }
 chunk-NIVGOFW2.js:136:23
-[19:42:20.071Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
-Object { asteroidId: "trail-3-58-a7", isClusterMember: true, velocityUsed: "(0.00, 0.00, 0.00)" }
+[20:09:23.614Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "temp-ast-0", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: false }
+chunk-NIVGOFW2.js:136:23
+[20:09:23.615Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "temp-ast-0", isClusterMember: false, velocityUsed: "(-4.21, -1.55, 1.97)" }
 chunk-NIVGOFW2.js:136:23
 [COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
-Object { v1: "(0.00, 0.00, 0.00)", v2: "(0.00, 0.00, 0.00)", mass1: 100, mass2: 1, restitution: 0.3 }
+Object { v1: "(0.00, 0.00, 0.00)", v2: "(-4.21, -1.55, 1.97)", mass1: 100, mass2: 10, restitution: 0.2 }
 main.js:21039:15
 [COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
-Object { relativeVelocityNormal: "0.0000", impulseMagnitude: "0.0000", restitution: 0.3 }
+Object { relativeVelocityNormal: "4.8971", impulseMagnitude: "-53.4224", restitution: 0.2 }
 main.js:21070:15
-[COLLISION_PHYSICS] 📦 Ejection check: impulse=0.00, threshold=2, eject=false main.js:21319:15
-[19:42:20.071Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
-Object { asteroidId: "trail-3-58-a7", newVelocity: "(0.00, 0.00, 0.00)", shouldEject: false, impulseMagnitude: "0.00" }
+[20:09:23.615Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "temp-ast-0", newVelocity: "(0.38, 0.14, -0.18)", shouldEject: false, impulseMagnitude: "53.42" }
 chunk-NIVGOFW2.js:136:23
-[19:42:20.071Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
-Object { asteroidId: "trail-3-58-a7", velocityAfter: "(0.00, 0.00, 0.00)", isIndependent: false, hasPendingEjection: false }
+[20:09:23.615Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "temp-ast-0", newVelocity: "(0.38, 0.14, -0.18)", shouldEject: false, impulseMagnitude: "53.42" }
 chunk-NIVGOFW2.js:136:23
-[19:42:22.633Z][INFO][COLLISION_PHYSICS] 🔄 Updating independent asteroids 
-Object { count: 1, sampleId: "trail-3-58-a2", sampleVelocity: "(-8.27, -3.23, 0.08)", samplePosition: "(12187, 3580, -60248)" }
+[20:09:23.615Z][INFO][COLLISION_PHYSICS] 📌 Asteroid marked as independent (preserves velocity) 
+Object { asteroidId: "temp-ast-0", impulse: "53.42" }
+chunk-NIVGOFW2.js:136:23
+[20:09:23.615Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "temp-ast-0", velocityAfter: "(0.38, 0.14, -0.18)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[20:09:45.257Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "temp-ast-1", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: false }
+chunk-NIVGOFW2.js:136:23
+[20:09:45.258Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "temp-ast-1", isClusterMember: false, velocityUsed: "(3.90, -0.53, 0.88)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(0.00, 0.00, 0.00)", v2: "(3.90, -0.53, 0.88)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "4.0334", impulseMagnitude: "-44.0003", restitution: 0.2 }
+main.js:21070:15
+[20:09:45.258Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "temp-ast-1", newVelocity: "(-0.31, 0.13, -0.19)", shouldEject: false, impulseMagnitude: "44.00" }
+chunk-NIVGOFW2.js:136:23
+[20:09:45.258Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "temp-ast-1", newVelocity: "(-0.31, 0.13, -0.19)", shouldEject: false, impulseMagnitude: "44.00" }
+chunk-NIVGOFW2.js:136:23
+[20:09:45.258Z][INFO][COLLISION_PHYSICS] 📌 Asteroid marked as independent (preserves velocity) 
+Object { asteroidId: "temp-ast-1", impulse: "44.00" }
+chunk-NIVGOFW2.js:136:23
+[20:09:45.258Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "temp-ast-1", velocityAfter: "(-0.31, 0.13, -0.19)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[20:15:05.984Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "temp-ast-2", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: false }
+chunk-NIVGOFW2.js:136:23
+[20:15:05.985Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "temp-ast-2", isClusterMember: false, velocityUsed: "(-2.03, 3.52, -2.57)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(0.00, 0.00, 0.00)", v2: "(-2.03, 3.52, -2.57)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "4.8066", impulseMagnitude: "-52.4361", restitution: 0.2 }
+main.js:21070:15
+[20:15:05.986Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "temp-ast-2", newVelocity: "(0.18, -0.32, 0.23)", shouldEject: false, impulseMagnitude: "52.44" }
+chunk-NIVGOFW2.js:136:23
+[20:15:05.986Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "temp-ast-2", newVelocity: "(0.18, -0.32, 0.23)", shouldEject: false, impulseMagnitude: "52.44" }
+chunk-NIVGOFW2.js:136:23
+[20:15:05.986Z][INFO][COLLISION_PHYSICS] 📌 Asteroid marked as independent (preserves velocity) 
+Object { asteroidId: "temp-ast-2", impulse: "52.44" }
+chunk-NIVGOFW2.js:136:23
+[20:15:05.986Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "temp-ast-2", velocityAfter: "(0.18, -0.32, 0.23)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🎯 Asteroid temp-ast-2 is INDEPENDENT - preserving collision velocity main.js:3134:15
+[20:15:51.736Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "temp-ast-4", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: false }
+chunk-NIVGOFW2.js:136:23
+[20:15:51.737Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "temp-ast-4", isClusterMember: false, velocityUsed: "(-4.53, -2.29, 2.31)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(0.00, 0.00, 0.00)", v2: "(-4.53, -2.29, 2.31)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "5.5592", impulseMagnitude: "-60.6453", restitution: 0.2 }
+main.js:21070:15
+[20:15:51.737Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "temp-ast-4", newVelocity: "(0.65, -0.12, 0.03)", shouldEject: false, impulseMagnitude: "60.65" }
+chunk-NIVGOFW2.js:136:23
+[20:15:51.737Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "temp-ast-4", newVelocity: "(0.65, -0.12, 0.03)", shouldEject: false, impulseMagnitude: "60.65" }
+chunk-NIVGOFW2.js:136:23
+[20:15:51.737Z][INFO][COLLISION_PHYSICS] 📌 Asteroid marked as independent (preserves velocity) 
+Object { asteroidId: "temp-ast-4", impulse: "60.65" }
+chunk-NIVGOFW2.js:136:23
+[20:15:51.737Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "temp-ast-4", velocityAfter: "(0.65, -0.12, 0.03)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🎯 Asteroid temp-ast-4 is INDEPENDENT - preserving collision velocity main.js:3134:15
+[20:15:57.189Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "temp-ast-3", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: false }
+chunk-NIVGOFW2.js:136:23
+[20:15:57.190Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "temp-ast-3", isClusterMember: false, velocityUsed: "(3.52, 2.61, 2.91)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(0.00, 0.00, 0.00)", v2: "(3.52, 2.61, 2.91)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "5.2333", impulseMagnitude: "-57.0909", restitution: 0.2 }
+main.js:21070:15
+[20:15:57.190Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "temp-ast-3", newVelocity: "(0.08, -0.60, -0.33)", shouldEject: false, impulseMagnitude: "57.09" }
+chunk-NIVGOFW2.js:136:23
+[20:15:57.190Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "temp-ast-3", newVelocity: "(0.08, -0.60, -0.33)", shouldEject: false, impulseMagnitude: "57.09" }
+chunk-NIVGOFW2.js:136:23
+[20:15:57.190Z][INFO][COLLISION_PHYSICS] 📌 Asteroid marked as independent (preserves velocity) 
+Object { asteroidId: "temp-ast-3", impulse: "57.09" }
+chunk-NIVGOFW2.js:136:23
+[20:15:57.190Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "temp-ast-3", velocityAfter: "(0.08, -0.60, -0.33)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🎯 Asteroid temp-ast-3 is INDEPENDENT - preserving collision velocity main.js:3134:15
+La conexión a ws://localhost:4200/?token=bwW3e62k4yK9 fue interrumpida mientras la página se cargaba. client:745:27
+[vite] server connection lost. Polling for restart... client:865:14
+[vite] connected from window af703682-3b9b-4042-b649-188898e8c9a0:68:11
+[vite] connected from window af703682-3b9b-4042-b649-188898e8c9a0:68:11
+[vite] connected from window af703682-3b9b-4042-b649-188898e8c9a0:68:11
+[vite] new window visibility visible af703682-3b9b-4042-b649-188898e8c9a0:64:12
+[vite] new window visibility visible af703682-3b9b-4042-b649-188898e8c9a0:64:12
+[vite] new window visibility visible af703682-3b9b-4042-b649-188898e8c9a0:64:12
+[vite] ping successful af703682-3b9b-4042-b649-188898e8c9a0:70:12
+[vite] ping successful af703682-3b9b-4042-b649-188898e8c9a0:70:12
+[vite] ping successful af703682-3b9b-4042-b649-188898e8c9a0:70:12
+Navega a http://localhost:4200/
+[vite] connecting... client:733:9
+[vite] connected. client:827:12
+NG0505: Angular hydration was requested on the client, but there was no serialized information present in the server response, thus hydration was not enabled. Make sure the `provideClientHydration()` is included into the list of providers in the server part of the application configuration. Find more at https://v20.angular.dev/errors/NG0505 chunk-JX3OTR4Z.js:14652:13
+Se ha impedido que un AudioContext se inicie automáticamente. Debe crearse o reanudarse después de un gesto del usuario en la página. main.js:809:16
+Angular is running in development mode. chunk-JX3OTR4Z.js:14648:13
+Navega a http://localhost:4200/
+[vite] connecting... client:733:9
+[vite] connected. client:827:12
+NG0505: Angular hydration was requested on the client, but there was no serialized information present in the server response, thus hydration was not enabled. Make sure the `provideClientHydration()` is included into the list of providers in the server part of the application configuration. Find more at https://v20.angular.dev/errors/NG0505 chunk-JX3OTR4Z.js:14652:13
+Se ha impedido que un AudioContext se inicie automáticamente. Debe crearse o reanudarse después de un gesto del usuario en la página. main.js:809:16
+Angular is running in development mode. chunk-JX3OTR4Z.js:14648:13
+[20:20:34.255Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "trail-3-58-a0", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: true }
+chunk-NIVGOFW2.js:136:23
+[20:20:34.256Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "trail-3-58-a0", isClusterMember: true, velocityUsed: "(-0.74, -0.07, -0.13)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(-4.65, -0.73, -1.41)", v2: "(-0.74, -0.07, -0.13)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ✅ IMPULSE CALCULATED 
+Object { relativeVelocityNormal: "4.0581", impulseMagnitude: "-44.2700", restitution: 0.2 }
+main.js:21070:15
+[20:20:34.256Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "trail-3-58-a0", newVelocity: "(-5.13, -0.45, -0.55)", shouldEject: false, impulseMagnitude: "44.27" }
+chunk-NIVGOFW2.js:136:23
+[20:20:34.256Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "trail-3-58-a0", newVelocity: "(-5.13, -0.45, -0.55)", shouldEject: false, impulseMagnitude: "44.27" }
+chunk-NIVGOFW2.js:136:23
+[20:20:34.256Z][INFO][COLLISION_PHYSICS] 📌 Asteroid marked as independent (preserves velocity) 
+Object { asteroidId: "trail-3-58-a0", impulse: "44.27" }
+chunk-NIVGOFW2.js:136:23
+[20:20:34.256Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "trail-3-58-a0", velocityAfter: "(-5.13, -0.45, -0.55)", isIndependent: false, hasPendingEjection: false }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🎯 Asteroid trail-3-58-a0 is INDEPENDENT - preserving collision velocity main.js:3134:15
+[20:20:34.761Z][INFO][COLLISION_PHYSICS] 🎯 Collision detected 
+Object { shipId: "player-ship", targetId: "trail-3-58-a0", targetSize: "SMALL", targetType: "ASTEROID", isClusterMember: true }
+chunk-NIVGOFW2.js:136:23
+[20:20:34.761Z][INFO][COLLISION_PHYSICS] 🔧 Velocity calculation 
+Object { targetId: "trail-3-58-a0", isClusterMember: true, velocityUsed: "(-5.13, -0.45, -0.55)" }
+chunk-NIVGOFW2.js:136:23
+[COLLISION_PHYSICS] 🔬 calculateInelasticCollision INPUT: 
+Object { v1: "(-4.65, -0.73, -1.41)", v2: "(-5.13, -0.45, -0.55)", mass1: 100, mass2: 10, restitution: 0.2 }
+main.js:21039:15
+[COLLISION_PHYSICS] ⚠️ Objects SEPARATING - no impulse applied 
+Object { relativeVelocityNormal: "-0.6260", relativeVel: "(0.48, -0.28, -0.87)", normal: "(-0.98, 0.01, 0.18)" }
+main.js:21053:17
+[20:20:34.762Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { targetId: "trail-3-58-a0", newVelocity: "(-5.13, -0.45, -0.55)", shouldEject: false, impulseMagnitude: "0.00" }
+chunk-NIVGOFW2.js:136:23
+[20:20:34.762Z][INFO][COLLISION_PHYSICS] 📊 Physics response calculated 
+Object { asteroidId: "trail-3-58-a0", newVelocity: "(-5.13, -0.45, -0.55)", shouldEject: false, impulseMagnitude: "0.00" }
+chunk-NIVGOFW2.js:136:23
+[20:20:34.762Z][INFO][COLLISION_PHYSICS] ✅ Velocity applied to asteroid 
+Object { asteroidId: "trail-3-58-a0", velocityAfter: "(-5.13, -0.45, -0.55)", isIndependent: false, hasPendingEjection: false }
 chunk-NIVGOFW2.js:136:23

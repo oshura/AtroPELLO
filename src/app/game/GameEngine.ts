@@ -39,6 +39,7 @@ import { BillboardRenderer } from './rendering/BillboardRenderer';
 import { TargetOutline2DRenderer } from './hud/TargetOutline2DRenderer';
 import { LoggingService, LogCategory, LogLevel } from '../services/logging.service';
 import { CollisionResponseService } from './services/physics/collision-response.service';
+import { CollisionManagerService } from './services/physics/collision-manager.service';
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
@@ -214,7 +215,7 @@ export class GameEngine {
     private relationService: RelationService,
     private animationManager: AnimationManagerService,
     loggingService: LoggingService,
-    private collisionResponseService: CollisionResponseService,
+    private collisionManager: CollisionManagerService,
   private solarSystemService?: SolarSystemService,
   private humanSolarSystemService?: HumanSolarSystemService,
   private portalPersistenceService?: PortalPersistenceService,
@@ -1161,7 +1162,7 @@ export class GameEngine {
       this.audio.ensureContext();
       const ok = await this.audio.unlock();
       this.audioUnlocked = ok;
-      console.log(`🔊 Audio unlocked: ${ok}, audioUnlocked flag: ${this.audioUnlocked}`);
+      this.logger.log(LogLevel.INFO, LogCategory.AUDIO, `🔊 Audio unlocked: ${ok}, audioUnlocked flag: ${this.audioUnlocked}`);
       // Don't change music scene here - let caller decide which scene to play
       // Start always-on ambience loop (logdark) once unlocked
       try { if (ok) this.audio.startAmbientLoop('sfx_logdark'); } catch {}
@@ -2253,112 +2254,44 @@ export class GameEngine {
   /** Handle physical response, camera effect and audio for a collision */
   private handleCollisionResponse(obj: any, name: string, dmg: number): void {
     this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'handleCollisionResponse start', { name, dmg, audioUnlocked: this.audioUnlocked });
-    if (!this.spaceship || !this.collisionResponseService) return;
+    if (!this.spaceship || !this.collisionManager) return;
     
-    // Obtener tipo del objeto usando getType() en lugar de strings
-    const objType = obj.getType ? obj.getType() : GameObjectType.UNKNOWN;
+    // Determinar si el objetivo es miembro de cluster
+    const isClusterMember = !this.independentAsteroids.some(a => a.id === obj.id) && 
+                            !this.ephemeralAsteroids.some(a => a.id === obj.id);
     
-    // Clasificar objetos por comportamiento físico usando enums
-    const isSmallAsteroid = objType === GameObjectType.ASTEROID || objType === GameObjectType.CLUSTER;
-    const isLargeAsteroid = objType === GameObjectType.SUPER_ASTEROID || objType === GameObjectType.MEGA_ASTEROID;
-    const isMassiveObject = objType === GameObjectType.PLANET || 
-                            objType === GameObjectType.RINGED_PLANET || 
-                            objType === GameObjectType.GASEOUS_PLANET || 
-                            objType === GameObjectType.GIANT_PLANET || 
-                            objType === GameObjectType.DWARF_PLANET || 
-                            objType === GameObjectType.PROTOPLANET || 
-                            objType === GameObjectType.EARTH_SPLIT_PLANET || 
-                            objType === GameObjectType.SUN;
+    // Delegar TODA la lógica al CollisionManager
+    const result = this.collisionManager.handleCollision(
+      this.spaceship,
+      obj,
+      isClusterMember
+    );
     
-    if (isSmallAsteroid) {
-      // ASTEROIDES PEQUEÑOS: Física de colisión inelástica 3D realista
-      this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🎯 Small asteroid collision detected', {
-        asteroidId: obj.id,
-        objType,
-        position: `(${obj.position.x.toFixed(0)}, ${obj.position.y.toFixed(0)}, ${obj.position.z.toFixed(0)})`,
-        velocityBefore: `(${obj.velocity.x.toFixed(2)}, ${obj.velocity.y.toFixed(2)}, ${obj.velocity.z.toFixed(2)})`
-      });
-      
-      // Para asteroides de cluster, necesitamos detectar si HAY approach (acercamiento)
-      // Si la nave está quieta pero el asteroide se mueve, debemos usar la velocidad del asteroide
-      const isClusterMember = !this.independentAsteroids.some(a => a.id === obj.id) && 
-                              !this.ephemeralAsteroids.some(a => a.id === obj.id);
-      
-      let asteroidVelocity: { x: number, y: number, z: number };
-      
-      if (isClusterMember) {
-        // Calcular si hay acercamiento: vector del asteroide hacia la nave
-        const dx = this.spaceship.position.x - obj.position.x;
-        const dy = this.spaceship.position.y - obj.position.y;
-        const dz = this.spaceship.position.z - obj.position.z;
-        const dist = Math.hypot(dx, dy, dz) || 1;
-        const normal = { x: dx / dist, y: dy / dist, z: dz / dist };
-        
-        // Velocidad del asteroide en el cluster
-        const asteroidClusterVel = obj.velocity;
-        
-        // Componente de velocidad del asteroide hacia la nave (relativo)
-        const approachSpeed = -(asteroidClusterVel.x * normal.x + 
-                                asteroidClusterVel.y * normal.y + 
-                                asteroidClusterVel.z * normal.z);
-        
-        // Si el asteroide se acerca (approachSpeed > 0), usamos velocidad relativa del cluster
-        // Si no (nave chocó con asteroide estático), usamos velocidad cero
-        if (approachSpeed > 0.01) {
-          // Asteroide acercándose: usar velocidad real para calcular impulso correcto
-          asteroidVelocity = { ...asteroidClusterVel };
-        } else {
-          // Nave chocó con asteroide: usar velocidad cero (correcto)
-          asteroidVelocity = { x: 0, y: 0, z: 0 };
-        }
-      } else {
-        // Independent/ephemeral: usa velocidad real
-        asteroidVelocity = { ...obj.velocity };
-      }
-      
-      this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🔧 Velocity calculation', {
-        asteroidId: obj.id,
-        isClusterMember,
-        velocityUsed: `(${asteroidVelocity.x.toFixed(2)}, ${asteroidVelocity.y.toFixed(2)}, ${asteroidVelocity.z.toFixed(2)})`
-      });
-      
-      const response = this.collisionResponseService.calculateShipCollisionResponse(
-        {
-          position: this.spaceship.position,
-          velocity: this.spaceship.velocity,
-          boundingSphere: this.spaceship.boundingSphere!
-        },
-        {
-          position: obj.position || { x: 0, y: 0, z: 0 },
-          velocity: asteroidVelocity, // Usar velocidad calculada
-          boundingSphere: obj.boundingSphere,
-          id: obj.id
-        },
-        name
-      );
+    // Aplicar resultados según tipo de colisión
+    if (result.collisionType === 'small-movable') {
+      // Física completa 3D: actualizar nave y asteroide
       
       this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '📊 Physics response calculated', {
         asteroidId: obj.id,
-        newVelocity: response.targetNewVelocity ? 
-          `(${response.targetNewVelocity.x.toFixed(2)}, ${response.targetNewVelocity.y.toFixed(2)}, ${response.targetNewVelocity.z.toFixed(2)})` : 'null',
-        shouldEject: response.targetEjected,
-        impulseMagnitude: response.targetNewVelocity ? 
-          Math.hypot(response.targetNewVelocity.x, response.targetNewVelocity.y, response.targetNewVelocity.z).toFixed(2) : '0'
+        newVelocity: result.targetNewVelocity ? 
+          `(${result.targetNewVelocity.x.toFixed(2)}, ${result.targetNewVelocity.y.toFixed(2)}, ${result.targetNewVelocity.z.toFixed(2)})` : 'null',
+        shouldEject: result.shouldEject,
+        impulseMagnitude: result.impulseMagnitude.toFixed(2)
       });
       
       // IMPORTANTE: Marcar como independiente ANTES de aplicar velocidad para evitar sobreescritura
       // Incluso con impulso pequeño, el asteroide debe mantener su velocidad de colisión
-      if (response.impulseMagnitude > 0.1) { // Cualquier impulso significa colisión real
+      if (result.impulseMagnitude > 0.1) {
         (obj as any)._isIndependent = true;
         this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '📌 Asteroid marked as independent (preserves velocity)', {
           asteroidId: obj.id,
-          impulse: response.impulseMagnitude.toFixed(2)
+          impulse: result.impulseMagnitude.toFixed(2)
         });
       }
       
       // Aplicar resultado a la nave
-      this.spaceship.position = response.newPosition;
-      this.spaceship.velocity = response.newVelocity;
+      this.spaceship.position = result.newPosition;
+      this.spaceship.velocity = result.newVelocity;
       this.spaceship.updateModelMatrix();
       
       // Actualizar bounding sphere de la nave
@@ -2368,21 +2301,24 @@ export class GameEngine {
         }
       } catch {}
       
-      // Eyectar de cluster PRIMERO si es necesario (antes de modificar velocidad)
-      if (response.targetEjected) {
+      // Eyectar de cluster si hay cualquier colisión real (impulso > 0.1)
+      // Esto asegura que el asteroide se añade a independentAsteroids y no se recalcula como cluster member
+      if (result.impulseMagnitude > 0.1 && isClusterMember) {
         this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🚀 Ejecting asteroid from cluster', {
           asteroidId: obj.id,
-          reason: 'High impulse from collision'
+          reason: 'Collision detected',
+          impulse: result.impulseMagnitude.toFixed(2),
+          highImpulse: result.shouldEject
         });
         this.makeAsteroidIndependent(obj);
       }
       
       // Aplicar resultado al asteroide (sale disparado según ángulo de impacto)
       // IMPORTANTE: Hacer esto DESPUÉS de eyectar para que no sea sobreescrito por applyCenterDrivenFullUpdate
-      if (response.targetNewVelocity && obj.velocity) {
-        obj.velocity.x = response.targetNewVelocity.x;
-        obj.velocity.y = response.targetNewVelocity.y;
-        obj.velocity.z = response.targetNewVelocity.z;
+      if (result.targetNewVelocity && obj.velocity) {
+        obj.velocity.x = result.targetNewVelocity.x;
+        obj.velocity.y = result.targetNewVelocity.y;
+        obj.velocity.z = result.targetNewVelocity.z;
         
         this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '✅ Velocity applied to asteroid', {
           asteroidId: obj.id,
@@ -2392,29 +2328,27 @@ export class GameEngine {
         });
       }
       
-    } else if (isLargeAsteroid || isMassiveObject) {
-      // ASTEROIDES GRANDES Y OBJETOS MASIVOS: Slide suave (apartar nave)
-      const response = this.collisionResponseService.calculateImmovableObjectResponse(
-        {
-          position: this.spaceship.position,
-          velocity: this.spaceship.velocity,
-          boundingSphere: this.spaceship.boundingSphere!
-        },
-        {
-          position: obj.position || { x: 0, y: 0, z: 0 },
-          boundingSphere: obj.boundingSphere
-        }
-      );
-      
-      // Aplicar slide suave (mejor UX, evita daño repetitivo)
+    } else if (result.collisionType === 'large-immovable' || result.collisionType === 'massive-slide') {
+      // Slide suave para objetos grandes/masivos
       const R = Math.max(10, (obj.boundingSphere?.radius ?? 200));
       const slide = Math.max(30, Math.min(250, R * 0.1));
-      const tangent = this.collisionResponseService['collisionPhysics'].normalize(response.tangentDirection);
-      const normal = this.collisionResponseService['collisionPhysics'].normalize({
-        x: this.spaceship.position.x - obj.position.x,
-        y: this.spaceship.position.y - obj.position.y,
-        z: this.spaceship.position.z - obj.position.z
-      });
+      
+      // Calcular dirección de slide (tangente + normal)
+      const dx = this.spaceship.position.x - obj.position.x;
+      const dy = this.spaceship.position.y - obj.position.y;
+      const dz = this.spaceship.position.z - obj.position.z;
+      const dist = Math.hypot(dx, dy, dz) || 1;
+      const normal = { x: dx / dist, y: dy / dist, z: dz / dist };
+      
+      // Tangente perpendicular a velocidad y normal
+      const v = this.spaceship.velocity;
+      const tangent = {
+        x: v.x - (v.x * normal.x + v.y * normal.y + v.z * normal.z) * normal.x,
+        y: v.y - (v.x * normal.x + v.y * normal.y + v.z * normal.z) * normal.y,
+        z: v.z - (v.x * normal.x + v.y * normal.y + v.z * normal.z) * normal.z
+      };
+      const tlen = Math.hypot(tangent.x, tangent.y, tangent.z) || 1;
+      tangent.x /= tlen; tangent.y /= tlen; tangent.z /= tlen;
       
       const start = { ...this.spaceship.position };
       const end = {
@@ -2424,24 +2358,11 @@ export class GameEngine {
       };
       
       this.collisionSlide = { start, end, t: 0, duration: 0.3 };
-      this.spaceship.velocity = response.newVelocity;
+      this.spaceship.velocity = result.newVelocity;
       
-    } else {
-      // DEFAULT: Cancelar velocidad radial (fallback para tipos desconocidos)
-      const C = obj.position || { x: 0, y: 0, z: 0 };
-      const S = this.spaceship.position;
-      let nx = S.x - C.x, ny = S.y - C.y, nz = S.z - C.z;
-      const nl = Math.hypot(nx, ny, nz) || 1;
-      nx /= nl; ny /= nl; nz /= nl;
-      
-      const v = this.spaceship.velocity;
-      const vDotN = v.x * nx + v.y * ny + v.z * nz;
-      
-      if (vDotN < 0) {
-        v.x = v.x - vDotN * nx;
-        v.y = v.y - vDotN * ny;
-        v.z = v.z - vDotN * nz;
-      }
+    } else if (result.collisionType === 'ethereal') {
+      // Sin física (portales)
+      // No hacer nada
     }
 
     // Camera impact vignette bump

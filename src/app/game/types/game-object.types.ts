@@ -51,6 +51,18 @@ export enum GameObjectCategory {
 }
 
 /**
+ * Tamaños de GameObjects para física de colisiones.
+ * Determina comportamiento físico (inercia, respuesta a impulsos, etc.)
+ */
+export enum GameObjectSize {
+  SMALL = 'SMALL',      // Asteroides pequeños, clusters - Móviles, afectados por colisiones
+  MEDIUM = 'MEDIUM',    // Super asteroides - Móviles pero pesados
+  LARGE = 'LARGE',      // Mega asteroides - Muy pesados, difíciles de mover
+  MASSIVE = 'MASSIVE',  // Planetas, sol - Prácticamente inmóviles
+  ETHEREAL = 'ETHEREAL' // Portales, objetos sin masa física
+}
+
+/**
  * Mapa de tipo a categoría para facilitar consultas
  */
 export const TYPE_TO_CATEGORY: Record<GameObjectType, GameObjectCategory> = {
@@ -72,6 +84,27 @@ export const TYPE_TO_CATEGORY: Record<GameObjectType, GameObjectCategory> = {
 };
 
 /**
+ * Mapa de tipo a tamaño físico para física de colisiones
+ */
+export const TYPE_TO_SIZE: Record<GameObjectType, GameObjectSize> = {
+  [GameObjectType.UNKNOWN]: GameObjectSize.SMALL,
+  [GameObjectType.SPACESHIP]: GameObjectSize.SMALL,
+  [GameObjectType.ASTEROID]: GameObjectSize.SMALL,
+  [GameObjectType.CLUSTER]: GameObjectSize.SMALL,
+  [GameObjectType.SUPER_ASTEROID]: GameObjectSize.MEDIUM,
+  [GameObjectType.MEGA_ASTEROID]: GameObjectSize.LARGE,
+  [GameObjectType.PLANET]: GameObjectSize.MASSIVE,
+  [GameObjectType.DWARF_PLANET]: GameObjectSize.MASSIVE,
+  [GameObjectType.PROTOPLANET]: GameObjectSize.MASSIVE,
+  [GameObjectType.GIANT_PLANET]: GameObjectSize.MASSIVE,
+  [GameObjectType.GASEOUS_PLANET]: GameObjectSize.MASSIVE,
+  [GameObjectType.RINGED_PLANET]: GameObjectSize.MASSIVE,
+  [GameObjectType.EARTH_SPLIT_PLANET]: GameObjectSize.MASSIVE,
+  [GameObjectType.SUN]: GameObjectSize.MASSIVE,
+  [GameObjectType.PORTAL]: GameObjectSize.ETHEREAL
+};
+
+/**
  * Verifica si un tipo pertenece a una categoría
  */
 export function isCategory(type: GameObjectType, category: GameObjectCategory): boolean {
@@ -83,6 +116,13 @@ export function isCategory(type: GameObjectType, category: GameObjectCategory): 
  */
 export function getCategory(type: GameObjectType): GameObjectCategory {
   return TYPE_TO_CATEGORY[type] || GameObjectCategory.UNKNOWN;
+}
+
+/**
+ * Obtiene el tamaño físico de un tipo (para física de colisiones)
+ */
+export function getPhysicsSize(type: GameObjectType): GameObjectSize {
+  return TYPE_TO_SIZE[type] || GameObjectSize.SMALL;
 }
 
 /**
