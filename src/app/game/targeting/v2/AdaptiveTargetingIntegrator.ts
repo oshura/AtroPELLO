@@ -74,7 +74,7 @@ export class AdaptiveTargetingIntegrator {
   // UPDATE CYCLE
   // ===================================
 
-  public update(deltaTime: number, availableTargets: ITargetable[], mousePos: { x: number; y: number }): void {
+  public update(deltaTime: number, availableTargets: ITargetable[], mousePos: { x: number; y: number }, skipDetection: boolean = false): void {
     if (!this.isInitialized) {
       // Log occasionally if not initialized
       if (Math.random() < 0.01) {
@@ -88,7 +88,8 @@ export class AdaptiveTargetingIntegrator {
       this.logger.debug(LogCategory.TARGETING, 'update() tick', {
         deltaTimeMs: Math.round(deltaTime * 1000),
         targets: availableTargets.length,
-        mousePos: { x: Math.round(mousePos.x), y: Math.round(mousePos.y) }
+        mousePos: { x: Math.round(mousePos.x), y: Math.round(mousePos.y) },
+        skipDetection
       });
     }
     
@@ -99,8 +100,8 @@ export class AdaptiveTargetingIntegrator {
     // Update available targets in adaptive system
     this.adaptiveSystem.updateAvailableTargets(availableTargets);
     
-    // Perform adaptive detection
-    const result = this.adaptiveSystem.detectTargetAt(mousePos);
+    // Perform adaptive detection (skip if UI panel occludes the scene)
+    const result = this.adaptiveSystem.detectTargetAt(mousePos, skipDetection);
     
     // Debug info (frequent for testing)
     if (Math.random() < 0.05) { // 5% chance for more frequent testing logs

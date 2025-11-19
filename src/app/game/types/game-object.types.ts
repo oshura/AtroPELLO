@@ -84,3 +84,59 @@ export function isCategory(type: GameObjectType, category: GameObjectCategory): 
 export function getCategory(type: GameObjectType): GameObjectCategory {
   return TYPE_TO_CATEGORY[type] || GameObjectCategory.UNKNOWN;
 }
+
+/**
+ * Obtiene un label legible para display UI de un GameObjectType
+ * Usado en HUD, outliner, target panels, etc.
+ */
+export function getDisplayLabel(type: GameObjectType): string {
+  switch (type) {
+    case GameObjectType.SPACESHIP: return 'Spaceship';
+    case GameObjectType.ASTEROID: return 'Asteroid';
+    case GameObjectType.SUPER_ASTEROID: return 'SuperAsteroid';
+    case GameObjectType.MEGA_ASTEROID: return 'MegaAsteroid';
+    case GameObjectType.CLUSTER: return 'Cluster';
+    case GameObjectType.PLANET: return 'Planet';
+    case GameObjectType.DWARF_PLANET: return 'Dwarf Planet';
+    case GameObjectType.PROTOPLANET: return 'Protoplanet';
+    case GameObjectType.GIANT_PLANET: return 'Giant Planet';
+    case GameObjectType.GASEOUS_PLANET: return 'Gaseous Planet';
+    case GameObjectType.RINGED_PLANET: return 'Ringed Planet';
+    case GameObjectType.EARTH_SPLIT_PLANET: return 'Earth';
+    case GameObjectType.SUN: return 'Sun';
+    case GameObjectType.PORTAL: return 'Portal';
+    case GameObjectType.UNKNOWN: return 'Unknown';
+    default: return 'Unknown';
+  }
+}
+
+/**
+ * Obtiene un icono/símbolo para UI compacta (mapa, filtros)
+ */
+export function getDisplayIcon(type: GameObjectType): string {
+  const category = getCategory(type);
+  switch (category) {
+    case GameObjectCategory.STAR: return '☀';
+    case GameObjectCategory.PLANET: return '●';
+    case GameObjectCategory.ASTEROID: return '▪';
+    case GameObjectCategory.CLUSTER: return '◈';
+    case GameObjectCategory.SHIP: return '▲';
+    case GameObjectCategory.PORTAL: return '◉';
+    default: return '?';
+  }
+}
+
+/**
+ * Obtiene un icono específico para categoría (usado en filtros del mapa)
+ */
+export function getCategoryIcon(category: GameObjectCategory): string {
+  switch (category) {
+    case GameObjectCategory.STAR: return '*';
+    case GameObjectCategory.PLANET: return 'P';
+    case GameObjectCategory.ASTEROID: return 'D'; // "Debris"
+    case GameObjectCategory.CLUSTER: return 'C';
+    case GameObjectCategory.SHIP: return 'S';
+    case GameObjectCategory.PORTAL: return 'Po';
+    default: return '?';
+  }
+}

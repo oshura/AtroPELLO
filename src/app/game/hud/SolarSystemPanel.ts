@@ -1,6 +1,7 @@
 import { Vector3 } from '../../types/game.types';
 import { GameLogger } from '../utils/GameLogger';
 import { LogCategory } from '../../services/logging.service';
+import { GameObjectCategory, getCategoryIcon } from '../types/game-object.types';
 
 /**
  * SolarSystemPanel: renders a full-screen, opaque top-down map of the solar system
@@ -29,7 +30,7 @@ export class SolarSystemPanel {
   private items: Array<{
     id: string;
     label: string;
-    category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center' | 'portal';
+    category: GameObjectCategory | 'center'; // 'center' es especial (no es un GameObject)
     pos: Vector3;
     px: number;
     py: number;
@@ -40,8 +41,15 @@ export class SolarSystemPanel {
   private hoveredId: string | null = null;
   private cursorPx: number | null = null;
   private cursorPy: number | null = null;
-  // Filtering state
-  private visibleCategories: Set<string> = new Set(['center','planet','cluster','debris','portal','ship']);
+  // Filtering state (categories + 'center' special)
+  private visibleCategories: Set<GameObjectCategory | 'center'> = new Set([
+    'center',
+    GameObjectCategory.PLANET,
+    GameObjectCategory.CLUSTER,
+    GameObjectCategory.ASTEROID,
+    GameObjectCategory.PORTAL,
+    GameObjectCategory.SHIP
+  ]);
   private showOrbits: boolean = true;
   private filterButtons: Array<{ cat: string; x: number; y: number; w: number; h: number; active: boolean; label: string }> = [];
   // Fine-grained planet-type filters
@@ -64,6 +72,11 @@ export class SolarSystemPanel {
 
   public setEnabled(v: boolean) { this.enabled = v; }
   public isEnabled(): boolean { return this.enabled; }
+  /**
+   * Check if this panel occludes the 3D scene at the given viewport coordinates.
+   * Since the panel is fullscreen when enabled, it occludes the entire viewport.
+   */
+  public containsPoint(_x: number, _y: number): boolean { return this.enabled; }
   public setSelectedId(id: string | null) { this.selectedId = id; }
   public setHoveredId(id: string | null) { this.hoveredId = id; }
   public getSelectedId(): string | null { return this.selectedId; }
@@ -76,14 +89,14 @@ export class SolarSystemPanel {
     this.cursorPy = (y / viewportH) * this.canvas.height;
   }
 
-  public toggleCategory(cat: string): void {
+  public toggleCategory(cat: GameObjectCategory | 'center' | 'orbits'): void {
     if (cat === 'orbits') {
       this.showOrbits = !this.showOrbits; return;
     }
     if (this.visibleCategories.has(cat)) this.visibleCategories.delete(cat); else this.visibleCategories.add(cat);
   }
 
-  public isCategoryVisible(cat: string): boolean { return this.visibleCategories.has(cat); }
+  public isCategoryVisible(cat: GameObjectCategory | 'center'): boolean { return this.visibleCategories.has(cat); }
   public areOrbitsVisible(): boolean { return this.showOrbits; }
 
   /** Reset view to initial fit (no pan, no zoom) */
@@ -247,34 +260,27 @@ export class SolarSystemPanel {
 
     // Build filter buttons (top-left) based on present categories
     this.filterButtons = [];
-    const present: string[] = [];
-    if (data.planets.length) present.push('planet');
-    if (data.clusters.length) present.push('cluster');
-    if (data.debris.length) present.push('debris');
-    if ((data.portals||[]).length) present.push('portal');
-    if (data.ship) present.push('ship');
+    const present: Array<GameObjectCategory | 'center'> = [];
+    if (data.planets.length) present.push(GameObjectCategory.PLANET);
+    if (data.clusters.length) present.push(GameObjectCategory.CLUSTER);
+    if (data.debris.length) present.push(GameObjectCategory.ASTEROID); // debris = asteroids
+    if ((data.portals||[]).length) present.push(GameObjectCategory.PORTAL);
+    if (data.ship) present.push(GameObjectCategory.SHIP);
     if (data.centerLabel) present.unshift('center');
     const btnSize = 22; const pad = 6; let bx = pad; const by = pad;
-    const iconFor = (cat: string) => {
-      switch(cat) {
-        case 'center': return '*';
-        case 'planet': return 'P';
-        case 'cluster': return 'C';
-        case 'debris': return 'D';
-        case 'portal': return 'Po';
-        case 'ship': return 'S';
-        case 'orbits': return 'Orb';
-        default: return '?';
-      }
+    const iconFor = (cat: GameObjectCategory | 'center' | 'orbits') => {
+      if (cat === 'center') return '*';
+      if (cat === 'orbits') return 'Orb';
+      return getCategoryIcon(cat as GameObjectCategory);
     };
     for (const cat of present) {
-      this.filterButtons.push({ cat, x: bx, y: by, w: btnSize, h: btnSize, active: this.visibleCategories.has(cat), label: iconFor(cat) });
+      this.filterButtons.push({ cat: cat as string, x: bx, y: by, w: btnSize, h: btnSize, active: this.visibleCategories.has(cat), label: iconFor(cat) });
       bx += btnSize + 4;
     }
     // Orbits toggle button
     this.filterButtons.push({ cat: 'orbits', x: bx, y: by, w: btnSize+14, h: btnSize, active: this.showOrbits, label: iconFor('orbits') });
     // Planet-type fine-grained filters (only shown if planets present)
-    if (data.planets.length && this.visibleCategories.has('planet')) {
+    if (data.planets.length && this.visibleCategories.has(GameObjectCategory.PLANET)) {
       const kindsPresent = new Set<string>();
       for (const p of data.planets) {
         const k = (p.kind || '').toLowerCase();
@@ -379,7 +385,7 @@ export class SolarSystemPanel {
     const pushItem = (
       id: string,
       label: string,
-      category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center' | 'portal',
+      category: GameObjectCategory | 'center',
       pos: Vector3,
       rPx: number,
       color: string,
@@ -398,35 +404,35 @@ export class SolarSystemPanel {
     pushItem('center', starLabel, 'center', data.center, 5, '#ffe08a');
   }
     // Planets
-    if (this.visibleCategories.has('planet')) {
+    if (this.visibleCategories.has(GameObjectCategory.PLANET)) {
       for (const p of data.planets) {
         const k = (p.kind || '').toLowerCase();
         // If a kind is provided, respect fine-grained filters
         if (k && !this.visiblePlanetKinds.has(k)) continue;
-        pushItem(p.id, p.label ?? p.id, 'planet', p.pos, 3, planetColor, k);
+        pushItem(p.id, p.label ?? p.id, GameObjectCategory.PLANET, p.pos, 3, planetColor, k);
       }
     }
-    // Debris
-    if (this.visibleCategories.has('debris')) {
-      for (const d of data.debris) pushItem(d.id, d.label ?? d.id, 'debris', d.pos, 1.5, megaColor);
+    // Debris (asteroids)
+    if (this.visibleCategories.has(GameObjectCategory.ASTEROID)) {
+      for (const d of data.debris) pushItem(d.id, d.label ?? d.id, GameObjectCategory.ASTEROID, d.pos, 1.5, megaColor);
     }
-    // Clusters (always included)
-    if (this.visibleCategories.has('cluster')) {
-      for (const cl of data.clusters) pushItem(cl.id, cl.label ?? cl.id, 'cluster', cl.center, 2.5, megaColor);
+    // Clusters
+    if (this.visibleCategories.has(GameObjectCategory.CLUSTER)) {
+      for (const cl of data.clusters) pushItem(cl.id, cl.label ?? cl.id, GameObjectCategory.CLUSTER, cl.center, 2.5, megaColor);
     }
     // Portals (arcane purple)
-    if (this.visibleCategories.has('portal')) {
-      for (const p of (data.portals || [])) pushItem(p.id, p.label ?? p.id, 'portal', p.pos, 3.2, portalColor);
+    if (this.visibleCategories.has(GameObjectCategory.PORTAL)) {
+      for (const p of (data.portals || [])) pushItem(p.id, p.label ?? p.id, GameObjectCategory.PORTAL, p.pos, 3.2, portalColor);
     }
   // Ship (friendly green)
-  if (data.ship && this.visibleCategories.has('ship')) pushItem('ship', data.ship.label ?? 'Ship', 'ship', data.ship.pos, 3.5, shipColor);
+  if (data.ship && this.visibleCategories.has(GameObjectCategory.SHIP)) pushItem('ship', data.ship.label ?? 'Ship', GameObjectCategory.SHIP, data.ship.pos, 3.5, shipColor);
 
     // 4.b) Simple outliner: draw circle stroke + label based on rules
     c.font = '12px Segoe UI, Roboto, sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'bottom';
     for (const it of this.items) {
-      const isPlanet = it.category === 'planet';
+      const isPlanet = it.category === GameObjectCategory.PLANET;
       const isCenter = it.category === 'center';
       const isSel = this.selectedId === it.id;
       const isHover = this.hoveredId === it.id;
@@ -438,7 +444,7 @@ export class SolarSystemPanel {
       // Show circle+label only if hovered or selected (for all categories)
       if (isHover || isSel) {
         // Ally-friendly outline for the ship; gold for selected others, white on hover
-        const isShip = it.category === 'ship';
+        const isShip = it.category === GameObjectCategory.SHIP;
         c.strokeStyle = isShip ? (isSel ? '#70f0a8' : '#46d88f') : (isSel ? '#ffeb7a' : 'rgba(255,255,255,0.6)');
         c.lineWidth = isSel ? 2 : 1;
         c.beginPath(); c.arc(it.px, it.py, it.rPx + (isSel ? 6 : 2), 0, Math.PI * 2); c.stroke();
@@ -452,7 +458,7 @@ export class SolarSystemPanel {
       const sel = this.items.find(i => i.id === this.selectedId);
       if (sel) {
         // Ally selection ring for ship; gold otherwise
-        c.strokeStyle = sel.category === 'ship' ? '#70f0a8' : '#ffeb7a';
+        c.strokeStyle = sel.category === GameObjectCategory.SHIP ? '#70f0a8' : '#ffeb7a';
         c.lineWidth = 2;
         c.beginPath(); c.arc(sel.px, sel.py, sel.rPx + 6, 0, Math.PI * 2); c.stroke();
       }
@@ -526,12 +532,12 @@ export class SolarSystemPanel {
         const dist = ship ? Math.hypot(dx, dy, dz) : 0;
         const typeStr = (() => {
           switch (active!.category) {
-            case 'planet': return 'Planeta';
+            case GameObjectCategory.PLANET: return 'Planeta';
             case 'center': return 'Estrella';
-            case 'cluster': return 'Cúmulo';
-            case 'debris': return 'Escombros';
-            case 'portal': return 'Portal';
-            case 'ship': return 'Nave';
+            case GameObjectCategory.CLUSTER: return 'Cúmulo';
+            case GameObjectCategory.ASTEROID: return 'Escombros';
+            case GameObjectCategory.PORTAL: return 'Portal';
+            case GameObjectCategory.SHIP: return 'Nave';
             default: return 'Objeto';
           }
         })();
@@ -692,7 +698,9 @@ export class SolarSystemPanel {
           if (b.cat.startsWith('kind:')) {
             this.togglePlanetKind(b.cat.slice('kind:'.length));
           } else {
-            this.toggleCategory(b.cat);
+            // Convert string to enum (button cat can be enum value or 'center'/'orbits')
+            const cat = (b.cat === 'center' || b.cat === 'orbits') ? b.cat : (b.cat as GameObjectCategory);
+            this.toggleCategory(cat);
           }
           return null; // Do not treat as item selection
         }

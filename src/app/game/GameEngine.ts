@@ -31,6 +31,7 @@ import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { GrimoirePanel } from './hud/GrimoirePanel';
+import { SpellType } from './types/spell.types';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
@@ -1787,9 +1788,14 @@ export class GameEngine {
     // Get mouse position from ReticleManager
     const mousePos = this.reticleManager.getDebugSnapshot().mouse;
     
+    // Check if any UI panel occludes the 3D scene (prevents 3D hover when interacting with panels)
+    const mapOccludes = this.systemPanel?.containsPoint?.(mousePos.x, mousePos.y) ?? false;
+    const grimoireOccludes = this.grimoirePanel?.containsPoint?.(mousePos.x, mousePos.y) ?? false;
+    const skipDetection = mapOccludes || grimoireOccludes;
+    
     // Update adaptive targeting system (performs detection and maintains mouse velocity)
     if (this.adaptiveTargeting) {
-      this.adaptiveTargeting.update(deltaTime, availableTargets, mousePos);
+      this.adaptiveTargeting.update(deltaTime, availableTargets, mousePos, skipDetection);
     } else {
       this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'AdaptiveTargeting not initialized yet');
     }
@@ -3730,9 +3736,6 @@ export class GameEngine {
     for (const p of this.planets) {
       const isSun = (p as any).planetType === 'Sun';
       const isPrimarySun = p === this.primarySun;
-      if (isPrimarySun) {
-        console.log('[RENDER PLANETS] Processing primarySun in loop:', p.id);
-      }
       // Calcular iluminación basada en Sol si existe (direccional desde el sol al objeto)
       let lightDir = this.lightDirection;
       let ambientStrengthLocal = this.ambientStrength;
@@ -3975,11 +3978,9 @@ export class GameEngine {
       // Brillo del Sol (si aplica)
       // Para el primarySun, SIEMPRE renderizar el glow (sin importar frustum/posición)
       if ((p as any).renderGlow && isPrimarySun) {
-        console.log('[RENDER PLANETS] Calling renderGlow for primarySun in loop');
         try {
           (p as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
         } catch (e) {
-          console.error('[RENDER PLANETS] renderGlow(primary sun) failed:', e);
           this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderGlow(primary sun) failed', e);
         }
       } else if ((p as any).renderGlow && isSun) {
@@ -4059,13 +4060,10 @@ export class GameEngine {
     
     // GARANTIZAR: Renderizar halo del primarySun SIEMPRE, incluso si el bucle lo saltó
     // Esto asegura que el brillo solar sea visible sin importar frustum/posición
-    console.log('[RENDER PLANETS] Post-loop check - primarySun exists:', !!this.primarySun, 'has renderGlow:', !!(this.primarySun as any)?.renderGlow);
     if (this.primarySun && (this.primarySun as any).renderGlow) {
-      console.log('[RENDER PLANETS] Calling renderGlow for primarySun POST-LOOP');
       try {
         (this.primarySun as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
       } catch (e) {
-        console.error('[RENDER PLANETS] renderGlow(primary sun post-loop) failed:', e);
         this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderGlow(primary sun post-loop) failed', e);
       }
     }
@@ -5047,7 +5045,7 @@ export class GameEngine {
     // Fase 2: lanzar hechizo con 'h' (desde el grimorio o recordando el seleccionado)
     if (key.toLowerCase() === 'h') {
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|'eternalrite'|'disrupt'|null;
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as SpellType | null;
         const spell = selected; // Do not fall back to hovered; require explicit selection
         if (!spell) {
           // Nada seleccionado: no hacer nada
@@ -5075,7 +5073,7 @@ export class GameEngine {
   }
   // Bloquear controles 2s de casteo
   // Speed (Double Phased Time Rite) mantiene outliners visibles, otros hechizos los ocultan
-  const keepOutliners = (spell === 'speed');
+  const keepOutliners = (spell === SpellType.SPEED);
   this.animationManager.startBlockingDelay(2000, keepOutliners);
   // Reproducir sonido de pre-ritual
   try {
@@ -5087,7 +5085,7 @@ export class GameEngine {
   }
   // Esperar 2 segundos y luego disparar animación/efecto
         setTimeout(() => {
-          if (spell === 'longjump') {
+          if (spell === SpellType.LONGJUMP) {
             // Verificar energía del vacío antes de intentar el salto
             if (!this.spaceship || this.spaceship.voidEnergyCurrent < 50) {
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
@@ -5116,10 +5114,10 @@ export class GameEngine {
               // Sin target válido: placeholder
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
             }
-          } else if (spell === 'speed') {
+          } else if (spell === SpellType.SPEED) {
             // Start Speed Rite animation (applies buff internally)
             try { this.animationManager.startSpeedRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'SpeedRite start error', e); }
-          } else if (spell === 'gaterite') {
+          } else if (spell === SpellType.GATE_RITE) {
             // Gate Rite: requiere planeta seleccionado y distancia ≤ 50u a la superficie
             const t = target as any;
             const isPlanet = typeof t?.getTargetType === 'function' && String(t.getTargetType?.()) === 'planet';
@@ -5136,10 +5134,10 @@ export class GameEngine {
             // Limpiar selección de target para que la cinemática se vea limpia
             try { this.clearTargetSelection(); } catch {}
             try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
-          } else if (spell === 'eternalrite') {
+          } else if (spell === SpellType.ETERNAL_RITE) {
             // Eternal Rite: ritual suicide animation (reduces health internally)
             try { this.animationManager.startEternalRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'EternalRite start error', e); }
-          } else if (spell === 'disrupt') {
+          } else if (spell === SpellType.DISRUPT) {
             // Material Disruption Rite: beam attack animation
             if (target && this.spaceship) {
               const anyT: any = target as any;
@@ -5165,7 +5163,7 @@ export class GameEngine {
       }
       // Si el grimorio no está abierto: usar el hechizo seleccionado persistente (si existe)
       if (this.grimoirePanel) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as 'speed'|'longjump'|'gaterite'|'eternalrite'|'disrupt'|null;
+        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as SpellType | null;
         if (!selected) return;
         // Immediately clear selection upon pressing 'h'
         try { (this.grimoirePanel as any)?.clearSelection?.(); } catch {}
@@ -5183,8 +5181,16 @@ export class GameEngine {
           this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
         }
         this.animationManager.startBlockingDelay(2000);
+        // Reproducir sonido de pre-ritual
+        try {
+          if (this.audio) {
+            this.audio.play('sfx_precast_ritual', { bus: 'sfx', volume: 0.7 });
+          }
+        } catch (e) {
+          this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Pre-cast ritual sound failed', e);
+        }
         setTimeout(() => {
-          if (selected === 'longjump') {
+          if (selected === SpellType.LONGJUMP) {
             if (!this.spaceship || this.spaceship.voidEnergyCurrent < 50) {
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
               return;
@@ -5206,9 +5212,9 @@ export class GameEngine {
             } else {
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
             }
-          } else if (selected === 'speed') {
+          } else if (selected === SpellType.SPEED) {
             try { this.animationManager.startSpeedRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'SpeedRite start error', e); }
-          } else if (selected === 'gaterite') {
+          } else if (selected === SpellType.GATE_RITE) {
             const t = target as any;
             const isPlanet = typeof t?.getTargetType === 'function' && String(t.getTargetType?.()) === 'planet';
             if (!isPlanet) { this.showPlaceholderText('GATE RITE REQUIERE PLANETA', 2000); return; }
@@ -5222,10 +5228,10 @@ export class GameEngine {
             if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
             try { this.clearTargetSelection(); } catch {}
             try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
-          } else if (selected === 'eternalrite') {
+          } else if (selected === SpellType.ETERNAL_RITE) {
             // Eternal Rite: ritual suicide animation
             try { this.animationManager.startEternalRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'EternalRite start error', e); }
-          } else if (selected === 'disrupt') {
+          } else if (selected === SpellType.DISRUPT) {
             // Material Disruption Rite
             if (target && this.spaceship) {
               const anyT: any = target as any;
@@ -6214,7 +6220,7 @@ export class GameEngine {
         const ch = (e: MouseEvent) => {
           if (!this.grimoirePanel || !this.grimoirePanel.isEnabled()) return;
           // Prefer UI: set selected spell from hover
-          const t = (this.grimoirePanel as any).getHoveredSpellType?.() as 'speed'|'longjump'|null;
+          const t = (this.grimoirePanel as any).getHoveredSpellType?.();
           if (t) {
             try { (this.grimoirePanel as any).setSelectedSpellType?.(t); } catch {}
           }

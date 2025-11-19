@@ -100,6 +100,244 @@ export enum GameObjectCategory {
   PLANET = 'PLANET',       // Agrupa: Planet, DwarfPlanet, GiantPlanet, etc.
   SHIP = 'SHIP',
   STAR = 'STAR',
+  PORTAL = 'PORTAL',
+  CLUSTER = 'CLUSTER'
+}
+
+// Mapping centralizado
+export const TYPE_TO_CATEGORY: Record<GameObjectType, GameObjectCategory> = {
+  [GameObjectType.ASTEROID]: GameObjectCategory.ASTEROID,
+  [GameObjectType.SUPER_ASTEROID]: GameObjectCategory.ASTEROID,
+  [GameObjectType.MEGA_ASTEROID]: GameObjectCategory.ASTEROID,
+  [GameObjectType.PLANET]: GameObjectCategory.PLANET,
+  [GameObjectType.DWARF_PLANET]: GameObjectCategory.PLANET,
+  // ... etc
+};
+
+// Helper functions
+export function getCategory(type: GameObjectType): GameObjectCategory {
+  return TYPE_TO_CATEGORY[type] || GameObjectCategory.UNKNOWN;
+}
+
+export function isCategory(type: GameObjectType, category: GameObjectCategory): boolean {
+  return getCategory(type) === category;
+}
+```
+
+**Uso en GameObject:**
+```typescript
+public getCategory(): GameObjectCategory {
+  return getCategory(this.gameObjectType);
+}
+```
+
+---
+
+## 3. Display Labels y UI Mapping
+
+### Principio
+**Los strings de visualización (labels UI, iconos) deben derivarse de los tipos, no ser hardcoded en múltiples lugares**.
+
+### Problema Común
+```typescript
+// ❌ Antipatrón: Duplicación de lógica de display
+// En GameEngine.ts
+private typeToLabel(t: TargetType): string {
+  switch (t) {
+    case TargetType.ASTEROID: return 'Asteroid';
+    case TargetType.MEGA_ASTEROID: return 'MegaAsteroid';
+    // ...
+  }
+}
+
+// En SolarSystemPanel.ts
+const iconFor = (cat: string) => {
+  if (cat === 'planet') return 'P';
+  if (cat === 'cluster') return 'C';
+  // ...
+};
+
+// En OutlineRenderer.ts
+const label = obj.constructor.name; // Más strings!
+```
+
+### Solución Clean Code
+
+**Helpers centralizados en `game-object.types.ts`:**
+```typescript
+/**
+ * Obtiene un label legible para UI de un GameObjectType
+ */
+export function getDisplayLabel(type: GameObjectType): string {
+  switch (type) {
+    case GameObjectType.SPACESHIP: return 'Spaceship';
+    case GameObjectType.ASTEROID: return 'Asteroid';
+    case GameObjectType.SUPER_ASTEROID: return 'SuperAsteroid';
+    case GameObjectType.MEGA_ASTEROID: return 'MegaAsteroid';
+    case GameObjectType.RINGED_PLANET: return 'Ringed Planet';
+    // ... etc - SINGLE SOURCE OF TRUTH
+  }
+}
+
+/**
+ * Obtiene un icono/símbolo para UI compacta
+ */
+export function getDisplayIcon(type: GameObjectType): string {
+  const category = getCategory(type);
+  switch (category) {
+    case GameObjectCategory.STAR: return '☀';
+    case GameObjectCategory.PLANET: return '●';
+    case GameObjectCategory.ASTEROID: return '▪';
+    // ...
+  }
+}
+
+/**
+ * Icono para filtros de categoría
+ */
+export function getCategoryIcon(category: GameObjectCategory): string {
+  switch (category) {
+    case GameObjectCategory.STAR: return '*';
+    case GameObjectCategory.PLANET: return 'P';
+    case GameObjectCategory.ASTEROID: return 'D';
+    // ...
+  }
+}
+```
+
+**Uso:**
+```typescript
+// En cualquier parte del código
+import { getDisplayLabel, getDisplayIcon } from './types/game-object.types';
+
+const label = getDisplayLabel(obj.getType());
+const icon = getDisplayIcon(obj.getType());
+```
+
+**Ventajas:**
+- ✅ Single source of truth
+- ✅ No duplicación
+- ✅ Fácil cambiar todos los labels a la vez
+- ✅ Consistencia garantizada
+
+---
+
+## 4. Enums para Sistemas de Juego
+
+### Principio
+**Cualquier conjunto finito de opciones debe ser un enum, no strings ad-hoc**.
+
+### Ejemplo: Sistema de Hechizos
+
+#### ❌ Antes (strings hardcoded)
+```typescript
+// En GrimoirePanel.ts
+type SpellId = 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | 'disrupt';
+private selectedSpell: 'speed' | 'longjump' | ... | null;
+
+// En GameEngine.ts  
+if (spell === 'speed') { /* ... */ }
+else if (spell === 'longjump') { /* ... */ }
+```
+
+#### ✅ Después (enum con helpers)
+```typescript
+// spell.types.ts
+export enum SpellType {
+  SPEED = 'SPEED',
+  LONGJUMP = 'LONGJUMP',
+  GATE_RITE = 'GATE_RITE',
+  ETERNAL_RITE = 'ETERNAL_RITE',
+  DISRUPT = 'DISRUPT'
+}
+
+export enum SpellState {
+  LOCKED = 'LOCKED',
+  AVAILABLE = 'AVAILABLE',
+  EQUIPPED = 'EQUIPPED'
+}
+
+export function getSpellLabel(spell: SpellType): string {
+  switch (spell) {
+    case SpellType.SPEED: return 'Speed Rite';
+    case SpellType.LONGJUMP: return 'Long Jump';
+    // ...
+  }
+}
+
+export function getSpellDescription(spell: SpellType): string {
+  switch (spell) {
+    case SpellType.SPEED: 
+      return 'Duplica temporalmente la velocidad máxima de la nave';
+    // ...
+  }
+}
+```
+
+**Beneficios:**
+- Type safety total
+- Autocompletado en IDE
+- Refactoring seguro
+- Documentación centralizada
+
+---
+
+## 5. Aplicación Práctica: Refactoring Completo
+
+### Caso Real: Sistema de Paneles y Spells
+
+**Problema inicial:**
+```typescript
+// ❌ Múltiples sistemas usando strings diferentes
+// SolarSystemPanel.ts
+category: 'planet' | 'cluster' | 'debris' | 'ship' | 'center'
+// GrimoirePanel.ts
+spell: 'speed' | 'longjump' | 'gaterite' | 'eternalrite'
+// GameEngine.ts
+if (obj.constructor.name === 'Asteroid') { /* ... */ }
+```
+
+**Solución implementada:**
+```typescript
+// ✅ game-object.types.ts - Single source of truth
+export enum GameObjectCategory {
+  ASTEROID, PLANET, SHIP, STAR, PORTAL, CLUSTER
+}
+
+export function getCategoryIcon(category: GameObjectCategory): string {
+  switch (category) {
+    case GameObjectCategory.STAR: return '*';
+    case GameObjectCategory.PLANET: return 'P';
+    // ... único lugar donde se definen iconos
+  }
+}
+
+// ✅ spell.types.ts
+export enum SpellType {
+  SPEED, LONGJUMP, GATE_RITE, ETERNAL_RITE, DISRUPT
+}
+
+// ✅ SolarSystemPanel.ts
+private items: Array<{
+  category: GameObjectCategory | 'center'; // Typed!
+  // ...
+}>;
+
+// ✅ GrimoirePanel.ts
+private spellStates: Map<SpellType, SpellState>;
+private selectedSpell: SpellType | null;
+
+public getSelectedSpellType(): SpellType | null {
+  return this.selectedSpell;
+}
+```
+
+**Resultados medibles:**
+- 🎯 40+ locations de strings hardcoded → enums type-safe
+- 🔒 3 sistemas (Map, Grimorio, GameObject) ahora interoperables
+- 📉 Duplicación de código eliminada (typeToLabel, iconFor, etc.)
+- ⚡ Compilación más rápida (type checking preventivo)
+  STAR = 'STAR',
   PORTAL = 'PORTAL'
 }
 

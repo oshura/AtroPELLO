@@ -1,4 +1,5 @@
 import { Vector3 } from '../../types/game.types';
+import { SpellType, SpellState, isSpellType } from '../types/spell.types';
 
 /**
  * GrimoirePanel: full-screen, opaque panel rendering an ancient open book
@@ -29,15 +30,21 @@ export class GrimoirePanel {
   // Static layout data (seeded RNG)
   private rng!: () => number;
   private speckles: Array<{ x: number; y: number; r: number; color: string }> = [];
-  private iconPlacements: Array<{ type: string; x: number; y: number; s: number; r: number }> = [];
+  private iconPlacements: Array<{ type: SpellType | string; x: number; y: number; s: number; r: number }> = [];
   private handwritingLines: Array<Array<{ x: number; y: number }>> = [];
   // Handwriting as segmented "words": each line is an array of word-polylines
   private handwritingSegments: Array<Array<Array<{ x: number; y: number }>>> = [];
   private pageWrinkles: Array<Array<{ x:number; y:number }>> = [];
   private hoveredIconIndex: number = -1;
   // Spell states and selection
-  private spellStates: Record<string, 'locked'|'available'|'equipped'> = { speed: 'available', longjump: 'available', gaterite: 'available', eternalrite: 'available', disrupt: 'available' };
-  private selectedSpell: 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | 'disrupt' | null = null;
+  private spellStates: Map<SpellType, SpellState> = new Map([
+    [SpellType.SPEED, SpellState.AVAILABLE],
+    [SpellType.LONGJUMP, SpellState.AVAILABLE],
+    [SpellType.GATE_RITE, SpellState.AVAILABLE],
+    [SpellType.ETERNAL_RITE, SpellState.AVAILABLE],
+    [SpellType.DISRUPT, SpellState.AVAILABLE]
+  ]);
+  private selectedSpell: SpellType | null = null;
   // Reading mode animation (zoom + slight tilt)
   private animStartMs: number = performance.now();
   private animDurMs: number = 320;
@@ -83,6 +90,11 @@ export class GrimoirePanel {
    * para no interceptar clicks destinados al mapa u otros HUDs.
    */
   public isInteractive(): boolean { return this.enabled && !this.animClosingPendingDisable; }
+  /**
+   * Check if this panel occludes the 3D scene at the given viewport coordinates.
+   * Uses isInteractive() to avoid occluding during closing animation.
+   */
+  public containsPoint(_x: number, _y: number): boolean { return this.isInteractive(); }
   public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
     // Convert to canvas pixel coords (texture covers full viewport)
     const x = ((clientX - rect.left) / Math.max(1, rect.width)) * viewportW;
@@ -92,41 +104,54 @@ export class GrimoirePanel {
   }
 
   // Expose hovered spell type for casting
-  public getHoveredSpellType(): 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | 'disrupt' | null {
+  public getHoveredSpellType(): SpellType | null {
     if (this.hoveredIconIndex < 0) return null;
-    const t = this.iconPlacements[this.hoveredIconIndex]?.type;
-    return (t === 'speed' || t === 'longjump' || t === 'gaterite' || t === 'eternalrite' || t === 'disrupt') ? t : null;
+    const icon = this.iconPlacements[this.hoveredIconIndex];
+    // Only return SpellType enums, ignore decorative string glyphs
+    return (icon && isSpellType(icon.type)) ? icon.type : null;
   }
-  public getSelectedSpellType(): 'speed' | 'longjump' | 'gaterite' | 'eternalrite' | 'disrupt' | null { return this.selectedSpell; }
-  public setSelectedSpellType(t: 'speed'|'longjump'|'gaterite'|'eternalrite'|'disrupt'|null): void {
+  
+  public getSelectedSpellType(): SpellType | null { 
+    return this.selectedSpell; 
+  }
+  
+  public setSelectedSpellType(t: SpellType | null): void {
     // Toggle off if the same glyph is clicked again
     if (t && this.selectedSpell === t) {
       this.selectedSpell = null;
     } else {
       this.selectedSpell = t;
     }
-    // Update states based on the current selectedSpell (not the incoming param), so deselect works properly
+    // Update states based on the current selectedSpell
     const sel = this.selectedSpell;
-  (['speed','longjump','gaterite','eternalrite','disrupt'] as const).forEach(k => {
+    const allSpells = [SpellType.SPEED, SpellType.LONGJUMP, SpellType.GATE_RITE, SpellType.ETERNAL_RITE, SpellType.DISRUPT];
+    allSpells.forEach(k => {
+      const currentState = this.spellStates.get(k);
       if (!sel) {
-        if (this.spellStates[k] !== 'locked') this.spellStates[k] = 'available';
+        if (currentState !== SpellState.LOCKED) this.spellStates.set(k, SpellState.AVAILABLE);
       } else if (k === sel) {
-        this.spellStates[k] = 'equipped';
-      } else if (this.spellStates[k] !== 'locked') {
-        this.spellStates[k] = 'available';
+        this.spellStates.set(k, SpellState.EQUIPPED);
+      } else if (currentState !== SpellState.LOCKED) {
+        this.spellStates.set(k, SpellState.AVAILABLE);
       }
     });
   }
+  
   /** Clear any current selection completely (external casting can call this). */
   public clearSelection(): void {
     this.selectedSpell = null;
-    (['speed','longjump','gaterite','eternalrite','disrupt'] as const).forEach(k => {
-      if (this.spellStates[k] !== 'locked') this.spellStates[k] = 'available';
+    const allSpells = [SpellType.SPEED, SpellType.LONGJUMP, SpellType.GATE_RITE, SpellType.ETERNAL_RITE, SpellType.DISRUPT];
+    allSpells.forEach(k => {
+      const currentState = this.spellStates.get(k);
+      if (currentState !== SpellState.LOCKED) this.spellStates.set(k, SpellState.AVAILABLE);
     });
   }
-  public setSpellState(t: 'speed'|'longjump'|'gaterite', state: 'locked'|'available'|'equipped'): void {
-    this.spellStates[t] = state;
-    if (state !== 'equipped' && this.selectedSpell === t) this.selectedSpell = null;
+
+  public setSpellState(spellType: SpellType, state: SpellState): void {
+    this.spellStates.set(spellType, state);
+    if (state !== SpellState.EQUIPPED && this.selectedSpell === spellType) {
+      this.selectedSpell = null;
+    }
   }
 
   private initGLResources(): void {
@@ -227,7 +252,7 @@ export class GrimoirePanel {
       const ic = this.iconPlacements[this.hoveredIconIndex];
       const t = ic.type;
       if (this.cursorPx !== null && this.cursorPy !== null) {
-        const state = this.spellStates[t] ?? 'locked';
+        const state = isSpellType(t) ? (this.spellStates.get(t) || SpellState.AVAILABLE) : SpellState.LOCKED;
         const Wb = this.measureTooltipWidth(t, state);
         // Determine if hovered glyph belongs to the right page
         const isRightPage = (
@@ -378,19 +403,28 @@ export class GrimoirePanel {
     // Frames behind all glyphs to mask handwriting beneath
     for (let i = 0; i < this.iconPlacements.length; i++) {
       const p = this.iconPlacements[i];
-      const state = this.spellStates[p.type] ?? 'locked';
+      // Get state: decorative glyphs (strings NOT in SpellType enum) are LOCKED, real spells use Map
+      const isRealSpell = isSpellType(p.type);
+      let state: SpellState;
+      if (!isRealSpell) {
+        state = SpellState.LOCKED;
+      } else {
+        const mapValue = this.spellStates.get(p.type as SpellType);
+        state = mapValue || SpellState.AVAILABLE;
+      }
+      
       const equipped = (this.selectedSpell === p.type);
       this.drawGlyphFrame(c, p.x, p.y, p.r, state, equipped);
     }
     // Icons (precomputed) and hover effects (on top)
     for (let i=0;i<this.iconPlacements.length;i++) {
       const p = this.iconPlacements[i];
-  const state = this.spellStates[p.type] ?? 'locked';
+      const state = isSpellType(p.type) ? (this.spellStates.get(p.type) || SpellState.AVAILABLE) : SpellState.LOCKED;
   // Remove separate equipped glow pass; neon effect is applied directly to the rune when equipped
       const alphaBefore = c.globalAlpha;
-      if (state === 'locked') c.globalAlpha = 0.45;
-      if (p.type === 'speed') {
-        if (state === 'equipped') {
+      if (state === SpellState.LOCKED) c.globalAlpha = 0.45;
+      if (p.type === SpellType.SPEED) {
+        if (state === SpellState.EQUIPPED) {
           c.save();
           const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
           c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
@@ -401,8 +435,8 @@ export class GrimoirePanel {
           this.drawSpeedRune(c, p.x, p.y, p.r*0.9);
         }
       }
-      else if (p.type === 'longjump') {
-        if (state === 'equipped') {
+      else if (p.type === SpellType.LONGJUMP) {
+        if (state === SpellState.EQUIPPED) {
           c.save();
           const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
           c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
@@ -413,8 +447,8 @@ export class GrimoirePanel {
           this.drawLongJumpRune(c, p.x, p.y, p.r*0.9);
         }
       }
-      else if (p.type === 'gaterite') {
-        if (state === 'equipped') {
+      else if (p.type === SpellType.GATE_RITE) {
+        if (state === SpellState.EQUIPPED) {
           c.save();
           const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 3.4));
           c.shadowColor = `rgba(255,140,0,${pulse.toFixed(3)})`;
@@ -425,8 +459,8 @@ export class GrimoirePanel {
           this.drawGateRiteRune(c, p.x, p.y, p.r*0.9);
         }
       }
-      else if (p.type === 'eternalrite') {
-        if (state === 'equipped') {
+      else if (p.type === SpellType.ETERNAL_RITE) {
+        if (state === SpellState.EQUIPPED) {
           c.save();
           const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 2.8));
           c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
@@ -437,8 +471,8 @@ export class GrimoirePanel {
           this.drawEternalRite(c, p.x, p.y, p.r*0.9);
         }
       }
-      else if (p.type === 'disrupt') {
-        if (state === 'equipped') {
+      else if (p.type === SpellType.DISRUPT) {
+        if (state === SpellState.EQUIPPED) {
           c.save();
           const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.2));
           c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
@@ -569,25 +603,24 @@ export class GrimoirePanel {
   const ljY = this.rightPage.y + this.rightPage.h * 0.60;
   const grX = this.rightPage.x + this.rightPage.w * 0.78;
   const grY = this.rightPage.y + this.rightPage.h * 0.78;
-  this.iconPlacements.push({ type: 'speed', x: speedX, y: speedY, s: 1.0, r: speedR });
-  this.iconPlacements.push({ type: 'longjump', x: ljX, y: ljY, s: 1.0, r: ljR });
-  this.iconPlacements.push({ type: 'gaterite', x: grX, y: grY, s: 1.0, r: grR });
+  this.iconPlacements.push({ type: SpellType.SPEED, x: speedX, y: speedY, s: 1.0, r: speedR });
+  this.iconPlacements.push({ type: SpellType.LONGJUMP, x: ljX, y: ljY, s: 1.0, r: ljR });
+  this.iconPlacements.push({ type: SpellType.GATE_RITE, x: grX, y: grY, s: 1.0, r: grR });
 
-    // Add five invented glyphs: eternalrite (available), four locked
+    // Add five invented glyphs: eternalrite (available), four locked/decorative
     const lp = this.leftPage, rp = this.rightPage;
     const rL = Math.min(lp.w, lp.h) * 0.095;
     const rR = Math.min(rp.w, rp.h) * 0.085;
     // Left page: ignis (top), eternalrite (middle), disrupt (AVAILABLE - lower middle), lux (bottom)
     this.iconPlacements.push({ type: 'ignis', x: lp.x + lp.w*0.72, y: lp.y + lp.h*0.26, s: 1.0, r: rL });
-    this.iconPlacements.push({ type: 'eternalrite', x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.45, s: 1.0, r: rL*0.95 });
-    this.iconPlacements.push({ type: 'disrupt', x: lp.x + lp.w*0.68, y: lp.y + lp.h*0.62, s: 1.0, r: rL*0.92 });
+    this.iconPlacements.push({ type: SpellType.ETERNAL_RITE, x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.45, s: 1.0, r: rL*0.95 });
+    this.iconPlacements.push({ type: SpellType.DISRUPT, x: lp.x + lp.w*0.68, y: lp.y + lp.h*0.62, s: 1.0, r: rL*0.92 });
     this.iconPlacements.push({ type: 'lux',   x: lp.x + lp.w*0.38, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
     // Right page (spare spaces): vinculum (upper-left), tempus (lower-left)
     this.iconPlacements.push({ type: 'vinculum', x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
     this.iconPlacements.push({ type: 'tempus',   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
 
-    // Ensure new glyphs default to locked state (except eternalrite and disrupt which are available)
-    ['ignis','lux','vinculum','tempus'].forEach(t => { if (!(t in this.spellStates)) this.spellStates[t] = 'locked'; });
+    // Decorative glyphs (ignis, lux, vinculum, tempus) are handled as strings and always render as locked
   }
 
   // Mulberry32 PRNG
@@ -886,7 +919,7 @@ export class GrimoirePanel {
   }
 
   // Parchment frame behind glyphs to mask handwriting and provide a clean space
-  private drawGlyphFrame(c: CanvasRenderingContext2D, cx:number, cy:number, r:number, state: 'locked'|'available'|'equipped' = 'available', equipped: boolean = false): void {
+  private drawGlyphFrame(c: CanvasRenderingContext2D, cx:number, cy:number, r:number, state: SpellState = SpellState.AVAILABLE, equipped: boolean = false): void {
     // Frame size relative to glyph radius
     const w = r * 2.2;
   const h = r * 1.6 * 2.25; // a bit taller for extra clearance (2.10 -> 2.25)
@@ -898,13 +931,13 @@ export class GrimoirePanel {
     c.shadowBlur = 6;
     c.shadowOffsetX = 0; c.shadowOffsetY = 3;
     // Fill: lighter parchment (locked even lighter/whiter)
-    c.fillStyle = state === 'locked' ? '#f7f4ec' : '#f7f0d8';
+    c.fillStyle = state === SpellState.LOCKED ? '#f7f4ec' : '#f7f0d8';
     this.roundRect(c, x, y, w, h, 6);
     c.fill();
     // Border
     c.shadowColor = 'transparent';
     c.lineWidth = 2.2;
-    if (state === 'locked') {
+    if (state === SpellState.LOCKED) {
       c.strokeStyle = 'rgba(80,80,80,0.35)';
     } else if (equipped) {
       c.strokeStyle = '#d4af37'; // golden
@@ -927,27 +960,31 @@ export class GrimoirePanel {
     c.restore();
   }
 
-  private drawSpellTooltip(c: CanvasRenderingContext2D, x:number, y:number, type: string, state: 'locked'|'available'|'equipped'): void {
+  private drawSpellTooltip(c: CanvasRenderingContext2D, x:number, y:number, type: SpellType | string, state: SpellState): void {
     let title: string;
     let desc: string;
-    if (type === 'longjump') {
+    if (type === SpellType.LONGJUMP) {
       title = 'Void Jump';
       desc = 'Tear the veil and traverse the void to your selected target.';
-    } else if (type === 'speed') {
+    } else if (type === SpellType.SPEED) {
       title = 'Double Phased Time Rite';
       desc = 'Double the ship\'s max speed for 2 minutes.';
-    } else if (type === 'gaterite') {
+    } else if (type === SpellType.GATE_RITE) {
       title = 'Gate Rite';
       desc = 'Rend a planet; birth an arcane portal to a new system.';
-    } else if (type === 'disrupt') {
+    } else if (type === SpellType.ETERNAL_RITE) {
+      title = 'Eternal Rite';
+      desc = 'Freeze time for all objects except your ship. Duration: 30 seconds.';
+    } else if (type === SpellType.DISRUPT) {
       title = 'Material Disruption Rite';
       desc = 'Unleash a beam of pure entropy. Asteroids within 50u crumble.';
     } else {
-      const cap = type.charAt(0).toUpperCase() + type.slice(1);
+      const typeStr = typeof type === 'string' ? type : String(type);
+      const cap = typeStr.charAt(0).toUpperCase() + typeStr.slice(1);
       title = `Sigillum ${cap}`;
       desc = 'Verba arcana obscura; incantatio vetusta et ineffabilis.';
     }
-    const stateText = state.toUpperCase();
+    const stateText = String(state); // Convert enum to string
     // Bubble scaled vertically by 1.5
     const pad = 10;
     c.save();
@@ -970,33 +1007,34 @@ export class GrimoirePanel {
     c.font = '12px serif';
     c.fillStyle = 'rgba(255,255,255,0.9)';
     c.fillText(desc, pad, 34);
-    c.fillStyle = state === 'locked' ? '#ff8888' : (state === 'equipped' ? '#ffd700' : '#a0ffa0');
+    c.fillStyle = state === SpellState.LOCKED ? '#ff8888' : (state === SpellState.EQUIPPED ? '#ffd700' : '#a0ffa0');
     c.fillText(stateText, pad, 50);
     c.restore();
   }
 
   // Measure tooltip bubble width (matches drawSpellTooltip font sizing)
-  private measureTooltipWidth(type: string, state: 'locked'|'available'|'equipped'): number {
+  private measureTooltipWidth(type: SpellType | string, state: SpellState): number {
     const c = this.ctx;
     let title: string;
     let desc: string;
-    if (type === 'longjump') {
+    if (type === SpellType.LONGJUMP) {
       title = 'Void Jump';
       desc = 'Tear the veil and traverse the void to your selected target.';
-    } else if (type === 'speed') {
+    } else if (type === SpellType.SPEED) {
       title = 'Double Phased Time Rite';
       desc = 'Double the ship\'s max speed for 2 minutes.';
-    } else if (type === 'gaterite') {
+    } else if (type === SpellType.GATE_RITE) {
       title = 'Gate Rite';
       desc = 'Rend a planet; birth an arcane portal to a new system.';
-    } else if (type === 'eternalrite') {
+    } else if (type === SpellType.ETERNAL_RITE) {
       title = 'Eternal Rite';
       desc = 'Embrace the void. Let the end become the beginning.';
-    } else if (type === 'disrupt') {
+    } else if (type === SpellType.DISRUPT) {
       title = 'Material Disruption Rite';
       desc = 'Unleash a beam of pure entropy. Asteroids within 50u crumble.';
     } else {
-      const cap = type.charAt(0).toUpperCase() + type.slice(1);
+      const typeStr = typeof type === 'string' ? type : String(type);
+      const cap = typeStr.charAt(0).toUpperCase() + typeStr.slice(1);
       title = `Sigillum ${cap}`;
       desc = 'Verba arcana obscura; incantatio vetusta et ineffabilis.';
     }
@@ -1006,7 +1044,7 @@ export class GrimoirePanel {
     c.font = 'italic 14px serif';
     const wTitle = c.measureText(title).width;
     c.font = '12px serif';
-    const stateText = state.toUpperCase();
+    const stateText = String(state); // Convert enum to string
     const wDesc = Math.max(c.measureText(desc).width, c.measureText(stateText).width);
     const Wb = Math.ceil(Math.max(wTitle, wDesc) + pad*2);
     c.restore();
@@ -1028,8 +1066,8 @@ export class GrimoirePanel {
   private drawPentacle(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
     c.save();
     c.translate(x,y);
-  // Make the pentacle taller without changing panel dimensions
-  const tall = 1.75; // ~25% taller
+    // Make the pentacle taller without changing panel dimensions
+    const tall = 1.75; // ~25% taller
     c.scale(1, tall);
     // Pulse factors
     const s = 1 + 0.06 * Math.sin(this.t * 2.2); // scale pulse

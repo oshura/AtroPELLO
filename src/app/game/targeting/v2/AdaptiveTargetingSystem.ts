@@ -192,9 +192,21 @@ export class AdaptiveTargetingSystem {
   // CORE DETECTION LOGIC
   // ===================================
 
-  public detectTargetAt(mousePos: { x: number; y: number }): AdaptiveTargetingResult {
+  public detectTargetAt(mousePos: { x: number; y: number }, skipDetection: boolean = false): AdaptiveTargetingResult {
     if (!this.camera || !this.canvas) {
       return { hoveredTarget: null, selectedTarget: this.currentSelected, nearbyTargets: [] };
+    }
+
+    // If a UI panel occludes the 3D scene, skip raycast detection but preserve current selection
+    if (skipDetection) {
+      // Clear hover but maintain selection
+      this.currentHovered = null;
+      this.previousHoveredId = null;
+      return { 
+        hoveredTarget: null, 
+        selectedTarget: this.currentSelected, 
+        nearbyTargets: [] 
+      };
     }
 
     const now = performance.now();
