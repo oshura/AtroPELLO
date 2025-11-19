@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { WebGLService } from '../../services/webgl.service';
 import { GameLogger } from '../utils/GameLogger';
 import { LogCategory } from '../../services/logging.service';
+import { truncateTextByWidth } from '../utils/text-utils';
 
 interface OutlineRenderData {
   x: number; // screen px (framebuffer pixels)
@@ -254,13 +255,7 @@ export class TargetOutline2DRenderer {
     ctx.font = '600 12px Segoe UI, Roboto, Arial';
     const topName = String(data.name || '');
     const maxWTop = 160;
-    let renderedTop = topName;
-    if (ctx.measureText(renderedTop).width > maxWTop) {
-      while (renderedTop.length > 3 && ctx.measureText(renderedTop + '…').width > maxWTop) {
-        renderedTop = renderedTop.slice(0, -1);
-      }
-      renderedTop += '…';
-    }
+    const renderedTop = truncateTextByWidth(topName, maxWTop, ctx);
     ctx.fillText(renderedTop, cx, cy - 38);
 
     // Previous name line removed (now used by type at bottom center)

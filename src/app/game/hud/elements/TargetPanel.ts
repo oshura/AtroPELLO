@@ -1,4 +1,5 @@
 import { ITargetable, TargetType } from '../../types/targeting.types';
+import { truncateTextByLength } from '../../utils/text-utils';
 
 export type Relation = 'ally' | 'neutral' | 'enemy';
 
@@ -65,7 +66,8 @@ export class TargetPanel {
   ctx.shadowColor = 'rgba(0,0,0,0.55)';
   ctx.shadowBlur = 4;
     const typeStr = (details as any).type !== undefined ? String((details as any).type) : '';
-    const title = typeStr ? `${typeStr}  ${this.state.name}` : `${this.state.name}`;
+    const fullTitle = typeStr ? `${typeStr}  ${this.state.name}` : `${this.state.name}`;
+    const title = truncateTextByLength(fullTitle, 42);
     // Bajar ligeramente el título
   ctx.fillText(title, x + 14, y + 38);
   ctx.shadowBlur = 0;
