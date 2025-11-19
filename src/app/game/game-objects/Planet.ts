@@ -1,6 +1,7 @@
-import { GameObject } from './GameObject';
-import { Vector3 } from '../types/game.types';
-import { ITargetable, TargetType } from './types/targeting.types';
+import { GameObject } from '../GameObject';
+import { Vector3 } from '../../types/game.types';
+import { ITargetable, TargetType } from '../types/targeting.types';
+import { GameObjectType } from '../types/game-object.types';
 
 export type PlanetColorName = 'verde' | 'azul_hielo' | 'marron' | 'gris' | 'azul_marino' | 'rojo_carmesi' | 'violeta_oscuro';
 
@@ -41,7 +42,8 @@ export class Planet extends GameObject implements ITargetable {
     this.baseColorName = colorName;
     const c = PLANET_COLORS[colorName];
     this.color = { r: c[0], g: c[1], b: c[2], a: 1 } as any;
-    this.objectType = TargetType.PLANET;
+    this.setType(GameObjectType.PLANET); // Establecer tipo de GameObject
+    this.objectType = TargetType.PLANET; // Mantener para compatibilidad
     
     // Health: planets are nearly indestructible (200-400 hits from ship)
     this.healthMax = 12000;
@@ -126,19 +128,4 @@ export enum PlanetType {
   Ringed = 'Ringed',
   Planetoid = 'Planetoid',
   Sun = 'Sun',
-}
-
-// Convenience subclasses for specific classifications
-export class DwarfPlanet extends Planet {
-  constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
-    super(id, colorName, radius, initialPos);
-    this.planetType = PlanetType.Dwarf;
-  }
-}
-
-export class Protoplanet extends Planet {
-  constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
-    super(id, colorName, radius, initialPos);
-    this.planetType = PlanetType.Protoplanet;
-  }
 }

@@ -1,8 +1,10 @@
 import { Vector3, Color } from '../types/game.types';
 import { TargetType } from './types/targeting.types';
+import { GameObjectType, GameObjectCategory, getCategory } from './types/game-object.types';
 
 /**
- * Clase base para todos los objetos 3D del juego
+ * Clase base para todos los objetos 3D del juego.
+ * Usa GameObjectType como fuente única de verdad para identificación de tipo.
  */
 export abstract class GameObject {
   public id: string;
@@ -62,7 +64,14 @@ export abstract class GameObject {
   public normals: Float32Array;
   public uvs: Float32Array;
   public colors: Float32Array; // Colores por vértice
-  // Tipo del objeto espacial (fuente única de verdad para tipo/target)
+  
+  /**
+   * Tipo del GameObject (fuente única de verdad).
+   * Las subclases DEBEN establecer esto en su constructor.
+   */
+  protected gameObjectType: GameObjectType = GameObjectType.UNKNOWN;
+  
+  // Tipo del objeto espacial para targeting (legacy, se mantiene por compatibilidad)
   protected objectType: TargetType = TargetType.UNKNOWN;
   
   // Buffers WebGL (se crean una vez)
@@ -118,7 +127,28 @@ export abstract class GameObject {
   protected abstract initGeometry(): void;
 
   /**
-   * Tipo de objeto/target unificado
+   * Obtiene el tipo de GameObject (fuente única de verdad)
+   */
+  public getType(): GameObjectType { 
+    return this.gameObjectType; 
+  }
+  
+  /**
+   * Establece el tipo de GameObject (solo debe usarse en constructores de subclases)
+   */
+  protected setType(type: GameObjectType): void {
+    this.gameObjectType = type;
+  }
+  
+  /**
+   * Obtiene la categoría del GameObject
+   */
+  public getCategory(): GameObjectCategory {
+    return getCategory(this.gameObjectType);
+  }
+  
+  /**
+   * Tipo de objeto/target unificado (legacy, para compatibilidad con sistema de targeting)
    */
   public getObjectType(): TargetType { return this.objectType; }
 

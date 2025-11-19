@@ -1,6 +1,7 @@
-import { Vector3, Color } from '../types/game.types';
+import { Vector3, Color } from '../../types/game.types';
 import { Planet, PlanetColorName, PlanetType } from './Planet';
 import { MegaAsteroid } from './MegaAsteroid';
+import { GameObjectType } from '../types/game-object.types';
 
 /**
  * EarthSplitPlanet: two hemispheres separated along Y (horizontal cut) with layered cap (crust/mantle/core)
@@ -50,6 +51,7 @@ export class EarthSplitPlanet extends Planet {
 
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3, separation: number = 300) {
     super(id, colorName, radius, initialPos);
+    this.setType(GameObjectType.EARTH_SPLIT_PLANET); // Cambiar tipo de Planet a EarthSplitPlanet
     this.planetType = PlanetType.Tierra;
     // Asignar separación solicitada (initGeometry ya se ejecutó, pero volveremos a aplicar colores más abajo)
     this.separation = Math.max(0, separation);

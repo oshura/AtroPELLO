@@ -1,4 +1,4 @@
-import { Portal } from '../Portal';
+import { Portal } from '../game-objects/Portal';
 import { WebGLService } from '../../services/webgl.service';
 import { ShaderManager } from '../ShaderManager';
 import { PortalShaderService } from '../shaders/PortalShaderService';

@@ -1,5 +1,5 @@
 import { Camera } from '../Camera';
-import { Spaceship } from '../Spaceship';
+import { Spaceship } from '../game-objects/Spaceship';
 import { Vector3 } from '../../types/game.types';
 import { GameLogger } from '../utils/GameLogger';
 import { LogCategory } from '../../services/logging.service';

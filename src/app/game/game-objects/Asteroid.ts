@@ -1,6 +1,7 @@
-import { GameObject } from './GameObject';
-import { Vector3 } from '../types/game.types';
-import { ITargetable, TargetType } from './types/targeting.types';
+import { GameObject } from '../GameObject';
+import { Vector3 } from '../../types/game.types';
+import { ITargetable, TargetType } from '../types/targeting.types';
+import { GameObjectType } from '../types/game-object.types';
 
 /**
  * Clase para los asteroides del juego
@@ -33,7 +34,8 @@ export class Asteroid extends GameObject implements ITargetable {
     );
 
     this.size = size;
-  this.objectType = TargetType.ASTEROID;
+    this.setType(GameObjectType.ASTEROID); // Establecer tipo de GameObject
+    this.objectType = TargetType.ASTEROID; // Mantener para compatibilidad con targeting
     this.color = { r: 0.6, g: 0.5, b: 0.4, a: 1.0 }; // Color gris-marrón rocoso
 
     // Health: small asteroids are fragile (1-3 hits from ship)

@@ -8,7 +8,7 @@ import { LoggingService, LogCategory } from '../../../services/logging.service';
 import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
 import { ITargetable } from '../../types/targeting.types';
-import { SuperAsteroid } from '../../SuperAsteroid';
+import { SuperAsteroid } from '../../game-objects/SuperAsteroid';
 import { mat4, vec3 } from 'gl-matrix';
 
 export enum OutlineType {

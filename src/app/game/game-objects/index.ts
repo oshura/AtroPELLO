@@ -1,0 +1,33 @@
+/**
+ * Barrel export para todos los GameObjects del juego.
+ * Centraliza las importaciones para facilitar el uso en otros módulos.
+ */
+
+// Tipos base
+export * from '../types/game-object.types';
+
+// Asteroides
+export * from './Asteroid';
+export * from './SuperAsteroid';
+export * from './MegaAsteroid';
+
+// Planetas
+export * from './Planet';
+export * from './DwarfPlanet';
+export * from './Protoplanet';
+export * from './GiantPlanet';
+export * from './GaseousPlanet';
+export * from './RingedPlanet';
+export * from './EarthSplitPlanet';
+
+// Estrellas
+export * from './Sun';
+
+// Portales
+export * from './Portal';
+
+// Naves
+export * from './Spaceship';
+
+// Clusters
+export * from './Cluster';

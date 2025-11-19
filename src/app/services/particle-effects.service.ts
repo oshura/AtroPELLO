@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { WebGLService } from './webgl.service';
 import { ShaderManager } from '../game/ShaderManager';
-import { Spaceship } from '../game/Spaceship';
+import { Spaceship } from '../game/game-objects/Spaceship';
 import { Camera } from '../game/Camera';
 import { vec3, quat } from 'gl-matrix';
 import { LoggingService, LogCategory, LogLevel } from './logging.service';

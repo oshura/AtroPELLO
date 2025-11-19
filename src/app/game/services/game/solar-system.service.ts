@@ -6,12 +6,10 @@ import { GameEngine } from '../../GameEngine';
 import { GameLogger } from '../../utils/GameLogger';
 import { LogCategory } from '../../../services/logging.service';
 import { Vector3 } from '../../../types/game.types';
-import { Sun } from '../../Sun';
-import { Planet, DwarfPlanet, Protoplanet } from '../../Planet';
-import { RingedPlanet } from '../../RingedPlanet';
-import { GaseousPlanet } from '../../GaseousPlanet';
-import { GiantPlanet } from '../../GiantPlanet';
-import { Portal } from '../../Portal';
+import {
+  Sun, Planet, DwarfPlanet, Protoplanet,
+  RingedPlanet, GaseousPlanet, GiantPlanet, Portal
+} from '../../game-objects';
 import { TargetType } from '../../types/targeting.types';
 
 /**

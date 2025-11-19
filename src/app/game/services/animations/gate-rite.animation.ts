@@ -5,7 +5,7 @@ import { CameraMode } from '../../Camera';
 import { SolarSystemSerializer } from '../game/solar-system-serializer';
 import { SystemGeneratorService } from '../game/system-generator.service';
 import { SolarSystemService } from '../game/solar-system.service';
-import { Portal } from '../../Portal';
+import { Portal } from '../../game-objects/Portal';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
 import { GameLogger } from '../../utils/GameLogger';
 

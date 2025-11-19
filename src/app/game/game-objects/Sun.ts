@@ -1,6 +1,7 @@
 import { Planet, PlanetColorName, PlanetType } from './Planet';
-import { TargetType } from './types/targeting.types';
-import { Vector3 } from '../types/game.types';
+import { TargetType } from '../types/targeting.types';
+import { Vector3 } from '../../types/game.types';
+import { GameObjectType } from '../types/game-object.types';
 
 /**
  * Sun: a bright self-lit star with additive glow. Treated as a special Planet.
@@ -15,6 +16,7 @@ export class Sun extends Planet {
   constructor(id: string, radius: number, initialPos: Vector3) {
     // Color name isn't used for shaders here; pick a warm palette base
     super(id, 'rojo_carmesi' as PlanetColorName, radius, initialPos);
+    this.setType(GameObjectType.SUN); // Cambiar tipo de Planet a Sun
     this.planetType = PlanetType.Sun;
     
     // Health: the Sun is virtually indestructible (1000+ hits)

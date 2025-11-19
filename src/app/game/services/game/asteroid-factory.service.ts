@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { Vector3 } from '../../../types/game.types';
-import { Asteroid } from '../../Asteroid';
-import { SuperAsteroid } from '../../SuperAsteroid';
+import { Asteroid } from '../../game-objects/Asteroid';
+import { SuperAsteroid } from '../../game-objects/SuperAsteroid';
 
 @Injectable({ providedIn: 'root' })
 export class AsteroidFactoryService {

@@ -1,5 +1,6 @@
-import { Vector3 } from '../types/game.types';
+import { Vector3 } from '../../types/game.types';
 import { Planet, PlanetType, PlanetColorName } from './Planet';
+import { GameObjectType } from '../types/game-object.types';
 
 /**
  * RingedPlanet: same spherical geometry as Planet, but classified as Ringed.
@@ -9,6 +10,7 @@ export class RingedPlanet extends Planet {
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
     // Multiply radius by 2 to make ringed planets visually larger
     super(id, colorName, radius * 2, initialPos);
+    this.setType(GameObjectType.RINGED_PLANET); // Cambiar tipo de Planet a RingedPlanet
     this.planetType = PlanetType.Ringed;
   }
 }

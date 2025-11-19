@@ -1,8 +1,9 @@
-import { GameObject } from './GameObject';
-import { Vector3 } from '../types/game.types';
+import { GameObject } from '../GameObject';
+import { Vector3 } from '../../types/game.types';
 import { mat4, vec3, quat } from 'gl-matrix';
-import { GameLogger } from './utils/GameLogger';
-import { LogCategory } from '../services/logging.service';
+import { GameLogger } from '../utils/GameLogger';
+import { LogCategory } from '../../services/logging.service';
+import { GameObjectType } from '../types/game-object.types';
 
 /**
  * Estados del thruster para diferentes efectos visuales
@@ -117,6 +118,7 @@ export class Spaceship extends GameObject {
 
   constructor(position: Vector3 = { x: 0, y: 0, z: 0 }) {
     super('player-ship', position);
+    this.setType(GameObjectType.SPACESHIP); // Establecer tipo de GameObject
     this.color = { r: 0.7, g: 0.75, b: 0.8, a: 1.0 }; // Color metálico plateado base
 
     // Salud inicial de la nave (podrá equilibrarse luego)

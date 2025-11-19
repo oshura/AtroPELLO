@@ -1,5 +1,5 @@
-import { Asteroid } from '../Asteroid';
-import { SuperAsteroid } from '../SuperAsteroid';
+import { Asteroid } from '../game-objects/Asteroid';
+import { SuperAsteroid } from '../game-objects/SuperAsteroid';
 import { GameObject } from '../GameObject';
 import { ShaderManager } from '../ShaderManager';
 

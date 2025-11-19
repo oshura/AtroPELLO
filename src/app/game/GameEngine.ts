@@ -4,8 +4,15 @@ import { MusicDirectorService } from '../services/audio/music-director.service';
 import { WebGLService } from '../services/webgl.service';
 import { ParticleEffectsService } from '../services/particle-effects.service';
 import { GameObject } from './GameObject';
-import { Spaceship, ThrusterState } from './Spaceship';
-import { Asteroid } from './Asteroid';
+// Import all GameObjects from centralized barrel export
+import {
+  Spaceship, ThrusterState,
+  Asteroid, SuperAsteroid, MegaAsteroid,
+  Planet, PlanetColorName, PlanetType, DwarfPlanet, Protoplanet,
+  GaseousPlanet, GiantPlanet, RingedPlanet, EarthSplitPlanet,
+  Sun, Portal, ClusterObject,
+  GameObjectType, GameObjectCategory, getCategory
+} from './game-objects';
 import { Camera, CameraMode } from './Camera';
 import { ShaderManager } from './ShaderManager';
 import { SolarSystemService } from './services/game/solar-system.service';
@@ -14,8 +21,6 @@ import { PortalPersistenceService } from './services/game/portal-persistence.ser
 import { PortalRegistryService } from './services/game/portal-registry.service';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
-import { SuperAsteroid } from './SuperAsteroid';
-import { ClusterObject } from './Cluster';
 import { ReticleManager } from './targeting';
 import { AdaptiveTargetingIntegrator } from './targeting/v2/AdaptiveTargetingIntegrator';
 import { AsteroidClusterService } from './services/game/asteroid-cluster.service';
@@ -31,14 +36,6 @@ import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
 import { TargetOutline2DRenderer } from './hud/TargetOutline2DRenderer';
-import { Planet, PlanetColorName, PlanetType, DwarfPlanet, Protoplanet } from './Planet';
-import { GaseousPlanet } from './GaseousPlanet';
-import { GiantPlanet } from './GiantPlanet';
-import { RingedPlanet } from './RingedPlanet';
-import { Sun } from './Sun';
-import { EarthSplitPlanet } from './EarthSplitPlanet';
-import { MegaAsteroid } from './MegaAsteroid';
-import { Portal } from './Portal';
 import { LoggingService, LogCategory, LogLevel } from '../services/logging.service';
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';

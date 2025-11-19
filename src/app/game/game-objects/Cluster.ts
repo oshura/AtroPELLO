@@ -1,6 +1,7 @@
-import { GameObject } from './GameObject';
-import { Vector3 } from '../types/game.types';
-import { ITargetable, TargetType } from './types/targeting.types';
+import { GameObject } from '../GameObject';
+import { Vector3 } from '../../types/game.types';
+import { ITargetable, TargetType } from '../types/targeting.types';
+import { GameObjectType } from '../types/game-object.types';
 
 /**
  * Representación del "clúster asteroidal" como un objeto espacial único.
@@ -32,11 +33,12 @@ export class ClusterObject extends GameObject implements ITargetable {
 
     // Color tenue y neutral
     this.color = { r: 0.45, g: 0.55, b: 0.9, a: 1.0 };
+    this.setType(GameObjectType.CLUSTER); // Establecer tipo de GameObject
     this.voidMassUnits = 0; // sin masa del vacío
     // salud simbólica (no destructible)
     this.healthMax = 1;
     this.healthCurrent = 1;
-    this.objectType = TargetType.CLUSTER;
+    this.objectType = TargetType.CLUSTER; // Mantener para compatibilidad
   }
 
   protected initGeometry(): void {

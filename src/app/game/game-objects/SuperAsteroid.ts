@@ -1,6 +1,7 @@
-import { Vector3 } from '../types/game.types';
+import { Vector3 } from '../../types/game.types';
 import { Asteroid } from './Asteroid';
-import { TargetType } from './types/targeting.types';
+import { TargetType } from '../types/targeting.types';
+import { GameObjectType } from '../types/game-object.types';
 
 /**
  * SuperAsteroid: igual que Asteroid pero con tamaño grande.
@@ -16,6 +17,7 @@ export class SuperAsteroid extends Asteroid {
   ) {
     // Usar el tamaño proporcionado directamente (la factoría decide el multiplicador)
     super(id, position, baseSize, direction);
+    this.setType(GameObjectType.SUPER_ASTEROID); // Cambiar tipo de asteroide normal a super
     (this as any).objectType = TargetType.SUPER_ASTEROID;
     
     // Health: much tougher than regular asteroids (10-20 hits from ship)

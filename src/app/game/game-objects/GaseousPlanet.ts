@@ -1,5 +1,6 @@
-import { Vector3 } from '../types/game.types';
+import { Vector3 } from '../../types/game.types';
 import { Planet, PlanetType, PlanetColorName } from './Planet';
+import { GameObjectType } from '../types/game-object.types';
 
 /**
  * GaseousPlanet: Cannot collide (placeholder), type set to Gaseous.
@@ -11,6 +12,7 @@ export class GaseousPlanet extends Planet {
 
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
     super(id, colorName, radius, initialPos);
+    this.setType(GameObjectType.GASEOUS_PLANET); // Cambiar tipo de Planet a GaseousPlanet
     this.planetType = PlanetType.Gaseous;
   }
 
