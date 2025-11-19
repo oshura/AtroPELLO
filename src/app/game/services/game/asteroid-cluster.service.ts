@@ -408,6 +408,9 @@ export class AsteroidClusterService {
       if (cluster.lodMode === 'full') {
         // En modo 'full' todos los miembros siguen al centro + offset y rotan individualmente
         for (const obj of cluster.objects) {
+          // Skip asteroides marcados como independientes (están siendo eyectados)
+          if ((obj as any)._pendingEjection) continue;
+          
           const off = cluster.memberOffsets.get(obj.id);
           if (off) {
             obj.position.x = cluster.center.x + off.x;

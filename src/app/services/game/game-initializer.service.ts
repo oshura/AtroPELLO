@@ -17,6 +17,7 @@ import { SolarSystemService } from '../../game/services/game/solar-system.servic
 import { HumanSolarSystemService } from '../../game/services/game/human-solar-system.service';
 import { PortalPersistenceService } from '../../game/services/game/portal-persistence.service';
 import { PortalRegistryService } from '../../game/services/game/portal-registry.service';
+import { CollisionResponseService } from '../../game/services/physics/collision-response.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -118,6 +119,7 @@ export class GameInitializer {
       relationService,
       animationManager,
       this.logger,
+      this.injector.get(CollisionResponseService),
       solarSystemService,
       humanSolarSystemService,
       portalPersistenceService,
