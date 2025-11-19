@@ -10,8 +10,7 @@ import {
   Asteroid, SuperAsteroid, MegaAsteroid,
   Planet, PlanetColorName, PlanetType, DwarfPlanet, Protoplanet,
   GaseousPlanet, GiantPlanet, RingedPlanet, EarthSplitPlanet,
-  Sun, Portal, ClusterObject,
-  GameObjectType, GameObjectCategory, getCategory
+  Sun, Portal
 } from './game-objects';
 import { Camera, CameraMode } from './Camera';
 import { ShaderManager } from './ShaderManager';

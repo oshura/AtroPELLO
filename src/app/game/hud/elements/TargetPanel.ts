@@ -171,8 +171,9 @@ export class TargetPanel {
     const infoW = width - (infoX - x) - 12;
 
     ctx.save();
-    // Aumentar tamaño de fuente para mejor legibilidad
-  ctx.font = '24px Segoe UI, Roboto, sans-serif';
+    // Aumentar tamaño de fuente para mejor legibilidad en perspectiva
+    // Incrementado 1.5x (24px → 36px) para compensar el achatamiento en el plano inclinado
+  ctx.font = '32px Segoe UI, Roboto, sans-serif';
   ctx.textBaseline = 'top';
   ctx.textAlign = 'left';
   ctx.fillStyle = color;
@@ -183,7 +184,7 @@ export class TargetPanel {
     // details already defined above
   // Hacer la letra más alta (no más ancha) usando escala vertical
   const detailsScaleY = 1.0; // sin estirar verticalmente para evitar desplazamientos
-  const lineHeight = 28; // altura de línea más estable
+  const lineHeight = 42; // altura de línea aumentada proporcionalmente (1.5x de 28px)
     const lines: string[] = [];
     let voidMassLine: string | null = null;
     for (const [key, value] of Object.entries(details)) {
