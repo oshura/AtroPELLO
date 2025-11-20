@@ -1,3 +1,5 @@
+import { TargetType } from './targeting.types';
+
 /**
  * Enumeración de tipos de GameObjects en el juego.
  * Fuente única de verdad para identificar el tipo de un objeto espacial.
@@ -180,3 +182,31 @@ export function getCategoryIcon(category: GameObjectCategory): string {
     default: return '?';
   }
 }
+
+/**
+ * Convierte TargetType (usado en targeting) a GameObjectType (sistema principal)
+ * Permite usar getDisplayLabel() con datos del sistema de targeting
+ */
+export function targetTypeToGameObjectType(targetType: TargetType): GameObjectType {
+  switch (targetType) {
+    case TargetType.SPACESHIP: return GameObjectType.SPACESHIP;
+    case TargetType.ASTEROID: return GameObjectType.ASTEROID;
+    case TargetType.SUPER_ASTEROID: return GameObjectType.SUPER_ASTEROID;
+    case TargetType.MEGA_ASTEROID: return GameObjectType.MEGA_ASTEROID;
+    case TargetType.CLUSTER: return GameObjectType.CLUSTER;
+    case TargetType.PLANET: return GameObjectType.PLANET;
+    case TargetType.SUN: return GameObjectType.SUN;
+    case TargetType.PORTAL: return GameObjectType.PORTAL;
+    case TargetType.WAYPOINT:
+    case TargetType.UNKNOWN:
+    default: return GameObjectType.UNKNOWN;
+  }
+}
+
+/**
+ * Helper para obtener label display desde TargetType directamente
+ */
+export function getDisplayLabelFromTargetType(targetType: TargetType): string {
+  return getDisplayLabel(targetTypeToGameObjectType(targetType));
+}
+

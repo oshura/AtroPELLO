@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { CollisionPhysicsService, CollisionInput, Vector3D } from './collision-physics.service';
 import { GameLogger } from '../../utils/GameLogger';
 import { LogLevel, LogCategory } from '../../../services/logging.service';
+import { GameObjectType } from '../../types/game-object.types';
 
 /**
  * Configuración de colisión para diferentes tipos de objetos
@@ -59,7 +60,7 @@ export class CollisionResponseService {
    * 
    * @param ship Datos de la nave (posición, velocidad, bounding sphere)
    * @param target Objeto objetivo (posición, velocidad, bounding sphere, tipo)
-   * @param objectType Tipo de objeto ('Asteroid', 'SuperAsteroid', 'Planet', etc.)
+   * @param objectType Tipo de objeto (GameObjectType enum)
    * @returns Respuesta con nuevas posiciones y velocidades
    */
   calculateShipCollisionResponse(
@@ -70,7 +71,7 @@ export class CollisionResponseService {
       boundingSphere?: { radius: number };
       id?: string;
     },
-    objectType: string
+    objectType: GameObjectType
   ): CollisionResponse {
     
     const config = this.getCollisionConfig(objectType);
@@ -128,13 +129,13 @@ export class CollisionResponseService {
   }
   
   /**
-   * Obtiene la configuración de colisión según el tipo de objeto
+   * Obtiene la configuración de colisión según el tipo de objeto (GameObjectType enum)
    */
-  private getCollisionConfig(objectType: string): CollisionConfig {
+  private getCollisionConfig(objectType: GameObjectType): CollisionConfig {
     switch (objectType) {
       // Asteroides pequeños: muy ligeros, algo elásticos, móviles
-      case 'Asteroid':
-      case 'ClusterObject':
+      case GameObjectType.ASTEROID:
+      case GameObjectType.CLUSTER:
         return {
           restitution: 0.3, // Colisión semi-inelástica
           mass: 1,          // Muy ligeros
@@ -142,7 +143,7 @@ export class CollisionResponseService {
         };
       
       // Super asteroides: más pesados, menos elásticos, móviles
-      case 'SuperAsteroid':
+      case GameObjectType.SUPER_ASTEROID:
         return {
           restitution: 0.2,
           mass: 10,
@@ -150,7 +151,7 @@ export class CollisionResponseService {
         };
       
       // Mega asteroides: muy pesados, casi inelásticos, móviles pero difíciles de mover
-      case 'MegaAsteroid':
+      case GameObjectType.MEGA_ASTEROID:
         return {
           restitution: 0.1,
           mass: 100,
@@ -158,13 +159,13 @@ export class CollisionResponseService {
         };
       
       // Planetas y objetos masivos: prácticamente inmóviles
-      case 'Planet':
-      case 'RingedPlanet':
-      case 'GaseousPlanet':
-      case 'GiantPlanet':
-      case 'DwarfPlanet':
-      case 'Protoplanet':
-      case 'EarthSplitPlanet':
+      case GameObjectType.PLANET:
+      case GameObjectType.RINGED_PLANET:
+      case GameObjectType.GASEOUS_PLANET:
+      case GameObjectType.GIANT_PLANET:
+      case GameObjectType.DWARF_PLANET:
+      case GameObjectType.PROTOPLANET:
+      case GameObjectType.EARTH_SPLIT_PLANET:
         return {
           restitution: 0.05, // Muy inelástico
           mass: 1e6,         // Masa enorme
@@ -172,7 +173,7 @@ export class CollisionResponseService {
         };
       
       // Sol: completamente inmóvil
-      case 'Sun':
+      case GameObjectType.SUN:
         return {
           restitution: 0.0,
           mass: 1e10,
@@ -180,14 +181,23 @@ export class CollisionResponseService {
         };
       
       // Portales: sin física (etéreos)
-      case 'Portal':
+      case GameObjectType.PORTAL:
         return {
           restitution: 0.0,
           mass: 1,
           immovable: true
         };
+
+      // Nave espacial: masa media, semi-elástico
+      case GameObjectType.SPACESHIP:
+        return {
+          restitution: 0.3,
+          mass: 100,
+          immovable: false
+        };
       
-      // Default: comportamiento conservador
+      // Unknown: comportamiento conservador
+      case GameObjectType.UNKNOWN:
       default:
         GameLogger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Unknown object type in collision', { objectType });
         return {

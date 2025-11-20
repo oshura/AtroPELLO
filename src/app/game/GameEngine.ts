@@ -43,6 +43,7 @@ import { CollisionManagerService } from './services/physics/collision-manager.se
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
+import { getDisplayLabelFromTargetType } from './types/game-object.types';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -1120,7 +1121,7 @@ export class GameEngine {
       c.objects.forEach(o => {
         // Register reactive destruction callback for each asteroid
         this.registerDestructionCallback(o);
-        if ((o as any) instanceof SuperAsteroid) supers.push(o as unknown as ITargetable);
+        if ((o as unknown as GameObject)?.getType?.() === GameObjectType.SUPER_ASTEROID) supers.push(o as unknown as ITargetable);
         else smalls.push(o as unknown as ITargetable);
       });
     });
@@ -1631,7 +1632,7 @@ export class GameEngine {
       if (c.lodMode === 'proxy' && c.proxy) clusters.push(c.proxy as unknown as ITargetable);
       if (c.lodMode === 'full') {
         c.objects.forEach(o => {
-          if ((o as any) instanceof SuperAsteroid) supers.push(o as unknown as ITargetable);
+          if ((o as unknown as GameObject)?.getType?.() === GameObjectType.SUPER_ASTEROID) supers.push(o as unknown as ITargetable);
           else normals.push(o as unknown as ITargetable);
         });
       }
@@ -1882,12 +1883,32 @@ export class GameEngine {
   const baseDetails = (this as any)._targetDetailsCache?.[selected.id] || this.getFallbackDetails(selected);
   // Añadir propiedades visibles comunes: masa del vacío del objeto si existe
   const voidMass = (selected as any).voidMassUnits ?? 0;
-  // Mostrar etiqueta explícita según tipo concreto: MegaAsteroid sobreescribe SuperAsteroid
-  const isMega = ((selected as any)?.constructor?.name === 'MegaAsteroid') || (selType === TargetType.MEGA_ASTEROID);
-  const isSuper = !isMega && (selected instanceof SuperAsteroid);
-  const pTypeSel = String((selected as any)?.planetType || '').toLowerCase();
-  const specialSel = pTypeSel === 'ringed' ? 'Ringed' : (pTypeSel === 'dwarf' ? 'Dwarf' : (pTypeSel === 'protoplanet' ? 'Protoplanet' : null));
-  const typeLabel = isMega ? 'MegaAsteroid' : (isSuper ? 'SuperAsteroid' : (specialSel ?? this.typeToLabel(selType)));
+  
+  // Obtener tipo real del objeto usando getType()
+  const objectType = (selected as unknown as GameObject)?.getType?.() || GameObjectType.UNKNOWN;
+  
+  // Determinar label basado en tipo específico
+  let typeLabel: string;
+  switch (objectType) {
+    case GameObjectType.MEGA_ASTEROID:
+      typeLabel = 'MegaAsteroid';
+      break;
+    case GameObjectType.SUPER_ASTEROID:
+      typeLabel = 'SuperAsteroid';
+      break;
+    case GameObjectType.RINGED_PLANET:
+      typeLabel = 'Ringed';
+      break;
+    case GameObjectType.DWARF_PLANET:
+      typeLabel = 'Dwarf';
+      break;
+    case GameObjectType.PROTOPLANET:
+      typeLabel = 'Protoplanet';
+      break;
+    default:
+      typeLabel = getDisplayLabelFromTargetType(selType);
+  }
+  
       // Include planet-specific hints when selected is a planet
       const planetHints = (selType === TargetType.PLANET)
         ? {
@@ -2119,20 +2140,7 @@ export class GameEngine {
     }
   }
 
-  private typeToLabel(t: TargetType): string {
-    switch (t) {
-      case TargetType.CLUSTER: return 'Cluster';
-      case TargetType.MEGA_ASTEROID: return 'MegaAsteroid';
-      case TargetType.SUPER_ASTEROID: return 'SuperAsteroid';
-      case TargetType.ASTEROID: return 'Asteroid';
-      case TargetType.SPACESHIP: return 'Spaceship';
-      case TargetType.SUN: return 'Sun';
-      case TargetType.PLANET: return 'Planet';
-      case TargetType.PORTAL: return 'Portal';
-      case TargetType.WAYPOINT: return 'Waypoint';
-      default: return 'Unknown';
-    }
-  }
+  // typeToLabel() eliminado - usar getDisplayLabelFromTargetType() de game-object.types
 
   // Los efectos de propulsión ahora se manejan en ParticleEffectsService
 
@@ -3157,7 +3165,7 @@ export class GameEngine {
           if (rep) {
             // Asegurar opacidad completa para el representante
             (rep as any).renderOpacity = 1.0;
-            if ((rep as any) instanceof SuperAsteroid) supers.push(rep);
+            if ((rep as unknown as GameObject)?.getType?.() === GameObjectType.SUPER_ASTEROID) supers.push(rep);
             else smalls.push(rep);
           }
         } else if (c.proxy && (c.lodMode === 'proxy' || (c.fade && c.fade.target === 'members'))) {
@@ -3171,7 +3179,7 @@ export class GameEngine {
           for (const o of c.objects) {
             // Evitar duplicar el representante si ya se añadió explícitamente
             if (c.lodMode === 'proxy' && c.representativeId && o.id === c.representativeId) continue;
-            if ((o as any) instanceof SuperAsteroid) supers.push(o);
+            if ((o as unknown as GameObject)?.getType?.() === GameObjectType.SUPER_ASTEROID) supers.push(o);
             else smalls.push(o);
           }
         }
@@ -3379,11 +3387,32 @@ export class GameEngine {
             this.fetchAndCacheTargetDetails(tgt as ITargetable);
             const base = (this as any)._targetDetailsCache?.[tgt.id] || this.getFallbackDetails(tgt as ITargetable);
             const tt = (tgt as ITargetable).getTargetType?.();
-            const isMega = ((tgt as any)?.constructor?.name === 'MegaAsteroid') || ((tt as any) === TargetType.MEGA_ASTEROID);
-            const isSuper = !isMega && ((tgt as any)?.constructor?.name === 'SuperAsteroid');
-            const pTypeMap = String((tgt as any)?.planetType || '').toLowerCase();
-            const specialMap = pTypeMap === 'ringed' ? 'Ringed' : (pTypeMap === 'dwarf' ? 'Dwarf' : (pTypeMap === 'protoplanet' ? 'Protoplanet' : null));
-            const typeLabel = isMega ? 'MegaAsteroid' : (isSuper ? 'SuperAsteroid' : (specialMap ?? this.typeToLabel(tt)));
+            
+            // Obtener tipo real del objeto usando getType()
+            const mapObjectType = (tgt as unknown as GameObject)?.getType?.() || GameObjectType.UNKNOWN;
+            
+            // Determinar label basado en tipo específico
+            let typeLabel: string;
+            switch (mapObjectType) {
+              case GameObjectType.MEGA_ASTEROID:
+                typeLabel = 'MegaAsteroid';
+                break;
+              case GameObjectType.SUPER_ASTEROID:
+                typeLabel = 'SuperAsteroid';
+                break;
+              case GameObjectType.RINGED_PLANET:
+                typeLabel = 'Ringed';
+                break;
+              case GameObjectType.DWARF_PLANET:
+                typeLabel = 'Dwarf';
+                break;
+              case GameObjectType.PROTOPLANET:
+                typeLabel = 'Protoplanet';
+                break;
+              default:
+                typeLabel = getDisplayLabelFromTargetType(tt);
+            }
+            
             const planetHints = (tt === TargetType.PLANET) ? {
               planetType: (tgt as any).planetType || (base as any)?.planetType || (tgt as any).baseColorName,
               probabilityOfLifePct: (tgt as any).probabilityOfLifePct ?? (base as any)?.probabilityOfLifePct ?? 0,

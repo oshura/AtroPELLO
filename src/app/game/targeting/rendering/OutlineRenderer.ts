@@ -8,7 +8,8 @@ import { LoggingService, LogCategory } from '../../../services/logging.service';
 import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
 import { ITargetable } from '../../types/targeting.types';
-import { SuperAsteroid } from '../../game-objects/SuperAsteroid';
+import { GameObject } from '../../GameObject';
+import { GameObjectType, getDisplayLabelFromTargetType } from '../../types/game-object.types';
 import { mat4, vec3 } from 'gl-matrix';
 
 export enum OutlineType {
@@ -618,9 +619,17 @@ export class OutlineRenderer {
       const planetClass = String(anyT.planetType || '').toLowerCase();
       const isGiantPlanet = isPlanet && planetClass === 'giant';
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
-  const pTypeStr = String((target as any)?.planetType || '').toLowerCase();
-  const special = pTypeStr === 'ringed' ? 'Ringed' : (pTypeStr === 'dwarf' ? 'Dwarf' : (pTypeStr === 'protoplanet' ? 'Protoplanet' : null));
-  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : (special ?? this.typeToLabel(target.getTargetType?.()));
+  const objType = (target as unknown as GameObject)?.getType?.();
+  let typeLabel: string;
+  if (objType === GameObjectType.SUPER_ASTEROID) {
+    typeLabel = 'SuperAsteroid';
+  } else if (objType === GameObjectType.MEGA_ASTEROID) {
+    typeLabel = 'MegaAsteroid';
+  } else {
+    const pTypeStr = String((target as any)?.planetType || '').toLowerCase();
+    const special = pTypeStr === 'ringed' ? 'Ringed' : (pTypeStr === 'dwarf' ? 'Dwarf' : (pTypeStr === 'protoplanet' ? 'Protoplanet' : null));
+    typeLabel = special ?? getDisplayLabelFromTargetType(target.getTargetType?.());
+  }
       // Distance label should be relative to the provided origin (e.g., ship center)
       const dOx = target.position.x - originPos.x;
       const dOy = target.position.y - originPos.y;
@@ -857,9 +866,17 @@ export class OutlineRenderer {
       if (!scr || scr.w <= 0) continue; // detrás de cámara
       // Crear/actualizar textura de label
   // Mostrar etiqueta explícita para SuperAsteroid si aplica
-  const pTypeStr2 = String((target as any)?.planetType || '').toLowerCase();
-  const special2 = pTypeStr2 === 'ringed' ? 'Ringed' : (pTypeStr2 === 'dwarf' ? 'Dwarf' : (pTypeStr2 === 'protoplanet' ? 'Protoplanet' : null));
-  const typeLabel = target instanceof SuperAsteroid ? 'SuperAsteroid' : (special2 ?? this.typeToLabel(target.getTargetType?.()));
+  const objType2 = (target as unknown as GameObject)?.getType?.();
+  let typeLabel: string;
+  if (objType2 === GameObjectType.SUPER_ASTEROID) {
+    typeLabel = 'SuperAsteroid';
+  } else if (objType2 === GameObjectType.MEGA_ASTEROID) {
+    typeLabel = 'MegaAsteroid';
+  } else {
+    const pTypeStr2 = String((target as any)?.planetType || '').toLowerCase();
+    const special2 = pTypeStr2 === 'ringed' ? 'Ringed' : (pTypeStr2 === 'dwarf' ? 'Dwarf' : (pTypeStr2 === 'protoplanet' ? 'Protoplanet' : null));
+    typeLabel = special2 ?? getDisplayLabelFromTargetType(target.getTargetType?.());
+  }
       // Distancia para etiqueta: respecto al origen compartido (p.ej. centro de la nave)
       const anyT: any = target as any;
       let rEdge = 0;
@@ -1124,18 +1141,7 @@ export class OutlineRenderer {
     return entry;
   }
 
-  private typeToLabel(tt: any): string {
-    const t = String(tt || 'unknown').toLowerCase();
-    if (t.includes('mega_asteroid') || t === 'megaasteroid') return 'MegaAsteroid';
-    if (t.includes('super_asteroid') || t === 'superasteroid') return 'SuperAsteroid';
-    if (t.includes('cluster')) return 'Cluster';
-    if (t.includes('asteroid')) return 'Asteroid';
-    if (t.includes('spaceship')) return 'Spaceship';
-    if (t.includes('planet')) return 'Planet';
-    if (t.includes('portal')) return 'Portal';
-    if (t.includes('waypoint')) return 'Waypoint';
-    return 'Unknown';
-  }
+  // typeToLabel() eliminado - usar getDisplayLabelFromTargetType() de game-object.types
 
   private createProgram(vsSrc: string, fsSrc: string): WebGLProgram | null {
     if (!this.gl) return null;

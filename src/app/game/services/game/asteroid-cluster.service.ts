@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Vector3 } from '../../../types/game.types';
 import { Asteroid } from '../../game-objects/Asteroid';
 import { SuperAsteroid } from '../../game-objects/SuperAsteroid';
+import { GameObjectType } from '../../types/game-object.types';
 import { AsteroidFactoryService } from './asteroid-factory.service';
 import { ClusterObject } from '../../game-objects/Cluster';
 
@@ -232,13 +233,13 @@ export class AsteroidClusterService {
     // 3) Si no hay miembros: posición aleatoria en radio base; tamaño duplicado por defecto
     let proxyPos = { ...cluster.center };
     let proxySize = 8.0;
-    const superObj = cluster.objects.find(o => (o as any) instanceof SuperAsteroid) as SuperAsteroid | undefined;
+    const superObj = cluster.objects.find(o => o.getType?.() === GameObjectType.SUPER_ASTEROID) as SuperAsteroid | undefined;
     if (superObj) {
       proxyPos = { ...superObj.position };
       proxySize = 8.0; // duplicado
       cluster.representativeId = superObj.id;
     } else {
-      const firstAst = cluster.objects.find(o => (o as any) instanceof Asteroid) as Asteroid | undefined;
+      const firstAst = cluster.objects.find(o => o.getType?.() === GameObjectType.ASTEROID) as Asteroid | undefined;
       if (firstAst) {
         proxyPos = { ...firstAst.position };
         proxySize = 4.0; // mitad

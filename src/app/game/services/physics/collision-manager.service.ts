@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { CollisionPhysicsService, Vector3D } from './collision-physics.service';
 import { CollisionResponseService, CollisionResponse } from './collision-response.service';
 import { GameObject } from '../../GameObject';
-import { GameObjectSize } from '../../types/game-object.types';
+import { GameObjectType, GameObjectSize } from '../../types/game-object.types';
 import { LoggingService, LogLevel, LogCategory } from '../../../services/logging.service';
 
 /**
@@ -112,7 +112,8 @@ export class CollisionManagerService {
       velocityUsed: `(${targetVelocity.x.toFixed(2)}, ${targetVelocity.y.toFixed(2)}, ${targetVelocity.z.toFixed(2)})`
     });
     
-    // Calcular respuesta física
+    // Calcular respuesta física usando GameObjectType enum
+    const objectType = target.getType?.() || GameObjectType.UNKNOWN;
     const response = this.collisionResponse.calculateShipCollisionResponse(
       {
         position: ship.position,
@@ -125,7 +126,7 @@ export class CollisionManagerService {
         boundingSphere: target.boundingSphere!,
         id: target.id
       },
-      target.constructor.name // Legacy: aún necesita class name
+      objectType
     );
     
     this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '📊 Physics response calculated', {

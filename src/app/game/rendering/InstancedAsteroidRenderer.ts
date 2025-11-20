@@ -1,6 +1,6 @@
 import { Asteroid } from '../game-objects/Asteroid';
-import { SuperAsteroid } from '../game-objects/SuperAsteroid';
 import { GameObject } from '../GameObject';
+import { GameObjectType } from '../types/game-object.types';
 import { ShaderManager } from '../ShaderManager';
 
 /**
@@ -79,7 +79,14 @@ export class InstancedAsteroidRenderer {
   /** Ensure a base model exists from the first object of the list */
   private ensureModelFrom(list: GameObject[], kind: 'asteroid' | 'super'): void {
     if (this.model[kind].ready) return;
-    const first = list.find(o => (kind === 'asteroid' ? (o as any) instanceof Asteroid && !((o as any) instanceof SuperAsteroid) : (o as any) instanceof SuperAsteroid));
+    const first = list.find(o => {
+      const objType = o.getType?.();
+      if (kind === 'asteroid') {
+        return objType === GameObjectType.ASTEROID;
+      } else {
+        return objType === GameObjectType.SUPER_ASTEROID;
+      }
+    });
     if (!first) return;
     // Create shared buffers from first object's geometry
     const vbo = this.gl.createBuffer();
