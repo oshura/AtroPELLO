@@ -76,6 +76,155 @@ Extensión típica:
 
 ## Recetas comunes
 
+### ✨ PROCESO COMPLETO: Añadir un nuevo sonido a un evento del juego
+
+Este es el proceso determinista de 5 pasos para integrar un nuevo audio a cualquier evento del juego (UI, gameplay, spell casting, etc.):
+
+#### **Paso 1: Preparar el archivo de audio**
+- Coloca el archivo WAV/OGG/MP3 en: `public/assets/audio/`
+- Nomenclatura recomendada:
+  - UI: `ui_<accion>.wav` (ej: `ui_select_glyph.wav`)
+  - SFX: `sfx_<efecto>.wav` (ej: `sfx_collision_light.wav`)
+  - Música: `music_<escena>.wav` (ej: `music_combat.wav`)
+  - Voz: `voice_<momento>.wav` (ej: `voice_narrator_sample.wav`)
+
+#### **Paso 2: Registrar en el manifiesto**
+Edita `src/app/assets/audio/_manifest.json` y añade una entrada:
+```json
+{
+  "existing_sound": "/assets/audio/existing.wav",
+  "ui_select_glyph": "/assets/audio/select-glifo.wav"  // ← Nueva entrada
+}
+```
+**Nombre lógico** (clave): Usa snake_case, debe ser único y descriptivo.
+
+#### **Paso 3: Cargar el audio en GameEngine (si es necesario)**
+Si el sonido se usa durante el juego (no en menús Angular), verifica que se carga en `GameEngine.ts` tras `enableAudio()`:
+
+```typescript
+// En GameEngine.enableAudio() o método de precarga
+await this.audio.load('ui_select_glyph', manifest.ui_select_glyph);
+```
+
+**Nota**: Los sonidos UI comunes ya se precargan en el `AudioEngineService.initializeAudioAssets()` si el manifiesto está conectado correctamente.
+
+#### **Paso 4: Reproducir en el componente/clase donde ocurre el evento**
+
+##### **Opción A: Desde un componente que tiene acceso a AudioEngineService**
+```typescript
+// En el constructor o mediante inyección de dependencias
+constructor(private audioService: AudioEngineService | null) {}
+
+// En el método del evento
+handleGlyphEquip(): void {
+  if (this.audioService) {
+    this.audioService.play('ui_select_glyph', { 
+      volume: 0.6, 
+      bus: 'ui' 
+    });
+  }
+}
+```
+
+##### **Opción B: Desde una clase del engine (GameEngine, Panel, etc.)**
+```typescript
+// Pasar AudioEngineService en el constructor
+constructor(gl: WebGL2RenderingContext, audio: AudioEngineService | null) {
+  this.audio = audio;
+}
+
+// Reproducir en el método del evento
+equipSpell(spellType: SpellType): void {
+  // ... lógica del evento
+  if (this.audio) {
+    this.audio.play('ui_select_glyph', { volume: 0.6, bus: 'ui' });
+  }
+}
+```
+
+#### **Paso 5: Configurar opciones según el tipo de sonido**
+
+Elige el **bus** adecuado:
+- `'ui'` → Clicks, confirmaciones, navegación de menús (volumen ~0.5-0.8)
+- `'sfx'` → Efectos de gameplay, colisiones, thrusters (volumen ~0.7-1.0)
+- `'music'` → Música ambiente o de escena (volumen ~0.4-0.6)
+- `'voice'` → Narración, diálogos (volumen ~0.8-1.0)
+
+Opciones adicionales comunes:
+```typescript
+// Sonido UI simple (no posicional)
+audio.play('ui_select_glyph', { bus: 'ui', volume: 0.6 });
+
+// SFX 3D posicional (explosión, colisión)
+audio.play('sfx_explosion', { 
+  bus: 'sfx', 
+  volume: 0.8,
+  position: { x: asteroid.x, y: asteroid.y, z: asteroid.z },
+  rolloff: { refDistance: 10, maxDistance: 200, rolloffFactor: 2 }
+});
+
+// Loop continuo (motor, ambiente)
+const handle = audio.play('sfx_ambient_hum', { 
+  bus: 'sfx', 
+  loop: true, 
+  volume: 0.4 
+});
+// Más tarde: handle?.stop(500); // fade-out 500ms
+```
+
+---
+
+#### **Ejemplo completo: Sonido de equipar glifo en GrimoirePanel**
+
+**1. Archivo:** `public/assets/audio/select-glifo.wav` ✅
+
+**2. Manifiesto** (`src/app/assets/audio/_manifest.json`):
+```json
+{
+  "ui_select_glyph": "/assets/audio/select-glifo.wav"
+}
+```
+
+**3. Constructor** de `GrimoirePanel.ts`:
+```typescript
+import { AudioEngineService } from '../../services/audio/audio-engine.service';
+
+export class GrimoirePanel {
+  private audioService: AudioEngineService | null = null;
+  
+  constructor(gl: WebGL2RenderingContext, audioService: AudioEngineService | null = null) {
+    this.audioService = audioService;
+    // ... resto del constructor
+  }
+}
+```
+
+**4. Instanciación** en `GameEngine.ts`:
+```typescript
+this.grimoirePanel = new GrimoirePanel(this.gl, this.audio, 1024, 1024);
+```
+
+**5. Reproducción** en el método que equipta el glifo:
+```typescript
+public setSelectedSpellType(t: SpellType | null): void {
+  const isEquipping = t !== null && t !== this.selectedSpell;
+  
+  if (t && this.selectedSpell === t) {
+    this.selectedSpell = null; // Desequipar
+  } else {
+    this.selectedSpell = t; // Equipar
+    if (isEquipping && this.audioService) {
+      this.audioService.play('ui_select_glyph', { volume: 0.6, bus: 'ui' });
+    }
+  }
+  // ... actualizar estados
+}
+```
+
+**Resultado:** Al hacer clic en un glifo, suena `select-glifo.wav` a volumen 0.6 en el bus UI.
+
+---
+
 ### Añadir un SFX 3D (p. ej. "scanner_ping")
 
 1) Exporta/pon el archivo en `public/assets/audio` y añade entrada al manifiesto:

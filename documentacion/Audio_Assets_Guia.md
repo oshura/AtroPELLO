@@ -56,6 +56,25 @@ Puedes reemplazar cualquiera de estos ficheros por tus propias grabaciones.
 
 ## Carga en el juego
 
+El sistema usa un manifiesto JSON (`src/app/assets/audio/_manifest.json`) que mapea nombres lógicos a rutas de archivos. 
+
+### ✅ Checklist rápido para añadir un nuevo sonido
+
+1. **Coloca el archivo** en `public/assets/audio/` (ej: `select-glifo.wav`)
+2. **Registra en manifiesto** (`src/app/assets/audio/_manifest.json`):
+   ```json
+   "ui_select_glyph": "/assets/audio/select-glifo.wav"
+   ```
+3. **Pasa AudioEngineService** al componente/clase que dispara el evento
+4. **Reproduce** en el método del evento:
+   ```typescript
+   this.audio.play('ui_select_glyph', { volume: 0.6, bus: 'ui' });
+   ```
+
+📖 **Proceso completo documentado en:** `Audio_Sistema_Arquitectura.md` → sección "PROCESO COMPLETO: Añadir un nuevo sonido"
+
+### Carga programática (avanzado)
+
 Si usas el manifiesto `_manifest.json`, puedes mapear nombres lógicos a rutas y cargarlos al inicio con el `AudioEngineService`:
 
 ```ts

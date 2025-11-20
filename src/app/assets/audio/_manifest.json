@@ -22,5 +22,6 @@
   "ui_grimoire_open": "/assets/audio/book-opening.wav",
   "ui_grimoire_close": "/assets/audio/book-closing.wav",
   "ui_map_open": "/assets/audio/MapOn.wav",
-  "ui_map_close": "/assets/audio/MapOff.wav"
+  "ui_map_close": "/assets/audio/MapOff.wav",
+  "ui_select_glyph": "/assets/audio/select-glifo.wav"
 }

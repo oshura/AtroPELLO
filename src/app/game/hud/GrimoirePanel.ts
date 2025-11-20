@@ -1,5 +1,6 @@
 import { Vector3 } from '../../types/game.types';
 import { SpellType, SpellState, isSpellType } from '../types/spell.types';
+import { AudioEngineService } from '../../services/audio/audio-engine.service';
 
 /**
  * GrimoirePanel: full-screen, opaque panel rendering an ancient open book
@@ -54,8 +55,11 @@ export class GrimoirePanel {
   private tScale: number = 1.0; // current scale
   private tRot: number = 0.0;   // current rotation (radians)
 
-  constructor(gl: WebGL2RenderingContext, width: number = 1024, height: number = 1024) {
+  private audioService: AudioEngineService | null = null;
+
+  constructor(gl: WebGL2RenderingContext, audioService: AudioEngineService | null = null, width: number = 1024, height: number = 1024) {
     this.gl = gl;
+    this.audioService = audioService;
     this.canvas = document.createElement('canvas');
     this.canvas.width = width; this.canvas.height = height;
     const ctx = this.canvas.getContext('2d');
@@ -116,11 +120,18 @@ export class GrimoirePanel {
   }
   
   public setSelectedSpellType(t: SpellType | null): void {
+    const wasEquipped = this.selectedSpell !== null;
+    const isEquipping = t !== null && t !== this.selectedSpell;
+    
     // Toggle off if the same glyph is clicked again
     if (t && this.selectedSpell === t) {
       this.selectedSpell = null;
     } else {
       this.selectedSpell = t;
+      // Play equip sound when selecting a new glyph
+      if (isEquipping && this.audioService) {
+        this.audioService.play('ui_select_glyph', { volume: 0.6, bus: 'ui' });
+      }
     }
     // Update states based on the current selectedSpell
     const sel = this.selectedSpell;
