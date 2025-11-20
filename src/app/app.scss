@@ -34,6 +34,9 @@
     opacity: 0;
     visibility: hidden;
     transition: opacity 0.3s, visibility 0.3s;
+    overflow-y: auto;
+    overflow-x: hidden;
+    background: #0a0a0f;
     
     // Show when visible class is present
     &.visible {
@@ -42,29 +45,21 @@
       visibility: visible;
     }
     
-    // Wiki content scrollable with custom scrollbar
-    > * {
-      width: 100%;
-      height: 100%;
-      overflow-y: auto;
-      overflow-x: hidden;
-      background: #0a0a0f;
+    // Custom scrollbar
+    &::-webkit-scrollbar {
+      width: 12px;
+    }
+    
+    &::-webkit-scrollbar-track {
+      background: rgba(0, 0, 0, 0.3);
+    }
+    
+    &::-webkit-scrollbar-thumb {
+      background: rgba(0, 255, 65, 0.3);
+      border-radius: 6px;
       
-      &::-webkit-scrollbar {
-        width: 12px;
-      }
-      
-      &::-webkit-scrollbar-track {
-        background: rgba(0, 0, 0, 0.3);
-      }
-      
-      &::-webkit-scrollbar-thumb {
-        background: rgba(0, 255, 65, 0.3);
-        border-radius: 6px;
-        
-        &:hover {
-          background: rgba(0, 255, 65, 0.5);
-        }
+      &:hover {
+        background: rgba(0, 255, 65, 0.5);
       }
     }
   }

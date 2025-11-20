@@ -192,36 +192,69 @@ import { WikiNavigationService } from '../../../services/wiki-navigation.service
       top: 80px;
       right: 20px;
       z-index: 9998;
-      background: linear-gradient(135deg, #ff0080 0%, #ff8c00 100%);
-      border: 4px solid #ffff00;
+      background: linear-gradient(135deg, #000000 0%, #1a0033 50%, #000000 100%);
+      border: 3px solid #ff00ff;
       padding: 12px 24px;
-      font-family: 'Press Start 2P', 'Courier New', monospace;
-      font-size: 14px;
-      color: #ffff00;
-      text-shadow: 2px 2px 0 #ff0080, -2px -2px 0 #00ffff;
-      box-shadow: 0 0 20px #ff0080, 0 0 40px #ff8c00, inset 0 0 10px rgba(255, 255, 0, 0.3);
+      font-family: 'Impact', 'Arial Black', sans-serif;
+      font-size: 16px;
+      font-weight: 900;
+      color: #00ffff;
+      text-shadow: 
+        0 0 5px #00ffff,
+        0 0 10px #00ffff,
+        0 0 20px #ff00ff,
+        0 0 30px #ff00ff;
+      box-shadow: 
+        0 0 15px #ff00ff,
+        inset 0 0 15px rgba(255, 0, 255, 0.2),
+        0 4px 0 #660066;
       cursor: pointer;
       text-decoration: none;
       display: flex;
       align-items: center;
       gap: 8px;
-      animation: blink 1.5s infinite;
-      transform: skew(-5deg);
+      animation: pulse 2s ease-in-out infinite;
+      transform: perspective(500px) rotateX(-5deg);
       transition: all 0.2s;
+      letter-spacing: 2px;
     }
 
     .arcade-back:hover {
-      transform: skew(-5deg) scale(1.1);
-      box-shadow: 0 0 30px #ff0080, 0 0 60px #ff8c00, inset 0 0 20px rgba(255, 255, 0, 0.5);
+      transform: perspective(500px) rotateX(-5deg) scale(1.05) translateY(-2px);
+      box-shadow: 
+        0 0 25px #ff00ff,
+        inset 0 0 25px rgba(255, 0, 255, 0.4),
+        0 6px 0 #660066;
+      text-shadow: 
+        0 0 8px #00ffff,
+        0 0 15px #00ffff,
+        0 0 25px #ff00ff,
+        0 0 40px #ff00ff;
     }
 
     .arcade-back:active {
-      transform: skew(-5deg) scale(0.95);
+      transform: perspective(500px) rotateX(-5deg) scale(0.98) translateY(2px);
+      box-shadow: 
+        0 0 15px #ff00ff,
+        inset 0 0 15px rgba(255, 0, 255, 0.2),
+        0 2px 0 #660066;
     }
 
-    @keyframes blink {
-      0%, 49% { opacity: 1; }
-      50%, 99% { opacity: 0.7; }
+    @keyframes pulse {
+      0%, 100% { 
+        border-color: #ff00ff;
+        box-shadow: 
+          0 0 15px #ff00ff,
+          inset 0 0 15px rgba(255, 0, 255, 0.2),
+          0 4px 0 #660066;
+      }
+      50% { 
+        border-color: #ff66ff;
+        box-shadow: 
+          0 0 25px #ff00ff,
+          inset 0 0 25px rgba(255, 0, 255, 0.3),
+          0 4px 0 #660066;
+      }
     }
 
     .page-header {
