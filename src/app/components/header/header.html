@@ -62,7 +62,10 @@
     </div>
     <div class="header-right">
       <nav class="header-nav">
-  <button class="nav-button" (click)="onOptionsClick()">Opciones</button>
+        <a [routerLink]="getWikiRoute()" class="wiki-link" title="Game Wiki">
+          <span class="terminal-icon">/&gt;</span>
+        </a>
+        <button class="nav-button" (click)="onOptionsClick()">Opciones</button>
         <button class="nav-button primary">Iniciar Sesión</button>
       </nav>
     </div>

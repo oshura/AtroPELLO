@@ -1,0 +1,27 @@
+# AtroPELLO Game - robots.txt
+# https://atropello.game
+
+User-agent: *
+Allow: /
+Allow: /wiki
+Allow: /wiki/*
+
+# Sitemap location
+Sitemap: https://atropello.game/sitemap.xml
+
+# Crawl delay (be nice to server)
+Crawl-delay: 1
+
+# Disallow admin/debug paths (if any exist in future)
+Disallow: /admin/
+Disallow: /debug/
+Disallow: /api/private/
+
+# Allow search engine to index game assets
+Allow: /assets/
+Allow: /audio/
+
+# Block crawling of very large files that would waste bandwidth
+Disallow: /*.webm$
+Disallow: /*.mp4$
+Disallow: /*.avi$

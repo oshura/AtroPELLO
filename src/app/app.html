@@ -1,7 +1,9 @@
 ﻿<app-header></app-header>
 <main class="main-content">
   <app-game></app-game>
+  <div class="wiki-overlay" [class.visible]="isWikiVisible()">
+    <router-outlet></router-outlet>
+  </div>
 </main>
 <app-footer></app-footer>
-<router-outlet></router-outlet>
 <audio-debug-overlay></audio-debug-overlay>

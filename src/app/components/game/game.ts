@@ -1,5 +1,7 @@
-﻿import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, HostListener, PLATFORM_ID, Inject, ChangeDetectorRef } from '@angular/core';
+﻿import { Component, ElementRef, ViewChild, AfterViewInit, OnDestroy, OnInit, HostListener, PLATFORM_ID, Inject, ChangeDetectorRef } from '@angular/core';
 import { isPlatformBrowser, CommonModule } from '@angular/common';
+import { Router, NavigationEnd } from '@angular/router';
+import { filter } from 'rxjs/operators';
 import { Modal } from '../modal/modal';
 import { DeathDialogComponent, DeathDialogAction } from '../dialogs/death-dialog/death-dialog';
 import { WelcomeDialogComponent } from '../dialogs/welcome-dialog/welcome-dialog';
@@ -16,7 +18,7 @@ import { LoggingService, LogCategory } from '../../services/logging.service';
   templateUrl: './game.html',
   styleUrl: './game.scss'
 })
-export class Game implements AfterViewInit, OnDestroy {
+export class Game implements AfterViewInit, OnDestroy, OnInit {
   @ViewChild('gameCanvas', { static: true }) canvas!: ElementRef<HTMLCanvasElement>;
   
   // Estado público para el template
@@ -27,18 +29,39 @@ export class Game implements AfterViewInit, OnDestroy {
   // Dialog states
   public showDeathDialog = false;
   public showControlsDialog = false;
+  private pausedByWiki = false;
 
   constructor(
     private stateManager: GameStateManager,
     private inputHandler: GameInputHandler,
     private gameInitializer: GameInitializer,
     private uiManager: GameUIManager,
+    private router: Router,
     @Inject(PLATFORM_ID) private platformId: Object,
     private logger: LoggingService,
     private cdr: ChangeDetectorRef
   ) {
     // Expose this instance globally for GameEngine access
     (globalThis as any).GameComponentInstance = this;
+  }
+
+  ngOnInit() {
+    // Auto-pause/resume when navigating to/from wiki
+    this.router.events
+      .pipe(filter(event => event instanceof NavigationEnd))
+      .subscribe((event: NavigationEnd) => {
+        const isWiki = event.url.startsWith('/wiki');
+        
+        if (isWiki && this.gameState === GameState.RUNNING) {
+          this.logger.info(LogCategory.GAME_LOOP, 'Auto-pausing for wiki');
+          this.pausedByWiki = true;
+          this.pauseGame();
+        } else if (!isWiki && this.pausedByWiki && this.gameState === GameState.PAUSED) {
+          this.logger.info(LogCategory.GAME_LOOP, 'Auto-resuming from wiki');
+          this.pausedByWiki = false;
+          this.resumeGame();
+        }
+      });
   }
 
   async ngAfterViewInit() {
@@ -291,37 +314,49 @@ export class Game implements AfterViewInit, OnDestroy {
   }
 
   /**
-   * Pausa/reanuda el juego
+   * Pausa el juego
+   */
+  private pauseGame(): void {
+    if (this.stateManager.canPause()) {
+      const gameEngine = this.gameInitializer.getGameEngine();
+      if (gameEngine) {
+        gameEngine.stop();
+        try {
+          const music = (gameEngine as any).music;
+          if (music) music.setScene('menu', 800);
+        } catch {}
+      }
+      this.stateManager.setState(GameState.PAUSED);
+      this.logger.info(LogCategory.GAME_LOOP, 'Game paused');
+    }
+  }
+
+  /**
+   * Reanuda el juego
+   */
+  private resumeGame(): void {
+    if (this.stateManager.canStart()) {
+      const gameEngine = this.gameInitializer.getGameEngine();
+      if (gameEngine) {
+        gameEngine.start();
+        try {
+          const music = (gameEngine as any).music;
+          if (music) music.setScene('exploration', 800);
+        } catch {}
+      }
+      this.stateManager.setState(GameState.RUNNING);
+      this.logger.info(LogCategory.GAME_LOOP, 'Game resumed');
+    }
+  }
+
+  /**
+   * Pausa/reanuda el juego (toggle)
    */
   togglePause(): void {
     if (this.gameState === GameState.RUNNING) {
-      if (this.stateManager.canPause()) {
-        const gameEngine = this.gameInitializer.getGameEngine();
-        if (gameEngine) {
-          gameEngine.stop(); // GameEngine no tiene pause, usa stop
-          // Cambiar a música de menú al pausar
-          try {
-            const music = (gameEngine as any).music;
-            if (music) music.setScene('menu', 800);
-          } catch {}
-        }
-        this.stateManager.setState(GameState.PAUSED);
-        this.logger.info(LogCategory.GAME_LOOP, 'Game paused');
-      }
+      this.pauseGame();
     } else if (this.gameState === GameState.PAUSED) {
-      if (this.stateManager.canStart()) {
-        const gameEngine = this.gameInitializer.getGameEngine();
-        if (gameEngine) {
-          gameEngine.start();
-          // Volver a música de exploración al reanudar
-          try {
-            const music = (gameEngine as any).music;
-            if (music) music.setScene('exploration', 800);
-          } catch {}
-        }
-        this.stateManager.setState(GameState.RUNNING);
-        this.logger.info(LogCategory.GAME_LOOP, 'Game resumed');
-      }
+      this.resumeGame();
     }
   }
 
