@@ -37,6 +37,7 @@ export class GrimoirePanel {
   private handwritingSegments: Array<Array<Array<{ x: number; y: number }>>> = [];
   private pageWrinkles: Array<Array<{ x:number; y:number }>> = [];
   private hoveredIconIndex: number = -1;
+  private previousHoveredIconIndex: number = -1; // Track hover changes for audio
   // Spell states and selection
   private spellStates: Map<SpellType, SpellState> = new Map([
     [SpellType.SPEED, SpellState.AVAILABLE],
@@ -255,6 +256,15 @@ export class GrimoirePanel {
       }
       // If click coordinate is over page but not over any glyph and selection exists, allow external code to clear selection by calling setSelectedSpellType(null)
     }
+    
+    // Play hover sound when entering a new glyph
+    if (this.hoveredIconIndex >= 0 && this.hoveredIconIndex !== this.previousHoveredIconIndex) {
+      if (this.audioService) {
+        this.audioService.play('ui_outline_hover', { volume: 0.5, bus: 'ui' });
+      }
+    }
+    this.previousHoveredIconIndex = this.hoveredIconIndex;
+    
     // Page content: handwriting + icons (static), plus hover effects
     this.drawPageContent(c, W, H);
     c.restore(); // end reading transform scope
