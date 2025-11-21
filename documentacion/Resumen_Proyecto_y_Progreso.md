@@ -64,9 +64,21 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - 11 callbacks implementados (map/grimoire/3D/camera/ship controls)
   - Métodos legacy convertidos a stubs (updateMapClickBinding, updateGrimoirePointerBinding)
 
+- **FASE 7a-7b COMPLETADAS** ✅: GameStateStore implementado (ver `documentacion/Analisis_GameStateStore.md`)
+  - Servicio `GameStateStore` creado con todas las colecciones del juego (500+ líneas)
+  - GameEngine refactorizado para usar gameState en lugar de arrays privados
+  - 15+ propiedades de GameEngine hechas públicas para acceso tipado
+  - Type safety mejorado: eliminados TODOS los `(engine as any)` casts (0 restantes)
+  - GameEngine reducido de 6,493 → 6,493 líneas (simplificado internamente)
+  - Archivos actualizados: void-jump, gate-rite, speed-rite, disruption-rite, solar-system.service
+  - Camera.ts: añadido getter `fov` para acceso tipado desde targeting system
+  - **Propiedades GameEngine públicas**: textureManager, hudManager, adaptiveTargeting, planetDebris, voidJumpActive, collisionsDisabled, portalRenderer, _targetDetailsCache, applySpeedRite(), showPlaceholderText(), startDisruptionBeam()
+
 - **FASE 6b PENDIENTE**: Extraer `PanelStateManager` (cooldowns, mutual exclusivity, panel lifecycle)
 - **FASE 6c PENDIENTE**: Centralizar UI audio en `UIAudioService` (event-driven audio triggers)
 - **FASE 6d PENDIENTE**: Opcional `CursorManager` para styling de cursor
+- **FASE 7c PENDIENTE**: Migrar servicios restantes a GameStateStore (CollisionManager, AsteroidCluster si necesario)
+- **FASE 7d PENDIENTE**: Testing completo de GameStateStore + GameEngine
 
 - Redefinir presentación de salud en HUD (diseño eliminado; nueva propuesta pendiente).
 - Eliminar definitivamente overlay de portal (ya retirado) y evaluar si se necesita indicador textual de cooldown.
