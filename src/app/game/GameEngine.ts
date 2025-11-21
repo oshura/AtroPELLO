@@ -3331,6 +3331,14 @@ export class GameEngine {
             this.gameState.mapIdToTarget.set(ea.id, ea as unknown as ITargetable);
           }
         }
+        // Asteroides independientes (eyectados de clusters) también deben aparecer en el mapa
+        if (this.gameState.independentAsteroids.length) {
+          for (const ia of this.gameState.independentAsteroids) {
+            if (ia.isActive && !ia.isActive()) continue;
+            debris.push({ id: ia.id, pos: { x: ia.position.x, y: ia.position.y, z: ia.position.z }, label: ia.getDisplayName?.() || ia.id });
+            this.gameState.mapIdToTarget.set(ia.id, ia as unknown as ITargetable);
+          }
+        }
       const ship = this.spaceship ? { pos: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }, label: 'Ship' } : undefined;
       if (this.spaceship) {
         // Allow selecting the player's ship as an ally from the map
