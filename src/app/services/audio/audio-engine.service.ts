@@ -45,6 +45,7 @@ export class AudioEngineService {
   private thrusterMix: number = 0.5; // 0..1 (default 50%)
   private ambienceMix: number = 0.5; // 0..1 (default 50%)
   private ambientHandle: PlayingHandle | null = null;
+  private pausedBusSnapshot: Partial<Record<AudioBus, number>> | null = null;
 
   constructor(@Inject(PLATFORM_ID) private platformId: Object, private debug: AudioDebugService) {}
 
@@ -108,6 +109,33 @@ export class AudioEngineService {
     // Allow slight headroom up to 2.0 if the user wants to boost globally
     const clamped = Math.max(0, Math.min(2, v));
     this.master.gain.value = clamped;
+  }
+  /** Mute SFX/voice/UI buses while keeping ambience/music untouched for pause screens */
+  public pauseNonAmbientBuses(): void {
+    this.ensureContext();
+    if (!this.ctx || this.pausedBusSnapshot) return;
+    const snapshot: Partial<Record<AudioBus, number>> = {};
+    const targets: AudioBus[] = ['sfx','voice','ui'];
+    for (const bus of targets) {
+      const node = this.buses[bus];
+      if (!node) continue;
+      snapshot[bus] = node.gain.value;
+      node.gain.value = 0;
+    }
+    this.pausedBusSnapshot = snapshot;
+  }
+
+  /** Restore previously paused buses back to their stored gain levels */
+  public resumeNonAmbientBuses(): void {
+    if (!this.pausedBusSnapshot) return;
+    this.ensureContext();
+    const snapshot = this.pausedBusSnapshot;
+    Object.entries(snapshot).forEach(([bus, gain]) => {
+      if (typeof gain !== 'number') return;
+      const node = this.buses[bus as AudioBus];
+      if (node) node.gain.value = gain;
+    });
+    this.pausedBusSnapshot = null;
   }
   public getThrusterGain(): number { return this.thrusterMix; }
   public setThrusterGain(v: number): void { this.thrusterMix = Math.max(0, Math.min(1, v)); }

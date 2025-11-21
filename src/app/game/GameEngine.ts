@@ -98,6 +98,7 @@ export class GameEngine {
   private thrusterCtl: ReturnType<AudioEngineService['createThrusterController']> | null = null;
   private audioUnlocked: boolean = false;
   private deathInProgress: boolean = false; // Prevents audio updates during death fade-out
+  private audioSilencedForPause: boolean = false;
   // Doppler cues (near fly-bys)
   private dopplerEnabled: boolean = true;
   private dopplerCues: Map<string, { cue: ReturnType<AudioEngineService['createDopplerCue']>; started: number }>
@@ -1174,6 +1175,25 @@ export class GameEngine {
     } catch (e) {
       console.error('🔴 Audio enable failed:', e);
       this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Audio enable failed', e);
+    }
+  }
+
+  /** Toggle pause mix so only ambience keeps playing during gameplay pauses */
+  public setAudioPausedForGame(paused: boolean): void {
+    if (!this.audio || this.audioSilencedForPause === paused) return;
+    this.audioSilencedForPause = paused;
+    try {
+      if (paused) {
+        this.audio.pauseNonAmbientBuses();
+        try { this.thrusterCtl?.stop(150); } catch {}
+      } else {
+        this.audio.resumeNonAmbientBuses();
+        if (this.audioUnlocked && this.thrusterCtl) {
+          this.thrusterCtl.start(0.0);
+        }
+      }
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to toggle paused audio mix', e);
     }
   }
 
@@ -2739,17 +2759,9 @@ export class GameEngine {
     // Set flag to prevent gameLoop from restarting thruster during fade
     this.deathInProgress = true;
     
-    // Stop all audio with graceful fade-out BEFORE pausing game loop
-    try {
-      if (this.thrusterCtl) {
-        this.thrusterCtl.stop(200); // 200ms fade out
-      }
-      if (this.audio) {
-        this.audio.stopAmbientLoop(250); // 250ms fade out
-      }
-    } catch (e) {
-      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to stop audio on death', e);
-    }
+    // Silence everything but ambience during death pause
+    try { this.setAudioPausedForGame(true); }
+    catch (e) { this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to pause audio mix on death', e); }
     
     // Delay game pause slightly to allow audio fades to complete
     // This ensures AudioContext can process the fade-out envelope
@@ -2865,12 +2877,14 @@ export class GameEngine {
       requestAnimationFrame(() => this.gameLoop());
       
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn complete - game loop restarted');
+      this.setAudioPausedForGame(false);
     } catch (e) {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Respawn failed', e);
       // Try to restart anyway
       this.isRunning = true;
       this.lastFrameTime = performance.now();
       requestAnimationFrame(() => this.gameLoop());
+      this.setAudioPausedForGame(false);
     }
   }
 
@@ -2967,6 +2981,7 @@ export class GameEngine {
           health: this.spaceship.healthCurrent,
           voidEnergy: this.spaceship.voidEnergyCurrent
         });
+        this.setAudioPausedForGame(false);
       } else {
         this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Cannot load save: no spawn point found');
         // Fallback to full respawn

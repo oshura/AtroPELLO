@@ -321,6 +321,7 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
       const gameEngine = this.gameInitializer.getGameEngine();
       if (gameEngine) {
         gameEngine.stop();
+        try { gameEngine.setAudioPausedForGame(true); } catch {}
         try {
           const music = (gameEngine as any).music;
           if (music) music.setScene('menu', 800);
@@ -339,6 +340,7 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
       const gameEngine = this.gameInitializer.getGameEngine();
       if (gameEngine) {
         gameEngine.start();
+        try { gameEngine.setAudioPausedForGame(false); } catch {}
         try {
           const music = (gameEngine as any).music;
           if (music) music.setScene('exploration', 800);
