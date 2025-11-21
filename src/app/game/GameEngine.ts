@@ -306,7 +306,7 @@ export class GameEngine {
   // Apply destination system
   this.applySolarSystemSnapshot(destSnap);
         // Find the destination portal in the new scene
-        const destPortal = this.gameState.portals.find(p => p.id === destId) || null;
+        const destPortal = this.gameState.findPortalById(destId);
         if (destPortal) {
           // Runtime traversal behavior: preserve ship velocity and orientation.
           // Reposition the ship at the center of the destination portal (emerging from it)
@@ -772,7 +772,7 @@ export class GameEngine {
     try {
       if (snapshot.planetDebris && snapshot.planetDebris.length) {
         for (const d of snapshot.planetDebris) {
-          const parent = this.gameState.planets.find(pl => pl.id === d.planetId);
+          const parent = this.gameState.findPlanetById(d.planetId);
           if (!parent) continue;
           const pos = {
             x: parent.position.x + d.localOffset.x,
@@ -906,7 +906,7 @@ export class GameEngine {
     this.targetCatalog.register(TargetType.PLANET, this.gameState.planets as unknown as ITargetable[]);
 
     // 2) Construir un rastro de clusters a lo largo de la elipse orbital de la Tierra
-    const earth = this.gameState.planets.find(p => p.id === 'planet-earth');
+    const earth = this.gameState.findPlanetById('planet-earth');
     const createdClusters: ReturnType<typeof this.asteroidClusterService.createCluster>[] = [];
     if (earth) {
       const a = earth.semiMajor;
@@ -2264,7 +2264,7 @@ export class GameEngine {
     if (!this.spaceship || !this.collisionManager) return;
     
     // Determinar si el objetivo es miembro de cluster
-    const isClusterMember = !this.gameState.independentAsteroids.some(a => a.id === obj.id) && 
+    const isClusterMember = !this.gameState.isIndependentAsteroid(obj.id) && 
                             !this.ephemeralAsteroids.some(a => a.id === obj.id);
     
     // Delegar TODA la lógica al CollisionManager
@@ -2330,7 +2330,7 @@ export class GameEngine {
         this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '✅ Velocity applied to asteroid', {
           asteroidId: obj.id,
           velocityAfter: `(${obj.velocity.x.toFixed(2)}, ${obj.velocity.y.toFixed(2)}, ${obj.velocity.z.toFixed(2)})`,
-          isIndependent: this.gameState.independentAsteroids.some(a => a.id === obj.id),
+          isIndependent: this.gameState.isIndependentAsteroid(obj.id),
           hasPendingEjection: !!(obj as any)._pendingEjection
         });
       }
@@ -2470,22 +2470,21 @@ export class GameEngine {
     const objId = obj.id;
     const typeName = obj.constructor?.name || 'Unknown';
     let removed = false;
-    
-    // Remove from appropriate array based on type
+
+    // Delegate primary removal to the GameStateStore so all collections stay in sync
+    try {
+      removed = this.gameState.removeObject(obj as GameObject) || removed;
+    } catch {}
+
+    // Additional cleanup for transient structures not owned by the store
     if (typeName === 'Asteroid' || typeName === '_Asteroid') {
       // NOTE: Regular cluster asteroids are managed by AsteroidClusterService
       // and don't need removal here (clusters handle their own lifecycle)
-      
+
       // Check ephemeral asteroids
       const ephIdx = this.ephemeralAsteroids.findIndex(a => a.id === objId);
       if (ephIdx >= 0) {
         this.ephemeralAsteroids.splice(ephIdx, 1);
-        removed = true;
-      }
-      // Check independent asteroids
-      const indIdx = this.gameState.independentAsteroids.findIndex(a => a.id === objId);
-      if (indIdx >= 0) {
-        this.gameState.independentAsteroids.splice(indIdx, 1);
         removed = true;
       }
       // Check if it's in a cluster
@@ -2496,8 +2495,8 @@ export class GameEngine {
             if (clusterIdx >= 0) {
               cluster.objects.splice(clusterIdx, 1);
               removed = true;
-              this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Asteroid removed from cluster', { 
-                asteroidId: objId, 
+              this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Asteroid removed from cluster', {
+                asteroidId: objId,
                 clusterId: cluster.id,
                 remainingInCluster: cluster.objects.length
               });
@@ -2506,11 +2505,6 @@ export class GameEngine {
         } catch {}
       }
     } else if (typeName === 'SuperAsteroid' || typeName === '_SuperAsteroid') {
-      const idx = this.gameState.superAsteroids.findIndex(a => a.id === objId);
-      if (idx >= 0) {
-        this.gameState.superAsteroids.splice(idx, 1);
-        removed = true;
-      }
       // Also remove from cluster service if it's part of a cluster
       try {
         this.asteroidClusterService.getClusters().forEach(cluster => {
@@ -2518,8 +2512,8 @@ export class GameEngine {
           if (clusterIdx >= 0) {
             cluster.objects.splice(clusterIdx, 1);
             removed = true;
-            this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'SuperAsteroid removed from cluster', { 
-              asteroidId: objId, 
+            this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'SuperAsteroid removed from cluster', {
+              asteroidId: objId,
               clusterId: cluster.id,
               remainingInCluster: cluster.objects.length
             });
@@ -2527,7 +2521,7 @@ export class GameEngine {
         });
       } catch {}
     } else if (typeName === 'MegaAsteroid' || typeName === '_MegaAsteroid') {
-      // Remove from planet debris
+      // Remove from planet debris map for visual debris trails
       for (const [planetId, debris] of this.planetDebris.entries()) {
         const idx = debris.findIndex(d => d.obj.id === objId);
         if (idx >= 0) {
@@ -2536,18 +2530,6 @@ export class GameEngine {
           if (debris.length === 0) this.planetDebris.delete(planetId);
           break;
         }
-      }
-    } else if (typeName.includes('Planet') && !typeName.includes('Dwarf') && !typeName.includes('Proto')) {
-      const idx = this.gameState.planets.findIndex(p => p.id === objId);
-      if (idx >= 0) {
-        this.gameState.planets.splice(idx, 1);
-        removed = true;
-      }
-    } else if (typeName === 'Portal') {
-      const idx = this.gameState.portals.findIndex(p => p.id === objId);
-      if (idx >= 0) {
-        this.gameState.portals.splice(idx, 1);
-        removed = true;
       }
     }
     
@@ -2634,7 +2616,7 @@ export class GameEngine {
     });
     
     // Check if already independent
-    if (this.gameState.independentAsteroids.find(a => a.id === objId)) {
+    if (this.gameState.isIndependentAsteroid(objId)) {
       this.logger.log(LogLevel.WARN, LogCategory.COLLISION_PHYSICS, '⚠️ Asteroid already independent', { asteroidId: objId });
       return;
     }
@@ -4206,8 +4188,8 @@ export class GameEngine {
     const camPosArr = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
     // Culling específico: si la cámara está a >= SPRITE LOD (~50,000u), no renderizar debris de ese planeta
     const SPRITE_LOD_DISTANCE = 50000;
-    const earth = this.gameState.planets.find(p => p.id === 'planet-earth');
-    const saturn = this.gameState.planets.find(p => p.id === 'planet-saturn');
+    const earth = this.gameState.findPlanetById('planet-earth');
+    const saturn = this.gameState.findPlanetById('planet-saturn');
     let skipEarth = false;
     let skipSaturn = false;
     if (earth && this.camera) {
@@ -6084,7 +6066,7 @@ export class GameEngine {
     } catch {}
     // Aplicar el mismo filtro de visibilidad para debris de la Tierra
     try {
-      const earth = this.gameState.planets.find(p => p.id === 'planet-earth');
+      const earth = this.gameState.findPlanetById('planet-earth');
       if (earth && this.camera) {
         const dxE = earth.position.x - this.camera.position.x;
         const dyE = earth.position.y - this.camera.position.y;

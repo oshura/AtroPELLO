@@ -279,6 +279,34 @@ export class GameStateStore {
       + (this.spaceship ? 1 : 0);
   }
   
+  /**
+   * Busca un planeta por ID.
+   * Método conveniente para búsquedas específicas.
+   * @param id ID del planeta
+   * @returns Planeta encontrado o undefined
+   */
+  findPlanetById(id: string): Planet | undefined {
+    return this.planets.find(p => p.id === id);
+  }
+  
+  /**
+   * Busca un portal por ID.
+   * @param id ID del portal
+   * @returns Portal encontrado o undefined
+   */
+  findPortalById(id: string): Portal | undefined {
+    return this.portals.find(p => p.id === id);
+  }
+  
+  /**
+   * Verifica si un asteroide es independiente (eyectado de cluster).
+   * @param asteroidId ID del asteroide
+   * @returns true si está en la colección de independientes
+   */
+  isIndependentAsteroid(asteroidId: string): boolean {
+    return this.independentAsteroids.some(a => a.id === asteroidId);
+  }
+  
   // ═══════════════════════════════════════════════════════════════════════════
   //  MUTATION METHODS
   // ═══════════════════════════════════════════════════════════════════════════

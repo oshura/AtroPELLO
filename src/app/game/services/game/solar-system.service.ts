@@ -6,6 +6,7 @@ import { GameEngine } from '../../GameEngine';
 import { GameLogger } from '../../utils/GameLogger';
 import { LogCategory } from '../../../services/logging.service';
 import { Vector3 } from '../../../types/game.types';
+import { GameStateStore } from '../../../services/game/game-state.store';
 import {
   Sun, Planet, DwarfPlanet, Protoplanet,
   RingedPlanet, GaseousPlanet, GiantPlanet, Portal
@@ -19,7 +20,10 @@ import { TargetType } from '../../types/targeting.types';
  */
 @Injectable({ providedIn: 'root' })
 export class SolarSystemService {
-  constructor(private generator: SystemGeneratorService) {}
+  constructor(
+    private generator: SystemGeneratorService,
+    private gameState: GameStateStore
+  ) {}
 
   /** Capture current system into a snapshot via serializer. */
   snapshot(state: Parameters<typeof SolarSystemSerializer.fromState>[0]): SolarSystemSnapshot {
@@ -65,8 +69,8 @@ export class SolarSystemService {
       // Clear planet debris map
       engine.planetDebris?.clear?.();
       // Reset planets and sun
-      engine.gameState.planets.length = 0;
-      engine.gameState.sun = null;
+      this.gameState.planets.length = 0;
+      this.gameState.sun = null;
       // Reset target catalog buckets
       targetCatalog?.register?.(TargetType.ASTEROID, []);
       targetCatalog?.register?.(TargetType.SUPER_ASTEROID, []);
@@ -83,7 +87,7 @@ export class SolarSystemService {
       sun.customName = s.name || sun.customName;
       if (gl && !sun.vertexBuffer) sun.initBuffers(gl);
       planetsArr.push(sun as unknown as Planet);
-      engine.gameState.sun = sun;
+      this.gameState.sun = sun;
     } catch (e) {
       GameLogger.error(LogCategory.SOLAR_SYSTEM_GENERATION, 'Sun instantiation failed', { e });
     }
@@ -135,8 +139,8 @@ export class SolarSystemService {
       }
     }
     // Attach to engine and register planets in target catalog
-    engine.gameState.planets.length = 0;
-    engine.gameState.planets.push(...planetsArr);
+    this.gameState.planets.length = 0;
+    this.gameState.planets.push(...planetsArr);
     try { targetCatalog?.register?.(TargetType.PLANET, planetsArr as any); } catch {}
 
     // --- Phase 3: Clusters ---
@@ -178,7 +182,7 @@ export class SolarSystemService {
     // --- Phase 4: Portals ---
     const createdPortals: PortalSnapshot[] = [];
     try {
-      const portalsArr: Portal[] = engine.gameState.portals || [];
+      const portalsArr: Portal[] = this.gameState.portals || [];
       for (const p of (snapshot.portals || [])) {
         const portal = new Portal(p.id, { ...p.position }, p.radius, logger);
         portal.linkedPortalId = p.linkedPortalId;
@@ -189,8 +193,8 @@ export class SolarSystemService {
         createdPortals.push(p);
         GameLogger.info(LogCategory.PORTAL, 'Portal instantiated', { id: p.id, linked: p.linkedPortalId });
       }
-      engine.gameState.portals.length = 0;
-      engine.gameState.portals.push(...portalsArr);
+      this.gameState.portals.length = 0;
+      this.gameState.portals.push(...portalsArr);
     } catch (e) {
       GameLogger.warn(LogCategory.PORTAL, 'Portal instantiation issues', { e });
     }
