@@ -5164,10 +5164,11 @@ export class GameEngine {
   if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
     this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
   }
-  // Bloquear controles 2s de casteo
-  // Speed (Double Phased Time Rite) mantiene outliners visibles, otros hechizos los ocultan
-  const keepOutliners = (spell === SpellType.SPEED);
-  this.animationManager.startBlockingDelay(2000, keepOutliners);
+  const isSpeedRite = (spell === SpellType.SPEED);
+  if (!isSpeedRite) {
+    // Bloquear controles 2s de casteo para el resto de hechizos
+    this.animationManager.startBlockingDelay(2000);
+  }
   // Reproducir sonido de pre-ritual
   try {
     if (this.audio) {
@@ -5175,6 +5176,10 @@ export class GameEngine {
     }
   } catch (e) {
     this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Pre-cast ritual sound failed', e);
+  }
+  if (isSpeedRite) {
+    this.triggerSpeedRiteInstantly();
+    return;
   }
   // Esperar 2 segundos y luego disparar animación/efecto
         setTimeout(() => {
@@ -5207,9 +5212,6 @@ export class GameEngine {
               // Sin target válido: placeholder
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
             }
-          } else if (spell === SpellType.SPEED) {
-            // Start Speed Rite animation (applies buff internally)
-            try { this.animationManager.startSpeedRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'SpeedRite start error', e); }
           } else if (spell === SpellType.GATE_RITE) {
             // Gate Rite: requiere planeta seleccionado y distancia ≤ 50u a la superficie
             const t = target as any;
@@ -5273,7 +5275,10 @@ export class GameEngine {
         if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
           this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
         }
-        this.animationManager.startBlockingDelay(2000);
+        const isSpeedRite = selected === SpellType.SPEED;
+        if (!isSpeedRite) {
+          this.animationManager.startBlockingDelay(2000);
+        }
         // Reproducir sonido de pre-ritual
         try {
           if (this.audio) {
@@ -5281,6 +5286,10 @@ export class GameEngine {
           }
         } catch (e) {
           this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Pre-cast ritual sound failed', e);
+        }
+        if (isSpeedRite) {
+          this.triggerSpeedRiteInstantly();
+          return;
         }
         setTimeout(() => {
           if (selected === SpellType.LONGJUMP) {
@@ -5305,8 +5314,6 @@ export class GameEngine {
             } else {
               this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
             }
-          } else if (selected === SpellType.SPEED) {
-            try { this.animationManager.startSpeedRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'SpeedRite start error', e); }
           } else if (selected === SpellType.GATE_RITE) {
             const t = target as any;
             const isPlanet = typeof t?.getTargetType === 'function' && String(t.getTargetType?.()) === 'planet';
@@ -5542,6 +5549,14 @@ export class GameEngine {
     this.spaceship.deceleration = baseD * 2;
     // Extend/refresh duration
     this.speedRiteUntilMs = now + Math.max(0, durationMs);
+  }
+
+  /** Activate Speed Rite immediately without triggering blocking animations */
+  private triggerSpeedRiteInstantly(): void {
+    this.applySpeedRite(120000);
+    try {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Speed Rite activated instantly');
+    } catch {}
   }
 
   /** Minimal full-screen text overlay helper for placeholder animations */
