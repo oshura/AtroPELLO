@@ -5529,9 +5529,13 @@ export class GameEngine {
     identity[0] = identity[5] = identity[10] = identity[15] = 1;
     this.shaderManager.setBasicMatrices(identity, this.camera.viewMatrix, this.camera.projectionMatrix);
     
-    // Enable blending for transparency
+    // Enable blending for transparency and force overlay above planets/billboards
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive for glow effect
+    const depthTestWasEnabled = gl.isEnabled(gl.DEPTH_TEST);
+    if (depthTestWasEnabled) {
+      gl.disable(gl.DEPTH_TEST);
+    }
     gl.depthMask(false);
     
     // Draw beam
@@ -5539,6 +5543,9 @@ export class GameEngine {
     
     // Restore state
     gl.depthMask(true);
+    if (depthTestWasEnabled) {
+      gl.enable(gl.DEPTH_TEST);
+    }
     gl.disable(gl.BLEND);
     gl.disableVertexAttribArray(posLoc);
     gl.disableVertexAttribArray(colorLoc);
