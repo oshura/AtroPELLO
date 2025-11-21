@@ -469,6 +469,7 @@ export class Camera {
   public get position(): Vector3 { return this.activeCamera.position; }
   public get target(): Vector3 { return this.activeCamera.target; }
   public get up(): Vector3 { return this.activeCamera.up; }
+  public get fov(): number { return this.activeCamera.fov; }
   
   constructor(aspect: number = 1.0) {
     this.rearViewCamera = new RearViewCamera(aspect);

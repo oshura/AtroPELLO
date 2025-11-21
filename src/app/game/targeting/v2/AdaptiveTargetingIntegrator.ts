@@ -315,13 +315,13 @@ export class AdaptiveTargetingIntegrator {
 
   // Runtime passthrough toggles for hover picking and dominant gating
   public setUseRaycastHover(v: boolean): void {
-    (this.adaptiveSystem as any).setUseRaycastHover?.(v);
+    this.adaptiveSystem.setUseRaycastHover?.(v);
   }
   public setDominantGateEnabled(v: boolean): void {
-    (this.adaptiveSystem as any).setDominantGateEnabled?.(v);
+    this.adaptiveSystem.setDominantGateEnabled?.(v);
   }
   public setDominantRadiusFraction(f: number): void {
-    (this.adaptiveSystem as any).setDominantRadiusFraction?.(f);
+    this.adaptiveSystem.setDominantRadiusFraction?.(f);
   }
 
   // ===================================
@@ -410,7 +410,7 @@ export class AdaptiveTargetingIntegrator {
         if (!info.screenPosition) continue; // only on-screen (ndc inside)
         // Giant target gating: if projected radius dominates screen, include only when near the mouse
         try {
-          const rp = (this.adaptiveSystem as any).getProjectedRadiusPx?.(info.target) || 0;
+          const rp = this.adaptiveSystem.getProjectedRadiusPx?.(info.target) || 0;
           const dims = (this as any).camera?.canvas ? { width: (this as any).camera.canvas.width, height: (this as any).camera.canvas.height } : { width: window.innerWidth, height: window.innerHeight };
           const minDim = Math.min(dims.width || 1, dims.height || 1);
           const dominant = rp >= 0.35 * minDim; // same threshold as system

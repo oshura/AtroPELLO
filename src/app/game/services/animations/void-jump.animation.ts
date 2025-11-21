@@ -61,7 +61,7 @@ export class VoidJumpAnimation implements GameAnimation {
       this.savedVoidEnergy = engine['spaceship'].voidEnergyCurrent ?? 0;
     }
     // Mark engine void-jump active for HUD/audio clamping
-    (engine as any).voidJumpActive = true;
+    engine.voidJumpActive = true;
     // Global key blockers: prevent ALL gameplay keys (panels, speed, camera, etc.)
   const blockKey: EventListener = (e: Event) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
     const keyEvents: Array<keyof DocumentEventMap> = ['keydown','keyup','keypress'];
@@ -88,9 +88,9 @@ export class VoidJumpAnimation implements GameAnimation {
 
     // Prepare optional flash images (if configured)
     this.flashTextures = [];
-    if (this.flashImageUrls.length && (engine as any).textureManager) {
+    if (this.flashImageUrls.length && engine.textureManager) {
       this.overlayColor = [0, 0, 0]; // better contrast for images
-      const tm = (engine as any).textureManager as any;
+      const tm = engine.textureManager as any;
       this.flashImageUrls.forEach((url, i) => {
         const key = `void-flash-${i}`;
         // Try multiple locations to be resilient with asset placement
@@ -123,7 +123,7 @@ export class VoidJumpAnimation implements GameAnimation {
   update(engine: GameEngine, dt: number): boolean {
     this.t += dt;
 
-    const ship = (engine as any).spaceship as any;
+    const ship = engine.spaceship as any;
     if (!ship) return true;
 
     // Update streaks movement in camera-local Z: faster as visual speed increases
@@ -230,7 +230,7 @@ export class VoidJumpAnimation implements GameAnimation {
       }
       // Remove key blockers & flag
       try { this.inputBlockers.forEach(fn => fn()); this.inputBlockers = []; } catch {}
-      (engine as any).voidJumpActive = false;
+      engine.voidJumpActive = false;
       engine['camera']?.setCameraMode?.(this.prevCameraMode);
       this.blocking = false;
       return true;
@@ -253,8 +253,8 @@ export class VoidJumpAnimation implements GameAnimation {
       this.inputBlockers.forEach(fn => fn());
       this.inputBlockers = [];
       // Reset flags
-      (engine as any).voidJumpActive = false;
-      (engine as any).collisionsDisabled = false;
+      engine.voidJumpActive = false;
+      engine.collisionsDisabled = false;
       // Restore camera
       engine['camera']?.setCameraMode?.(this.prevCameraMode);
     } catch (err) {
@@ -263,15 +263,15 @@ export class VoidJumpAnimation implements GameAnimation {
   }
 
   render(engine: GameEngine): void {
-    const gl = (engine as any).gl as WebGL2RenderingContext;
-    const shaderManager = (engine as any).shaderManager as any;
-    const cam = (engine as any).camera;
+    const gl = engine.gl as WebGL2RenderingContext;
+    const shaderManager = engine.shaderManager as any;
+    const cam = engine.camera;
     if (!gl || !shaderManager || !cam) return;
-    const overlay = (engine as any).overlayRenderer as any;
+    const overlay = engine.overlayRenderer as any;
 
   // First: draw speed streaks (lines) only after the look-at phase has completed
     // Streak length grows with current visual speed factor (0..1)
-    const ship = (engine as any).spaceship as any;
+    const ship = engine.spaceship as any;
     const speedFactor = Math.min(1, (ship?.currentSpeed ?? 0) / Math.max(1, ship?.maxSpeed ?? 1));
     const streakAlpha = Math.min(1, 0.12 + speedFactor * 0.7);
   if (this.t > this.orientTime && this.streakSeeds.length && streakAlpha > 0.01) {
@@ -341,7 +341,7 @@ export class VoidJumpAnimation implements GameAnimation {
           const k = clamp01((this.t - imageStart) / Math.max(0.0001, this.imageDisplayTime));
           const zoom = 1.0 + 0.3 * k;
           // Query texture size (for proper cover)
-          const tm = (engine as any).textureManager as any;
+          const tm = engine.textureManager as any;
           const key = `void-flash-0`;
           const size = tm?.getTextureSize?.(key) || null;
           if (size && overlay.drawTextureCover) {
@@ -376,7 +376,7 @@ export class VoidJumpAnimation implements GameAnimation {
   }
 
   private doTeleport(engine: GameEngine, target: ITargetable): void {
-    const ship = (engine as any).spaceship as any;
+    const ship = engine.spaceship as any;
     if (!ship) return;
     const c = this.getTargetCenter(engine, target);
     const r = this.getTargetRadius(target);

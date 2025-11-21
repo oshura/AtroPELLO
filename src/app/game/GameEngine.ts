@@ -41,6 +41,7 @@ import { LoggingService, LogCategory, LogLevel } from '../services/logging.servi
 import { CollisionResponseService } from './services/physics/collision-response.service';
 import { CollisionManagerService } from './services/physics/collision-manager.service';
 import { PanelEventCoordinator } from './services/ui/panel-event-coordinator.service';
+import { GameStateStore } from '../services/game/game-state.store';
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
@@ -53,39 +54,39 @@ import { getDisplayLabelFromTargetType } from './types/game-object.types';
   providedIn: 'root'
 })
 export class GameEngine {
-  private gl: WebGL2RenderingContext | null = null;
+  public gl: WebGL2RenderingContext | null = null;
   private isRunning: boolean = false;
   private lastFrameTime: number = 0;
   
   // Sistemas principales
-  private camera!: Camera;
-  private shaderManager!: ShaderManager;
-  private textureManager!: TextureManager;
+  public camera!: Camera;
+  public shaderManager!: ShaderManager;
+  public textureManager!: TextureManager;
   private particleEffects!: ParticleEffectsService;
-  private hudManager!: HUDManager;
+  public hudManager!: HUDManager;
   private reticleManager!: ReticleManager;
-  private adaptiveTargeting!: AdaptiveTargetingIntegrator;
-  private asteroidClusterService!: AsteroidClusterService;
-  private targetCatalog!: TargetCatalogService;
+  public adaptiveTargeting!: AdaptiveTargetingIntegrator;
+  public asteroidClusterService!: AsteroidClusterService;
+  public targetCatalog!: TargetCatalogService;
   private targetDetails!: TargetDetailService;
   private targetPreview!: TargetPreviewRenderer;
   private systemPanel: SolarSystemPanel | null = null;
   private grimoirePanel: GrimoirePanel | null = null;
-  private overlayRenderer: ScreenOverlayRenderer | null = null;
+  public overlayRenderer: ScreenOverlayRenderer | null = null;
   private targetOutline2D: TargetOutline2DRenderer | null = null;
+  public voidJumpActive: boolean = false;
+  public collisionsDisabled: boolean = false;
+  public portalRenderer: any = null; // PortalRenderer instance
   // Runtime toggle to enable/disable the 2D outliner overlay for performance testing
   private outlinerEnabled: boolean = true;
-  // Cooldowns to prevent immediate reopen of panels after closing
-  private mapReopenAllowedAtMs: number = 0;
-  private grimoireReopenAllowedAtMs: number = 0;
   // Landing overlay removed
   private domCanvas: HTMLCanvasElement | null = null;
-  private mapIdToTarget: Map<string, ITargetable> = new Map();
   // Defers a map selection when the user clicks immediately after opening the map
   // before the id->target mapping has been rebuilt in the first render pass.
   private pendingMapSelectId: string | null = null;
   // Central logger
   public readonly logger: LoggingService;
+  public _targetDetailsCache: Record<string, any> = {};
   
   // HUD health update throttle (update every 250ms instead of every frame)
   private lastHealthUpdateTime: number = 0;
@@ -106,22 +107,17 @@ export class GameEngine {
   private camVel: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
   private dopplerSkip: boolean = false; // throttle doppler updates (every other frame)
   
-  // Objetos del juego
-  private spaceship!: Spaceship;
-  private asteroids: Asteroid[] = [];
+  // Objetos del juego - MIGRATED TO GameStateStore
+  // Acceso via this.gameState.spaceship, this.gameState.independentAsteroids, etc.
+  public spaceship!: Spaceship; // Referencia pública para acceso externo
+  
   // Asteroides efímeros (spawn aleatorio cerca de la nave)
   private ephemeralAsteroids: Asteroid[] = [];
   private ephemeralSpawnCounter: number = 0;
   private nextEphemeralCheckMs: number = 0; // próxima comprobación de spawn (cada 10s)
-  private superAsteroids: SuperAsteroid[] = [];
-  // Independent asteroids (ejected from clusters after collision, have individual motion)
-  private independentAsteroids: Asteroid[] = [];
-  private planets: Planet[] = [];
-  // Persistent portals (created by Gate Rite); survive system transitions
-  private portals: Portal[] = [];
-  private primarySun: Sun | null = null;
+  
   // Debris asociados a un planeta (e.g., anillo de mega-asteroides de la Tierra dividida)
-  private planetDebris: Map<string, Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }>> = new Map();
+  public planetDebris: Map<string, Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }>> = new Map();
   // Track last applied snapshot id (debug)
   private lastAppliedSnapshotId: string | null = null;
   // Current active solar system snapshot (para acceder a configuración de debris efímero)
@@ -219,9 +215,10 @@ export class GameEngine {
     loggingService: LoggingService,
     private collisionManager: CollisionManagerService,
     private panelEventCoordinator: PanelEventCoordinator,
-  private solarSystemService?: SolarSystemService,
-  private humanSolarSystemService?: HumanSolarSystemService,
-  private portalPersistenceService?: PortalPersistenceService,
+    public gameState: GameStateStore,
+  public solarSystemService?: SolarSystemService,
+  public humanSolarSystemService?: HumanSolarSystemService,
+  public portalPersistenceService?: PortalPersistenceService,
   public portalRegistry?: PortalRegistryService,
     audioEngine?: AudioEngineService,
     musicDirector?: MusicDirectorService
@@ -251,7 +248,7 @@ export class GameEngine {
       if (this.portalTraversalCooldownSec > 0) {
         this.portalTraversalCooldownSec = Math.max(0, this.portalTraversalCooldownSec - deltaTime);
       }
-      if (!this.portals || this.portals.length === 0) return;
+      if (!this.gameState.portals || this.gameState.portals.length === 0) return;
       const shipPos = this.spaceship.position;
       const prevShip = this.lastShipPos || { ...shipPos };
       // Portal pentacle is modeled in portal local XY plane; with no dynamic rotation applied,
@@ -262,7 +259,7 @@ export class GameEngine {
       const vy = shipPos.y - prevShip.y;
       const vz = shipPos.z - prevShip.z;
       const denomBase = vx * planeNormal.x + vy * planeNormal.y + vz * planeNormal.z;
-      for (const portal of this.portals) {
+      for (const portal of this.gameState.portals) {
         // Segment-plane intersection (plane through portal.position with normal +Z)
         const C = portal.position;
         const n = planeNormal;
@@ -309,7 +306,7 @@ export class GameEngine {
   // Apply destination system
   this.applySolarSystemSnapshot(destSnap);
         // Find the destination portal in the new scene
-        const destPortal = this.portals.find(p => p.id === destId) || null;
+        const destPortal = this.gameState.portals.find(p => p.id === destId) || null;
         if (destPortal) {
           // Runtime traversal behavior: preserve ship velocity and orientation.
           // Reposition the ship at the center of the destination portal (emerging from it)
@@ -442,7 +439,7 @@ export class GameEngine {
   // Overlay renderer for robust full-screen fades and image flashes
   this.overlayRenderer = new ScreenOverlayRenderer(this.gl);
     // Nuevo renderer encapsulado para portales (visual halo/eye futuro)
-    try { (this as any).portalRenderer = new (require('./rendering/PortalRenderer').PortalRenderer)(this.webglService as any, this.shaderManager); } catch {}
+    try { this.portalRenderer = new (require('./rendering/PortalRenderer').PortalRenderer)(this.webglService as any, this.shaderManager); } catch {}
   // Landing overlay removed
 
       // Inicializar sistema de retícula con renderizado (FASE 2)
@@ -523,13 +520,13 @@ export class GameEngine {
         // Targeting runtime tweaks
         w.Debug.Targeting = w.Debug.Targeting || {};
         w.Debug.Targeting.useRaycastHover = (v: boolean) => {
-          try { (this.adaptiveTargeting as any)?.setUseRaycastHover?.(!!v); this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'useRaycastHover', { value: !!v }); } catch {}
+          try { this.adaptiveTargeting?.setUseRaycastHover?.(!!v); this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'useRaycastHover', { value: !!v }); } catch {}
         };
         w.Debug.Targeting.dominantGate = (v: boolean) => {
-          try { (this.adaptiveTargeting as any)?.setDominantGateEnabled?.(!!v); this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'dominantGateEnabled', { value: !!v }); } catch {}
+          try { this.adaptiveTargeting?.setDominantGateEnabled?.(!!v); this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'dominantGateEnabled', { value: !!v }); } catch {}
         };
         w.Debug.Targeting.setDominantFraction = (f: number) => {
-          try { (this.adaptiveTargeting as any)?.setDominantRadiusFraction?.(Number(f)); this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'dominantRadiusFraction', { value: f }); } catch {}
+          try { this.adaptiveTargeting?.setDominantRadiusFraction?.(Number(f)); this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'dominantRadiusFraction', { value: f }); } catch {}
         };
         // Panels: Map and Grimoire (ancient book)
         w.Debug.Panels = w.Debug.Panels || {};
@@ -599,10 +596,10 @@ export class GameEngine {
     // IMPORTANT: Do NOT carry over existing portals when applying a new system snapshot.
     // Design: The origin portal remains only in the origin system; the destination portal is part of the new snapshot.
     // Clearing the current portal list avoids duplicates (origin + destination) coexisting in the same context.
-    this.portals = [];
+    this.gameState.portals.length = 0;
     // Clear planets & debris
-    this.planets = [];
-    this.primarySun = null;
+    this.gameState.planets.length = 0;
+    this.gameState.sun = null;
     this.planetDebris.clear();
     // Clear clusters
     try { this.asteroidClusterService.clearAll?.(); } catch {}
@@ -626,8 +623,8 @@ export class GameEngine {
         (sun as any).orbitNormal = { x: 0, y: 1, z: 0 };
         (sun as any).orbitU = { x: 1, y: 0, z: 0 };
         if (gl && !sun.vertexBuffer) sun.initBuffers(gl as WebGL2RenderingContext);
-        this.planets.push(sun as any);
-        this.primarySun = sun;
+        this.gameState.planets.push(sun as any);
+        this.gameState.sun = sun;
       }
     } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.SOLAR_SYSTEM_GENERATION, 'Sun instantiation failed', e); }
 
@@ -707,7 +704,7 @@ export class GameEngine {
           }
         } catch {}
         if (gl && !planetObj.vertexBuffer) planetObj.initBuffers(gl as WebGL2RenderingContext);
-        this.planets.push(planetObj);
+        this.gameState.planets.push(planetObj);
         // Register reactive destruction callback
         this.registerDestructionCallback(planetObj);
         // Saturn debris belt similar to legacy if available
@@ -721,7 +718,7 @@ export class GameEngine {
         this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Planet instantiation failed', { id: p.id, e });
       }
     }
-    try { this.targetCatalog.register(TargetType.PLANET, this.planets as any); } catch {}
+    try { this.targetCatalog.register(TargetType.PLANET, this.gameState.planets as any); } catch {}
 
     // Clusters
     const normals: any[] = [];
@@ -757,12 +754,12 @@ export class GameEngine {
       // Reset target catalog bucket for portals to reflect the new system state
       try { this.targetCatalog.register(TargetType.PORTAL, [] as any); } catch {}
       for (const p of (snapshot.portals || [])) {
-        if (this.portals.some(ep => ep.id === p.id)) { createdPortals.push(p); continue; }
+        if (this.gameState.portals.some(ep => ep.id === p.id)) { createdPortals.push(p); continue; }
         const portal = new Portal(p.id, { ...p.position }, p.radius, this.logger);
         portal.linkedPortalId = p.linkedPortalId;
         portal.applyEyeState(p.eyeState);
         if (gl && !portal.vertexBuffer) portal.initBuffers(gl as WebGL2RenderingContext);
-        this.portals.push(portal);
+        this.gameState.portals.push(portal);
         // Register reactive destruction callback
         this.registerDestructionCallback(portal);
         this.targetCatalog.add(TargetType.PORTAL, portal as any);
@@ -775,7 +772,7 @@ export class GameEngine {
     try {
       if (snapshot.planetDebris && snapshot.planetDebris.length) {
         for (const d of snapshot.planetDebris) {
-          const parent = this.planets.find(pl => pl.id === d.planetId);
+          const parent = this.gameState.planets.find(pl => pl.id === d.planetId);
           if (!parent) continue;
           const pos = {
             x: parent.position.x + d.localOffset.x,
@@ -795,7 +792,7 @@ export class GameEngine {
         }
       }
     } catch (e) { this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Debris restore failed', e); }
-    this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Snapshot applied', { id: snapshot.id, planetCount: this.planets.length, portalCount: this.portals.length });
+    this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Snapshot applied', { id: snapshot.id, planetCount: this.gameState.planets.length, portalCount: this.gameState.portals.length });
     return { portalsCreated: createdPortals };
   }
 
@@ -859,9 +856,9 @@ export class GameEngine {
     // ¡CRÍTICO! Inicializar buffers WebGL para los objetos iniciales
     this.initializeAllBuffers();
     // Register existing portals if any (none initially)
-    if (this.portals.length) {
-      this.portals.forEach(p => p.initBuffers(this.gl!));
-      this.targetCatalog.add(TargetType.PORTAL, this.portals[0] as any); // simple add; multiple handled later
+    if (this.gameState.portals.length) {
+      this.gameState.portals.forEach(p => p.initBuffers(this.gl!));
+      this.targetCatalog.add(TargetType.PORTAL, this.gameState.portals[0] as any); // simple add; multiple handled later
     }
     // Prepare audio controllers after ship exists
     try {
@@ -905,11 +902,11 @@ export class GameEngine {
     } else {
       this.createPlanets();
     }
-    this.planets.forEach(p => p.initBuffers(this.gl!));
-    this.targetCatalog.register(TargetType.PLANET, this.planets as unknown as ITargetable[]);
+    this.gameState.planets.forEach(p => p.initBuffers(this.gl!));
+    this.targetCatalog.register(TargetType.PLANET, this.gameState.planets as unknown as ITargetable[]);
 
     // 2) Construir un rastro de clusters a lo largo de la elipse orbital de la Tierra
-    const earth = this.planets.find(p => p.id === 'planet-earth');
+    const earth = this.gameState.planets.find(p => p.id === 'planet-earth');
     const createdClusters: ReturnType<typeof this.asteroidClusterService.createCluster>[] = [];
     if (earth) {
       const a = earth.semiMajor;
@@ -1193,9 +1190,9 @@ export class GameEngine {
    * en una dirección aleatoria. Mantiene offsets relativos de miembros en cada clúster.
    */
   private randomizeStartNearSun(distFromSurface: number = 5000): void {
-    if (!this.primarySun) return;
-    const sunCenter = this.primarySun.position;
-    const sunRadius = this.primarySun.scale.x; // radio en this.scale
+    if (!this.gameState.sun) return;
+    const sunCenter = this.gameState.sun.position;
+    const sunRadius = this.gameState.sun.scale.x; // radio en this.scale
     // Vector unitario aleatorio uniforme en la esfera
     const u = Math.random();
     const v = Math.random();
@@ -1301,7 +1298,7 @@ export class GameEngine {
       this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'GameEngine.update() executed', {
         deltaTime: Math.round(deltaTime * 1000) + 'ms',
         spaceship: !!this.spaceship,
-        asteroids: this.asteroids.length
+        asteroids: 0 /* TODO: Get from cluster service */
       });
     }
     
@@ -1312,7 +1309,7 @@ export class GameEngine {
     }
     // Activar suavizado de alta velocidad durante void jump / gate rite transit
     try {
-      const voidJumpActive = !!(this as any).voidJumpActive;
+      const voidJumpActive = this.voidJumpActive;
       // También activar mientras haya una animación que bloquee inputs (GateRite transit lo habilita explícitamente)
       if (this.spaceship && typeof (this.spaceship as any).setHighSpeedSmoothing === 'function') {
         (this.spaceship as any).setHighSpeedSmoothing(voidJumpActive);
@@ -1521,7 +1518,7 @@ export class GameEngine {
             }
 
             // Stickiness: if we already have an active cue, keep it until it truly exits or a much closer object appears
-            const activeEntry = Array.from(this.dopplerCues.entries())[0]; // at most one after we enforce below
+            const activeEntry = Array.from(this.gameState.dopplerCues.entries())[0]; // at most one after we enforce below
             if (activeEntry) {
               const [activeId, entry] = activeEntry;
               // Locate active object to measure distance
@@ -1544,13 +1541,13 @@ export class GameEngine {
             }
 
             // Update existing cue (and stop any extra entries)
-            for (const [id, entry] of Array.from(this.dopplerCues.entries())) {
+            for (const [id, entry] of Array.from(this.gameState.dopplerCues.entries())) {
               if (id !== closestId) {
                 try { entry.cue.stop(80); } catch {}
-                this.dopplerCues.delete(id);
+                this.gameState.dopplerCues.delete(id);
                 continue;
               }
-              if (!closestPos) { try { entry.cue.stop(80); } catch {}; this.dopplerCues.delete(id); continue; }
+              if (!closestPos) { try { entry.cue.stop(80); } catch {}; this.gameState.dopplerCues.delete(id); continue; }
               const prev = this.lastObjPos.get(id) || closestPos;
               const ev = closestVel || { x: (closestPos.x - prev.x) / dt, y: (closestPos.y - prev.y) / dt, z: (closestPos.z - prev.z) / dt };
               entry.cue.update(closestPos, listenerPos, ev, this.camVel);
@@ -1558,11 +1555,11 @@ export class GameEngine {
             }
 
             // Create cue if we have a selected target and none is active
-            if (closestId && !this.dopplerCues.has(closestId)) {
+            if (closestId && !this.gameState.dopplerCues.has(closestId)) {
               const SOUND_NAME = this.audio.has(PREFERRED) ? PREFERRED : (this.audio.has(ALT1) ? ALT1 : ALT2);
               const p = closestPos!;
               const cue = this.audio.createDopplerCue({ name: SOUND_NAME, initialPos: { x: p.x, y: p.y, z: p.z }, baseVolume: 0.75, audibleRadius: 30, cUnits: 300, bus: 'sfx', loop: true });
-              this.dopplerCues.set(closestId, { cue, started: performance.now() });
+              this.gameState.dopplerCues.set(closestId, { cue, started: performance.now() });
               this.lastObjPos.set(closestId, { x: p.x, y: p.y, z: p.z });
             }
           }
@@ -1610,7 +1607,7 @@ export class GameEngine {
     // Actualizar cámara con nueva posición
     this.camera.update(this.spaceship, deltaTime);
   // Update portals (spin)
-  try { this.portals.forEach(p => p.update(deltaTime)); } catch {}
+  try { this.gameState.portals.forEach(p => p.update(deltaTime)); } catch {}
 
     // Asteroides sueltos eliminados: gestionamos solo clusters
   // Actualizar clusters: mueven su centro y sincronizan física común
@@ -1717,8 +1714,8 @@ export class GameEngine {
   } catch {}
   // Incluir asteroides independientes (eyectados de clusters) como targets adicionales
   try {
-    if (this.independentAsteroids.length) {
-      const independentsActive = this.independentAsteroids.filter(a => a.isActive && a.isActive());
+    if (this.gameState.independentAsteroids.length) {
+      const independentsActive = this.gameState.independentAsteroids.filter(a => a.isActive && a.isActive());
       if (independentsActive.length) {
         // Registrar en catálogo si no están ya
         const existing = this.targetCatalog.getByType(TargetType.ASTEROID).map(t => t.id);
@@ -1787,7 +1784,7 @@ export class GameEngine {
     // Debug ocasional para verificar targets
     if (Math.random() < 0.001) { // 0.1% chance
       this.logger.log(LogLevel.DEBUG, LogCategory.TARGETING, 'GameEngine targets update', {
-        asteroidCount: this.asteroids.length,
+        asteroidCount: 0 /* TODO: Get from cluster service */,
         targetCount: availableTargets.length,
         firstTarget: availableTargets[0]?.getDisplayName() || 'none'
       });
@@ -1882,7 +1879,7 @@ export class GameEngine {
       // For now, fire-and-forget; the HUD will be updated next frame when resolved
       this.fetchAndCacheTargetDetails(selected);
 
-  const baseDetails = (this as any)._targetDetailsCache?.[selected.id] || this.getFallbackDetails(selected);
+  const baseDetails = this._targetDetailsCache?.[selected.id] || this.getFallbackDetails(selected);
   // Añadir propiedades visibles comunes: masa del vacío del objeto si existe
   const voidMass = (selected as any).voidMassUnits ?? 0;
   
@@ -2040,7 +2037,7 @@ export class GameEngine {
   }
 
   private async fetchAndCacheTargetDetails(target: ITargetable) {
-    const cache = ((this as any)._targetDetailsCache ||= {});
+    const cache = (this._targetDetailsCache ||= {});
     if (cache[target.id]) return; // Already have details
     try {
   const res = await this.targetDetails.getDetails(target);
@@ -2184,9 +2181,9 @@ export class GameEngine {
     // Helper to apply damage with cooldown per object
     const applyDamage = (obj: any, amount: number): void => {
       if (!obj || !obj.id) return;
-      const nextAllowed = this.collisionDamageCooldown.get(obj.id) || 0;
+      const nextAllowed = this.gameState.collisionCooldowns.get(obj.id) || 0;
       if (now < nextAllowed) return; // still in cooldown
-      this.collisionDamageCooldown.set(obj.id, now + 500); // 0.5s cooldown per source
+      this.gameState.collisionCooldowns.set(obj.id, now + 500); // 0.5s cooldown per source
       // Portal is ethereal: ignore negative/zero damage
       if (amount <= 0) return;
       const prev = this.spaceship.healthCurrent;
@@ -2207,10 +2204,10 @@ export class GameEngine {
       });
     } catch {}
     try { this.ephemeralAsteroids.forEach(a => { if (a.isActive && a.isActive()) sources.push(a); }); } catch {}
-    try { this.independentAsteroids.forEach(a => { if (a.isActive && a.isActive()) sources.push(a); }); } catch {}
-    try { this.planets.forEach(p => { if (p.isActive && p.isActive()) sources.push(p); }); } catch {}
-    try { if (this.primarySun && this.primarySun.isActive && this.primarySun.isActive()) sources.push(this.primarySun); } catch {}
-    try { this.portals.forEach(p => { if (p.isActive && p.isActive()) sources.push(p); }); } catch {}
+    try { this.gameState.independentAsteroids.forEach(a => { if (a.isActive && a.isActive()) sources.push(a); }); } catch {}
+    try { this.gameState.planets.forEach(p => { if (p.isActive && p.isActive()) sources.push(p); }); } catch {}
+    try { if (this.gameState.sun && this.gameState.sun.isActive && this.gameState.sun.isActive()) sources.push(this.gameState.sun); } catch {}
+    try { this.gameState.portals.forEach(p => { if (p.isActive && p.isActive()) sources.push(p); }); } catch {}
     // Mega asteroides en planetDebris
     try { for (const arr of this.planetDebris.values()) { for (const d of arr) { if (d.obj.isActive && d.obj.isActive()) sources.push(d.obj); } } } catch {}
     // Debug: log sources count periodically
@@ -2267,7 +2264,7 @@ export class GameEngine {
     if (!this.spaceship || !this.collisionManager) return;
     
     // Determinar si el objetivo es miembro de cluster
-    const isClusterMember = !this.independentAsteroids.some(a => a.id === obj.id) && 
+    const isClusterMember = !this.gameState.independentAsteroids.some(a => a.id === obj.id) && 
                             !this.ephemeralAsteroids.some(a => a.id === obj.id);
     
     // Delegar TODA la lógica al CollisionManager
@@ -2333,7 +2330,7 @@ export class GameEngine {
         this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '✅ Velocity applied to asteroid', {
           asteroidId: obj.id,
           velocityAfter: `(${obj.velocity.x.toFixed(2)}, ${obj.velocity.y.toFixed(2)}, ${obj.velocity.z.toFixed(2)})`,
-          isIndependent: this.independentAsteroids.some(a => a.id === obj.id),
+          isIndependent: this.gameState.independentAsteroids.some(a => a.id === obj.id),
           hasPendingEjection: !!(obj as any)._pendingEjection
         });
       }
@@ -2476,12 +2473,9 @@ export class GameEngine {
     
     // Remove from appropriate array based on type
     if (typeName === 'Asteroid' || typeName === '_Asteroid') {
-      // Check regular asteroids array
-      const idx = this.asteroids.findIndex(a => a.id === objId);
-      if (idx >= 0) {
-        this.asteroids.splice(idx, 1);
-        removed = true;
-      }
+      // NOTE: Regular cluster asteroids are managed by AsteroidClusterService
+      // and don't need removal here (clusters handle their own lifecycle)
+      
       // Check ephemeral asteroids
       const ephIdx = this.ephemeralAsteroids.findIndex(a => a.id === objId);
       if (ephIdx >= 0) {
@@ -2489,9 +2483,9 @@ export class GameEngine {
         removed = true;
       }
       // Check independent asteroids
-      const indIdx = this.independentAsteroids.findIndex(a => a.id === objId);
+      const indIdx = this.gameState.independentAsteroids.findIndex(a => a.id === objId);
       if (indIdx >= 0) {
-        this.independentAsteroids.splice(indIdx, 1);
+        this.gameState.independentAsteroids.splice(indIdx, 1);
         removed = true;
       }
       // Check if it's in a cluster
@@ -2512,9 +2506,9 @@ export class GameEngine {
         } catch {}
       }
     } else if (typeName === 'SuperAsteroid' || typeName === '_SuperAsteroid') {
-      const idx = this.superAsteroids.findIndex(a => a.id === objId);
+      const idx = this.gameState.superAsteroids.findIndex(a => a.id === objId);
       if (idx >= 0) {
-        this.superAsteroids.splice(idx, 1);
+        this.gameState.superAsteroids.splice(idx, 1);
         removed = true;
       }
       // Also remove from cluster service if it's part of a cluster
@@ -2544,15 +2538,15 @@ export class GameEngine {
         }
       }
     } else if (typeName.includes('Planet') && !typeName.includes('Dwarf') && !typeName.includes('Proto')) {
-      const idx = this.planets.findIndex(p => p.id === objId);
+      const idx = this.gameState.planets.findIndex(p => p.id === objId);
       if (idx >= 0) {
-        this.planets.splice(idx, 1);
+        this.gameState.planets.splice(idx, 1);
         removed = true;
       }
     } else if (typeName === 'Portal') {
-      const idx = this.portals.findIndex(p => p.id === objId);
+      const idx = this.gameState.portals.findIndex(p => p.id === objId);
       if (idx >= 0) {
-        this.portals.splice(idx, 1);
+        this.gameState.portals.splice(idx, 1);
         removed = true;
       }
     }
@@ -2640,7 +2634,7 @@ export class GameEngine {
     });
     
     // Check if already independent
-    if (this.independentAsteroids.find(a => a.id === objId)) {
+    if (this.gameState.independentAsteroids.find(a => a.id === objId)) {
       this.logger.log(LogLevel.WARN, LogCategory.COLLISION_PHYSICS, '⚠️ Asteroid already independent', { asteroidId: objId });
       return;
     }
@@ -2670,7 +2664,7 @@ export class GameEngine {
     }
     
     // Add to independent asteroids array
-    this.independentAsteroids.push(obj);
+    this.gameState.independentAsteroids.push(obj);
     
     // Register reactive destruction callback (if not already registered)
     this.registerDestructionCallback(obj);
@@ -2682,7 +2676,7 @@ export class GameEngine {
       asteroidId: objId, 
       velocity: `(${obj.velocity.x.toFixed(2)}, ${obj.velocity.y.toFixed(2)}, ${obj.velocity.z.toFixed(2)})`,
       position: `(${obj.position.x.toFixed(0)}, ${obj.position.y.toFixed(0)}, ${obj.position.z.toFixed(0)})`,
-      totalIndependent: this.independentAsteroids.length,
+      totalIndependent: this.gameState.independentAsteroids.length,
       pendingEjection: !!(obj as any)._pendingEjection
     });
   }
@@ -2691,7 +2685,7 @@ export class GameEngine {
    * Update independent asteroids: apply motion and cull by distance
    */
   private updateIndependentAsteroids(deltaTime: number): void {
-    if (!this.spaceship || this.independentAsteroids.length === 0) return;
+    if (!this.spaceship || this.gameState.independentAsteroids.length === 0) return;
     
     const shipPos = this.spaceship.position;
     const CULLING_DISTANCE = 25000; // Remove if farther than 25km
@@ -2701,10 +2695,10 @@ export class GameEngine {
     // Log periódico (cada 5s) para ver estado de asteroides independientes
     if (!this._lastIndependentLogTime || now - this._lastIndependentLogTime > 5000) {
       this._lastIndependentLogTime = now;
-      if (this.independentAsteroids.length > 0) {
-        const sample = this.independentAsteroids[0];
+      if (this.gameState.independentAsteroids.length > 0) {
+        const sample = this.gameState.independentAsteroids[0];
         this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🔄 Updating independent asteroids', {
-          count: this.independentAsteroids.length,
+          count: this.gameState.independentAsteroids.length,
           sampleId: sample.id,
           sampleVelocity: `(${sample.velocity.x.toFixed(2)}, ${sample.velocity.y.toFixed(2)}, ${sample.velocity.z.toFixed(2)})`,
           samplePosition: `(${sample.position.x.toFixed(0)}, ${sample.position.y.toFixed(0)}, ${sample.position.z.toFixed(0)})`
@@ -2713,8 +2707,8 @@ export class GameEngine {
     }
     
     // Update and cull
-    for (let i = this.independentAsteroids.length - 1; i >= 0; i--) {
-      const ast = this.independentAsteroids[i];
+    for (let i = this.gameState.independentAsteroids.length - 1; i >= 0; i--) {
+      const ast = this.gameState.independentAsteroids[i];
       
       // Apply velocity
       ast.position.x += ast.velocity.x * deltaTime;
@@ -2748,7 +2742,7 @@ export class GameEngine {
           distance: distance.toFixed(0),
           lifetime: (lifetime / 1000).toFixed(1) + 's'
         });
-        this.independentAsteroids.splice(i, 1);
+        this.gameState.independentAsteroids.splice(i, 1);
       }
     }
   }
@@ -2819,23 +2813,22 @@ export class GameEngine {
 
     try {
       // Clear all game objects
-      this.asteroids = [];
-      this.ephemeralAsteroids = [];
-      this.superAsteroids = [];
-      this.independentAsteroids = [];
-      this.planets = [];
-      this.portals = [];
-      this.primarySun = null;
+            this.ephemeralAsteroids = [];
+      this.gameState.superAsteroids.length = 0;
+      this.gameState.independentAsteroids.length = 0;
+      this.gameState.planets.length = 0;
+      this.gameState.portals.length = 0;
+      this.gameState.sun = null;
       this.planetDebris.clear();
       
       // Clear cluster service (will be repopulated by createGameObjects)
       // Note: AsteroidClusterService doesn't have clear() method, objects will be replaced
       
       // Clear collision cooldowns
-      this.collisionDamageCooldown.clear();
+      this.gameState.collisionCooldowns.clear();
       
       // Clear doppler cues
-      this.dopplerCues.clear();
+      this.gameState.dopplerCues.clear();
       this.lastObjPos.clear();
       
       // Reset camera effects
@@ -2919,7 +2912,7 @@ export class GameEngine {
       let nearestPortal: any = null;
       let minDist = Infinity;
       
-      for (const portal of this.portals) {
+      for (const portal of this.gameState.portals) {
         const dx = portal.position.x - this.spaceship.position.x;
         const dy = portal.position.y - this.spaceship.position.y;
         const dz = portal.position.z - this.spaceship.position.z;
@@ -2932,8 +2925,8 @@ export class GameEngine {
       }
 
       // If no portal found, use primary sun as fallback
-      if (!nearestPortal && this.primarySun) {
-        nearestPortal = this.primarySun;
+      if (!nearestPortal && this.gameState.sun) {
+        nearestPortal = this.gameState.sun;
         this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'No portal found - using sun as spawn point');
       }
 
@@ -2956,7 +2949,7 @@ export class GameEngine {
         this.spaceship.voidEnergyCurrent = this.spaceship.voidEnergyMax;
         
         // Clear collision cooldowns
-        this.collisionDamageCooldown.clear();
+        this.gameState.collisionCooldowns.clear();
         
         // Reset camera effects
         this.impactVignetteLevel = 0;
@@ -3013,23 +3006,22 @@ export class GameEngine {
 
     try {
       // Clear all game objects
-      this.asteroids = [];
-      this.ephemeralAsteroids = [];
-      this.superAsteroids = [];
-      this.independentAsteroids = [];
-      this.planets = [];
-      this.portals = [];
-      this.primarySun = null;
+            this.ephemeralAsteroids = [];
+      this.gameState.superAsteroids.length = 0;
+      this.gameState.independentAsteroids.length = 0;
+      this.gameState.planets.length = 0;
+      this.gameState.portals.length = 0;
+      this.gameState.sun = null;
       this.planetDebris.clear();
       
       // Clear cluster service (will be repopulated by createGameObjects)
       // Note: AsteroidClusterService doesn't have clear() method, objects will be replaced
       
       // Clear collision cooldowns
-      this.collisionDamageCooldown.clear();
+      this.gameState.collisionCooldowns.clear();
       
       // Clear doppler cues
-      this.dopplerCues.clear();
+      this.gameState.dopplerCues.clear();
       this.lastObjPos.clear();
       
       // Reset camera effects
@@ -3091,7 +3083,7 @@ export class GameEngine {
     
     // Log detallado cada 60 frames para evitar spam
     if (Math.floor(performance.now() / 1000) % 3 === 0) {
-      this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Rendering frame', { ship: this.spaceship?.position, asteroids: this.asteroids.length });
+      this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Rendering frame', { ship: this.spaceship?.position, asteroids: 0 /* TODO: Get from cluster service */ });
     }
 
     // Configurar iluminación global
@@ -3193,8 +3185,8 @@ export class GameEngine {
         }
       }
       // Append independent asteroids (always smalls)
-      if (this.independentAsteroids.length) {
-        for (const a of this.independentAsteroids) {
+      if (this.gameState.independentAsteroids.length) {
+        for (const a of this.gameState.independentAsteroids) {
           if (a.isActive()) smalls.push(a);
         }
       }
@@ -3264,8 +3256,8 @@ export class GameEngine {
         }
       }
       // Render independent asteroids in non-instanced path
-      if (this.independentAsteroids.length) {
-        for (const a of this.independentAsteroids) {
+      if (this.gameState.independentAsteroids.length) {
+        for (const a of this.gameState.independentAsteroids) {
           if (a.isActive()) {
             this.shaderManager.setLitOpacity(1.0);
             this.renderObject(a);
@@ -3278,9 +3270,9 @@ export class GameEngine {
   this.renderPlanets();
   // Render portals (halo encapsulado en PortalRenderer)
   try {
-    const portalRenderer = (this as any).portalRenderer;
+    const portalRenderer = this.portalRenderer;
     if (portalRenderer) {
-      portalRenderer.render(this.portals, this.camera.viewMatrix, this.camera.projectionMatrix, (performance.now() || 0) / 1000);
+      portalRenderer.render(this.gameState.portals, this.camera.viewMatrix, this.camera.projectionMatrix, (performance.now() || 0) / 1000);
     }
   } catch {}
 
@@ -3296,16 +3288,16 @@ export class GameEngine {
   // Renderizar overlay de mapa del sistema o el grimorio si están activados (opacos, reemplazan HUD)
   if (this.systemPanel && this.systemPanel.isEnabled()) {
     try {
-      const center = this.primarySun ? { ...this.primarySun.position } : { x: 0, y: 0, z: 0 } as any;
+      const center = this.gameState.sun ? { ...this.gameState.sun.position } : { x: 0, y: 0, z: 0 } as any;
       // Rebuild id->target mapping each frame for map selection
-      this.mapIdToTarget.clear();
+      this.gameState.mapIdToTarget.clear();
       // Map the 'center' synthetic id to the actual primary sun target so clicks select it reliably
-      if (this.primarySun) {
-        this.mapIdToTarget.set('center', this.primarySun as unknown as ITargetable);
+      if (this.gameState.sun) {
+        this.gameState.mapIdToTarget.set('center', this.gameState.sun as unknown as ITargetable);
       }
-  const planets = this.planets
+  const planets = this.gameState.planets
         // Exclude the primary sun from the map's planet list to avoid blue dot + label
-        .filter(p => !(this.primarySun && p.id === this.primarySun.id))
+        .filter(p => !(this.gameState.sun && p.id === this.gameState.sun.id))
         .map(p => {
         // Prefer Planet.getDisplayName() which already returns customName if present
         const label = (p.getDisplayName?.() || (p as any).customName || p.id);
@@ -3324,7 +3316,7 @@ export class GameEngine {
             if (kindRaw === 'rocky' || kindRaw === 'terrestrial') return 'rocky';
             return kindRaw;
           })();
-        this.mapIdToTarget.set(p.id, p as unknown as ITargetable);
+        this.gameState.mapIdToTarget.set(p.id, p as unknown as ITargetable);
         return {
           id: p.id,
           label,
@@ -3340,36 +3332,36 @@ export class GameEngine {
       });
       const clusters = this.asteroidClusterService.getClusters().map(c => {
         const rep: ITargetable | null = (c.proxy as unknown as ITargetable) || (c.objects[0] as unknown as ITargetable) || null;
-        if (rep) this.mapIdToTarget.set(c.id, rep);
+        if (rep) this.gameState.mapIdToTarget.set(c.id, rep);
         return { id: c.id, label: c.id, center: { x: c.center.x, y: c.center.y, z: c.center.z } };
       });
       const debris: Array<{ id: string; pos: { x: number; y: number; z: number }; label?: string }> = [];
       for (const arr of this.planetDebris.values()) {
         for (const d of arr) {
           debris.push({ id: d.obj.id, pos: { x: d.obj.position.x, y: d.obj.position.y, z: d.obj.position.z }, label: d.obj.getDisplayName?.() || d.obj.id });
-          this.mapIdToTarget.set(d.obj.id, d.obj as unknown as ITargetable);
+          this.gameState.mapIdToTarget.set(d.obj.id, d.obj as unknown as ITargetable);
         }
       }
         // Ephemeral asteroids también se muestran como 'debris' (temporales)
         if (this.ephemeralAsteroids.length) {
           for (const ea of this.ephemeralAsteroids) {
             debris.push({ id: ea.id, pos: { x: ea.position.x, y: ea.position.y, z: ea.position.z }, label: ea.getDisplayName?.() || ea.id });
-            this.mapIdToTarget.set(ea.id, ea as unknown as ITargetable);
+            this.gameState.mapIdToTarget.set(ea.id, ea as unknown as ITargetable);
           }
         }
       const ship = this.spaceship ? { pos: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }, label: 'Ship' } : undefined;
       if (this.spaceship) {
         // Allow selecting the player's ship as an ally from the map
-        this.mapIdToTarget.set('ship', this.spaceship as unknown as ITargetable);
+        this.gameState.mapIdToTarget.set('ship', this.spaceship as unknown as ITargetable);
       }
       // Portals
-      const portals = this.portals.map(p => {
-        this.mapIdToTarget.set(p.id, p as unknown as ITargetable);
+      const portals = this.gameState.portals.map(p => {
+        this.gameState.mapIdToTarget.set(p.id, p as unknown as ITargetable);
         return { id: p.id, pos: { x: p.position.x, y: p.position.y, z: p.position.z }, label: 'Portal' };
       });
         // If there is a deferred map selection (click happened before mapping), resolve it now
         if (this.pendingMapSelectId) {
-          const pendingTgt = this.mapIdToTarget.get(this.pendingMapSelectId);
+          const pendingTgt = this.gameState.mapIdToTarget.get(this.pendingMapSelectId);
           if (pendingTgt && this.adaptiveTargeting) {
             try { this.prepareDisplayPropsForTarget(pendingTgt as ITargetable); } catch {}
             try { this.adaptiveTargeting.selectTarget(pendingTgt); } catch {}
@@ -3383,11 +3375,11 @@ export class GameEngine {
       try {
         const activeId = (this.systemPanel as any).getSelectedId?.() || (this.systemPanel as any).getHoveredId?.() || null;
         if (activeId) {
-          const tgt = this.mapIdToTarget.get(activeId);
+          const tgt = this.gameState.mapIdToTarget.get(activeId);
           if (tgt) {
             // Ensure details are fetched (async); use cached or fallback immediately
             this.fetchAndCacheTargetDetails(tgt as ITargetable);
-            const base = (this as any)._targetDetailsCache?.[tgt.id] || this.getFallbackDetails(tgt as ITargetable);
+            const base = this._targetDetailsCache?.[tgt.id] || this.getFallbackDetails(tgt as ITargetable);
             const tt = (tgt as ITargetable).getTargetType?.();
             
             // Obtener tipo real del objeto usando getType()
@@ -3432,7 +3424,7 @@ export class GameEngine {
       } catch {}
 
   // Only show center label when the star has an explicit customName; do not fallback to id
-  const centerLabel = this.primarySun ? ((this.primarySun as any).customName || undefined) : undefined;
+  const centerLabel = this.gameState.sun ? ((this.gameState.sun as any).customName || undefined) : undefined;
   this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, ship, portals, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
@@ -3492,7 +3484,7 @@ export class GameEngine {
    */
   private createPlanets(): void {
     // Si ya existen, no recrear
-    if (this.planets.length > 0) return;
+    if (this.gameState.planets.length > 0) return;
 
     const center = { x: 0, y: 0, z: 0 };
     // Crear Sol en el centro (inmóvil)
@@ -3501,8 +3493,8 @@ export class GameEngine {
     sun.orbitCenter = { ...center };
     sun.semiMajor = 0; sun.semiMinor = 0; sun.orbitAngularSpeed = 0; sun.orbitAngle = 0;
     sun.angularVelocity.y = 0.0005; // leve rotación visual
-    this.planets.push(sun);
-    this.primarySun = sun;
+    this.gameState.planets.push(sun);
+    this.gameState.sun = sun;
   const count = 9;
     const minA = 50000; // semi-eje mayor mínimo
     const maxA = 100000; // semi-eje mayor máximo
@@ -3710,7 +3702,7 @@ export class GameEngine {
       (planetObj as any).customName = this.generatePlanetName();
     }
   } catch {}
-  this.planets.push(planetObj);
+  this.gameState.planets.push(planetObj);
   // Actualizar separación: el siguiente anillo debe respetar b_next >= lastOuterA + spacing
   lastOuterA = a;
     }
@@ -3718,9 +3710,9 @@ export class GameEngine {
 
   /** Actualiza la posición/orientación de planetas según su órbita */
   private updatePlanets(dt: number): void {
-    for (const p of this.planets) {
+    for (const p of this.gameState.planets) {
       // Skip orbital translation for anchored primary sun
-      if (this.primarySun && p.id === this.primarySun.id) {
+      if (this.gameState.sun && p.id === this.gameState.sun.id) {
         p.update(dt);
         continue;
       }
@@ -3852,17 +3844,17 @@ export class GameEngine {
     this.gl.enable(this.gl.DEPTH_TEST);
     this.gl.depthMask(true);
     
-    for (const p of this.planets) {
+    for (const p of this.gameState.planets) {
       const isSun = (p as any).planetType === 'Sun';
-      const isPrimarySun = p === this.primarySun;
+      const isPrimarySun = p === this.gameState.sun;
       // Calcular iluminación basada en Sol si existe (direccional desde el sol al objeto)
       let lightDir = this.lightDirection;
       let ambientStrengthLocal = this.ambientStrength;
       let lightColorLocal = this.lightColor;
-      if (this.primarySun) {
-        const lx = p.position.x - this.primarySun.position.x;
-        const ly = p.position.y - this.primarySun.position.y;
-        const lz = p.position.z - this.primarySun.position.z;
+      if (this.gameState.sun) {
+        const lx = p.position.x - this.gameState.sun.position.x;
+        const ly = p.position.y - this.gameState.sun.position.y;
+        const lz = p.position.z - this.gameState.sun.position.z;
         const len = Math.hypot(lx, ly, lz) || 1;
         lightDir = new Float32Array([lx / len, ly / len, lz / len]);
         // Luz más cálida
@@ -3896,11 +3888,11 @@ export class GameEngine {
   const isEarthSplit = (p as any).planetType === 'Tierra';
         // Calcular dirección de luz desde el Sol al planeta para iluminación dinámica
         let lightDir: { x: number; y: number; z: number } | undefined;
-        if (this.primarySun) {
+        if (this.gameState.sun) {
           // Vector desde planeta hacia Sol (normalizado)
-          const toSunX = this.primarySun.position.x - p.position.x;
-          const toSunY = this.primarySun.position.y - p.position.y;
-          const toSunZ = this.primarySun.position.z - p.position.z;
+          const toSunX = this.gameState.sun.position.x - p.position.x;
+          const toSunY = this.gameState.sun.position.y - p.position.y;
+          const toSunZ = this.gameState.sun.position.z - p.position.z;
           const sunDist = Math.sqrt(toSunX * toSunX + toSunY * toSunY + toSunZ * toSunZ) || 1;
           const sunDirWorldX = toSunX / sunDist;
           const sunDirWorldY = toSunY / sunDist;
@@ -4179,9 +4171,9 @@ export class GameEngine {
     
     // GARANTIZAR: Renderizar halo del primarySun SIEMPRE, incluso si el bucle lo saltó
     // Esto asegura que el brillo solar sea visible sin importar frustum/posición
-    if (this.primarySun && (this.primarySun as any).renderGlow) {
+    if (this.gameState.sun && (this.gameState.sun as any).renderGlow) {
       try {
-        (this.primarySun as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
+        (this.gameState.sun as any).renderGlow(this.gl as any, this.shaderManager, this.camera);
       } catch (e) {
         this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'renderGlow(primary sun post-loop) failed', e);
       }
@@ -4214,8 +4206,8 @@ export class GameEngine {
     const camPosArr = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
     // Culling específico: si la cámara está a >= SPRITE LOD (~50,000u), no renderizar debris de ese planeta
     const SPRITE_LOD_DISTANCE = 50000;
-    const earth = this.planets.find(p => p.id === 'planet-earth');
-    const saturn = this.planets.find(p => p.id === 'planet-saturn');
+    const earth = this.gameState.planets.find(p => p.id === 'planet-earth');
+    const saturn = this.gameState.planets.find(p => p.id === 'planet-saturn');
     let skipEarth = false;
     let skipSaturn = false;
     if (earth && this.camera) {
@@ -4368,10 +4360,10 @@ export class GameEngine {
     // Iluminación de la nave: dirigir la luz desde el Sol hacia la nave si existe
     let shipLightDir = this.lightDirection;
     let shipLightColor = this.lightColor;
-    if (this.primarySun) {
-      const lx = this.spaceship.position.x - this.primarySun.position.x;
-      const ly = this.spaceship.position.y - this.primarySun.position.y;
-      const lz = this.spaceship.position.z - this.primarySun.position.z;
+    if (this.gameState.sun) {
+      const lx = this.spaceship.position.x - this.gameState.sun.position.x;
+      const ly = this.spaceship.position.y - this.gameState.sun.position.y;
+      const lz = this.spaceship.position.z - this.gameState.sun.position.z;
       const len = Math.hypot(lx, ly, lz) || 1;
       shipLightDir = new Float32Array([lx / len, ly / len, lz / len]);
       // Luz algo más cálida para la nave
@@ -5021,8 +5013,8 @@ export class GameEngine {
         const next = !this.systemPanel.isEnabled();
         if (next) {
           // Opening: respect reopen cooldown
-          if (now < this.mapReopenAllowedAtMs) {
-            this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Map reopen blocked by cooldown', { remainingMs: Math.round(this.mapReopenAllowedAtMs - now) });
+          if (now < this.gameState.mapReopenAllowedAtMs) {
+            this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Map reopen blocked by cooldown', { remainingMs: Math.round(this.gameState.mapReopenAllowedAtMs - now) });
             return;
           }
           this.systemPanel.setEnabled(true);
@@ -5045,13 +5037,13 @@ export class GameEngine {
           } catch (e) {
             this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Map close sound failed', e);
           }
-          this.mapReopenAllowedAtMs = now + 1000;
+          this.gameState.mapReopenAllowedAtMs = now + 1000;
         }
         // Ensure mutual exclusivity with Grimoire
         if (this.systemPanel.isEnabled() && this.grimoirePanel) {
           try { 
             this.grimoirePanel.setEnabled(false); 
-            this.grimoireReopenAllowedAtMs = performance.now() + 1000;
+            this.gameState.grimoireReopenAllowedAtMs = performance.now() + 1000;
           } catch {}
         }
         if (this.systemPanel.isEnabled()) {
@@ -5081,8 +5073,8 @@ export class GameEngine {
         const currentlyOpen = (this.grimoirePanel as any).isInteractive?.() ?? this.grimoirePanel.isEnabled();
         const next = !currentlyOpen;
         if (next) {
-          if (now < this.grimoireReopenAllowedAtMs) {
-            this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Grimoire reopen blocked by cooldown', { remainingMs: Math.round(this.grimoireReopenAllowedAtMs - now) });
+          if (now < this.gameState.grimoireReopenAllowedAtMs) {
+            this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Grimoire reopen blocked by cooldown', { remainingMs: Math.round(this.gameState.grimoireReopenAllowedAtMs - now) });
             return;
           }
           this.grimoirePanel.setEnabled(true);
@@ -5096,7 +5088,7 @@ export class GameEngine {
           }
         } else {
           this.grimoirePanel.setEnabled(false);
-          this.grimoireReopenAllowedAtMs = now + 1000;
+          this.gameState.grimoireReopenAllowedAtMs = now + 1000;
           // Play grimoire close sound
           try {
             if (this.audio) {
@@ -5110,7 +5102,7 @@ export class GameEngine {
         if (this.grimoirePanel.isEnabled() && this.systemPanel) {
           try { 
             this.systemPanel.setEnabled(false); 
-            this.mapReopenAllowedAtMs = performance.now() + 1000;
+            this.gameState.mapReopenAllowedAtMs = performance.now() + 1000;
           } catch {}
         }
         if (!this.grimoirePanel.isEnabled()) {
@@ -5127,7 +5119,7 @@ export class GameEngine {
     if (key.toLowerCase() === 'escape') {
       if (this.systemPanel && this.systemPanel.isEnabled()) {
         this.systemPanel.setEnabled(false);
-        this.mapReopenAllowedAtMs = performance.now() + 1000;
+        this.gameState.mapReopenAllowedAtMs = performance.now() + 1000;
         // Play map close sound
         try {
           if (this.audio) {
@@ -5143,7 +5135,7 @@ export class GameEngine {
       }
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
         this.grimoirePanel.setEnabled(false);
-        this.grimoireReopenAllowedAtMs = performance.now() + 1000;
+        this.gameState.grimoireReopenAllowedAtMs = performance.now() + 1000;
         // Play grimoire close sound
         try {
           if (this.audio) {
@@ -5291,7 +5283,7 @@ export class GameEngine {
         // Si el mapa está abierto, cerrarlo y aplicar cooldown igual que con escape
         if (this.systemPanel && this.systemPanel.isEnabled()) {
           this.systemPanel.setEnabled(false);
-          this.mapReopenAllowedAtMs = performance.now() + 1000;
+          this.gameState.mapReopenAllowedAtMs = performance.now() + 1000;
           try { this.updateMapClickBinding(); } catch {}
           try { this.updateCanvasCursor(); } catch {}
         }
@@ -5385,7 +5377,7 @@ export class GameEngine {
   /**
    * Start the Material Disruption Rite beam animation
    */
-  private startDisruptionBeam(targetPos: { x: number; y: number; z: number }, target: any): void {
+  public startDisruptionBeam(targetPos: { x: number; y: number; z: number }, target: any): void {
     if (!this.spaceship) return;
     
     // Get ship's cockpit position (forward from center)
@@ -5545,7 +5537,7 @@ export class GameEngine {
   }
 
   /** Apply the Double Phased Time Rite: doubles maxSpeed for a duration (default 2 minutes) */
-  private applySpeedRite(durationMs: number = 120000): void {
+  public applySpeedRite(durationMs: number = 120000): void {
     if (!this.spaceship) return;
     const now = performance.now();
     // Cache original max once (first activation)
@@ -5571,7 +5563,7 @@ export class GameEngine {
   }
 
   /** Minimal full-screen text overlay helper for placeholder animations */
-  private showPlaceholderText(msg: string, durationMs: number = 2000): void {
+  public showPlaceholderText(msg: string, durationMs: number = 2000): void {
     if (!this.gl || !this.overlayRenderer) return;
     const gl = this.gl;
     const screen = gl.canvas as HTMLCanvasElement;
@@ -5746,7 +5738,7 @@ export class GameEngine {
   public getDebugInfo(): any {
     return {
       isRunning: this.isRunning,
-      objectCount: this.asteroids.length + 1,
+      objectCount: 0 /* TODO: Get from cluster service */ + 1,
       cameraInfo: this.camera ? this.camera.getDebugInfo() : null,
       spaceshipPosition: this.spaceship ? { ...this.spaceship.position } : null,
       spaceshipVelocity: this.spaceship ? { ...this.spaceship.velocity } : null
@@ -5977,7 +5969,7 @@ export class GameEngine {
     const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
     const speedPctExtended = (this.spaceship.currentSpeed / Math.max(1e-6, baseMax)) * 100; // 0..200 when jumping/rite
     const riteActive = !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && performance.now() < this.speedRiteUntilMs);
-    const voidJumpActive = !!(this as any).voidJumpActive;
+    const voidJumpActive = !!this.voidJumpActive;
     const speedForHud = voidJumpActive ? Math.max(0, Math.min(100, speedPctExtended)) : Math.max(0, Math.min(200, speedPctExtended));
     const gameData = {
       velocity: velocityMagnitude,
@@ -6092,7 +6084,7 @@ export class GameEngine {
     } catch {}
     // Aplicar el mismo filtro de visibilidad para debris de la Tierra
     try {
-      const earth = this.planets.find(p => p.id === 'planet-earth');
+      const earth = this.gameState.planets.find(p => p.id === 'planet-earth');
       if (earth && this.camera) {
         const dxE = earth.position.x - this.camera.position.x;
         const dyE = earth.position.y - this.camera.position.y;
@@ -6313,7 +6305,7 @@ export class GameEngine {
       // No permitir selección de la nave en el mapa (solo hover outline)
       if (id === 'ship') return;
       
-      const target = this.mapIdToTarget.get(id);
+      const target = this.gameState.mapIdToTarget.get(id);
       if (target && this.adaptiveTargeting) {
         try { this.prepareDisplayPropsForTarget(target as unknown as ITargetable); } catch {}
         try { this.adaptiveTargeting.selectTarget(target); } catch {}
@@ -6472,7 +6464,7 @@ export class GameEngine {
   private resolveMapIdForTarget(target: ITargetable): string | null {
     try {
       // Primary Sun maps to 'center'
-      if (this.primarySun && (target as any).id === (this.primarySun as any).id) return 'center';
+      if (this.gameState.sun && (target as any).id === (this.gameState.sun as any).id) return 'center';
       // Planets map to their own id
       const ttype = target.getTargetType?.();
       if (ttype === TargetType.PLANET) return target.id;
@@ -6496,3 +6488,5 @@ export class GameEngine {
     }
   }
 }
+
+

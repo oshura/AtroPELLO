@@ -19,6 +19,7 @@ import { PortalPersistenceService } from '../../game/services/game/portal-persis
 import { PortalRegistryService } from '../../game/services/game/portal-registry.service';
 import { CollisionManagerService } from '../../game/services/physics/collision-manager.service';
 import { PanelEventCoordinator } from '../../game/services/ui/panel-event-coordinator.service';
+import { GameStateStore } from './game-state.store';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -110,6 +111,7 @@ export class GameInitializer {
   const portalPersistenceService = this.injector.get(PortalPersistenceService);
   const portalRegistry = this.injector.get(PortalRegistryService);
     const panelEventCoordinator = this.injector.get(PanelEventCoordinator);
+    const gameStateStore = this.injector.get(GameStateStore);
     this.gameEngine = new GameEngine(
       this.webglService,
       this.particleEffectsService,
@@ -123,6 +125,7 @@ export class GameInitializer {
       this.logger,
       this.injector.get(CollisionManagerService),
       panelEventCoordinator,
+      gameStateStore,
       solarSystemService,
       humanSolarSystemService,
       portalPersistenceService,

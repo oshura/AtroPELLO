@@ -78,15 +78,15 @@ export class GateRiteAnimation implements GameAnimation {
     this.phase = GateRitePhase.PreFocus;
     this.t = 0;
     this.finished = false;
-    try { (engine as any).showPlaceholderText?.('GATE RITE: INIT', 900); } catch {}
+    try { engine.showPlaceholderText?.('GATE RITE: INIT', 900); } catch {}
     // Pausar consumo de energía del vacío durante toda la animación
     try {
-      const ship: any = (engine as any)['spaceship'];
+      const ship = engine.spaceship;
       if (ship) ship.voidEnergyPaused = true;
     } catch {}
     // Seed manual camera with current active transform, then switch to MANUAL to prevent ship overrides
     try {
-      const cam: any = (engine as any).camera;
+      const cam = engine.camera;
       if (cam?.getCurrentMode && cam?.setCameraMode) {
         this.prevCameraMode = cam.getCurrentMode();
         const seedPos = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
@@ -101,8 +101,8 @@ export class GateRiteAnimation implements GameAnimation {
     // Capture snapshot NOW (including debris + portals) for later persistence/reference
     try {
       this.originalSnapshot = SolarSystemSerializer.fromState({
-        sun: engine['primarySun'] ? { id: engine['primarySun'].id, name: engine['primarySun'].customName, position: { ...engine['primarySun'].position }, scale: { ...engine['primarySun'].scale } } : null,
-        planets: engine['planets']?.map((p: any) => ({
+        sun: engine.gameState.sun ? { id: engine.gameState.sun.id, name: engine.gameState.sun.customName, position: { ...engine.gameState.sun.position }, scale: { ...engine.gameState.sun.scale } } : null,
+        planets: engine.gameState.planets?.map((p: any) => ({
           id: p.id,
           customName: p.customName,
           position: { ...p.position },
@@ -129,7 +129,7 @@ export class GateRiteAnimation implements GameAnimation {
           radius: c.radius || 12,
           centerSpeedFactor: c.centerSpeedFactor || 0.5,
         })) || [],
-        portals: engine['portals']?.map((portal: any) => ({
+        portals: engine.gameState.portals?.map((portal: any) => ({
           id: portal.id,
           position: { ...portal.position },
           radius: portal.radius || 100,
@@ -153,7 +153,7 @@ export class GateRiteAnimation implements GameAnimation {
       });
       // Persist original snapshot if portal persistence is available (only once per rite start)
       try {
-        const persistence: any = (engine as any)['portalPersistenceService'];
+        const persistence: any = engine.portalPersistenceService;
         if (persistence && this.originalSnapshot) {
           persistence.autoLabelAndSave?.('gate-origin', this.originalSnapshot);
         }
@@ -166,12 +166,12 @@ export class GateRiteAnimation implements GameAnimation {
   this.zoomElapsed = 0;
   // Apply new design timings: zoom lasts 3× original base duration
   this.zoomDuration = 2.5 * 3.0;
-    const cam: any = (engine as any).camera;
+    const cam = engine.camera;
     if (cam) {
       this.initialCamPos = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
       this.initialCamTarget = cam.target ? { x: cam.target.x, y: cam.target.y, z: cam.target.z } : null;
     }
-  try { (engine as any).showPlaceholderText?.('GATE RITE: CAMERA ZOOM', 800); } catch {}
+  try { engine.showPlaceholderText?.('GATE RITE: CAMERA ZOOM', 800); } catch {}
   }
 
   update(engine: GameEngine, dt: number): boolean {
@@ -209,7 +209,7 @@ export class GateRiteAnimation implements GameAnimation {
 
   private updateCameraZoomOut(engine: GameEngine, dt: number) {
     if (!this.targetPlanet) { this.finishEarly(engine, 'NO TARGET'); return; }
-    const cam: any = (engine as any).camera;
+    const cam = engine.camera;
     if (!cam || !this.initialCamPos) { this.finishEarly(engine, 'NO CAM'); return; }
 
   this.zoomElapsed += dt;
@@ -261,7 +261,7 @@ export class GateRiteAnimation implements GameAnimation {
   private enterPlanetWrapper(engine: GameEngine) {
     this.phase = GateRitePhase.PlanetWrapper;
     this.wrapperElapsed = 0;
-    const cam: any = (engine as any).camera;
+    const cam = engine.camera;
     if (cam) this.baseCamPos = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
   }
 
@@ -270,7 +270,7 @@ export class GateRiteAnimation implements GameAnimation {
     const k = Math.min(1, this.wrapperElapsed / this.wrapperDuration);
     // Show a temporary overlay text only once at start (not every frame)
     if (this.wrapperElapsed < dt + 0.0001) {
-      try { (engine as any).showPlaceholderText?.('Gate Rite: Wrapping', 900); } catch {}
+      try { engine.showPlaceholderText?.('Gate Rite: Wrapping', 900); } catch {}
     }
     // Suavizar aparición del "envolvente" del planeta: exponer parámetros graduales para el renderer
     try {
@@ -301,7 +301,7 @@ export class GateRiteAnimation implements GameAnimation {
       }
     } catch {}
     // Camera jitter: small per-axis sin noise scaled by (0→peak at mid→0)
-    const cam: any = (engine as any).camera;
+    const cam = engine.camera;
     if (cam && this.baseCamPos) {
       const midPulse = Math.sin(k * Math.PI); // 0→1→0
       const jA = this.cameraJitterAmp * midPulse;
@@ -330,7 +330,7 @@ export class GateRiteAnimation implements GameAnimation {
         p.originalScaleX = this.collapseStartScale;
       }
     } catch {}
-    try { (engine as any).showPlaceholderText?.('Gate Rite: Collapse', 900); } catch {}
+    try { engine.showPlaceholderText?.('Gate Rite: Collapse', 900); } catch {}
   }
 
   private updatePlanetCollapse(engine: GameEngine, dt: number) {
@@ -367,13 +367,13 @@ export class GateRiteAnimation implements GameAnimation {
     if (this.collapseElapsed >= this.collapseDuration) {
       // Remove planet from engine arrays/catalog
       try {
-        const planets: any[] = engine['planets'];
-        engine['planets'] = planets.filter(pl => pl.id !== p.id);
+        const planets: any[] = engine.gameState.planets;
+        const idx = planets.findIndex(pl => pl.id === p.id);
+        if (idx >= 0) planets.splice(idx, 1);
         // Remove from target catalog (re-register PLANET bucket)
         const tc = engine['targetCatalog'];
         if (tc) {
-          const remaining = planets.filter(pl => pl.id !== p.id) as any[];
-          tc.register(TargetType.PLANET, remaining as any);
+          tc.register(TargetType.PLANET, planets as any);
         }
       } catch {}
       this.enterPortalManifest(engine);
@@ -389,11 +389,11 @@ export class GateRiteAnimation implements GameAnimation {
       const baseR = (this as any).collapseStartScale && isFinite((this as any).collapseStartScale)
         ? (this as any).collapseStartScale
         : (((this.targetPlanet as any)?.scale?.x) || 120);
-      const logger: LoggingService | undefined = (engine as any)?.logger as LoggingService | undefined;
+      const logger: LoggingService | undefined = engine.logger as LoggingService | undefined;
       const portal = new Portal('portal-gaterite', pos, Math.max(60, Number(baseR)), logger);
       // Orientar el portal con la normal opuesta al forward de la nave para cruce perpendicular (incluye pitch)
       try {
-        const ship: any = (engine as any)['spaceship'];
+        const ship: any = engine.spaceship;
         if (ship && ship.rotation) {
           const yaw = Number(ship.rotation.y) || 0;
           const pitch = Number(ship.rotation.x) || 0;
@@ -428,17 +428,17 @@ export class GateRiteAnimation implements GameAnimation {
         (portal as any).eyelidOpen = 0.05;
       } catch {}
       this.portalInstance = portal;
-      const gl = (engine as any).gl;
+      const gl = engine.gl;
       if (gl && !portal.vertexBuffer) portal.initBuffers(gl);
       // Register portal
-      const portalsArr = (engine as any)['portals'];
+      const portalsArr = engine.gameState.portals;
       if (Array.isArray(portalsArr)) portalsArr.push(portal);
-      (engine as any)['targetCatalog']?.add?.(TargetType.PORTAL, portal);
+      engine.targetCatalog?.add?.(TargetType.PORTAL, portal);
       try { logger?.log(LogLevel.INFO, LogCategory.PORTAL, 'Portal manifest created', { id: portal.id, radius: portal.radius, pos }); } catch {}
     } catch (e) {
-      try { ((engine as any)?.logger as LoggingService | undefined)?.log(LogLevel.ERROR, LogCategory.PORTAL, 'Portal manifest failed', e); } catch {}
+      try { (engine.logger as LoggingService | undefined)?.log(LogLevel.ERROR, LogCategory.PORTAL, 'Portal manifest failed', e); } catch {}
     }
-    try { (engine as any).showPlaceholderText?.('Gate Rite: Portal', 1000); } catch {}
+    try { engine.showPlaceholderText?.('Gate Rite: Portal', 1000); } catch {}
   }
 
   private updatePortalManifest(engine: GameEngine, dt: number) {
@@ -463,7 +463,7 @@ export class GateRiteAnimation implements GameAnimation {
       // No mover la nave: solo reorientar una vez al inicio del manifest (usar lookAt hacia el portal si existe)
       try {
         if (this.manifestElapsed < dt + 0.0001) {
-          const ship: any = (engine as any)['spaceship'];
+          const ship: any = engine.spaceship;
           if (ship && ship.position) {
             if (typeof ship.lookAt === 'function') {
               ship.lookAt({ x: this.portalInstance.position.x, y: this.portalInstance.position.y, z: this.portalInstance.position.z });
@@ -489,7 +489,7 @@ export class GateRiteAnimation implements GameAnimation {
   private enterCameraReframe(engine: GameEngine) {
     this.phase = GateRitePhase.CameraReframe;
     this.reframeElapsed = 0;
-    const cam: any = (engine as any).camera;
+    const cam = engine.camera;
     if (!cam || !this.portalInstance) return;
     // Punto inicial: la posición actual (plano general)
     this.reframeStart = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
@@ -514,7 +514,7 @@ export class GateRiteAnimation implements GameAnimation {
     const k = Math.min(1, this.reframeElapsed / Math.max(0.0001, this.reframeDuration));
     const ease = (x:number) => 1 - Math.pow(1 - x, 3); // ease-out
     const t = ease(k);
-    const cam: any = (engine as any).camera;
+    const cam = engine.camera;
     if (cam && this.reframeStart && this.reframeEnd && this.reframeTarget) {
       cam.position.x = this.reframeStart.x + (this.reframeEnd.x - this.reframeStart.x) * t;
       cam.position.y = this.reframeStart.y + (this.reframeEnd.y - this.reframeStart.y) * t;
@@ -532,14 +532,15 @@ export class GateRiteAnimation implements GameAnimation {
   private enterTransit(engine: GameEngine) {
     this.phase = GateRitePhase.Transit;
     this.transitElapsed = 0;
-    try { (engine as any).showPlaceholderText?.('Gate Rite: Transit', 800); } catch {}
+    try { engine.showPlaceholderText?.('Gate Rite: Transit', 800); } catch {}
     // Use non-smoothed transit camera to avoid flicker and lag
     this.camTransitSmoothing = false;
     // Lazy resolve generator via Angular injector pattern (fallback new)
-    try { this.generator = (engine as any)['systemGeneratorService'] || this.generator || null; } catch {}
+    // TODO: systemGeneratorService should be added to GameEngine if needed
+    // try { this.generator = engine.systemGeneratorService || this.generator || null; } catch {}
     // Preparar: situar nave a 1000u del portal, orientar al centro; preparar travelling y streaks
     try {
-      const ship: any = (engine as any)['spaceship'];
+      const ship: any = engine.spaceship;
       if (ship && this.portalInstance) {
         const center = this.portalInstance.position;
         // Colocar a 1000u del centro hacia atrás
@@ -558,9 +559,9 @@ export class GateRiteAnimation implements GameAnimation {
   // Travelling inicial: aún sin aceleración de +10u/s (se activará al finalizar travelling)
   this.accelActive = false;
         // Pausar energía y marcar HUD para overspeed clamping
-        try { ship.voidEnergyPaused = true; (engine as any).voidJumpActive = true; } catch {}
+        try { ship.voidEnergyPaused = true; engine.voidJumpActive = true; } catch {}
         // Capturar estado inicial de cámara manual para travelling
-        const cam: any = (engine as any).camera;
+        const cam = engine.camera;
         if (cam) {
           this.camTravelStart = {
             pos: { x: cam.position.x, y: cam.position.y, z: cam.position.z },
@@ -587,7 +588,7 @@ export class GateRiteAnimation implements GameAnimation {
     this.transitElapsed += dt;
     const k = Math.min(1, this.transitElapsed / this.transitDuration);
     try {
-      const ship: any = (engine as any)['spaceship'];
+      const ship: any = engine.spaceship;
       if (ship && this.portalInstance) {
         const center = this.portalInstance.position;
   // Mantener rumbo al centro una sola vez (enterTransit); evitar micro-ajustes por frame
@@ -603,7 +604,7 @@ export class GateRiteAnimation implements GameAnimation {
           ship.targetSpeed = ship.currentSpeed;
         }
         // Travelling de cámara manual hacia pose tipo cámara 0 detrás de la nave con ligera inclinación
-        const cam: any = (engine as any).camera;
+        const cam = engine.camera;
         if (cam && this.camTravelStart && !this.camTransitSmoothing) {
           // Durante travelling (antes de accelActive) aún interpolamos; tras accelActive anclamos rígido
           const shipQ = ship.getOrientationQuaternion?.();
@@ -680,7 +681,7 @@ export class GateRiteAnimation implements GameAnimation {
     this.phase = GateRitePhase.FadeSwitch;
     this.fadeElapsed = 0;
     // Iniciar cambio a cámara trasera durante el fade (no visible al usuario por la cortinilla)
-    try { (engine as any).camera?.setCameraMode?.(CameraMode.REAR_VIEW); } catch {}
+    try { engine.camera?.setCameraMode?.(CameraMode.REAR_VIEW); } catch {}
   }
 
   private updateFadeSwitch(engine: GameEngine, dt: number) {
@@ -689,7 +690,7 @@ export class GateRiteAnimation implements GameAnimation {
     if (k >= 1) {
       // Al completar el fade, generar y aplicar el nuevo sistema, colocar nave, reactivar energía
       try {
-        const solarSvc: SolarSystemService | undefined = (engine as any)['solarSystemService'];
+        const solarSvc: SolarSystemService | undefined = engine.solarSystemService;
         const originPortal = this.portalInstance ? {
           id: this.portalInstance.id,
           position: { ...this.portalInstance.position },
@@ -714,9 +715,9 @@ export class GateRiteAnimation implements GameAnimation {
           snapshot = solarSvc.generateWithLinkedPortal(originPortal, Date.now(), genOptions);
         }
         else if (this.generator) snapshot = this.generator.generate(Date.now());
-        if (snapshot && (engine as any).applySolarSystemSnapshot) {
+        if (snapshot && engine.applySolarSystemSnapshot) {
           // Registrar portales en el PortalRegistryService
-          const registry = (engine as any).portalRegistry;
+          const registry = engine.portalRegistry;
           const originSystemId = this.originalSnapshot?.id || 'unknown-origin';
           const destSystemId = snapshot.id || 'unknown-dest';
           
@@ -758,7 +759,7 @@ export class GateRiteAnimation implements GameAnimation {
           
           // Persistir snapshot de origen con planeta colapsado excluido y portal enlazado
           try {
-            const persistence: any = (engine as any)['portalPersistenceService'];
+            const persistence: any = engine.portalPersistenceService;
             if (persistence && this.originalSnapshot && this.portalInstance && dest) {
               const originPortalSnap = {
                 id: this.portalInstance.id,
@@ -779,12 +780,12 @@ export class GateRiteAnimation implements GameAnimation {
             }
           } catch {}
           // Aplicar nuevo sistema
-          (engine as any).applySolarSystemSnapshot(snapshot);
+          engine.applySolarSystemSnapshot(snapshot);
           // Colocar nave a 1000u del portal de destino, encarada en dirección contraria al portal y frenando a 0
           try {
             const dest = (snapshot.portals && snapshot.portals.length) ? snapshot.portals[snapshot.portals.length - 1] : null;
-            const ship: any = (engine as any)['spaceship'];
-            const portalsArr: any[] = (engine as any)['portals'] || [];
+            const ship: any = engine.spaceship;
+            const portalsArr: any[] = engine.gameState.portals || [];
             const destPortalObj = dest ? portalsArr.find(p => p.id === dest.id) : null;
             if (ship && dest && destPortalObj) {
               const R = Number(destPortalObj.radius) || 120;
@@ -829,7 +830,7 @@ export class GateRiteAnimation implements GameAnimation {
           // Logs y persistencia del generado
           try { GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite switched system after fade', { id: snapshot.id }); } catch {}
           try {
-            const persistence: any = (engine as any)['portalPersistenceService'];
+            const persistence: any = engine.portalPersistenceService;
             if (persistence && snapshot) persistence.autoLabelAndSave?.('gate-generated', snapshot);
           } catch {}
         }
@@ -851,7 +852,7 @@ export class GateRiteAnimation implements GameAnimation {
   private updateArrivalDecel(engine: GameEngine, dt: number) {
     this.arrivalElapsed += dt;
     try {
-      const ship: any = (engine as any)['spaceship'];
+      const ship: any = engine.spaceship;
       if (ship) {
         // Interpolar velocidad lineal (o con easing suave) desde arrivalStartSpeed hasta 1u/s a lo largo de arrivalDuration
         const targetStable = 1;
@@ -875,15 +876,15 @@ export class GateRiteAnimation implements GameAnimation {
           // Reactivar y rellenar Void Energy al 100%
           ship.voidEnergyPaused = false;
           ship.voidEnergyCurrent = ship.voidEnergyMax;
-          try { (engine as any).voidJumpActive = false; } catch {}
+          try { engine.voidJumpActive = false; } catch {}
           // Desactivar suavizado de alta velocidad al finalizar el rito
-          try { const ship: any = (engine as any)['spaceship']; if (ship?.setHighSpeedSmoothing) ship.setHighSpeedSmoothing(false); } catch {}
+          try { const ship: any = engine.spaceship; if (ship?.setHighSpeedSmoothing) ship.setHighSpeedSmoothing(false); } catch {}
           // Cambiar a cámara de HUD/cabina (modo 8) como último paso
           try {
-            (engine as any).camera?.setCameraMode?.(CameraMode.COCKPIT);
+            engine.camera?.setCameraMode?.(CameraMode.COCKPIT);
             // Iniciar fade-in del HUD cuando entramos en modo cabina
-            if ((engine as any).hudManager?.startFadeIn) {
-              (engine as any).hudManager.startFadeIn(0.32); // 320ms dentro del rango solicitado
+            if (engine.hudManager?.startFadeIn) {
+              engine.hudManager.startFadeIn(0.32); // 320ms dentro del rango solicitado
             }
           } catch {}
           if (ship._gateRiteOriginalDecel !== undefined) { ship.deceleration = ship._gateRiteOriginalDecel; delete ship._gateRiteOriginalDecel; }
@@ -905,12 +906,12 @@ export class GateRiteAnimation implements GameAnimation {
   }
 
   private finishEarly(engine: GameEngine, reason: string) {
-    try { (engine as any).showPlaceholderText?.('GATE RITE ABORT: ' + reason, 1800); } catch {}
+    try { engine.showPlaceholderText?.('GATE RITE ABORT: ' + reason, 1800); } catch {}
     this.phase = GateRitePhase.Completed;
     this.finished = true;
     // Restore camera if we changed it
     try {
-      const cam: any = (engine as any).camera;
+      const cam = engine.camera;
       if (cam?.setCameraMode && this.prevCameraMode !== null) {
         cam.setCameraMode(this.prevCameraMode);
       }
@@ -921,14 +922,14 @@ export class GateRiteAnimation implements GameAnimation {
     // Emergency cleanup - restore all modified game state
     try {
       // Reset flags
-      (engine as any).voidJumpActive = false;
-      (engine as any).collisionsDisabled = false;
+      engine.voidJumpActive = false;
+      engine.collisionsDisabled = false;
       // Restore void energy
       if (engine['spaceship']) {
         engine['spaceship'].voidEnergyPaused = false;
       }
       // Restore camera
-      const cam: any = (engine as any).camera;
+      const cam = engine.camera;
       if (cam?.setCameraMode && this.prevCameraMode !== null) {
         cam.setCameraMode(this.prevCameraMode);
       }
@@ -943,10 +944,10 @@ export class GateRiteAnimation implements GameAnimation {
     // Render speed streaks only once acceleration is active (after travelling completes)
     if (this.phase === GateRitePhase.Transit && this.streakSeeds.length && this.accelActive) {
       try {
-        const gl = (engine as any)['gl'] as WebGL2RenderingContext;
-        const shaderManager: any = (engine as any)['shaderManager'];
-        const cam: any = (engine as any)['camera'];
-        const ship: any = (engine as any)['spaceship'];
+        const gl = engine.gl as WebGL2RenderingContext;
+        const shaderManager: any = engine.shaderManager;
+        const cam: any = engine.camera;
+        const ship: any = engine.spaceship;
         if (gl && shaderManager && cam && ship) {
           const speedFactor = Math.min(1, (ship.currentSpeed || 0) / Math.max(1, this.speedCapPreCross));
           const streakAlpha = Math.min(1, 0.12 + speedFactor * 0.7);
@@ -994,7 +995,7 @@ export class GateRiteAnimation implements GameAnimation {
     // Render 500ms full-screen fade during FadeSwitch
     if (this.phase === GateRitePhase.FadeSwitch) {
       try {
-        const overlay: any = (engine as any)['overlayRenderer'];
+        const overlay: any = engine.overlayRenderer;
         if (overlay) {
           const t = Math.min(1, Math.max(0, this.fadeElapsed / Math.max(0.001, this.fadeDuration)));
           overlay.drawSolid([0,0,0], t);

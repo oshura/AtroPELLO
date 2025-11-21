@@ -22,7 +22,7 @@ export class EternalRiteAnimation implements GameAnimation {
     // Reduce health to 0 after animation completes
     if (this.t >= this.duration && !this.healthReduced) {
       this.healthReduced = true;
-      const spaceship = (engine as any).spaceship;
+      const spaceship = engine.spaceship;
       if (spaceship) {
         spaceship.healthCurrent = 0; // Triggers death dialog automatically
       }
@@ -37,7 +37,7 @@ export class EternalRiteAnimation implements GameAnimation {
 
   public render(engine: GameEngine): void {
     // Show placeholder text overlay during animation
-    const gl = (engine as any).gl;
+    const gl = engine.gl;
     if (!gl) return;
 
     const canvas = gl.canvas as HTMLCanvasElement;

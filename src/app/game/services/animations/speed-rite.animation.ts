@@ -13,7 +13,7 @@ export class SpeedRiteAnimation implements GameAnimation {
     this.t = 0;
     this.blocking = true;
     // Apply speed buff immediately when animation starts
-    (engine as any).applySpeedRite?.(120000); // 2 minutes
+    engine.applySpeedRite?.(120000); // 2 minutes
   }
 
   public update(_engine: GameEngine, dt: number): boolean {
@@ -27,7 +27,7 @@ export class SpeedRiteAnimation implements GameAnimation {
 
   public render(engine: GameEngine): void {
     // Show placeholder text overlay during animation
-    const gl = (engine as any).gl;
+    const gl = engine.gl;
     if (!gl) return;
 
     const canvas = gl.canvas as HTMLCanvasElement;

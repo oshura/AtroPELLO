@@ -35,7 +35,7 @@ export class DisruptionRiteAnimation implements GameAnimation {
     // Start beam after text display completes
     if (this.t >= this.textDuration && !this.beamStarted && this.targetPos) {
       this.beamStarted = true;
-      (engine as any).startDisruptionBeam?.(this.targetPos, this.target);
+      engine.startDisruptionBeam?.(this.targetPos, this.target);
     }
 
     if (this.t >= this.totalDuration) {
@@ -49,7 +49,7 @@ export class DisruptionRiteAnimation implements GameAnimation {
     // Only show text overlay during first part of animation
     if (this.t >= this.textDuration) return;
 
-    const gl = (engine as any).gl;
+    const gl = engine.gl;
     if (!gl) return;
 
     const canvas = gl.canvas as HTMLCanvasElement;

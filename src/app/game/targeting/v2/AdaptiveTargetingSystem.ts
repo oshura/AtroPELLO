@@ -562,7 +562,7 @@ export class AdaptiveTargetingSystem {
     const zc = -v[2]; // positive in front of camera
     if (zc <= 1e-3) return 0;
     const dims = this.getCanvasDimensions();
-    const f = 0.5 * dims.height / Math.tan((this.camera as any).fov * 0.5);
+    const f = 0.5 * dims.height / Math.tan(this.camera.fov * 0.5);
     return (radius * f) / zc;
   }
 
