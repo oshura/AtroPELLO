@@ -40,6 +40,7 @@ import { TargetOutline2DRenderer } from './hud/TargetOutline2DRenderer';
 import { LoggingService, LogCategory, LogLevel } from '../services/logging.service';
 import { CollisionResponseService } from './services/physics/collision-response.service';
 import { CollisionManagerService } from './services/physics/collision-manager.service';
+import { PanelEventCoordinator } from './services/ui/panel-event-coordinator.service';
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
@@ -217,6 +218,7 @@ export class GameEngine {
     private animationManager: AnimationManagerService,
     loggingService: LoggingService,
     private collisionManager: CollisionManagerService,
+    private panelEventCoordinator: PanelEventCoordinator,
   private solarSystemService?: SolarSystemService,
   private humanSolarSystemService?: HumanSolarSystemService,
   private portalPersistenceService?: PortalPersistenceService,
@@ -472,8 +474,8 @@ export class GameEngine {
         this.adaptiveTargeting.setDistanceOriginProvider(() => ({ ...this.spaceship.position }));
       }
 
-      // Setup mouse click handling for adaptive targeting
-      this.setupAdaptiveTargetingEvents(canvasRef);
+      // Setup panel event coordinator with all callbacks
+      this.setupPanelEventCoordinator();
 
   // Registro de targets se realiza al crear los clusters (initializeAllBuffers)
 
@@ -6198,175 +6200,37 @@ export class GameEngine {
   }
 
   /** Attach or detach click binding based on panel enabled state */
+  /**
+   * @deprecated Legacy method - now handled by PanelEventCoordinator
+   * Updates map panel event binding state in the coordinator
+   */
   private updateMapClickBinding(): void {
-    if (!this.domCanvas || !this.systemPanel) return;
-    const el = this.domCanvas;
-    const handler = (this as any)._mapClickHandler as ((e: MouseEvent) => void) | undefined;
-    const moveHandler = (this as any)._mapMoveHandler as ((e: MouseEvent) => void) | undefined;
-    const wheelHandler = (this as any)._mapWheelHandler as ((e: WheelEvent) => void) | undefined;
+    if (!this.systemPanel) return;
     const enabled = this.systemPanel.isEnabled();
-    if (enabled) {
-      if (!handler) {
-        const h = (e: MouseEvent) => {
-          if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl) return;
-          const rect = el.getBoundingClientRect();
-          const id = this.systemPanel!.hitTestViewport(
-            e.clientX,
-            e.clientY,
-            rect,
-            (this.gl!.canvas as HTMLCanvasElement).width,
-            (this.gl!.canvas as HTMLCanvasElement).height,
-            'click'
-          );
-          if (id) {
-            // No permitir selección de la nave en el mapa (solo hover outline)
-            if (id === 'ship') {
-              return;
-            }
-            const target = this.mapIdToTarget.get(id);
-            if (target && this.adaptiveTargeting) {
-              try { this.prepareDisplayPropsForTarget(target as unknown as ITargetable); } catch {}
-              try { this.adaptiveTargeting.selectTarget(target); } catch {}
-              try { this.fetchAndCacheTargetDetails(target as unknown as ITargetable); } catch {}
-              try { this.systemPanel!.setSelectedId(id); } catch {}
-            } else {
-              // Defer selection until id->target mapping is rebuilt in the first render pass
-              this.pendingMapSelectId = id;
-            }
-          }
-        };
-        (this as any)._mapClickHandler = h;
-        el.addEventListener('click', h);
-      }
-      if (!moveHandler) {
-        const mh = (e: MouseEvent) => {
-          if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl) return;
-          const rect = el.getBoundingClientRect();
-          // Update cursor position on the map
-          try { this.systemPanel!.setCursorFromViewport(
-            e.clientX,
-            e.clientY,
-            rect,
-            (this.gl!.canvas as HTMLCanvasElement).width,
-            (this.gl!.canvas as HTMLCanvasElement).height
-          ); } catch {}
-          const id = this.systemPanel!.hitTestViewport(
-            e.clientX,
-            e.clientY,
-            rect,
-            (this.gl!.canvas as HTMLCanvasElement).width,
-            (this.gl!.canvas as HTMLCanvasElement).height,
-            'move'
-          );
-          try { this.systemPanel!.setHoveredId(id); } catch {}
-        };
-        (this as any)._mapMoveHandler = mh;
-        el.addEventListener('mousemove', mh);
-      }
-      if (!wheelHandler) {
-        const wh = (e: WheelEvent) => {
-          if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl) return;
-          const rect = el.getBoundingClientRect();
-          try {
-            this.systemPanel.handleWheelFromViewport(
-              e.deltaY,
-              e.clientX,
-              e.clientY,
-              rect,
-              (this.gl!.canvas as HTMLCanvasElement).width,
-              (this.gl!.canvas as HTMLCanvasElement).height
-            );
-          } catch {}
-          // Prevent page scroll when zooming the map
-          try {
-            e.preventDefault();
-            // Also stop propagation so other handlers (e.g., camera zoom) don't receive it
-            e.stopPropagation();
-            // Some handlers may be registered in the same phase; be extra safe
-            (e as any).cancelBubble = true;
-            if (e.stopImmediatePropagation) e.stopImmediatePropagation();
-          } catch {}
-        };
-        (this as any)._mapWheelHandler = wh;
-        // Use non-passive to allow preventDefault
-        el.addEventListener('wheel', wh, { passive: false } as any);
-      }
-    } else {
-      if (handler) {
-        el.removeEventListener('click', handler);
-        (this as any)._mapClickHandler = undefined;
-      }
-      if (moveHandler) {
-        el.removeEventListener('mousemove', moveHandler);
-        (this as any)._mapMoveHandler = undefined;
-      }
-      if (wheelHandler) {
-        el.removeEventListener('wheel', wheelHandler as any);
-        (this as any)._mapWheelHandler = undefined;
-      }
+    this.panelEventCoordinator.setMapEnabled(enabled);
+    
+    // Clear map selection state when disabling
+    if (!enabled) {
       try { this.systemPanel.setSelectedId(null); } catch {}
       try { this.systemPanel.setHoveredId(null); } catch {}
     }
   }
 
-  /** Attach/detach pointer tracking for GrimoirePanel (cursor only) */
+  /**
+   * @deprecated Legacy method - now handled by PanelEventCoordinator
+   * Updates grimoire panel event binding state in the coordinator
+   */
   private updateGrimoirePointerBinding(): void {
-    if (!this.domCanvas || !this.grimoirePanel) return;
-    const el = this.domCanvas;
-    const moveHandler = (this as any)._grimoireMoveHandler as ((e: MouseEvent) => void) | undefined;
-    const clickHandler = (this as any)._grimoireClickHandler as ((e: MouseEvent) => void) | undefined;
+    if (!this.grimoirePanel) return;
     // Usar estado interactivo (cierra handlers inmediatamente al iniciar animación de cierre)
     const enabled = (this.grimoirePanel as any).isInteractive?.() ?? this.grimoirePanel.isEnabled();
-    if (enabled) {
-      if (!moveHandler) {
-        const mh = (e: MouseEvent) => {
-          if (!this.grimoirePanel || !this.grimoirePanel.isEnabled() || !this.gl) return;
-          const rect = el.getBoundingClientRect();
-          try { this.grimoirePanel!.setCursorFromViewport(
-            e.clientX,
-            e.clientY,
-            rect,
-            (this.gl!.canvas as HTMLCanvasElement).width,
-            (this.gl!.canvas as HTMLCanvasElement).height
-          ); } catch {}
-        };
-        (this as any)._grimoireMoveHandler = mh;
-        el.addEventListener('mousemove', mh);
-      }
-      if (!clickHandler) {
-        const ch = (e: MouseEvent) => {
-          if (!this.grimoirePanel || !this.grimoirePanel.isEnabled()) return;
-          // Prefer UI: set selected spell from hover
-          const t = (this.grimoirePanel as any).getHoveredSpellType?.();
-          if (t) {
-            try { (this.grimoirePanel as any).setSelectedSpellType?.(t); } catch {}
-          }
-          // Swallow click so it doesn't affect 3D
-          try {
-            e.preventDefault();
-            e.stopPropagation();
-            (e as any).cancelBubble = true;
-            if ((e as any).stopImmediatePropagation) (e as any).stopImmediatePropagation();
-          } catch {}
-        };
-        (this as any)._grimoireClickHandler = ch;
-        // Use capture to ensure the grimoire click runs before other canvas listeners (e.g., adaptive targeting)
-        el.addEventListener('click', ch, { capture: true });
-      }
-    } else {
-      if (moveHandler) {
-        el.removeEventListener('mousemove', moveHandler);
-        (this as any)._grimoireMoveHandler = undefined;
-      }
-      if (clickHandler) {
-        // Must pass the same capture flag used during addEventListener to successfully remove
-        el.removeEventListener('click', clickHandler, { capture: true as any });
-        (this as any)._grimoireClickHandler = undefined;
-      }
-    }
+    this.panelEventCoordinator.setGrimoireEnabled(enabled);
   }
 
-  /** Hide OS cursor when Grimoire is enabled; restore otherwise */
+  /**
+   * @deprecated Legacy method - cursor management could be extracted to CursorManager (FASE 6d)
+   * Hide OS cursor when Grimoire is enabled; restore otherwise
+   */
   private updateCanvasCursor(): void {
     try {
       if (!this.domCanvas) return;
@@ -6378,42 +6242,230 @@ export class GameEngine {
   /**
    * Configura eventos del mouse para el sistema de targeting adaptativo
    */
-  private setupAdaptiveTargetingEvents(canvasRef: any): void {
-    // Obtener canvas desde WebGLService que ya está inicializado
+  /**
+   * Initialize PanelEventCoordinator with all event callbacks
+   */
+  private setupPanelEventCoordinator(): void {
     const canvas = this.webglService.getCanvas();
     
     if (!canvas) {
-  this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'No se pudo obtener canvas desde WebGLService para eventos de targeting');
+      this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'No canvas available for event coordinator');
       return;
     }
 
-  this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'Canvas obtenido desde WebGLService para eventos de targeting');
+    this.domCanvas = canvas;
 
-    // Setup click handler for adaptive targeting
-    const handleClick = (event: MouseEvent) => {
-      // If an opaque panel is open, do NOT handle 3D selection here; let the panel's own handler receive the event
-      const mapOpen = !!(this.systemPanel && this.systemPanel.isEnabled?.());
-      const grimoireOpen = !!(this.grimoirePanel && this.grimoirePanel.isEnabled?.());
-      if (mapOpen || grimoireOpen) {
-        // Important: don't stop propagation here so SolarSystemPanel/Grimoire listeners can process the click
-        // Swallow legacy ReticleManager click consumption by marking a flag; ReticleManager will skip for mapOpen
-        (globalThis as any).GameEngineInstance = (globalThis as any).GameEngineInstance || this;
-        return; // no adaptive click selection
+    // Initialize coordinator with comprehensive callbacks
+    this.panelEventCoordinator.initialize(canvas, {
+      // Map panel events (mouse/wheel)
+      onMapClick: (clientX, clientY) => this.handleMapClick(clientX, clientY),
+      onMapMove: (clientX, clientY) => this.handleMapMove(clientX, clientY),
+      onMapWheel: (deltaY, clientX, clientY) => this.handleMapWheel(deltaY, clientX, clientY),
+      
+      // Grimoire panel events (mouse)
+      onGrimoireClick: (clientX, clientY) => this.handleGrimoireClick(clientX, clientY),
+      onGrimoireMove: (clientX, clientY) => this.handleGrimoireMove(clientX, clientY),
+      
+      // 3D targeting (when no panel active)
+      on3DClick: (event) => this.handle3DClick(event)
+    });
+
+    this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'PanelEventCoordinator initialized successfully');
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  Panel Event Callback Handlers (called by PanelEventCoordinator)
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  private handleMapToggle(): void {
+    if (!this.systemPanel) return;
+    const wasEnabled = this.systemPanel.isEnabled();
+    this.systemPanel.setEnabled(!wasEnabled);
+    this.panelEventCoordinator.setMapEnabled(!wasEnabled);
+    
+    if (!wasEnabled) {
+      // Map opened
+      try { this.audio?.play('ui_map_open'); } catch {}
+      if (this.grimoirePanel?.isEnabled()) {
+        this.grimoirePanel.setEnabled(false);
+        this.panelEventCoordinator.setGrimoireEnabled(false);
       }
-      if (!this.adaptiveTargeting) return;
-      this.adaptiveTargeting.handleClick();
-      // After selection via 3D click, ensure display props are ready and warm target details
-      try {
-        const sel = this.adaptiveTargeting.getCurrentTarget?.();
-        if (sel) {
-          this.prepareDisplayPropsForTarget(sel);
-          this.fetchAndCacheTargetDetails(sel);
-        }
-      } catch {}
-    };
+    } else {
+      // Map closed
+      try { this.audio?.play('ui_map_close'); } catch {}
+    }
+  }
 
-    canvas.addEventListener('click', handleClick);
-  this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'AdaptiveTargeting mouse events configured successfully');
+  private handleMapClick(clientX: number, clientY: number): void {
+    if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl || !this.domCanvas) return;
+    
+    const rect = this.domCanvas.getBoundingClientRect();
+    const id = this.systemPanel.hitTestViewport(
+      clientX,
+      clientY,
+      rect,
+      (this.gl.canvas as HTMLCanvasElement).width,
+      (this.gl.canvas as HTMLCanvasElement).height,
+      'click'
+    );
+    
+    if (id) {
+      // No permitir selección de la nave en el mapa (solo hover outline)
+      if (id === 'ship') return;
+      
+      const target = this.mapIdToTarget.get(id);
+      if (target && this.adaptiveTargeting) {
+        try { this.prepareDisplayPropsForTarget(target as unknown as ITargetable); } catch {}
+        try { this.adaptiveTargeting.selectTarget(target); } catch {}
+        try { this.fetchAndCacheTargetDetails(target as unknown as ITargetable); } catch {}
+        try { this.systemPanel.setSelectedId(id); } catch {}
+      } else {
+        // Defer selection until id->target mapping is rebuilt in the first render pass
+        this.pendingMapSelectId = id;
+      }
+    }
+  }
+
+  private handleMapMove(clientX: number, clientY: number): void {
+    if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl || !this.domCanvas) return;
+    
+    const rect = this.domCanvas.getBoundingClientRect();
+    
+    // Update cursor position on the map
+    try {
+      this.systemPanel.setCursorFromViewport(
+        clientX,
+        clientY,
+        rect,
+        (this.gl.canvas as HTMLCanvasElement).width,
+        (this.gl.canvas as HTMLCanvasElement).height
+      );
+    } catch {}
+    
+    const id = this.systemPanel.hitTestViewport(
+      clientX,
+      clientY,
+      rect,
+      (this.gl.canvas as HTMLCanvasElement).width,
+      (this.gl.canvas as HTMLCanvasElement).height,
+      'move'
+    );
+    
+    // Play hover sound when hovering over a new object (but not the ship)
+    const prevId = this.systemPanel.getHoveredId();
+    if (id !== prevId && id && id !== 'ship') {
+      try { this.audio?.play('ui_outline_hover', { bus: 'ui', volume: 0.3 }); } catch {}
+    }
+    
+    try { this.systemPanel.setHoveredId(id); } catch {}
+  }
+
+  private handleMapWheel(deltaY: number, clientX: number, clientY: number): void {
+    if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl || !this.domCanvas) return;
+    
+    const rect = this.domCanvas.getBoundingClientRect();
+    try {
+      this.systemPanel.handleWheelFromViewport(
+        deltaY,
+        clientX,
+        clientY,
+        rect,
+        (this.gl.canvas as HTMLCanvasElement).width,
+        (this.gl.canvas as HTMLCanvasElement).height
+      );
+    } catch {}
+  }
+
+  private handleGrimoireToggle(): void {
+    if (!this.grimoirePanel) return;
+    const wasEnabled = this.grimoirePanel.isEnabled();
+    this.grimoirePanel.setEnabled(!wasEnabled);
+    this.panelEventCoordinator.setGrimoireEnabled(!wasEnabled);
+    
+    if (!wasEnabled) {
+      // Grimoire opened
+      try { this.audio?.play('ui_grimoire_open'); } catch {}
+      if (this.systemPanel?.isEnabled()) {
+        this.systemPanel.setEnabled(false);
+        this.panelEventCoordinator.setMapEnabled(false);
+      }
+    } else {
+      // Grimoire closed
+      try { this.audio?.play('ui_grimoire_close'); } catch {}
+    }
+  }
+
+  private handleGrimoireClick(clientX: number, clientY: number): void {
+    if (!this.grimoirePanel || !this.grimoirePanel.isEnabled()) return;
+    
+    // Set selected spell from hover
+    const spellType = (this.grimoirePanel as any).getHoveredSpellType?.();
+    if (spellType) {
+      try {
+        (this.grimoirePanel as any).setSelectedSpellType?.(spellType);
+      } catch {}
+    }
+  }
+
+  private handleGrimoireMove(clientX: number, clientY: number): void {
+    if (!this.grimoirePanel || !this.grimoirePanel.isEnabled() || !this.gl || !this.domCanvas) return;
+    
+    const rect = this.domCanvas.getBoundingClientRect();
+    try {
+      this.grimoirePanel.setCursorFromViewport(
+        clientX,
+        clientY,
+        rect,
+        (this.gl.canvas as HTMLCanvasElement).width,
+        (this.gl.canvas as HTMLCanvasElement).height
+      );
+    } catch {}
+  }
+
+  private handleEscape(): void {
+    // Close any open panel
+    if (this.systemPanel?.isEnabled()) {
+      this.systemPanel.setEnabled(false);
+      this.panelEventCoordinator.setMapEnabled(false);
+      try { this.audio?.play('ui_map_close'); } catch {}
+      return;
+    }
+    
+    if (this.grimoirePanel?.isEnabled()) {
+      this.grimoirePanel.setEnabled(false);
+      this.panelEventCoordinator.setGrimoireEnabled(false);
+      try { this.audio?.play('ui_grimoire_close'); } catch {}
+      return;
+    }
+    
+    // No panel open, clear target selection
+    if (this.adaptiveTargeting) {
+      try {
+        (this.adaptiveTargeting as any).clearTargetSelection?.();
+      } catch {}
+    }
+  }
+
+  private handleCameraMode(mode: string): void {
+    if (!this.camera) return;
+    try {
+      this.camera.setCameraMode(parseInt(mode, 10));
+    } catch {}
+  }
+
+  private handle3DClick(event: MouseEvent): void {
+    if (!this.adaptiveTargeting) return;
+    
+    this.adaptiveTargeting.handleClick();
+    
+    // After selection via 3D click, ensure display props are ready and warm target details
+    try {
+      const sel = this.adaptiveTargeting.getCurrentTarget?.();
+      if (sel) {
+        this.prepareDisplayPropsForTarget(sel);
+        this.fetchAndCacheTargetDetails(sel);
+      }
+    } catch {}
   }
 
   /** Map ID resolver for a given world target: returns the map item id to select/highlight */

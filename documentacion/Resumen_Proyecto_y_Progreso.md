@@ -58,6 +58,16 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 
 ## Próximos pasos inmediatos
 
+- **FASE 6 COMPLETADA** ✅: Event handling extraído a `PanelEventCoordinator` service (ver `documentacion/FASE_6_PanelEventCoordinator.md`)
+  - GameEngine reducido de 6,449 → 6,161 líneas (-288 líneas, -4.5%)
+  - Event routing centralizado en service inyectable y testeable
+  - 11 callbacks implementados (map/grimoire/3D/camera/ship controls)
+  - Métodos legacy convertidos a stubs (updateMapClickBinding, updateGrimoirePointerBinding)
+
+- **FASE 6b PENDIENTE**: Extraer `PanelStateManager` (cooldowns, mutual exclusivity, panel lifecycle)
+- **FASE 6c PENDIENTE**: Centralizar UI audio en `UIAudioService` (event-driven audio triggers)
+- **FASE 6d PENDIENTE**: Opcional `CursorManager` para styling de cursor
+
 - Redefinir presentación de salud en HUD (diseño eliminado; nueva propuesta pendiente).
 - Eliminar definitivamente overlay de portal (ya retirado) y evaluar si se necesita indicador textual de cooldown.
 - Outliner adaptativo según FPS para subir texturas 2D.
@@ -84,6 +94,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 - `documentacion/Layout.md`: Coherente con la estructura de componentes (header/main/footer) y el enfoque Flexbox. Mantener.
 - `documentacion/OutlineShaders.md`: Describe fielmente la Fase 4 (OutlineRenderer, dos pasadas, tipos y pipeline). Se han suavizado las cifras de rendimiento en este repo para evitar métricas no verificadas.
 - `documentacion/Grimorio_y_Hechizos.md`: NUEVO. Añadido para centralizar la documentación del libro del grimorio y los hechizos (flujo de casteo, HUD/Brújula y recursos). Coherente con el estado actual del código.
+- `documentacion/FASE_6_PanelEventCoordinator.md`: **NUEVO**. Documenta la extracción de event handling de GameEngine a servicio dedicado. Incluye arquitectura, decisiones de diseño, métricas de impacto y roadmap de fases 6b-6d.
 
 ## Referencias rápidas
 
@@ -97,6 +108,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 - Audio (arquitectura): `documentacion/Audio_Sistema_Arquitectura.md`
 - Audio (assets y formatos): `documentacion/Audio_Assets_Guia.md`
 - Grimorio: `src/app/game/hud/GrimoirePanel.ts`, hechizos en `GameEngine.handleKeyDown()` (tecla 'h')
+- **Event handling**: `src/app/services/ui/panel-event-coordinator.service.ts`, documentación en `documentacion/FASE_6_PanelEventCoordinator.md`
 
 ## Notas de implementación
 

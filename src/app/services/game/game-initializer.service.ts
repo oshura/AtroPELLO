@@ -18,6 +18,7 @@ import { HumanSolarSystemService } from '../../game/services/game/human-solar-sy
 import { PortalPersistenceService } from '../../game/services/game/portal-persistence.service';
 import { PortalRegistryService } from '../../game/services/game/portal-registry.service';
 import { CollisionManagerService } from '../../game/services/physics/collision-manager.service';
+import { PanelEventCoordinator } from '../../game/services/ui/panel-event-coordinator.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -108,6 +109,7 @@ export class GameInitializer {
   const humanSolarSystemService = this.injector.get(HumanSolarSystemService);
   const portalPersistenceService = this.injector.get(PortalPersistenceService);
   const portalRegistry = this.injector.get(PortalRegistryService);
+    const panelEventCoordinator = this.injector.get(PanelEventCoordinator);
     this.gameEngine = new GameEngine(
       this.webglService,
       this.particleEffectsService,
@@ -120,6 +122,7 @@ export class GameInitializer {
       animationManager,
       this.logger,
       this.injector.get(CollisionManagerService),
+      panelEventCoordinator,
       solarSystemService,
       humanSolarSystemService,
       portalPersistenceService,

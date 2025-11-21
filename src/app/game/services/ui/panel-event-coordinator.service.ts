@@ -1,0 +1,162 @@
+import { Injectable } from '@angular/core';
+import { LoggingService, LogLevel, LogCategory } from '../../../services/logging.service';
+
+/**
+ * PanelEventCoordinator
+ * 
+ * FASE 6: Event binding and routing service
+ * Responsabilidades:
+ * - Attach/detach DOM event listeners (keyboard, mouse, wheel)
+ * - Route events to appropriate panels based on state
+ * - Coordinate which panel handles each event type
+ * 
+ * NO gestiona (para fases posteriores):
+ * - Panel state/mutual exclusivity → FASE 6b: PanelStateManager
+ * - Audio triggers → FASE 6c: UI Audio Integration
+ * - Cursor management → FASE 6d: CursorManager
+ * - Cooldown logic → FASE 6b: PanelStateManager
+ */
+
+export interface PanelEventCallbacks {
+  // Map panel callbacks (mouse/wheel only - keyboard handled by GameEngine)
+  onMapClick?: (clientX: number, clientY: number) => void;
+  onMapMove?: (clientX: number, clientY: number) => void;
+  onMapWheel?: (deltaY: number, clientX: number, clientY: number) => void;
+  
+  // Grimoire panel callbacks (mouse only - keyboard handled by GameEngine)
+  onGrimoireClick?: (clientX: number, clientY: number) => void;
+  onGrimoireMove?: (clientX: number, clientY: number) => void;
+  
+  // 3D targeting callback (when no panel is active)
+  on3DClick?: (event: MouseEvent) => void;
+}
+
+@Injectable({ providedIn: 'root' })
+export class PanelEventCoordinator {
+  private canvas: HTMLCanvasElement | null = null;
+  private callbacks: PanelEventCallbacks = {};
+  
+  // Event handler references for cleanup
+  private clickHandler?: (e: MouseEvent) => void;
+  private moveHandler?: (e: MouseEvent) => void;
+  private wheelHandler?: (e: WheelEvent) => void;
+  
+  // State flags (minimal - just for routing decisions)
+  private mapEnabled = false;
+  private grimoireEnabled = false;
+  private inputsBlocked = false;
+
+  constructor(private logger: LoggingService) {}
+
+  /**
+   * Initialize event coordinator with canvas element and callbacks
+   * Note: Keyboard events are handled by existing game.ts @HostListener flow,
+   * not by this service (to avoid duplicate event handling)
+   */
+  initialize(canvas: HTMLCanvasElement, callbacks: PanelEventCallbacks): void {
+    this.canvas = canvas;
+    this.callbacks = callbacks;
+    this.attachCanvasMouseListeners();
+    this.logger.log(LogLevel.INFO, LogCategory.HUD, 'PanelEventCoordinator initialized');
+  }
+
+  /**
+   * Update panel state for routing decisions
+   */
+  setMapEnabled(enabled: boolean): void {
+    this.mapEnabled = enabled;
+  }
+
+  setGrimoireEnabled(enabled: boolean): void {
+    this.grimoireEnabled = enabled;
+  }
+
+  setInputsBlocked(blocked: boolean): void {
+    this.inputsBlocked = blocked;
+  }
+
+  /**
+   * Attach canvas mouse/wheel listeners
+   */
+  private attachCanvasMouseListeners(): void {
+    if (!this.canvas) return;
+
+    this.clickHandler = (e: MouseEvent) => this.handleClick(e);
+    this.moveHandler = (e: MouseEvent) => this.handleMouseMove(e);
+    this.wheelHandler = (e: WheelEvent) => this.handleWheel(e);
+
+    this.canvas.addEventListener('click', this.clickHandler);
+    this.canvas.addEventListener('mousemove', this.moveHandler);
+    this.canvas.addEventListener('wheel', this.wheelHandler, { passive: false });
+  }
+
+  /**
+   * Route mouse clicks based on active panel
+   */
+  private handleClick(event: MouseEvent): void {
+    if (this.mapEnabled) {
+      this.callbacks.onMapClick?.(event.clientX, event.clientY);
+      return;
+    }
+
+    if (this.grimoireEnabled) {
+      this.callbacks.onGrimoireClick?.(event.clientX, event.clientY);
+      // Prevent 3D targeting when grimoire is open
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    // No panel active - allow 3D targeting
+    this.callbacks.on3DClick?.(event);
+  }
+
+  /**
+   * Route mouse movement to appropriate panel
+   */
+  private handleMouseMove(event: MouseEvent): void {
+    if (this.mapEnabled) {
+      this.callbacks.onMapMove?.(event.clientX, event.clientY);
+      return;
+    }
+
+    if (this.grimoireEnabled) {
+      this.callbacks.onGrimoireMove?.(event.clientX, event.clientY);
+      return;
+    }
+  }
+
+  /**
+   * Route mouse wheel events (only for map zoom)
+   */
+  private handleWheel(event: WheelEvent): void {
+    if (this.mapEnabled) {
+      this.callbacks.onMapWheel?.(event.deltaY, event.clientX, event.clientY);
+      // Prevent page scroll when map is open
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  }
+
+  /**
+   * Cleanup all event listeners
+   */
+  destroy(): void {
+    if (this.canvas) {
+      if (this.clickHandler) {
+        this.canvas.removeEventListener('click', this.clickHandler);
+      }
+      if (this.moveHandler) {
+        this.canvas.removeEventListener('mousemove', this.moveHandler);
+      }
+      if (this.wheelHandler) {
+        this.canvas.removeEventListener('wheel', this.wheelHandler);
+      }
+    }
+
+    this.canvas = null;
+    this.callbacks = {};
+    
+    this.logger.log(LogLevel.INFO, LogCategory.HUD, 'PanelEventCoordinator destroyed');
+  }
+}
