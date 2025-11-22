@@ -41,6 +41,7 @@ import { LoggingService, LogCategory, LogLevel } from '../services/logging.servi
 import { CollisionResponseService } from './services/physics/collision-response.service';
 import { CollisionManagerService } from './services/physics/collision-manager.service';
 import { PanelEventCoordinator } from './services/ui/panel-event-coordinator.service';
+import { SpellIOCoordinator } from './services/spells/spell-io-coordinator.service';
 import { GameStateStore } from '../services/game/game-state.store';
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
@@ -107,6 +108,9 @@ export class GameEngine {
   private lastCamPos: { x: number; y: number; z: number } | null = null;
   private camVel: { x: number; y: number; z: number } = { x: 0, y: 0, z: 0 };
   private dopplerSkip: boolean = false; // throttle doppler updates (every other frame)
+  private hoverAudioMuted: boolean = false;
+  private panelInputsLocked: boolean = false;
+  private precastChantDurationMs: number | null = null;
   
   // Objetos del juego - MIGRATED TO GameStateStore
   // Acceso via this.gameState.spaceship, this.gameState.independentAsteroids, etc.
@@ -216,6 +220,7 @@ export class GameEngine {
     loggingService: LoggingService,
     private collisionManager: CollisionManagerService,
     private panelEventCoordinator: PanelEventCoordinator,
+    private spellIOCoordinator: SpellIOCoordinator,
     public gameState: GameStateStore,
   public solarSystemService?: SolarSystemService,
   public humanSolarSystemService?: HumanSolarSystemService,
@@ -1313,6 +1318,7 @@ export class GameEngine {
   private update(deltaTime: number): void {
     // Actualizar animaciones (bloquean inputs si están activas)
     this.animationManager.update(this, deltaTime);
+    this.syncSpellIOStates();
     // DEBUG CRÍTICO - Verificar que update se ejecuta
     if (performance.now() % 1500 < 50) { // Cada 1.5 segundos
       this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'GameEngine.update() executed', {
@@ -4995,12 +5001,53 @@ export class GameEngine {
   /**
    * Maneja eventos de teclado
    */
+  private areSpellGameplayInputsLocked(): boolean {
+    try {
+      return this.spellIOCoordinator?.areGameplayInputsLocked() ?? this.animationManager.isBlockingInputs();
+    } catch {
+      return this.animationManager.isBlockingInputs();
+    }
+  }
+
+  private arePanelsLockedBySpell(): boolean {
+    try {
+      return this.spellIOCoordinator?.arePanelsLocked() ?? this.animationManager.isBlockingInputs();
+    } catch {
+      return this.animationManager.isBlockingInputs();
+    }
+  }
+
+  private syncSpellIOStates(): void {
+    const shouldMuteHover = this.spellIOCoordinator?.shouldMuteHoverAudio?.() ?? false;
+    if (shouldMuteHover !== this.hoverAudioMuted) {
+      this.hoverAudioMuted = shouldMuteHover;
+      try { this.adaptiveTargeting?.setHoverAudioMuted?.(shouldMuteHover); } catch {}
+    }
+
+    const lockPanels = this.arePanelsLockedBySpell();
+    if (lockPanels !== this.panelInputsLocked) {
+      this.panelInputsLocked = lockPanels;
+      try { this.panelEventCoordinator?.setInputsBlocked(lockPanels); } catch {}
+    }
+  }
+
+  private getPrecastChantDurationMs(): number {
+    if (this.precastChantDurationMs && this.precastChantDurationMs > 0) {
+      return this.precastChantDurationMs;
+    }
+    const sec = this.audio?.getBufferDuration?.('sfx_precast_ritual');
+    if (sec && isFinite(sec) && sec > 0) {
+      this.precastChantDurationMs = Math.max(300, Math.round(sec * 1000));
+      return this.precastChantDurationMs;
+    }
+    // Fallback to legacy 2s delay if duration unavailable (do not cache so we can retry once buffer loads)
+    return 2000;
+  }
+
   public handleKeyDown(key: string): void {
     // Block most inputs during animations/pre-cast delay; allow Escape to close panels
-    if (this.animationManager && this.animationManager.isBlockingInputs && this.animationManager.isBlockingInputs()) {
-      if (key.toLowerCase() !== 'escape') {
-        return;
-      }
+    if (this.areSpellGameplayInputsLocked() && key.toLowerCase() !== 'escape') {
+      return;
     }
     // Manejo de cambio de modos de cámara
     if (key === '0') {
@@ -5018,11 +5065,15 @@ export class GameEngine {
     }
 
     // Manejo de controles de nave
-    if (this.spaceship && !this.animationManager.isBlockingInputs()) {
+    if (this.spaceship && !this.areSpellGameplayInputsLocked()) {
       this.updateShipControls(key, true);
     }
     // Toggle panel de mapa del sistema con tecla 'M'
     if (key.toLowerCase() === 'm') {
+      if (this.arePanelsLockedBySpell()) {
+        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Map toggle blocked by spell IO lock');
+        return;
+      }
       if (this.systemPanel) {
         const now = performance.now();
         const next = !this.systemPanel.isEnabled();
@@ -5082,6 +5133,10 @@ export class GameEngine {
     }
     // Toggle Grimoire (ancient book) with 'L'
     if (key.toLowerCase() === 'l') {
+      if (this.arePanelsLockedBySpell()) {
+        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Grimoire toggle blocked by spell IO lock');
+        return;
+      }
       if (this.grimoirePanel) {
         const now = performance.now();
         // Considerar el estado interactivo (evita que "cerrando" cuente como abierto)
@@ -5198,9 +5253,10 @@ export class GameEngine {
     this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
   }
   const isSpeedRite = (spell === SpellType.SPEED);
+  const precastDelayMs = this.getPrecastChantDurationMs();
   if (!isSpeedRite) {
-    // Bloquear controles 2s de casteo para el resto de hechizos
-    this.animationManager.startBlockingDelay(2000);
+    // Bloquear controles mientras dura el canto IaIa
+    this.animationManager.startBlockingDelay(precastDelayMs, { spellType: spell });
   }
   // Reproducir sonido de pre-ritual
   try {
@@ -5214,7 +5270,7 @@ export class GameEngine {
     this.triggerSpeedRiteInstantly();
     return;
   }
-  // Esperar 2 segundos y luego disparar animación/efecto
+  // Esperar a que termine el canto IaIa antes de ejecutar efectos
         setTimeout(() => {
           if (spell === SpellType.LONGJUMP) {
             // Verificar energía del vacío antes de intentar el salto
@@ -5286,7 +5342,7 @@ export class GameEngine {
               this.showPlaceholderText('NO VALID TARGET', 1500);
             }
           }
-        }, 2000);
+        }, precastDelayMs);
         return;
       }
       // Si el grimorio no está abierto: usar el hechizo seleccionado persistente (si existe)
@@ -5309,8 +5365,9 @@ export class GameEngine {
           this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
         }
         const isSpeedRite = selected === SpellType.SPEED;
+        const precastDelayMs = this.getPrecastChantDurationMs();
         if (!isSpeedRite) {
-          this.animationManager.startBlockingDelay(2000);
+          this.animationManager.startBlockingDelay(precastDelayMs, { spellType: selected });
         }
         // Reproducir sonido de pre-ritual
         try {
@@ -5384,14 +5441,14 @@ export class GameEngine {
               this.showPlaceholderText('NO VALID TARGET', 1500);
             }
           }
-        }, 2000);
+        }, precastDelayMs);
         return;
       }
       return;
     }
   }
   public handleKeyUp(key: string): void {
-    if (this.spaceship && !this.animationManager.isBlockingInputs()) {
+    if (this.spaceship && !this.areSpellGameplayInputsLocked()) {
       this.updateShipControls(key, false);
     }
   }
@@ -6155,10 +6212,7 @@ export class GameEngine {
       if (!selected && !hovered) return;
 
       // During animations (and pre-cast blocking delay), suppress overlays for a clean view
-      // UNLESS the animation explicitly wants to keep outliners visible (like void-jump)
-      const currentAnim = (this.animationManager as any).current as any;
-      const keepVisible = currentAnim?.keepOutlinersVisible === true;
-      const blockOverlays = !keepVisible && !!this.animationManager?.isBlockingInputs?.();
+      const blockOverlays = this.spellIOCoordinator?.shouldHideOutliners?.() ?? (!!this.animationManager?.isBlockingInputs?.());
 
       const dpr = (this.webglService.getState().devicePixelRatio || 1);
 
@@ -6382,7 +6436,7 @@ export class GameEngine {
     
     // Play hover sound when hovering over a new object (but not the ship)
     const prevId = this.systemPanel.getHoveredId();
-    if (id !== prevId && id && id !== 'ship') {
+    if (!this.hoverAudioMuted && id !== prevId && id && id !== 'ship') {
       try { this.audio?.play('ui_outline_hover', { bus: 'ui', volume: 0.3 }); } catch {}
     }
     

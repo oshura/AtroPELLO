@@ -20,6 +20,7 @@ import { PortalRegistryService } from '../../game/services/game/portal-registry.
 import { CollisionManagerService } from '../../game/services/physics/collision-manager.service';
 import { PanelEventCoordinator } from '../../game/services/ui/panel-event-coordinator.service';
 import { GameStateStore } from './game-state.store';
+import { SpellIOCoordinator } from '../../game/services/spells/spell-io-coordinator.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -111,6 +112,7 @@ export class GameInitializer {
   const portalPersistenceService = this.injector.get(PortalPersistenceService);
   const portalRegistry = this.injector.get(PortalRegistryService);
     const panelEventCoordinator = this.injector.get(PanelEventCoordinator);
+    const spellIOCoordinator = this.injector.get(SpellIOCoordinator);
     const gameStateStore = this.injector.get(GameStateStore);
     this.gameEngine = new GameEngine(
       this.webglService,
@@ -125,6 +127,7 @@ export class GameInitializer {
       this.logger,
       this.injector.get(CollisionManagerService),
       panelEventCoordinator,
+      spellIOCoordinator,
       gameStateStore,
       solarSystemService,
       humanSolarSystemService,

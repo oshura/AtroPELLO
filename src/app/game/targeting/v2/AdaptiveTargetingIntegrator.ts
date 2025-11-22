@@ -199,6 +199,10 @@ export class AdaptiveTargetingIntegrator {
     // Outlines disabled during refactoring - will be re-implemented with new system
   }
 
+  public setHoverAudioMuted(muted: boolean): void {
+    this.adaptiveSystem.setHoverAudioMuted(muted);
+  }
+
   private renderDynamicReticle(deltaTime: number): void {
     // This would render the dynamic reticle based on mouse velocity
     // For now, just update the reticle state for when we re-implement rendering

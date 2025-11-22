@@ -94,6 +94,11 @@ export class PanelEventCoordinator {
    * Route mouse clicks based on active panel
    */
   private handleClick(event: MouseEvent): void {
+    if (this.inputsBlocked) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (this.mapEnabled) {
       this.callbacks.onMapClick?.(event.clientX, event.clientY);
       return;
@@ -115,6 +120,9 @@ export class PanelEventCoordinator {
    * Route mouse movement to appropriate panel
    */
   private handleMouseMove(event: MouseEvent): void {
+    if (this.inputsBlocked) {
+      return;
+    }
     if (this.mapEnabled) {
       this.callbacks.onMapMove?.(event.clientX, event.clientY);
       return;
@@ -130,6 +138,11 @@ export class PanelEventCoordinator {
    * Route mouse wheel events (only for map zoom)
    */
   private handleWheel(event: WheelEvent): void {
+    if (this.inputsBlocked) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
     if (this.mapEnabled) {
       this.callbacks.onMapWheel?.(event.deltaY, event.clientX, event.clientY);
       // Prevent page scroll when map is open

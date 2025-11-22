@@ -8,6 +8,7 @@ import { SolarSystemService } from '../game/solar-system.service';
 import { Portal } from '../../game-objects/Portal';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
 import { GameLogger } from '../../utils/GameLogger';
+import { SpellType } from '../../types/spell.types';
 
 enum GateRitePhase {
   PreFocus = 0,
@@ -24,6 +25,7 @@ enum GateRitePhase {
 
 export class GateRiteAnimation implements GameAnimation {
   public readonly name = 'gate-rite';
+  public readonly spellType = SpellType.GATE_RITE;
   private phase: GateRitePhase = GateRitePhase.PreFocus;
   private t = 0; // seconds within current phase
   private targetPlanet: ITargetable | null = null;

@@ -202,6 +202,15 @@ export class AudioEngineService {
 
   public has(name: string): boolean { return this.buffers.has(name); }
 
+  /** Returns decoded buffer duration in seconds, if loaded. */
+  public getBufferDuration(name: string): number | null {
+    const buf = this.buffers.get(name);
+    if (!buf || typeof buf.duration !== 'number' || !isFinite(buf.duration)) {
+      return null;
+    }
+    return buf.duration;
+  }
+
   public play(name: string, opts: PlayOptions = {}): PlayingHandle | null {
     this.ensureContext();
     if (!this.ctx) return null;

@@ -4,6 +4,7 @@ import { GameEngine } from '../../GameEngine';
 import { GameAnimation } from './types';
 import { GameLogger } from '../../utils/GameLogger';
 import { LogCategory } from '../../../services/logging.service';
+import { SpellType } from '../../types/spell.types';
 
 @Injectable({ providedIn: 'root' })
 export class AnimationManagerService {
@@ -78,6 +79,11 @@ export class AnimationManagerService {
     return !!this.current && this.current.isBlockingInputs();
   }
 
+  /** Provides read-only access to the currently running animation (used for coordination). */
+  public getCurrentAnimation(): GameAnimation | null {
+    return this.current;
+  }
+
   /** Force-terminate current animation and restore game state (called on player death) */
   public forceTerminateCurrentAnimation(engine: GameEngine): void {
     if (!this.current) return;
@@ -92,7 +98,10 @@ export class AnimationManagerService {
   }
 
   /** Start a simple blocking placeholder animation for a fixed duration. */
-  public startBlockingDelay(durationMs: number, keepOutlinersVisible: boolean = false): void {
+  public startBlockingDelay(
+    durationMs: number,
+    options?: { keepOutlinersVisible?: boolean; spellType?: SpellType }
+  ): void {
     if (durationMs <= 0) return;
     // If already running something, keep it (do not override a real animation)
     if (this.current) return;
@@ -100,7 +109,8 @@ export class AnimationManagerService {
     const total = Math.max(0.001, durationMs) / 1000;
     this.current = {
       name: 'blocking-delay',
-      keepOutlinersVisible, // Pass through to control outliner visibility
+      keepOutlinersVisible: options?.keepOutlinersVisible ?? false,
+      spellType: options?.spellType,
       start: () => {},
       update: (_engine: GameEngine, dt: number) => {
         t += dt;

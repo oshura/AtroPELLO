@@ -1,9 +1,11 @@
 import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
+import { SpellType } from '../../types/spell.types';
 
 export class SpeedRiteAnimation implements GameAnimation {
   public readonly name = 'speed-rite';
   public readonly keepOutlinersVisible = true; // Speed rite maintains outliners visible
+  public readonly spellType = SpellType.SPEED;
 
   private t = 0; // seconds elapsed
   private duration = 1.2; // 1200ms

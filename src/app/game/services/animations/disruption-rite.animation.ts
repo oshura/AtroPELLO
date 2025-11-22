@@ -1,9 +1,11 @@
 import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
 import { ITargetable } from '../../types/targeting.types';
+import { SpellType } from '../../types/spell.types';
 
 export class DisruptionRiteAnimation implements GameAnimation {
   public readonly name = 'disruption-rite';
+  public readonly spellType = SpellType.DISRUPT;
   // No keepOutlinersVisible property - defaults to false (outliners hidden)
 
   private t = 0; // seconds elapsed

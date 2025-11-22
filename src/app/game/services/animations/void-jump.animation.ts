@@ -2,12 +2,14 @@ import { GameAnimation } from './types';
 import { ITargetable, TargetType } from '../../types/targeting.types';
 import { GameEngine } from '../../GameEngine';
 import { CameraMode } from '../../Camera';
+import { SpellType } from '../../types/spell.types';
 
 function clamp01(x: number) { return Math.max(0, Math.min(1, x)); }
 function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
 
 export class VoidJumpAnimation implements GameAnimation {
   public readonly name = 'void-jump';
+  public readonly spellType = SpellType.LONGJUMP;
 
   private t = 0; // seconds elapsed
   private blocking = true;

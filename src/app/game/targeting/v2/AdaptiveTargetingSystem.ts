@@ -137,6 +137,7 @@ export class AdaptiveTargetingSystem {
   private currentSelected: TargetDisplayInfo | null = null;
   private previousHoveredId: string | null = null;
   private previousSelectedId: string | null = null;
+  private hoverAudioMuted = false;
   // Sticky hover to avoid flicker on borderline detections
   private stickyHover: { info: TargetDisplayInfo; lastSeenTs: number } | null = null;
   private hoverHoldMs: number = 120; // keep last hover briefly if still within tolerance
@@ -231,7 +232,7 @@ export class AdaptiveTargetingSystem {
     // Play audio cue when hover changes
     const newHoveredId = hoveredTarget?.target.id?.toString() || null;
     if (newHoveredId !== this.previousHoveredId) {
-      if (newHoveredId !== null) {
+      if (newHoveredId !== null && !this.hoverAudioMuted) {
         // Hover appeared
         try {
           const clip = this.audio.has('ui_outline_hover') ? 'ui_outline_hover' : 'ui_select';
@@ -294,6 +295,10 @@ export class AdaptiveTargetingSystem {
       } catch {}
       this.previousSelectedId = newSelectedId;
     }
+  }
+
+  public setHoverAudioMuted(muted: boolean): void {
+    this.hoverAudioMuted = muted;
   }
 
   // ===================================

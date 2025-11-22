@@ -1,8 +1,10 @@
 import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
+import { SpellType } from '../../types/spell.types';
 
 export class EternalRiteAnimation implements GameAnimation {
   public readonly name = 'eternal-rite';
+  public readonly spellType = SpellType.ETERNAL_RITE;
   // No keepOutlinersVisible property - defaults to false (outliners hidden)
 
   private t = 0; // seconds elapsed
