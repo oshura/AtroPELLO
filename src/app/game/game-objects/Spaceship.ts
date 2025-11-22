@@ -61,6 +61,10 @@ export class Spaceship extends GameObject {
   private outOfVoidEnergy: boolean = false; // sin energía: no acelera; deriva
   private driftVelocity: Vector3 = { x: 0, y: 0, z: 0 }; // velocidad constante en mundo (10% de la anterior)
   
+  // Capacidad de carga (HUD de cargamento)
+  public cargoCapacityMax: number = 10;
+  public cargoCapacityCurrent: number = 0;
+  
   // Armamento disponible (por ahora vacío)
   public weapons: any[] = [];
   

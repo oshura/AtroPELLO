@@ -6202,6 +6202,11 @@ export class GameEngine {
         max: this.spaceship.healthMax,
         pct: (this.spaceship.healthCurrent / Math.max(1, this.spaceship.healthMax)) * 100
       },
+      shipCargo: {
+        current: this.spaceship.cargoCapacityCurrent,
+        max: this.spaceship.cargoCapacityMax,
+        pct: (this.spaceship.cargoCapacityCurrent / Math.max(1, this.spaceship.cargoCapacityMax)) * 100
+      },
       weapons: this.spaceship.weapons,
       // Pasar posición de la nave para cálculo de bearing/elevación en brújula
       position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z },

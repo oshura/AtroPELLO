@@ -7,6 +7,7 @@ import { Compass } from './elements/Compass';
 import { NavigationSphere } from './elements/NavigationSphere';
 import { SpeedometerDigital } from './elements/SpeedometerDigital';
 import { HealthGauge } from './elements/HealthGauge';
+import { CargoGauge } from './elements/CargoGauge';
 import { MarqueePanel } from './elements/MarqueePanel';
 import { TargetingSystem, TargetInfo } from '../types/targeting.types';
 import { TargetPanel, TargetPanelState, Relation } from './elements/TargetPanel';
@@ -28,6 +29,7 @@ export class HUDManager {
   private navigationSphere: NavigationSphere;
   private speedometer: SpeedometerDigital;
   private healthGauge: HealthGauge;
+  private cargoGauge: CargoGauge;
   private marqueePanel: MarqueePanel;
   private targetPanel: TargetPanel;
   
@@ -52,6 +54,7 @@ export class HUDManager {
     this.navigationSphere = new NavigationSphere();
     this.speedometer = new SpeedometerDigital();
     this.healthGauge = new HealthGauge();
+    this.cargoGauge = new CargoGauge();
     this.marqueePanel = new MarqueePanel();
   this.targetPanel = new TargetPanel();
     GameLogger.debug(LogCategory.HUD, 'Elementos HUD creados');
@@ -106,6 +109,7 @@ export class HUDManager {
     voidEnergy?: { current: number; max: number; pct: number };
     weapons?: any[];
     shipHealth?: { current: number; max: number; pct: number };
+    shipCargo?: { current: number; max: number; pct: number };
     // Optional: remaining seconds for active speed rite (Double Phased Time Rite)
     speedRiteRemainingSec?: number | null;
     // Optional: portal traversal cooldown seconds remaining
@@ -139,6 +143,7 @@ export class HUDManager {
   this.speedometer.update(gameData.speed);
   this.marqueePanel.update(); // Sin parámetros, usa su lógica interna
   this.healthGauge.update(gameData.shipHealth ?? null);
+  this.cargoGauge.update(gameData.shipCargo ?? null);
     
     // Renderizar todos los elementos en la textura
     // Guardar temporalmente energía del vacío para el render
@@ -147,6 +152,7 @@ export class HUDManager {
     (this as any)._weaponsHUD = gameData.weapons || [];
     // Guardar salud de la nave para barras de arco
     (this as any)._shipHealthHUD = gameData.shipHealth || null;
+    (this as any)._shipCargoHUD = gameData.shipCargo || null;
     // Portal cooldown HUD removed
     this.renderToTexture();
   }
@@ -484,6 +490,23 @@ export class HUDManager {
       }
       const gaugeY = compassPos.y + dims.height * 0.1;
       this.healthGauge.render(ctx, { x: gaugeX, y: gaugeY });
+    }
+
+    const shipCargo = (this as any)._shipCargoHUD as { current: number; max: number; pct: number } | null;
+    if (shipCargo) {
+      const dims = this.cargoGauge.getDimensions();
+      const gapFromCompass = 58;
+      const gapFromVoidEnergy = 10;
+      const areaLeft = compassPos.x + gapFromCompass;
+      const areaRight = canvas.width - sideMargin - gapFromVoidEnergy;
+      const minX = areaLeft + dims.width / 2;
+      const maxX = areaRight - dims.width / 2;
+      let gaugeX = maxX - 18;
+      if (gaugeX < minX) {
+        gaugeX = Math.min(maxX, Math.max(minX, gaugeX));
+      }
+      const gaugeY = compassPos.y + dims.height * 0.1;
+      this.cargoGauge.render(ctx, { x: gaugeX, y: gaugeY });
     }
 
     // Salud y portal wireframe eliminados (diseño pendiente de redefinición)
