@@ -472,17 +472,17 @@ export class HUDManager {
     const shipHealth = (this as any)._shipHealthHUD as { current: number; max: number; pct: number } | null;
     if (shipHealth) {
       const dims = this.healthGauge.getDimensions();
-      const gapFromWeapons = 28;
-      const gapFromCompass = 60;
+      const gapFromWeapons = 10;
+      const gapFromCompass = 58;
       const areaLeft = weaponsPanelRightEdge + gapFromWeapons;
       const areaRight = compassPos.x - gapFromCompass;
       const minX = areaLeft + dims.width / 2;
       const maxX = areaRight - dims.width / 2;
-      let gaugeX = minX + 20;
+      let gaugeX = minX + 2;
       if (gaugeX > maxX) {
         gaugeX = Math.max(minX, maxX);
       }
-      const gaugeY = compassPos.y - dims.height * 0.35;
+      const gaugeY = compassPos.y + dims.height * 0.1;
       this.healthGauge.render(ctx, { x: gaugeX, y: gaugeY });
     }
 
