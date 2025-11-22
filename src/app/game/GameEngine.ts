@@ -230,7 +230,13 @@ export class GameEngine {
     endPos: { x: number; y: number; z: number };
     target: Asteroid | null;
     startTime: number;
-    duration: number;
+    maxDuration: number;
+    shrinkRate: number;
+    currentScalar: number;
+    minScalar: number;
+    baseScale: { x: number; y: number; z: number };
+    baseSize: number;
+    pixelScalar: number;
   } | null = null;
 
   constructor(
@@ -5826,7 +5832,7 @@ export class GameEngine {
       startPos: { ...this.spaceship.position },
       endPos: targetPos,
       startTime: performance.now(),
-      maxDuration: 10000,
+      maxDuration: Number.POSITIVE_INFINITY,
       pullSpeed: 2.0,
       captureRadius: 4.5,
     };
@@ -5979,31 +5985,36 @@ export class GameEngine {
   }
 
   private calculateCargoYieldFromAsteroid(target: Asteroid): number {
-    const composition = String((target as any).composition ?? 'mixed').toLowerCase();
-    const compTable: Record<string, number> = {
-      iron: 6,
-      nickel: 5,
-      silicate: 4,
-      carbonaceous: 3,
-      mixed: 3,
-    };
-    const compValue = compTable[composition] ?? 3;
-    const sizeFactor = Math.max(1, target.size ?? 1);
-    const voidUnits = Math.max(1, Math.round((target as any).voidMassUnits ?? 3));
-    const voidFactor = Math.max(1, Math.round(voidUnits * 0.8));
-    return Math.max(1, Math.round(compValue + sizeFactor + voidFactor));
+    const rawMass = Number((target as any).massTons ?? NaN);
+    const massTons = isFinite(rawMass) && rawMass > 0 ? rawMass : Math.max(10, (target.size ?? 1) * 60);
+    const units = Math.floor(massTons * 0.02); // 2% of reported mass, truncated
+    return Math.max(1, units);
   }
 
   /** Launches the Void Kinesis conduit beam */
   public startVoidKinesisBeam(targetPos: { x: number; y: number; z: number }, target: Asteroid): void {
     if (!this.spaceship || !targetPos) return;
+    const baseScale = {
+      x: target.scale?.x ?? target.size,
+      y: target.scale?.y ?? target.size,
+      z: target.scale?.z ?? target.size,
+    };
+    const baseSize = target.size ?? 1;
+    const pixelRadius = 0.02; // ≈1px in world space at typical camera distances
+    const minScalar = Math.max(pixelRadius / Math.max(0.01, baseSize), 0.01);
     this.voidKinesisBeam = {
       active: true,
       startPos: { ...this.spaceship.position },
       endPos: targetPos,
       target,
       startTime: performance.now(),
-      duration: 1800,
+      maxDuration: 6000,
+      shrinkRate: 0.85,
+      currentScalar: 1,
+      minScalar,
+      baseScale,
+      baseSize,
+      pixelScalar: minScalar,
     };
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Void Kinesis beam started', {
       targetId: target.id,
@@ -6014,26 +6025,37 @@ export class GameEngine {
   private updateVoidKinesisBeam(deltaTime: number): void {
     if (!this.voidKinesisBeam?.active || !this.spaceship) return;
     const beam = this.voidKinesisBeam;
-    if (this.spaceship) {
-      beam.startPos = { ...this.spaceship.position };
-    }
-    if (beam.target?.position) {
-      beam.endPos = { ...beam.target.position };
-    }
-    const elapsed = performance.now() - beam.startTime;
-    if (elapsed >= beam.duration) {
-      const target = beam.target;
-      if (target && this.isAsteroidTarget(target)) {
-        const gained = this.addVoidEnergyFromAsteroid(target);
-        try {
-          if (gained > 0) {
-            this.hudManager?.addMarqueeMessage?.(`Energía del vacío +${gained}`);
-          } else {
-            this.hudManager?.addMarqueeMessage?.('Energía del vacío al máximo');
-          }
-        } catch {}
-      }
+    const target = beam.target;
+    if (!target || !this.isAsteroidTarget(target) || (typeof target.isActive === 'function' && !target.isActive())) {
       this.voidKinesisBeam = null;
+      return;
+    }
+    beam.startPos = { ...this.spaceship.position };
+    beam.endPos = { ...target.position };
+
+    const elapsed = performance.now() - beam.startTime;
+    if (elapsed >= beam.maxDuration) {
+      this.resolveVoidKinesisConversion(target);
+      return;
+    }
+
+    // Shrink asteroid visually until it "pixels out"
+    const shrinkAmount = beam.shrinkRate * deltaTime;
+    beam.currentScalar = Math.max(beam.minScalar, beam.currentScalar - shrinkAmount);
+    const appliedScalar = beam.currentScalar;
+    target.scale = {
+      x: beam.baseScale.x * appliedScalar,
+      y: beam.baseScale.y * appliedScalar,
+      z: beam.baseScale.z * appliedScalar,
+    };
+    target.size = Math.max(beam.baseSize * appliedScalar, beam.baseSize * beam.pixelScalar);
+    target.updateModelMatrix();
+    if (target.boundingSphere) {
+      target.boundingSphere.radius = Math.max(0.01, target.size * 2);
+    }
+
+    if (beam.currentScalar <= beam.pixelScalar + 1e-3) {
+      this.resolveVoidKinesisConversion(target);
     }
   }
 
@@ -6095,6 +6117,22 @@ export class GameEngine {
     gl.disableVertexAttribArray(colorLoc);
     gl.deleteBuffer(vbo);
     gl.deleteBuffer(cbo);
+  }
+
+  private resolveVoidKinesisConversion(target: Asteroid): void {
+    if (!target || !this.isAsteroidTarget(target)) {
+      this.voidKinesisBeam = null;
+      return;
+    }
+    const gained = this.addVoidEnergyFromAsteroid(target);
+    try {
+      if (gained > 0) {
+        this.hudManager?.addMarqueeMessage?.(`Energía del vacío +${gained}`);
+      } else {
+        this.hudManager?.addMarqueeMessage?.('Energía del vacío al máximo');
+      }
+    } catch {}
+    this.voidKinesisBeam = null;
   }
 
   private addVoidEnergyFromAsteroid(target: Asteroid): number {
