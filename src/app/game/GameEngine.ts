@@ -5965,6 +5965,16 @@ export class GameEngine {
       return false;
     }
     const yieldUnits = this.calculateCargoYieldFromAsteroid(target);
+    if (this.spaceship.cargoCapacityRemaining < yieldUnits) {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Cargo conversion aborted - insufficient capacity', {
+        targetId: target.id,
+        yieldUnits,
+        remaining: this.spaceship.cargoCapacityRemaining,
+      });
+      this.showPlaceholderText('BODEGA SIN ESPACIO', 1800);
+      try { this.hudManager?.addMarqueeMessage?.('Libera carga para anclar'); } catch {}
+      return false;
+    }
     const stored = this.spaceship.addCargo(yieldUnits);
     if (stored <= 0) {
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Cargo hold is full - cannot store asteroid', {
@@ -6124,7 +6134,18 @@ export class GameEngine {
       this.voidKinesisBeam = null;
       return;
     }
-    const gained = this.addVoidEnergyFromAsteroid(target);
+    if (!this.spaceship) {
+      this.voidKinesisBeam = null;
+      return;
+    }
+    const gainInfo = this.calculateVoidEnergyGainFromAsteroid(target);
+    const projected = this.spaceship.voidEnergyCurrent + gainInfo.gain;
+    if (projected > this.spaceship.voidEnergyMax) {
+      this.showPlaceholderText('RESERVA DEL VACÍO LLENA', 2000);
+      this.voidKinesisBeam = null;
+      return;
+    }
+    const gained = this.addVoidEnergyFromAsteroid(target, gainInfo);
     try {
       if (gained > 0) {
         this.hudManager?.addMarqueeMessage?.(`Energía del vacío +${gained}`);
@@ -6135,12 +6156,17 @@ export class GameEngine {
     this.voidKinesisBeam = null;
   }
 
-  private addVoidEnergyFromAsteroid(target: Asteroid): number {
+  private calculateVoidEnergyGainFromAsteroid(target: Asteroid): { gain: number; voidUnits: number } {
+    const voidUnits = Math.max(1, Math.round((target as any).voidMassUnits ?? (target.size ?? 1) * 2));
+    const gain = Math.max(8, Math.round(voidUnits * 7));
+    return { gain, voidUnits };
+  }
+
+  private addVoidEnergyFromAsteroid(target: Asteroid, info?: { gain: number; voidUnits: number }): number {
     if (!this.spaceship) {
       return 0;
     }
-    const voidUnits = Math.max(1, Math.round((target as any).voidMassUnits ?? (target.size ?? 1) * 2));
-    const gain = Math.max(8, Math.round(voidUnits * 7));
+    const { gain, voidUnits } = info ?? this.calculateVoidEnergyGainFromAsteroid(target);
     const before = this.spaceship.voidEnergyCurrent;
     this.spaceship.voidEnergyCurrent = Math.min(
       this.spaceship.voidEnergyMax,
@@ -6158,6 +6184,9 @@ export class GameEngine {
   }
 
   private castAnchoringPulse(target: ITargetable | null): void {
+    if (!this.spaceship) {
+      return;
+    }
     if (!target || !this.isAsteroidTarget(target)) {
       this.showPlaceholderText('ANCHORING PULSE REQUIERE ASTEROIDE', 1500);
       return;
@@ -6171,6 +6200,11 @@ export class GameEngine {
       this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
       return;
     }
+    const requiredCargo = this.calculateCargoYieldFromAsteroid(target);
+    if (this.spaceship.cargoCapacityRemaining < requiredCargo) {
+      this.showPlaceholderText(`BODEGA SIN ESPACIO (${requiredCargo}u)`, 2000);
+      return;
+    }
     try {
       this.animationManager.startAnchoringPulse(this, target);
     } catch (e) {
@@ -6179,6 +6213,9 @@ export class GameEngine {
   }
 
   private castVoidKinesis(target: ITargetable | null): void {
+    if (!this.spaceship) {
+      return;
+    }
     if (!target || !this.isAsteroidTarget(target)) {
       this.showPlaceholderText('VOID KINESIS REQUIERE ASTEROIDE', 1500);
       return;
@@ -6190,6 +6227,12 @@ export class GameEngine {
     }
     if (this.getDistanceFromShip(pos) > 50) {
       this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
+      return;
+    }
+    const voidGainInfo = this.calculateVoidEnergyGainFromAsteroid(target);
+    const projectedVoid = this.spaceship.voidEnergyCurrent + voidGainInfo.gain;
+    if (projectedVoid > this.spaceship.voidEnergyMax) {
+      this.showPlaceholderText('RESERVA DEL VACÍO LLENA', 2000);
       return;
     }
     try {
