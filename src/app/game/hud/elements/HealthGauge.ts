@@ -55,28 +55,30 @@ export class HealthGauge {
     ctx.lineWidth = 1.5;
     this.drawRoundedRect(ctx, -halfW, -halfH, this.width, this.height, 8);
 
-    // Red cross icon
+    // Cross icon (phosphorescent green)
     ctx.save();
     ctx.translate(-halfW + 20, -halfH + 26);
-    ctx.fillStyle = '#ff4d4d';
-    ctx.fillRect(-4, -12, 8, 24);
-    ctx.fillRect(-12, -4, 24, 8);
+    ctx.fillStyle = '#00ff80';
+    ctx.fillRect(-3, -9, 6, 18);
+    ctx.fillRect(-9, -3, 18, 6);
     ctx.restore();
 
-    // Labels
-    ctx.fillStyle = '#f8f8f8';
-    ctx.font = '10px "Share Tech Mono", monospace';
-    ctx.textAlign = 'left';
-    ctx.textBaseline = 'top';
-    ctx.fillText('SHIP HEALTH', -halfW + 36, -halfH + 6);
+    const pct = Math.max(0, Math.min(1, this.currentValue / Math.max(1, this.maxValue)));
 
     // Current health readout
     ctx.font = 'bold 20px "Share Tech Mono", monospace';
     ctx.textBaseline = 'middle';
     const currentText = this.formatValue(this.currentValue);
+    let primaryColor = '#ffffff';
+    if (pct <= 0.25) {
+      primaryColor = '#ff4d4d';
+    } else if (pct <= 0.5) {
+      primaryColor = '#ffe066';
+    }
+    ctx.fillStyle = primaryColor;
     const currentWidth = ctx.measureText(currentText).width;
     ctx.save();
-    ctx.translate(-halfW + 36, -halfH + 28);
+    ctx.translate(-halfW + 56, -halfH + 28);
     ctx.scale(1, 1.5);
     ctx.fillText(currentText, 0, 0);
     ctx.restore();
@@ -85,7 +87,7 @@ export class HealthGauge {
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     const maxText = `/ ${this.formatValue(this.maxValue)}`;
     ctx.save();
-    ctx.translate(-halfW + 36 + currentWidth + 8, -halfH + 30);
+    ctx.translate(-halfW + 56 + currentWidth + 8, -halfH + 30);
     ctx.scale(1, 1.5);
     ctx.fillText(maxText, 0, 0);
     ctx.restore();
@@ -99,13 +101,14 @@ export class HealthGauge {
     ctx.lineWidth = 1;
     ctx.strokeRect(barX, barY, barWidth, barHeight);
 
-    const pct = Math.max(0, Math.min(1, this.currentValue / Math.max(1, this.maxValue)));
     const barFill = pct * barWidth;
-    const gradient = ctx.createLinearGradient(barX, 0, barX + barWidth, 0);
-    gradient.addColorStop(0, '#00ff9d');
-    gradient.addColorStop(0.5, '#ffe066');
-    gradient.addColorStop(1, '#ff4d4d');
-    ctx.fillStyle = gradient;
+    let barColor = '#00ff80';
+    if (pct <= 0.25) {
+      barColor = '#ff4d4d';
+    } else if (pct <= 0.5) {
+      barColor = '#ffe066';
+    }
+    ctx.fillStyle = barColor;
     ctx.fillRect(barX, barY, barFill, barHeight);
 
     // Percent text
