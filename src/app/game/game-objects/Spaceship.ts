@@ -62,8 +62,8 @@ export class Spaceship extends GameObject {
   private driftVelocity: Vector3 = { x: 0, y: 0, z: 0 }; // velocidad constante en mundo (10% de la anterior)
   
   // Capacidad de carga (HUD de cargamento)
-  public cargoCapacityMax: number = 10;
-  public cargoCapacityCurrent: number = 0;
+  public cargoCapacityMax: number = 18;
+  public cargoCapacityCurrent: number = 3;
   
   // Armamento disponible (por ahora vacío)
   public weapons: any[] = [];
@@ -118,6 +118,42 @@ export class Spaceship extends GameObject {
    */
   public setHealthChangeCallback(callback: (newHealth: number, oldHealth: number) => void): void {
     this.onHealthChangeCallback = callback;
+  }
+
+  /** Remaining cargo slots before overfilling */
+  public get cargoCapacityRemaining(): number {
+    return Math.max(0, this.cargoCapacityMax - this.cargoCapacityCurrent);
+  }
+
+  /**
+   * Adds cargo units, clamping to capacity. Returns the units actually stored.
+   */
+  public addCargo(units: number): number {
+    if (!Number.isFinite(units) || units <= 0) {
+      return 0;
+    }
+    const available = this.cargoCapacityRemaining;
+    const applied = Math.min(available, Math.floor(units));
+    if (applied <= 0) {
+      return 0;
+    }
+    this.cargoCapacityCurrent = Math.min(this.cargoCapacityMax, this.cargoCapacityCurrent + applied);
+    return applied;
+  }
+
+  /**
+   * Removes cargo units safely. Returns the units actually removed.
+   */
+  public removeCargo(units: number): number {
+    if (!Number.isFinite(units) || units <= 0) {
+      return 0;
+    }
+    const removable = Math.min(this.cargoCapacityCurrent, Math.floor(units));
+    if (removable <= 0) {
+      return 0;
+    }
+    this.cargoCapacityCurrent = Math.max(0, this.cargoCapacityCurrent - removable);
+    return removable;
   }
 
   constructor(position: Vector3 = { x: 0, y: 0, z: 0 }) {

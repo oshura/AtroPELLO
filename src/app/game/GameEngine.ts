@@ -211,6 +211,28 @@ export class GameEngine {
     duration: number; // milliseconds
   } | null = null;
 
+  // Anchoring Pulse tether beam state
+  private anchoringPulseBeam: {
+    active: boolean;
+    target: Asteroid | null;
+    startPos: { x: number; y: number; z: number };
+    endPos: { x: number; y: number; z: number };
+    startTime: number;
+    maxDuration: number;
+    pullSpeed: number;
+    captureRadius: number;
+  } | null = null;
+
+  // Void Kinesis conduit beam state
+  private voidKinesisBeam: {
+    active: boolean;
+    startPos: { x: number; y: number; z: number };
+    endPos: { x: number; y: number; z: number };
+    target: Asteroid | null;
+    startTime: number;
+    duration: number;
+  } | null = null;
+
   constructor(
     private webglService: WebGLService,
     private particleEffectsService: ParticleEffectsService,
@@ -1745,7 +1767,9 @@ export class GameEngine {
     this.particleEffects.updateThrusterEffect(this.spaceship, deltaTime);
     this.particleEffects.updateDestructionDebris(this.camera, deltaTime);
 
-    // Update disruption beam if active
+    // Update active spell beams
+    this.updateAnchoringPulseBeam(deltaTime);
+    this.updateVoidKinesisBeam(deltaTime);
     this.updateDisruptionBeam();
 
     // Actualizar cámara con nueva posición
@@ -3219,10 +3243,8 @@ export class GameEngine {
     // Establecer un color base por defecto para lit en el frame (evita depender de draws previos)
     this.shaderManager.setLitColor(new Float32Array([0.7, 0.75, 0.8]));
 
-    // Renderizar haz de disrupción antes de la nave para que quede por debajo de la cabina
-    if (this.disruptionBeam && this.disruptionBeam.active) {
-      this.renderDisruptionBeam();
-      // Restaurar el shader lit para continuar dibujando geometría opaca
+    // Renderizar haces especiales antes de la nave para que queden por debajo de la cabina
+    const restoreLitProgram = () => {
       this.shaderManager.useLitProgram();
       this.shaderManager.setLighting(
         this.lightDirection,
@@ -3232,6 +3254,19 @@ export class GameEngine {
       );
       this.shaderManager.setSpecular(new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]), 0.15, 32.0);
       this.shaderManager.setLitColor(new Float32Array([0.7, 0.75, 0.8]));
+    };
+
+    if (this.disruptionBeam?.active) {
+      this.renderDisruptionBeam();
+      restoreLitProgram();
+    }
+    if (this.anchoringPulseBeam?.active) {
+      this.renderAnchoringPulseBeam();
+      restoreLitProgram();
+    }
+    if (this.voidKinesisBeam?.active) {
+      this.renderVoidKinesisBeam();
+      restoreLitProgram();
     }
 
     // Renderizar nave con shader texturizado (por encima del beam)
@@ -5439,6 +5474,10 @@ export class GameEngine {
           } else if (spell === SpellType.ETERNAL_RITE) {
             // Eternal Rite: ritual suicide animation (reduces health internally)
             try { this.animationManager.startEternalRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'EternalRite start error', e); }
+          } else if (spell === SpellType.ANCHORING_PULSE) {
+            this.castAnchoringPulse(target ?? null);
+          } else if (spell === SpellType.VOID_KINESIS) {
+            this.castVoidKinesis(target ?? null);
           } else if (spell === SpellType.DISRUPT) {
             // Material Disruption Rite: beam attack animation
             if (target && this.spaceship) {
@@ -5539,6 +5578,10 @@ export class GameEngine {
           } else if (selected === SpellType.ETERNAL_RITE) {
             // Eternal Rite: ritual suicide animation
             try { this.animationManager.startEternalRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'EternalRite start error', e); }
+          } else if (selected === SpellType.ANCHORING_PULSE) {
+            this.castAnchoringPulse(target ?? null);
+          } else if (selected === SpellType.VOID_KINESIS) {
+            this.castVoidKinesis(target ?? null);
           } else if (selected === SpellType.DISRUPT) {
             // Material Disruption Rite
             if (target && this.spaceship) {
@@ -5569,6 +5612,37 @@ export class GameEngine {
     if (this.spaceship && !this.areSpellGameplayInputsLocked()) {
       this.updateShipControls(key, false);
     }
+  }
+
+  private getTargetPosition(target: any): { x: number; y: number; z: number } | null {
+    if (!target) return null;
+    if (target.boundingSphere?.center) {
+      return { ...target.boundingSphere.center };
+    }
+    if (target.position) {
+      return { x: target.position.x, y: target.position.y, z: target.position.z };
+    }
+    return null;
+  }
+
+  private getDistanceFromShip(point: { x: number; y: number; z: number }): number {
+    if (!this.spaceship) return Infinity;
+    const dx = point.x - this.spaceship.position.x;
+    const dy = point.y - this.spaceship.position.y;
+    const dz = point.z - this.spaceship.position.z;
+    return Math.hypot(dx, dy, dz);
+  }
+
+  private isAsteroidTarget(target: any): target is Asteroid {
+    if (!target) return false;
+    const typeName = target.constructor?.name || '';
+    if (typeof target.getTargetType === 'function') {
+      const t = String(target.getTargetType());
+      if (t.toLowerCase().includes('asteroid')) {
+        return true;
+      }
+    }
+    return typeName.includes('Asteroid');
   }
 
   /**
@@ -5738,6 +5812,353 @@ export class GameEngine {
     // Cleanup temporary buffers
     gl.deleteBuffer(vbo);
     gl.deleteBuffer(cbo);
+  }
+
+  /** Launches the Anchoring Pulse tether beam */
+  public startAnchoringPulseBeam(target: Asteroid): void {
+    if (!this.spaceship || !target) return;
+    const targetPos = this.getTargetPosition(target);
+    if (!targetPos) return;
+    try { this.makeAsteroidIndependent(target); } catch {}
+    this.anchoringPulseBeam = {
+      active: true,
+      target,
+      startPos: { ...this.spaceship.position },
+      endPos: targetPos,
+      startTime: performance.now(),
+      maxDuration: 10000,
+      pullSpeed: 2.0,
+      captureRadius: 4.5,
+    };
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Anchoring Pulse beam engaged', {
+      targetId: target.id,
+      composition: (target as any).composition ?? 'unknown'
+    });
+  }
+
+  private updateAnchoringPulseBeam(deltaTime: number): void {
+    if (!this.anchoringPulseBeam?.active || !this.spaceship) return;
+    const beam = this.anchoringPulseBeam;
+    const target = beam.target;
+    if (!target || !this.isAsteroidTarget(target)) {
+      this.finishAnchoringPulseBeam('canceled');
+      return;
+    }
+    if (typeof target.isActive === 'function' && !target.isActive()) {
+      this.finishAnchoringPulseBeam('canceled');
+      return;
+    }
+    beam.startPos = { ...this.spaceship.position };
+    beam.endPos = { x: target.position.x, y: target.position.y, z: target.position.z };
+    const elapsed = performance.now() - beam.startTime;
+    if (elapsed > beam.maxDuration) {
+      this.finishAnchoringPulseBeam('expired');
+      return;
+    }
+    const dx = this.spaceship.position.x - target.position.x;
+    const dy = this.spaceship.position.y - target.position.y;
+    const dz = this.spaceship.position.z - target.position.z;
+    const dist = Math.hypot(dx, dy, dz);
+    if (dist <= beam.captureRadius) {
+      const stored = this.convertAsteroidToCargo(target);
+      this.finishAnchoringPulseBeam(stored ? 'converted' : 'canceled');
+      return;
+    }
+    const step = Math.max(0, beam.pullSpeed * deltaTime);
+    if (step > 0 && dist > 1e-3) {
+      const ratio = Math.min(1, step / dist);
+      target.position.x += dx * ratio;
+      target.position.y += dy * ratio;
+      target.position.z += dz * ratio;
+      target.velocity.x = 0;
+      target.velocity.y = 0;
+      target.velocity.z = 0;
+      target.angularVelocity.x = 0;
+      target.angularVelocity.y = 0;
+      target.angularVelocity.z = 0;
+      target.updateModelMatrix();
+      if (target.boundingSphere) {
+        target.boundingSphere.center = { ...target.position };
+      }
+    }
+  }
+
+  private finishAnchoringPulseBeam(reason: 'converted' | 'expired' | 'canceled'): void {
+    if (this.anchoringPulseBeam) {
+      this.anchoringPulseBeam.active = false;
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Anchoring Pulse beam finished', { reason });
+    this.anchoringPulseBeam = null;
+  }
+
+  private renderAnchoringPulseBeam(): void {
+    if (!this.gl || !this.anchoringPulseBeam?.active) return;
+    const beam = this.anchoringPulseBeam;
+    const gl = this.gl;
+    const start = beam.startPos;
+    const end = beam.endPos;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const dz = end.z - start.z;
+    const length = Math.hypot(dx, dy, dz);
+    if (length < 1e-3) return;
+    const thickness = 0.12;
+    const right = { x: -dy, y: dx, z: 0 };
+    const rightLen = Math.hypot(right.x, right.y, right.z) || 1;
+    right.x /= rightLen; right.y /= rightLen; right.z /= rightLen;
+    const vertices = new Float32Array([
+      start.x - right.x * thickness, start.y - right.y * thickness, start.z - right.z * thickness,
+      start.x + right.x * thickness, start.y + right.y * thickness, start.z + right.z * thickness,
+      end.x - right.x * thickness, end.y - right.y * thickness, end.z - right.z * thickness,
+      end.x + right.x * thickness, end.y + right.y * thickness, end.z + right.z * thickness,
+    ]);
+    const pulse = 0.6 + 0.4 * Math.sin((performance.now() - beam.startTime) * 0.01);
+    const r = 0.35 * pulse;
+    const g = 0.9 * pulse;
+    const b = 1.0 * pulse;
+    const colors = new Float32Array([
+      r, g, b,
+      r, g, b,
+      r * 0.8, g * 0.8, b * 0.9,
+      r * 0.8, g * 0.8, b * 0.9,
+    ]);
+    const vbo = gl.createBuffer();
+    const cbo = gl.createBuffer();
+    if (!vbo || !cbo) return;
+    this.shaderManager.useBasicProgram();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+    const posLoc = this.shaderManager.basicAttributes['position'];
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cbo);
+    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+    const colorLoc = this.shaderManager.basicAttributes['color'];
+    gl.enableVertexAttribArray(colorLoc);
+    gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
+    const identity = new Float32Array(16);
+    identity[0] = identity[5] = identity[10] = identity[15] = 1;
+    this.shaderManager.setBasicMatrices(identity, this.camera.viewMatrix, this.camera.projectionMatrix);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    const depthEnabled = gl.isEnabled(gl.DEPTH_TEST);
+    if (depthEnabled) gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.depthMask(true);
+    if (depthEnabled) gl.enable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+    gl.disableVertexAttribArray(posLoc);
+    gl.disableVertexAttribArray(colorLoc);
+    gl.deleteBuffer(vbo);
+    gl.deleteBuffer(cbo);
+  }
+
+  private convertAsteroidToCargo(target: Asteroid): boolean {
+    if (!this.spaceship || !target) {
+      return false;
+    }
+    const yieldUnits = this.calculateCargoYieldFromAsteroid(target);
+    const stored = this.spaceship.addCargo(yieldUnits);
+    if (stored <= 0) {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Cargo hold is full - cannot store asteroid', {
+        targetId: target.id,
+        yieldUnits,
+      });
+      try { this.hudManager?.addMarqueeMessage?.('Carga completa - libera espacio'); } catch {}
+      return false;
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Asteroid converted to cargo', {
+      targetId: target.id,
+      storedUnits: stored,
+      composition: (target as any).composition ?? 'unknown'
+    });
+    try { this.hudManager?.addMarqueeMessage?.(`Carga +${stored}u`); } catch {}
+    this.destroyObject(target);
+    return true;
+  }
+
+  private calculateCargoYieldFromAsteroid(target: Asteroid): number {
+    const composition = String((target as any).composition ?? 'mixed').toLowerCase();
+    const compTable: Record<string, number> = {
+      iron: 6,
+      nickel: 5,
+      silicate: 4,
+      carbonaceous: 3,
+      mixed: 3,
+    };
+    const compValue = compTable[composition] ?? 3;
+    const sizeFactor = Math.max(1, target.size ?? 1);
+    const voidUnits = Math.max(1, Math.round((target as any).voidMassUnits ?? 3));
+    const voidFactor = Math.max(1, Math.round(voidUnits * 0.8));
+    return Math.max(1, Math.round(compValue + sizeFactor + voidFactor));
+  }
+
+  /** Launches the Void Kinesis conduit beam */
+  public startVoidKinesisBeam(targetPos: { x: number; y: number; z: number }, target: Asteroid): void {
+    if (!this.spaceship || !targetPos) return;
+    this.voidKinesisBeam = {
+      active: true,
+      startPos: { ...this.spaceship.position },
+      endPos: targetPos,
+      target,
+      startTime: performance.now(),
+      duration: 1800,
+    };
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Void Kinesis beam started', {
+      targetId: target.id,
+      voidMassUnits: (target as any).voidMassUnits ?? null,
+    });
+  }
+
+  private updateVoidKinesisBeam(deltaTime: number): void {
+    if (!this.voidKinesisBeam?.active || !this.spaceship) return;
+    const beam = this.voidKinesisBeam;
+    if (this.spaceship) {
+      beam.startPos = { ...this.spaceship.position };
+    }
+    if (beam.target?.position) {
+      beam.endPos = { ...beam.target.position };
+    }
+    const elapsed = performance.now() - beam.startTime;
+    if (elapsed >= beam.duration) {
+      const target = beam.target;
+      if (target && this.isAsteroidTarget(target)) {
+        const gained = this.addVoidEnergyFromAsteroid(target);
+        try {
+          if (gained > 0) {
+            this.hudManager?.addMarqueeMessage?.(`Energía del vacío +${gained}`);
+          } else {
+            this.hudManager?.addMarqueeMessage?.('Energía del vacío al máximo');
+          }
+        } catch {}
+      }
+      this.voidKinesisBeam = null;
+    }
+  }
+
+  private renderVoidKinesisBeam(): void {
+    if (!this.gl || !this.voidKinesisBeam?.active) return;
+    const beam = this.voidKinesisBeam;
+    const gl = this.gl;
+    const start = beam.startPos;
+    const end = beam.endPos;
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const dz = end.z - start.z;
+    const length = Math.hypot(dx, dy, dz);
+    if (length < 1e-3) return;
+    const thickness = 0.18;
+    const right = { x: -dy, y: dx, z: 0 };
+    const rightLen = Math.hypot(right.x, right.y, right.z) || 1;
+    right.x /= rightLen; right.y /= rightLen; right.z /= rightLen;
+    const vertices = new Float32Array([
+      start.x - right.x * thickness, start.y - right.y * thickness, start.z - right.z * thickness,
+      start.x + right.x * thickness, start.y + right.y * thickness, start.z + right.z * thickness,
+      end.x - right.x * thickness, end.y - right.y * thickness, end.z - right.z * thickness,
+      end.x + right.x * thickness, end.y + right.y * thickness, end.z + right.z * thickness,
+    ]);
+    const pulse = 0.5 + 0.5 * Math.sin((performance.now() - beam.startTime) * 0.02);
+    const colors = new Float32Array([
+      1.0 * pulse, 0.2 * pulse, 0.1 * pulse,
+      1.0 * pulse, 0.2 * pulse, 0.1 * pulse,
+      0.7 * pulse, 0.05 * pulse, 0.05 * pulse,
+      0.7 * pulse, 0.05 * pulse, 0.05 * pulse,
+    ]);
+    const vbo = gl.createBuffer();
+    const cbo = gl.createBuffer();
+    if (!vbo || !cbo) return;
+    this.shaderManager.useBasicProgram();
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
+    const posLoc = this.shaderManager.basicAttributes['position'];
+    gl.enableVertexAttribArray(posLoc);
+    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, cbo);
+    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+    const colorLoc = this.shaderManager.basicAttributes['color'];
+    gl.enableVertexAttribArray(colorLoc);
+    gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
+    const identity = new Float32Array(16);
+    identity[0] = identity[5] = identity[10] = identity[15] = 1;
+    this.shaderManager.setBasicMatrices(identity, this.camera.viewMatrix, this.camera.projectionMatrix);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    const depthEnabled = gl.isEnabled(gl.DEPTH_TEST);
+    if (depthEnabled) gl.disable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    gl.depthMask(true);
+    if (depthEnabled) gl.enable(gl.DEPTH_TEST);
+    gl.disable(gl.BLEND);
+    gl.disableVertexAttribArray(posLoc);
+    gl.disableVertexAttribArray(colorLoc);
+    gl.deleteBuffer(vbo);
+    gl.deleteBuffer(cbo);
+  }
+
+  private addVoidEnergyFromAsteroid(target: Asteroid): number {
+    if (!this.spaceship) {
+      return 0;
+    }
+    const voidUnits = Math.max(1, Math.round((target as any).voidMassUnits ?? (target.size ?? 1) * 2));
+    const gain = Math.max(8, Math.round(voidUnits * 7));
+    const before = this.spaceship.voidEnergyCurrent;
+    this.spaceship.voidEnergyCurrent = Math.min(
+      this.spaceship.voidEnergyMax,
+      this.spaceship.voidEnergyCurrent + gain
+    );
+    const applied = this.spaceship.voidEnergyCurrent - before;
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Void Kinesis energy conversion', {
+      targetId: target.id,
+      requestedGain: gain,
+      appliedGain: applied,
+      voidUnits,
+    });
+    this.destroyObject(target);
+    return applied;
+  }
+
+  private castAnchoringPulse(target: ITargetable | null): void {
+    if (!target || !this.isAsteroidTarget(target)) {
+      this.showPlaceholderText('ANCHORING PULSE REQUIERE ASTEROIDE', 1500);
+      return;
+    }
+    const pos = this.getTargetPosition(target);
+    if (!pos) {
+      this.showPlaceholderText('SIN POSICIÓN VÁLIDA', 1500);
+      return;
+    }
+    if (this.getDistanceFromShip(pos) > 50) {
+      this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
+      return;
+    }
+    try {
+      this.animationManager.startAnchoringPulse(this, target);
+    } catch (e) {
+      this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'Anchoring Pulse animation failed', e);
+    }
+  }
+
+  private castVoidKinesis(target: ITargetable | null): void {
+    if (!target || !this.isAsteroidTarget(target)) {
+      this.showPlaceholderText('VOID KINESIS REQUIERE ASTEROIDE', 1500);
+      return;
+    }
+    const pos = this.getTargetPosition(target);
+    if (!pos) {
+      this.showPlaceholderText('SIN POSICIÓN VÁLIDA', 1500);
+      return;
+    }
+    if (this.getDistanceFromShip(pos) > 50) {
+      this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
+      return;
+    }
+    try {
+      this.animationManager.startVoidKinesis(this, target);
+    } catch (e) {
+      this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'Void Kinesis animation failed', e);
+    }
   }
 
   /** Apply the Double Phased Time Rite: doubles maxSpeed for a duration (default 2 minutes) */

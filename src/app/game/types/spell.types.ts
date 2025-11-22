@@ -13,7 +13,9 @@ export enum SpellType {
   LONGJUMP = 'LONGJUMP',
   GATE_RITE = 'GATE_RITE',
   ETERNAL_RITE = 'ETERNAL_RITE',
-  DISRUPT = 'DISRUPT'
+  DISRUPT = 'DISRUPT',
+  ANCHORING_PULSE = 'ANCHORING_PULSE',
+  VOID_KINESIS = 'VOID_KINESIS'
 }
 
 /**
@@ -53,6 +55,8 @@ export function getSpellLabel(spell: SpellType): string {
     case SpellType.GATE_RITE: return 'Gate Rite';
     case SpellType.ETERNAL_RITE: return 'Eternal Rite';
     case SpellType.DISRUPT: return 'Disrupt';
+    case SpellType.ANCHORING_PULSE: return 'Anchoring Pulse';
+    case SpellType.VOID_KINESIS: return 'Void Kinesis';
     default: return 'Unknown Spell';
   }
 }
@@ -72,6 +76,10 @@ export function getSpellDescription(spell: SpellType): string {
       return 'Congela el tiempo para todos los objetos excepto la nave';
     case SpellType.DISRUPT:
       return 'Desestabiliza portales cercanos';
+    case SpellType.ANCHORING_PULSE:
+      return 'Ancla asteroides cercanos y los arrastra a la bodega';
+    case SpellType.VOID_KINESIS:
+      return 'Condensa asteroides en energía del vacío utilizable';
     default:
       return '';
   }

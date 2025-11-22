@@ -13,6 +13,8 @@ export class AnimationManagerService {
   private cachedGateRiteCtor: ({ new(): GameAnimation }) | null = null;
   private cachedEternalRiteCtor: ({ new(): GameAnimation }) | null = null;
   private cachedDisruptionRiteCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedAnchoringPulseCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedVoidKinesisCtor: ({ new(): GameAnimation }) | null = null;
   private flashImages: string[] = [
     '/assets/Athathoth.jpg',
     '/assets/GreatCthulhu.jpg',
@@ -28,6 +30,8 @@ export class AnimationManagerService {
     // Preload other rites best-effort
     this.preloadEternalRite();
     this.preloadDisruptionRite();
+    this.preloadAnchoringPulse();
+    this.preloadVoidKinesis();
   }
 
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
@@ -247,6 +251,76 @@ export class AnimationManagerService {
         const mod = await import('./disruption-rite.animation');
         const Anim = (mod as any).DisruptionRiteAnimation as { new(): GameAnimation };
         this.cachedDisruptionRiteCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  public startAnchoringPulse(engine: GameEngine, target?: ITargetable): boolean {
+    if (this.current && this.current.name !== 'blocking-delay') return false;
+    if (this.cachedAnchoringPulseCtor) {
+      const anim = new this.cachedAnchoringPulseCtor();
+      anim.start(engine, target || undefined);
+      this.current = anim;
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./anchoring-pulse.animation');
+        const Anim = (mod as any).AnchoringPulseAnimation as { new(): GameAnimation };
+        this.cachedAnchoringPulseCtor = Anim;
+        const anim = new Anim();
+        anim.start(engine, target || undefined);
+        this.current = anim;
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load AnchoringPulseAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadAnchoringPulse(): void {
+    (async () => {
+      try {
+        const mod = await import('./anchoring-pulse.animation');
+        const Anim = (mod as any).AnchoringPulseAnimation as { new(): GameAnimation };
+        this.cachedAnchoringPulseCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  public startVoidKinesis(engine: GameEngine, target?: ITargetable): boolean {
+    if (this.current && this.current.name !== 'blocking-delay') return false;
+    if (this.cachedVoidKinesisCtor) {
+      const anim = new this.cachedVoidKinesisCtor();
+      anim.start(engine, target || undefined);
+      this.current = anim;
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./void-kinesis.animation');
+        const Anim = (mod as any).VoidKinesisAnimation as { new(): GameAnimation };
+        this.cachedVoidKinesisCtor = Anim;
+        const anim = new Anim();
+        anim.start(engine, target || undefined);
+        this.current = anim;
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load VoidKinesisAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadVoidKinesis(): void {
+    (async () => {
+      try {
+        const mod = await import('./void-kinesis.animation');
+        const Anim = (mod as any).VoidKinesisAnimation as { new(): GameAnimation };
+        this.cachedVoidKinesisCtor = Anim;
       } catch { /* ignore */ }
     })();
   }

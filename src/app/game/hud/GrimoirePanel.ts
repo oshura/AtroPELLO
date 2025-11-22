@@ -44,7 +44,9 @@ export class GrimoirePanel {
     [SpellType.LONGJUMP, SpellState.AVAILABLE],
     [SpellType.GATE_RITE, SpellState.AVAILABLE],
     [SpellType.ETERNAL_RITE, SpellState.AVAILABLE],
-    [SpellType.DISRUPT, SpellState.AVAILABLE]
+    [SpellType.DISRUPT, SpellState.AVAILABLE],
+    [SpellType.ANCHORING_PULSE, SpellState.AVAILABLE],
+    [SpellType.VOID_KINESIS, SpellState.AVAILABLE]
   ]);
   private selectedSpell: SpellType | null = null;
   // Reading mode animation (zoom + slight tilt)
@@ -136,7 +138,15 @@ export class GrimoirePanel {
     }
     // Update states based on the current selectedSpell
     const sel = this.selectedSpell;
-    const allSpells = [SpellType.SPEED, SpellType.LONGJUMP, SpellType.GATE_RITE, SpellType.ETERNAL_RITE, SpellType.DISRUPT];
+    const allSpells = [
+      SpellType.SPEED,
+      SpellType.LONGJUMP,
+      SpellType.GATE_RITE,
+      SpellType.ETERNAL_RITE,
+      SpellType.DISRUPT,
+      SpellType.ANCHORING_PULSE,
+      SpellType.VOID_KINESIS
+    ];
     allSpells.forEach(k => {
       const currentState = this.spellStates.get(k);
       if (!sel) {
@@ -152,7 +162,15 @@ export class GrimoirePanel {
   /** Clear any current selection completely (external casting can call this). */
   public clearSelection(): void {
     this.selectedSpell = null;
-    const allSpells = [SpellType.SPEED, SpellType.LONGJUMP, SpellType.GATE_RITE, SpellType.ETERNAL_RITE, SpellType.DISRUPT];
+    const allSpells = [
+      SpellType.SPEED,
+      SpellType.LONGJUMP,
+      SpellType.GATE_RITE,
+      SpellType.ETERNAL_RITE,
+      SpellType.DISRUPT,
+      SpellType.ANCHORING_PULSE,
+      SpellType.VOID_KINESIS
+    ];
     allSpells.forEach(k => {
       const currentState = this.spellStates.get(k);
       if (currentState !== SpellState.LOCKED) this.spellStates.set(k, SpellState.AVAILABLE);
@@ -504,6 +522,30 @@ export class GrimoirePanel {
           this.drawDisruptRune(c, p.x, p.y, p.r*0.9);
         }
       }
+      else if (p.type === SpellType.ANCHORING_PULSE) {
+        if (state === SpellState.EQUIPPED) {
+          c.save();
+          const pulse = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
+          c.shadowColor = `rgba(0,160,255,${pulse.toFixed(3)})`;
+          c.shadowBlur = 26;
+          this.drawAnchoringPulseRune(c, p.x, p.y, p.r*0.9, '#00b8ff');
+          c.restore();
+        } else {
+          this.drawAnchoringPulseRune(c, p.x, p.y, p.r*0.9);
+        }
+      }
+      else if (p.type === SpellType.VOID_KINESIS) {
+        if (state === SpellState.EQUIPPED) {
+          c.save();
+          const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 3.6));
+          c.shadowColor = `rgba(255,40,40,${pulse.toFixed(3)})`;
+          c.shadowBlur = 28;
+          this.drawVoidKinesisRune(c, p.x, p.y, p.r*0.9, '#ff3737');
+          c.restore();
+        } else {
+          this.drawVoidKinesisRune(c, p.x, p.y, p.r*0.9);
+        }
+      }
       else if (p.type === 'eye') this.drawEye(c, p.x, p.y, p.r*1.0);
       else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, p.r*0.7);
       else if (p.type === 'ignis') this.drawIgnis(c, p.x, p.y, p.r*0.85);
@@ -636,10 +678,12 @@ export class GrimoirePanel {
     this.iconPlacements.push({ type: 'ignis', x: lp.x + lp.w*0.72, y: lp.y + lp.h*0.26, s: 1.0, r: rL });
     this.iconPlacements.push({ type: SpellType.ETERNAL_RITE, x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.45, s: 1.0, r: rL*0.95 });
     this.iconPlacements.push({ type: SpellType.DISRUPT, x: lp.x + lp.w*0.68, y: lp.y + lp.h*0.62, s: 1.0, r: rL*0.92 });
+    this.iconPlacements.push({ type: SpellType.ANCHORING_PULSE, x: lp.x + lp.w*0.46, y: lp.y + lp.h*0.70, s: 1.0, r: rL*0.92 });
     this.iconPlacements.push({ type: 'lux',   x: lp.x + lp.w*0.38, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
     // Right page (spare spaces): vinculum (upper-left), tempus (lower-left)
     this.iconPlacements.push({ type: 'vinculum', x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
     this.iconPlacements.push({ type: 'tempus',   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
+    this.iconPlacements.push({ type: SpellType.VOID_KINESIS, x: rp.x + rp.w*0.72, y: rp.y + rp.h*0.50, s: 1.0, r: rR*1.05 });
 
     // Decorative glyphs (ignis, lux, vinculum, tempus) are handled as strings and always render as locked
   }
@@ -783,6 +827,89 @@ export class GrimoirePanel {
       c.stroke();
     }
     
+    c.restore();
+  }
+
+  private drawAnchoringPulseRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    // Anchoring tether: concentric circle with chain link and anchor prongs
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const col = color || '#1d3c5d';
+    c.strokeStyle = col; c.lineWidth = 2.4;
+    // Outer containment ring
+    c.beginPath(); c.arc(0, 0, r*0.95, 0, Math.PI*2); c.stroke();
+    // Inner conduit ring with dashed energy
+    c.setLineDash([6, 4]);
+    c.beginPath(); c.arc(0, 0, r*0.65, 0, Math.PI*2); c.stroke();
+    c.setLineDash([]);
+    // Vertical tether column
+    c.lineWidth = 3;
+    c.beginPath(); c.moveTo(0, -r*0.25); c.lineTo(0, r*0.55); c.stroke();
+    // Chain links along tether
+    c.lineWidth = 2;
+    for (let i=0;i<4;i++) {
+      const ty = -r*0.1 + i * r*0.22;
+      c.beginPath();
+      c.ellipse(0, ty, r*0.14, r*0.08, 0, 0, Math.PI*2);
+      c.stroke();
+    }
+    // Anchor prongs
+    c.lineWidth = 2.6;
+    c.beginPath();
+    c.moveTo(-r*0.40, r*0.45);
+    c.lineTo(0, r*0.85);
+    c.lineTo(r*0.40, r*0.45);
+    c.stroke();
+    // Small capture triangle above center
+    c.beginPath();
+    c.moveTo(0, -r*0.55);
+    c.lineTo(-r*0.22, -r*0.30);
+    c.lineTo(r*0.22, -r*0.30);
+    c.closePath();
+    c.stroke();
+    c.restore();
+  }
+
+  private drawVoidKinesisRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    // Void beam: concentric circle with collapsing triangle and swirling tendrils
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const col = color || '#4f1a1f';
+    c.strokeStyle = col; c.lineWidth = 2.6;
+    // Outer ring
+    c.beginPath(); c.arc(0, 0, r*0.95, 0, Math.PI*2); c.stroke();
+    // Inner void circle
+    c.globalAlpha = 0.8;
+    c.beginPath(); c.arc(0, 0, r*0.55, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 1;
+    // Inverted triangle core
+    const triR = r*0.6;
+    c.beginPath();
+    for (let i=0;i<3;i++) {
+      const ang = Math.PI/2 + i * (2*Math.PI/3);
+      const px = Math.cos(ang) * triR;
+      const py = Math.sin(ang) * triR;
+      if (i === 0) c.moveTo(px, py); else c.lineTo(px, py);
+    }
+    c.closePath();
+    c.stroke();
+    // Spiral tendrils (three Beziers)
+    c.lineWidth = 2.2;
+    for (let i=0;i<3;i++) {
+      const baseAng = i * (2*Math.PI/3);
+      const cx = Math.cos(baseAng) * r*0.15;
+      const cy = Math.sin(baseAng) * r*0.15;
+      const endX = Math.cos(baseAng + Math.PI/6) * r*0.9;
+      const endY = Math.sin(baseAng + Math.PI/6) * r*0.9;
+      c.beginPath();
+      c.moveTo(cx, cy);
+      const ctrl1X = Math.cos(baseAng + Math.PI/12) * r*0.45;
+      const ctrl1Y = Math.sin(baseAng + Math.PI/12) * r*0.45;
+      const ctrl2X = Math.cos(baseAng + Math.PI/3) * r*0.7;
+      const ctrl2Y = Math.sin(baseAng + Math.PI/3) * r*0.7;
+      c.bezierCurveTo(ctrl1X, ctrl1Y, ctrl2X, ctrl2Y, endX, endY);
+      c.stroke();
+    }
+    // Central void core dot
+    c.beginPath(); c.arc(0, 0, r*0.08, 0, Math.PI*2); c.fillStyle = col; c.fill();
     c.restore();
   }
 
@@ -999,6 +1126,12 @@ export class GrimoirePanel {
     } else if (type === SpellType.DISRUPT) {
       title = 'Material Disruption Rite';
       desc = 'Unleash a beam of pure entropy. Asteroids within 50u crumble.';
+    } else if (type === SpellType.ANCHORING_PULSE) {
+      title = 'Anchoring Pulse';
+      desc = 'Emit a blue tether that drags compliant asteroids ≤50u into cargo.';
+    } else if (type === SpellType.VOID_KINESIS) {
+      title = 'Void Kinesis';
+      desc = 'Concentrate a void-red beam to dissolve asteroids into void energy.';
     } else {
       const typeStr = typeof type === 'string' ? type : String(type);
       const cap = typeStr.charAt(0).toUpperCase() + typeStr.slice(1);
@@ -1053,6 +1186,12 @@ export class GrimoirePanel {
     } else if (type === SpellType.DISRUPT) {
       title = 'Material Disruption Rite';
       desc = 'Unleash a beam of pure entropy. Asteroids within 50u crumble.';
+    } else if (type === SpellType.ANCHORING_PULSE) {
+      title = 'Anchoring Pulse';
+      desc = 'Hook compliant asteroids ≤50u and reel them into cargo.';
+    } else if (type === SpellType.VOID_KINESIS) {
+      title = 'Void Kinesis';
+      desc = 'Transmute asteroid mass into volatile void energy.';
     } else {
       const typeStr = typeof type === 'string' ? type : String(type);
       const cap = typeStr.charAt(0).toUpperCase() + typeStr.slice(1);
