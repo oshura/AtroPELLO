@@ -26,6 +26,11 @@ export interface PanelEventCallbacks {
   // Grimoire panel callbacks (mouse only - keyboard handled by GameEngine)
   onGrimoireClick?: (clientX: number, clientY: number) => void;
   onGrimoireMove?: (clientX: number, clientY: number) => void;
+
+  // Inventory panel callbacks (mouse/wheel)
+  onInventoryClick?: (clientX: number, clientY: number) => void;
+  onInventoryMove?: (clientX: number, clientY: number) => void;
+  onInventoryWheel?: (deltaY: number, clientX: number, clientY: number) => void;
   
   // 3D targeting callback (when no panel is active)
   on3DClick?: (event: MouseEvent) => void;
@@ -44,6 +49,7 @@ export class PanelEventCoordinator {
   // State flags (minimal - just for routing decisions)
   private mapEnabled = false;
   private grimoireEnabled = false;
+  private inventoryEnabled = false;
   private inputsBlocked = false;
 
   constructor(private logger: LoggingService) {}
@@ -69,6 +75,10 @@ export class PanelEventCoordinator {
 
   setGrimoireEnabled(enabled: boolean): void {
     this.grimoireEnabled = enabled;
+  }
+
+  setInventoryEnabled(enabled: boolean): void {
+    this.inventoryEnabled = enabled;
   }
 
   setInputsBlocked(blocked: boolean): void {
@@ -112,6 +122,13 @@ export class PanelEventCoordinator {
       return;
     }
 
+    if (this.inventoryEnabled) {
+      this.callbacks.onInventoryClick?.(event.clientX, event.clientY);
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
     // No panel active - allow 3D targeting
     this.callbacks.on3DClick?.(event);
   }
@@ -132,6 +149,11 @@ export class PanelEventCoordinator {
       this.callbacks.onGrimoireMove?.(event.clientX, event.clientY);
       return;
     }
+
+    if (this.inventoryEnabled) {
+      this.callbacks.onInventoryMove?.(event.clientX, event.clientY);
+      return;
+    }
   }
 
   /**
@@ -146,6 +168,13 @@ export class PanelEventCoordinator {
     if (this.mapEnabled) {
       this.callbacks.onMapWheel?.(event.deltaY, event.clientX, event.clientY);
       // Prevent page scroll when map is open
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+
+    if (this.inventoryEnabled) {
+      this.callbacks.onInventoryWheel?.(event.deltaY, event.clientX, event.clientY);
       event.preventDefault();
       event.stopPropagation();
     }

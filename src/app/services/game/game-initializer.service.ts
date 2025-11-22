@@ -21,6 +21,8 @@ import { CollisionManagerService } from '../../game/services/physics/collision-m
 import { PanelEventCoordinator } from '../../game/services/ui/panel-event-coordinator.service';
 import { GameStateStore } from './game-state.store';
 import { SpellIOCoordinator } from '../../game/services/spells/spell-io-coordinator.service';
+import { CargoHoldService } from './cargo-hold.service';
+import { CharacterProfileService } from './character-profile.service';
 
 export interface GameInitializationConfig {
   canvasWidth?: number;
@@ -114,6 +116,8 @@ export class GameInitializer {
     const panelEventCoordinator = this.injector.get(PanelEventCoordinator);
     const spellIOCoordinator = this.injector.get(SpellIOCoordinator);
     const gameStateStore = this.injector.get(GameStateStore);
+    const cargoHoldService = this.injector.get(CargoHoldService);
+    const characterProfileService = this.injector.get(CharacterProfileService);
     this.gameEngine = new GameEngine(
       this.webglService,
       this.particleEffectsService,
@@ -129,6 +133,8 @@ export class GameInitializer {
       panelEventCoordinator,
       spellIOCoordinator,
       gameStateStore,
+      cargoHoldService,
+      characterProfileService,
       solarSystemService,
       humanSolarSystemService,
       portalPersistenceService,

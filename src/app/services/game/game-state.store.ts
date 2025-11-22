@@ -12,6 +12,15 @@ import { Spaceship } from '../../game/game-objects/Spaceship';
 import { Camera } from '../../game/Camera';
 import { GameObjectType } from '../../game/types/game-object.types';
 import { ITargetable } from '../../game/types/targeting.types';
+import {
+  CargoManifestEntry,
+  CharacterProfile,
+  EquipmentSlot,
+  EquipmentSlotState,
+  PersonalGearItem,
+  PersonalGearSlot,
+  RarityTier
+} from '../../game/types/inventory.types';
 
 /**
  * Evento de cambio de estado del juego
@@ -19,7 +28,7 @@ import { ITargetable } from '../../game/types/targeting.types';
  */
 export interface GameStateChangeEvent {
   /** Tipo de cambio ocurrido */
-  type: 'asteroid-added' | 'object-removed' | 'state-reset' | 'object-updated';
+  type: 'asteroid-added' | 'object-removed' | 'state-reset' | 'object-updated' | 'inventory-updated';
   /** Objeto afectado (si aplica) */
   object?: GameObject;
   /** Metadata adicional del evento */
@@ -110,6 +119,39 @@ export class GameStateStore {
   
   /** Cámara del juego */
   public camera: Camera | null = null;
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  //  CHARACTER / INVENTORY STATE
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Perfil del piloto mostrado en el panel de inventario */
+  public characterProfile: CharacterProfile = {
+    name: 'Harvey Walters',
+    sanity: 58,
+    health: 100
+  };
+
+  /** Equipo personal (incluye slots dedicados de traje/botas) */
+  public personalGear: PersonalGearItem[] = [
+    {
+      slot: PersonalGearSlot.SUIT,
+      label: 'Traje Explorador Mk.III',
+      description: 'Fibra trenzada con aislamiento arcano básico.',
+      rarity: RarityTier.UNCOMMON
+    },
+    {
+      slot: PersonalGearSlot.BOOTS,
+      label: 'Boots Cauterizadas',
+      description: 'Amortiguan golpes y sellan atmósferas dudosas.',
+      rarity: RarityTier.COMMON
+    }
+  ];
+
+  /** Slots de la nave con módulos equipados (null = slot vacío) */
+  public equipmentLoadout: Record<EquipmentSlot, EquipmentSlotState | null> = this.createDefaultEquipmentLoadout();
+
+  /** Manifiesto de carga granular mostrado en el panel */
+  public cargoManifest: CargoManifestEntry[] = [];
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  GAME STATE FLAGS
@@ -129,6 +171,9 @@ export class GameStateStore {
   
   /** Timestamp mínimo para reabrir grimorio (cooldown) */
   public grimoireReopenAllowedAtMs: number = 0;
+
+  /** Timestamp mínimo para reabrir inventario (cooldown) */
+  public inventoryReopenAllowedAtMs: number = 0;
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  MAPPINGS & CACHES
@@ -407,6 +452,72 @@ export class GameStateStore {
     
     return removed;
   }
+
+  /** Reemplaza completamente el perfil del piloto. */
+  setCharacterProfile(profile: CharacterProfile): void {
+    this.characterProfile = {
+      name: profile.name || this.characterProfile.name,
+      sanity: this.clampPercent(profile.sanity ?? this.characterProfile.sanity),
+      health: this.clampPercent(profile.health ?? this.characterProfile.health)
+    };
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character' } });
+    this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Character profile updated', {
+      name: this.characterProfile.name,
+      sanity: this.characterProfile.sanity,
+      health: this.characterProfile.health
+    });
+  }
+
+  /** Ajusta parcialmente valores de cordura/salud sin reemplazar el perfil completo. */
+  updateCharacterVitals(partial: Partial<Pick<CharacterProfile, 'sanity' | 'health'>>): void {
+    if (typeof partial.sanity === 'number') {
+      this.characterProfile.sanity = this.clampPercent(partial.sanity);
+    }
+    if (typeof partial.health === 'number') {
+      this.characterProfile.health = this.clampPercent(partial.health);
+    }
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character' } });
+  }
+
+  /** Reemplaza la lista de equipo personal (traje, botas, accesorios). */
+  replacePersonalGear(items: PersonalGearItem[]): void {
+    this.personalGear = [...items];
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'personalGear' } });
+    this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'Personal gear updated', { count: this.personalGear.length });
+  }
+
+  /** Define o vacía un slot de equipo de la nave. */
+  setEquipmentSlot(slot: EquipmentSlot, state: EquipmentSlotState | null): void {
+    this.equipmentLoadout[slot] = state ? { ...state, slot } : null;
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'equipment', slot } });
+  }
+
+  /** Reemplaza todo el manifiesto de carga. */
+  setCargoManifest(entries: CargoManifestEntry[]): void {
+    this.cargoManifest = [...entries];
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'cargo' } });
+    this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'Cargo manifest replaced', { count: this.cargoManifest.length });
+  }
+
+  /** Inserta o actualiza una entrada de carga. */
+  upsertCargoEntry(entry: CargoManifestEntry): void {
+    const idx = this.cargoManifest.findIndex(c => c.id === entry.id);
+    if (idx >= 0) {
+      this.cargoManifest[idx] = entry;
+    } else {
+      this.cargoManifest.push(entry);
+    }
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'cargo', entryId: entry.id } });
+  }
+
+  /** Elimina una entrada de carga por ID. */
+  removeCargoEntry(entryId: string): boolean {
+    const idx = this.cargoManifest.findIndex(c => c.id === entryId);
+    if (idx < 0) return false;
+    this.cargoManifest.splice(idx, 1);
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'cargo', entryId } });
+    return true;
+  }
   
   /**
    * Limpia todo el estado del juego (reset completo).
@@ -454,6 +565,48 @@ export class GameStateStore {
    */
   private _notifyChange(event: GameStateChangeEvent): void {
     this._stateChanged$.next(event);
+  }
+
+  private clampPercent(value: number): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(100, value));
+  }
+
+  private createDefaultEquipmentLoadout(): Record<EquipmentSlot, EquipmentSlotState | null> {
+    return {
+      [EquipmentSlot.CORE]: {
+        slot: EquipmentSlot.CORE,
+        label: 'Núcleo Basilisco v2',
+        rarity: RarityTier.RARE,
+        integrityPct: 92,
+        description: 'Matraz taquiónico estabilizado para rituales prolongados.'
+      },
+      [EquipmentSlot.REACTOR]: {
+        slot: EquipmentSlot.REACTOR,
+        label: 'Reactor Cyclopean',
+        rarity: RarityTier.EPIC,
+        integrityPct: 87,
+        description: 'Convierte masa residual en empuje silencioso.'
+      },
+      [EquipmentSlot.ENGINE]: {
+        slot: EquipmentSlot.ENGINE,
+        label: 'Motores Venter Mk.II',
+        rarity: RarityTier.UNCOMMON,
+        integrityPct: 78,
+        description: 'Confiables aunque temperamentales en vacío profundo.'
+      },
+      [EquipmentSlot.WINGS]: null,
+      [EquipmentSlot.HULL]: {
+        slot: EquipmentSlot.HULL,
+        label: 'Placas Umbra-Lattice',
+        rarity: RarityTier.RARE,
+        integrityPct: 64,
+        description: 'Disipa impacto cinético en patrones hexagonales.'
+      },
+      [EquipmentSlot.SHIELD]: null,
+      [EquipmentSlot.DRONE_BAY]: null,
+      [EquipmentSlot.AUXILIARY]: null
+    };
   }
   
   /**

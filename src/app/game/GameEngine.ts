@@ -32,6 +32,7 @@ import { TargetDetailService } from './services/target-detail.service';
 import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { GrimoirePanel } from './hud/GrimoirePanel';
+import { InventoryPanel } from './hud/InventoryPanel';
 import { SpellType } from './types/spell.types';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
@@ -43,10 +44,13 @@ import { CollisionManagerService } from './services/physics/collision-manager.se
 import { PanelEventCoordinator } from './services/ui/panel-event-coordinator.service';
 import { SpellIOCoordinator } from './services/spells/spell-io-coordinator.service';
 import { GameStateStore } from '../services/game/game-state.store';
+import { CargoHoldService } from '../services/game/cargo-hold.service';
+import { CharacterProfileService } from '../services/game/character-profile.service';
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
 import { getDisplayLabelFromTargetType } from './types/game-object.types';
+import { EquipmentSlot, InventorySnapshot } from './types/inventory.types';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -73,6 +77,7 @@ export class GameEngine {
   private targetPreview!: TargetPreviewRenderer;
   private systemPanel: SolarSystemPanel | null = null;
   private grimoirePanel: GrimoirePanel | null = null;
+  private inventoryPanel: InventoryPanel | null = null;
   public overlayRenderer: ScreenOverlayRenderer | null = null;
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   public voidJumpActive: boolean = false;
@@ -254,6 +259,8 @@ export class GameEngine {
     private panelEventCoordinator: PanelEventCoordinator,
     private spellIOCoordinator: SpellIOCoordinator,
     public gameState: GameStateStore,
+    private cargoHoldService: CargoHoldService,
+    private characterProfileService: CharacterProfileService,
   public solarSystemService?: SolarSystemService,
   public humanSolarSystemService?: HumanSolarSystemService,
   public portalPersistenceService?: PortalPersistenceService,
@@ -571,6 +578,14 @@ export class GameEngine {
   } catch (e) {
     this.logger.log(LogLevel.WARN, LogCategory.HUD, 'GrimoirePanel initialization failed', e);
     this.grimoirePanel = null;
+  }
+
+  try {
+    this.inventoryPanel = new InventoryPanel(this.gl, 1024, 1024);
+    this.inventoryPanel.setEnabled(false);
+  } catch (e) {
+    this.logger.log(LogLevel.WARN, LogCategory.HUD, 'InventoryPanel initialization failed', e);
+    this.inventoryPanel = null;
   }
 
   
@@ -3618,6 +3633,13 @@ export class GameEngine {
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.HUD, 'GrimoirePanel render failed', e);
     }
+  } else if (this.inventoryPanel && this.inventoryPanel.isEnabled()) {
+    try {
+      this.refreshInventoryPanelSnapshot();
+      this.inventoryPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.HUD, 'InventoryPanel render failed', e);
+    }
   } else {
     // Draw background landing overlay behind the cockpit HUD (full camera view)
     try {
@@ -5271,6 +5293,15 @@ export class GameEngine {
             this.gameState.grimoireReopenAllowedAtMs = performance.now() + 1000;
           } catch {}
         }
+        if (this.systemPanel.isEnabled() && this.inventoryPanel?.isEnabled()) {
+          try {
+            this.inventoryPanel.setEnabled(false);
+            this.inventoryPanel.resetScroll();
+            this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+            this.updateInventoryPointerBinding();
+            this.updateCanvasCursor();
+          } catch {}
+        }
         if (this.systemPanel.isEnabled()) {
           try { this.systemPanel.resetView(); } catch {}
           // Preselect current target in the map when opening (prefer adaptive selection)
@@ -5334,6 +5365,15 @@ export class GameEngine {
             this.gameState.mapReopenAllowedAtMs = performance.now() + 1000;
           } catch {}
         }
+        if (this.grimoirePanel.isEnabled() && this.inventoryPanel?.isEnabled()) {
+          try {
+            this.inventoryPanel.setEnabled(false);
+            this.inventoryPanel.resetScroll();
+            this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+            this.updateInventoryPointerBinding();
+            this.updateCanvasCursor();
+          } catch {}
+        }
         if (!this.grimoirePanel.isEnabled()) {
           // Closing grimoire: clear selection
           this.clearTargetSelection();
@@ -5342,6 +5382,15 @@ export class GameEngine {
       try { this.updateMapClickBinding(); } catch {}
       try { this.updateGrimoirePointerBinding(); } catch {}
       try { this.updateCanvasCursor(); } catch {}
+      return;
+    }
+    // Toggle Inventory panel with 'I'
+    if (key.toLowerCase() === 'i') {
+      if (this.arePanelsLockedBySpell()) {
+        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Inventory toggle blocked by spell IO lock');
+        return;
+      }
+      this.handleInventoryToggle();
       return;
     }
     // Escape: cerrar mapa/grimorio si están activos; si no, limpiar target actual
@@ -6935,6 +6984,51 @@ export class GameEngine {
     this.panelEventCoordinator.setGrimoireEnabled(enabled);
   }
 
+  private updateInventoryPointerBinding(): void {
+    const enabled = !!(this.inventoryPanel && this.inventoryPanel.isEnabled());
+    this.panelEventCoordinator.setInventoryEnabled(enabled);
+  }
+
+  private refreshInventoryPanelSnapshot(): void {
+    if (!this.inventoryPanel || !this.inventoryPanel.isEnabled()) {
+      return;
+    }
+    const snapshot = this.buildInventorySnapshot();
+    if (snapshot) {
+      this.inventoryPanel.update(snapshot);
+    }
+  }
+
+  private buildInventorySnapshot(): InventorySnapshot | null {
+    if (!this.gameState) {
+      return null;
+    }
+
+    const equipment = {} as Record<EquipmentSlot, InventorySnapshot['equipment'][EquipmentSlot]>;
+    for (const slotKey of Object.values(EquipmentSlot)) {
+      const slot = slotKey as EquipmentSlot;
+      const state = this.gameState.equipmentLoadout[slot] || null;
+      equipment[slot] = state ? { ...state } : null;
+    }
+
+    const ship = this.spaceship || null;
+    const current = ship ? ship.cargoCapacityCurrent : 0;
+    const max = ship ? ship.cargoCapacityMax : 0;
+    const pct = max > 0 ? (current / max) * 100 : 0;
+
+    return {
+      character: { ...this.gameState.characterProfile },
+      equipment,
+      personalGear: this.gameState.personalGear.map(item => ({ ...item })),
+      cargo: this.gameState.cargoManifest.map(entry => ({ ...entry })),
+      cargoCapacity: {
+        current,
+        max,
+        pct: Math.max(0, Math.min(200, pct))
+      }
+    };
+  }
+
   /**
    * @deprecated Legacy method - cursor management could be extracted to CursorManager (FASE 6d)
    * Hide OS cursor when Grimoire is enabled; restore otherwise
@@ -6943,7 +7037,14 @@ export class GameEngine {
     try {
       if (!this.domCanvas) return;
       const gOn = !!(this.grimoirePanel && this.grimoirePanel.isEnabled());
-      this.domCanvas.style.cursor = gOn ? 'none' : '';
+      const invOn = !!(this.inventoryPanel && this.inventoryPanel.isEnabled());
+      if (gOn) {
+        this.domCanvas.style.cursor = 'none';
+      } else if (invOn) {
+        this.domCanvas.style.cursor = 'default';
+      } else {
+        this.domCanvas.style.cursor = '';
+      }
     } catch {}
   }
 
@@ -6973,6 +7074,11 @@ export class GameEngine {
       // Grimoire panel events (mouse)
       onGrimoireClick: (clientX, clientY) => this.handleGrimoireClick(clientX, clientY),
       onGrimoireMove: (clientX, clientY) => this.handleGrimoireMove(clientX, clientY),
+
+      // Inventory panel events (mouse/wheel)
+      onInventoryClick: (clientX, clientY) => this.handleInventoryClick(clientX, clientY),
+      onInventoryMove: (clientX, clientY) => this.handleInventoryMove(clientX, clientY),
+      onInventoryWheel: (deltaY, clientX, clientY) => this.handleInventoryWheel(deltaY, clientX, clientY),
       
       // 3D targeting (when no panel active)
       on3DClick: (event) => this.handle3DClick(event)
@@ -6988,6 +7094,7 @@ export class GameEngine {
   private handleMapToggle(): void {
     if (!this.systemPanel) return;
     const wasEnabled = this.systemPanel.isEnabled();
+    const now = performance.now();
     this.systemPanel.setEnabled(!wasEnabled);
     this.panelEventCoordinator.setMapEnabled(!wasEnabled);
     
@@ -6998,9 +7105,17 @@ export class GameEngine {
         this.grimoirePanel.setEnabled(false);
         this.panelEventCoordinator.setGrimoireEnabled(false);
       }
+      if (this.inventoryPanel?.isEnabled()) {
+        this.inventoryPanel.setEnabled(false);
+        this.inventoryPanel.resetScroll();
+        this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+        this.updateInventoryPointerBinding();
+        this.updateCanvasCursor();
+      }
     } else {
       // Map closed
       try { this.audio?.play('ui_map_close'); } catch {}
+      this.gameState.mapReopenAllowedAtMs = now + 1000;
     }
   }
 
@@ -7087,6 +7202,7 @@ export class GameEngine {
   private handleGrimoireToggle(): void {
     if (!this.grimoirePanel) return;
     const wasEnabled = this.grimoirePanel.isEnabled();
+    const now = performance.now();
     this.grimoirePanel.setEnabled(!wasEnabled);
     this.panelEventCoordinator.setGrimoireEnabled(!wasEnabled);
     
@@ -7097,9 +7213,17 @@ export class GameEngine {
         this.systemPanel.setEnabled(false);
         this.panelEventCoordinator.setMapEnabled(false);
       }
+      if (this.inventoryPanel?.isEnabled()) {
+        this.inventoryPanel.setEnabled(false);
+        this.inventoryPanel.resetScroll();
+        this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+        this.updateInventoryPointerBinding();
+        this.updateCanvasCursor();
+      }
     } else {
       // Grimoire closed
       try { this.audio?.play('ui_grimoire_close'); } catch {}
+      this.gameState.grimoireReopenAllowedAtMs = now + 1000;
     }
   }
 
@@ -7130,6 +7254,95 @@ export class GameEngine {
     } catch {}
   }
 
+  private handleInventoryToggle(): void {
+    if (!this.inventoryPanel) {
+      return;
+    }
+
+    const now = performance.now();
+    const isEnabled = this.inventoryPanel.isEnabled();
+    const next = !isEnabled;
+
+    if (next) {
+      if (now < this.gameState.inventoryReopenAllowedAtMs) {
+        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Inventory reopen blocked by cooldown', {
+          remainingMs: Math.round(this.gameState.inventoryReopenAllowedAtMs - now)
+        });
+        return;
+      }
+      // Close other overlays for mutual exclusivity
+      if (this.systemPanel?.isEnabled()) {
+        this.systemPanel.setEnabled(false);
+        this.gameState.mapReopenAllowedAtMs = now + 1000;
+        this.updateMapClickBinding();
+      }
+      if (this.grimoirePanel?.isEnabled()) {
+        this.grimoirePanel.setEnabled(false);
+        this.gameState.grimoireReopenAllowedAtMs = now + 1000;
+        this.updateGrimoirePointerBinding();
+      }
+      this.inventoryPanel.resetScroll();
+      this.inventoryPanel.setEnabled(true);
+      this.refreshInventoryPanelSnapshot();
+      try {
+        this.audio?.play('ui_inventory_open', { bus: 'ui', volume: 0.55 });
+      } catch (e) {
+        this.logger.log(LogLevel.DEBUG, LogCategory.AUDIO, 'Inventory open sound failed', e);
+      }
+    } else {
+      this.inventoryPanel.setEnabled(false);
+      this.inventoryPanel.resetScroll();
+      this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+      try {
+        this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.5 });
+      } catch (e) {
+        this.logger.log(LogLevel.DEBUG, LogCategory.AUDIO, 'Inventory close sound failed', e);
+      }
+    }
+
+    this.updateInventoryPointerBinding();
+    this.updateCanvasCursor();
+  }
+
+  private handleInventoryClick(_clientX: number, _clientY: number): void {
+    // Reserved for interactive slots; currently no click actions
+  }
+
+  private handleInventoryMove(clientX: number, clientY: number): void {
+    if (!this.inventoryPanel || !this.inventoryPanel.isEnabled() || !this.gl || !this.domCanvas) {
+      return;
+    }
+
+    const rect = this.domCanvas.getBoundingClientRect();
+    try {
+      this.inventoryPanel.setCursorFromViewport(
+        clientX,
+        clientY,
+        rect,
+        (this.gl.canvas as HTMLCanvasElement).width,
+        (this.gl.canvas as HTMLCanvasElement).height
+      );
+    } catch {}
+  }
+
+  private handleInventoryWheel(deltaY: number, clientX: number, clientY: number): void {
+    if (!this.inventoryPanel || !this.inventoryPanel.isEnabled() || !this.gl || !this.domCanvas) {
+      return;
+    }
+
+    const rect = this.domCanvas.getBoundingClientRect();
+    try {
+      this.inventoryPanel.setCursorFromViewport(
+        clientX,
+        clientY,
+        rect,
+        (this.gl.canvas as HTMLCanvasElement).width,
+        (this.gl.canvas as HTMLCanvasElement).height
+      );
+      this.inventoryPanel.handleWheelFromViewport(deltaY);
+    } catch {}
+  }
+
   private handleEscape(): void {
     // Close any open panel
     if (this.systemPanel?.isEnabled()) {
@@ -7143,6 +7356,15 @@ export class GameEngine {
       this.grimoirePanel.setEnabled(false);
       this.panelEventCoordinator.setGrimoireEnabled(false);
       try { this.audio?.play('ui_grimoire_close'); } catch {}
+      return;
+    }
+
+    if (this.inventoryPanel?.isEnabled()) {
+      this.inventoryPanel.setEnabled(false);
+      this.inventoryPanel.resetScroll();
+      this.gameState.inventoryReopenAllowedAtMs = performance.now() + 1000;
+      this.updateInventoryPointerBinding();
+      try { this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.5 }); } catch {}
       return;
     }
     
