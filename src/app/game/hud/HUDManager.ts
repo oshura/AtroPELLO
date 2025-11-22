@@ -476,6 +476,7 @@ export class HUDManager {
     this.compass.render(ctx, compassPos);
 
     const shipHealth = (this as any)._shipHealthHUD as { current: number; max: number; pct: number } | null;
+    let healthGaugeCenterX: number | null = null;
     if (shipHealth) {
       const dims = this.healthGauge.getDimensions();
       const gapFromWeapons = 10;
@@ -488,6 +489,7 @@ export class HUDManager {
       if (gaugeX > maxX) {
         gaugeX = Math.max(minX, maxX);
       }
+      healthGaugeCenterX = gaugeX;
       const gaugeY = compassPos.y + dims.height * 0.1;
       this.healthGauge.render(ctx, { x: gaugeX, y: gaugeY });
     }
@@ -496,15 +498,11 @@ export class HUDManager {
     if (shipCargo) {
       const dims = this.cargoGauge.getDimensions();
       const gapFromCompass = 58;
-      const gapFromVoidEnergy = 10;
-      const areaLeft = compassPos.x + gapFromCompass;
-      const areaRight = canvas.width - sideMargin - gapFromVoidEnergy;
-      const minX = areaLeft + dims.width / 2;
-      const maxX = areaRight - dims.width / 2;
-      let gaugeX = maxX - 18;
-      if (gaugeX < minX) {
-        gaugeX = Math.min(maxX, Math.max(minX, gaugeX));
-      }
+      const mirroredX = healthGaugeCenterX !== null ? canvas.width - healthGaugeCenterX : null;
+      const areaLeft = compassPos.x + gapFromCompass + dims.width / 2;
+      const areaRight = canvas.width - sideMargin - dims.width / 2;
+      let gaugeX = mirroredX ?? (areaRight - 18);
+      gaugeX = Math.max(areaLeft, Math.min(areaRight, gaugeX));
       const gaugeY = compassPos.y + dims.height * 0.1;
       this.cargoGauge.render(ctx, { x: gaugeX, y: gaugeY });
     }

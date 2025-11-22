@@ -67,7 +67,16 @@ export class CargoGauge {
     const maxText = `/ ${this.formatValue(this.maxValue)}`;
     const maxWidth = ctx.measureText(maxText).width;
     const blockWidth = currentWidth + 8 + maxWidth;
-    const textStartX = halfW - 56 - blockWidth;
+    const paddingFromEdge = 36;
+    const textBlockEnd = halfW - paddingFromEdge;
+    let textStartX = textBlockEnd - blockWidth;
+    const minTextStart = -halfW + 18;
+    if (textStartX < minTextStart) {
+      textStartX = minTextStart;
+    }
+    if (textStartX + blockWidth > textBlockEnd) {
+      textStartX = textBlockEnd - blockWidth;
+    }
     let primaryColor = '#ffffff';
     if (pct >= 0.75) {
       primaryColor = '#ff4d4d';
