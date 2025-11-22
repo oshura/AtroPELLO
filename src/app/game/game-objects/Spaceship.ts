@@ -63,7 +63,7 @@ export class Spaceship extends GameObject {
   
   // Capacidad de carga (HUD de cargamento)
   public cargoCapacityMax: number = 10;
-  public cargoCapacityCurrent: number = 08;
+  public cargoCapacityCurrent: number = 0;
   
   // Armamento disponible (por ahora vacío)
   public weapons: any[] = [];

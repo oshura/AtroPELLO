@@ -95,12 +95,13 @@ export class CargoGauge {
     ctx.fillText(maxLabel, 0, 0);
     ctx.restore();
 
+    const currentValueColor = pct < 0.5 ? '#ffffff' : primaryColor;
     ctx.save();
     ctx.translate(currentTextX, -halfH + 28);
     ctx.scale(1, 1.5);
     ctx.font = 'bold 20px "Share Tech Mono", monospace';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = primaryColor;
+    ctx.fillStyle = currentValueColor;
     ctx.fillText(currentText, 0, 0);
     ctx.restore();
 
