@@ -64,18 +64,19 @@ export class CargoGauge {
     ctx.textBaseline = 'middle';
     const currentText = this.formatValue(this.currentValue);
     const currentWidth = ctx.measureText(currentText).width;
-    const maxText = `/ ${this.formatValue(this.maxValue)}`;
-    const maxWidth = ctx.measureText(maxText).width;
-    const blockWidth = currentWidth + 8 + maxWidth;
-    const paddingFromEdge = 36;
-    const textBlockEnd = halfW - paddingFromEdge;
-    let textStartX = textBlockEnd - blockWidth;
+    ctx.font = '12px "Share Tech Mono", monospace';
+    const maxLabel = `${this.formatValue(this.maxValue)} /`;
+    const maxLabelWidth = ctx.measureText(maxLabel).width;
+    const gap = 6;
+    const crossOffset = 28; // bring numbers closer to the cargo icon
+    const textBlockEnd = halfW - crossOffset;
     const minTextStart = -halfW + 18;
-    if (textStartX < minTextStart) {
-      textStartX = minTextStart;
-    }
-    if (textStartX + blockWidth > textBlockEnd) {
-      textStartX = textBlockEnd - blockWidth;
+    let currentTextX = textBlockEnd - currentWidth;
+    let maxTextX = currentTextX - gap - maxLabelWidth;
+    if (maxTextX < minTextStart) {
+      const shift = minTextStart - maxTextX;
+      maxTextX += shift;
+      currentTextX += shift;
     }
     let primaryColor = '#ffffff';
     if (pct >= 0.75) {
@@ -87,17 +88,20 @@ export class CargoGauge {
     }
     ctx.fillStyle = primaryColor;
     ctx.save();
-    ctx.translate(textStartX, -halfH + 28);
+    ctx.translate(maxTextX, -halfH + 30);
     ctx.scale(1, 1.5);
-    ctx.fillText(currentText, 0, 0);
+    ctx.font = '12px "Share Tech Mono", monospace';
+    ctx.fillStyle = 'rgba(200,200,200,0.8)';
+    ctx.fillText(maxLabel, 0, 0);
     ctx.restore();
 
-    ctx.font = '12px "Share Tech Mono", monospace';
-    ctx.fillStyle = 'rgba(255,255,255,0.7)';
     ctx.save();
-    ctx.translate(textStartX + currentWidth + 8, -halfH + 30);
+    ctx.translate(currentTextX, -halfH + 28);
     ctx.scale(1, 1.5);
-    ctx.fillText(maxText, 0, 0);
+    ctx.font = 'bold 20px "Share Tech Mono", monospace';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = primaryColor;
+    ctx.fillText(currentText, 0, 0);
     ctx.restore();
 
     // Progress bar mirrored: fills from right to left
