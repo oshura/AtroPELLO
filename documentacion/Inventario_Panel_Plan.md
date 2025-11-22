@@ -33,11 +33,12 @@
 
 ## 4. Componentes Técnicos
 - **Tipos** (`src/app/game/types/inventory.types.ts`):
-  - `CargoItemType`, `EquipmentSlot`, `RarityTier`.
-  - Interfaces `CargoManifestEntry`, `EquipmentSlotState`, `CharacterProfile`.
+  - `CargoItemType`, `EquipmentSlot`, `PersonalGearSlot`, `RarityTier`.
+  - Interfaces/Tipos `CargoManifestEntry`, `EquipmentSlotState`, `CharacterProfile`, `InventorySnapshot`.
+  - Interacción: `InventoryPanelRegion`, `InventorySelection`, `InventoryActionType`.
 - **Estado** (`GameStateStore`):
   - Campos nuevos: `characterProfile`, `equipmentLoadout: Record<EquipmentSlot, EquipmentSlotState>`, `cargoManifest: CargoManifestEntry[]`, `inventoryReopenAllowedAtMs`.
-  - Métodos `setCharacterProfile`, `setEquipmentLoadout`, `setCargoManifest` (con logging).
+  - Métodos `setCharacterProfile`, `setEquipmentLoadout`, `setCargoManifest`, `upsertCargoEntry`, `removeCargoEntry` (todos loggean y emiten `stateChanged`).
 - **Servicios**:
   - `CargoHoldService`: convierte asteroides a `CargoManifestEntry`, sincroniza con `Spaceship` y el store.
   - `CharacterProfileService`: inicializa y actualiza datos básicos del piloto.
@@ -56,6 +57,8 @@
   ```
 - Scroll vertical en la columna derecha (wheel + drag en barra custom).
 - Animación ligera de apertura/cierre (similar al grimorio, pero temática industrial).
+- `InventoryPanel` rastrea regiones clicables (slots, filas de carga, botón inferior) y expone `pickRegionAtCursor()` + `setSelection()` para que `GameEngine` administre la selección.
+- Footer con botón `Expulsar carga/equipo` que se habilita al tener una selección válida.
 
 ## 6. Integración con GameEngine
 - Nueva propiedad `inventoryPanel` inicializada junto a los otros paneles.
@@ -65,8 +68,9 @@
   - Usa `inventoryReopenAllowedAtMs`.
   - Cierra mapa y grimorio al abrir inventario (hasta que exista `PanelStateManager`).
   - Reproduce `ui_inventory_open/close` (usar `audio.play` temporalmente, luego migrar a UIAudioService).
+  - Ejecuta `refreshInventoryPanelSnapshot()` cuando el panel ya estaba abierto para evitar frame-stale.
 - `handleEscape()` cierra el inventario si está activo.
-- `tick()` inyecta snapshot actual en el panel (usa datos del store + `shipCargo` ya usado por `CargoGauge`).
+- `tick()` inyecta snapshot actual en el panel mediante `buildInventorySnapshot()` (clona arrays/objetos para preservar inmutabilidad) usando datos del store + `ShipsCargo` ya usado por `CargoGauge`.
 
 ## 7. PanelEventCoordinator
 - Extender `PanelEventCallbacks` con `onInventoryClick`, `onInventoryMove`, `onInventoryWheel`.
@@ -77,10 +81,13 @@
 - `Spaceship` mantiene conteo total (`cargoCapacityCurrent/Max`).
 - `CargoHoldService.convertAsteroid()` produce `CargoManifestEntry` con:
   - `id`, `label`, `mass`, `rarity`, `type` (raw material, reliquia, etc.).
-- Store sincronizado para que el panel muestre datos persistentes (reset al respawn).
+- Store sincronizado para que el panel muestre datos persistentes (reset al respawn mediante `clearManifest()` + `setCargoManifest([])`).
+
+> Detalle exhaustivo del manifiesto y snapshots: ver `documentacion/Sistema_Cargo_Inventory.md`.
 
 ## 9. Pruebas
 - Manual: `M/L/I` se excluyen mutuamente, Escape cierra el panel activo, wheel no hace scroll global, lista de carga respeta la capacidad, Traje/Botas siempre visibles.
+- Manual (nueva UX): selección de fila/slot resalta el elemento, el footer muestra el resumen y `Expulsar` sólo funciona si hay selección.
 - Unit tests en `CargoHoldService` y nuevos mutadores del store.
 
 ## 10. Próximos pasos
@@ -88,3 +95,20 @@
 2. Extender `GameStateStore`.
 3. Implementar `InventoryPanel` con layout descrito.
 4. Cablear `PanelEventCoordinator` y `GameEngine` (tecla `I`, Escape, rendering).
+
+## 11. Estado de implementación (Nov 2025)
+- Tipos, store y servicios completados (`inventory.types.ts`, `GameStateStore`, `CargoHoldService`, `CharacterProfileService`).
+- `InventoryPanel` activo y renderizando snapshots con capacidad dinámica.
+- `PanelEventCoordinator` cableado con callbacks específicos para inventario y cooldown en `GameStateStore`.
+- Hooks de conversión ya registran la carga real y limpian manifiesto en resets.
+- Botón de jettison en footer operativo para carga, módulos y equipo personal (selecciona → click `Expulsar`).
+- Pendiente: flujos de venta/descarga y audio definitivo vía `UIAudioService`.
+
+## 12. Interacción y Jettison
+- `PanelEventCoordinator` entrega `onInventoryClick/Move/Wheel`; `GameEngine` convierte el click en selección vía `InventoryPanelRegion`.
+- Selección actual se guarda en `GameEngine.inventorySelection` y se refleja visualmente llamando `InventoryPanel.setSelection()`.
+- Acción `InventoryActionType.JETTISON`:
+  - **Carga**: `Spaceship.removeCargo(units)` + `CargoHoldService.removeCargoEntry()`.
+  - **Módulos**: `GameStateStore.setEquipmentSlot(slot, null)`.
+  - **Equipo personal**: `GameStateStore.removePersonalGearAtIndex(index)`.
+- Tras expulsar se limpia la selección, se refresca el snapshot y se reproduce `ui_inventory_close` (temporal hasta tener SFX dedicados).

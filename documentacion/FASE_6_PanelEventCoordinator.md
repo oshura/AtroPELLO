@@ -1,6 +1,6 @@
 # FASE 6: PanelEventCoordinator - Extracción de Event Handling
 
-**Estado**: ✅ **COMPLETADA** (Diciembre 2024)
+**Estado**: ✅ **COMPLETADA** (Diciembre 2024) • **Actualización inventario** (Noviembre 2025)
 
 **Objetivo**: Reducir la complejidad de GameEngine extrayendo todo el manejo de eventos DOM a un servicio dedicado `PanelEventCoordinator`.
 
@@ -17,11 +17,13 @@
 
 ---
 
+> **Actualización 2025**: La llegada del panel de inventario demostró que la arquitectura escala sin cambios drásticos; se añadieron callbacks/flags nuevos manteniendo el mismo contrato.
+
 ## 🏗️ Arquitectura Implementada
 
 ### Componentes Nuevos
 
-#### 1. **PanelEventCoordinator Service** (200 líneas)
+#### 1. **PanelEventCoordinator Service** (~230 líneas)
 ```typescript
 @Injectable({ providedIn: 'root' })
 export class PanelEventCoordinator {
@@ -31,6 +33,7 @@ export class PanelEventCoordinator {
   // State setters (called from GameEngine)
   setMapEnabled(enabled: boolean): void
   setGrimoireEnabled(enabled: boolean): void
+  setInventoryEnabled(enabled: boolean): void
   setInputsBlocked(blocked: boolean): void
   
   // Cleanup
@@ -41,6 +44,7 @@ export class PanelEventCoordinator {
 **Responsabilidades**:
 - ✅ Bind/unbind DOM events (keydown, keyup, click, mousemove, wheel)
 - ✅ Route events to appropriate callbacks based on state flags
+- ✅ Garantizar exclusividad entre mapa, grimorio e inventario (flags dedicados)
 - ✅ Prevent event leakage (e.g., 3D clicks cuando map/grimoire abierto)
 - ✅ Cleanup de listeners en destroy()
 
@@ -53,7 +57,7 @@ export class PanelEventCoordinator {
 
 ### Interface: PanelEventCallbacks
 
-Define 11 callbacks que conectan el coordinador con la lógica de GameEngine:
+Define 15 callbacks que conectan el coordinador con la lógica de GameEngine:
 
 ```typescript
 interface PanelEventCallbacks {
@@ -67,6 +71,12 @@ interface PanelEventCallbacks {
   onGrimoireToggle: () => void;
   onGrimoireClick: (clientX: number, clientY: number) => void;
   onGrimoireMove: (clientX: number, clientY: number) => void;
+  
+  // Inventory panel (I key)
+  onInventoryToggle: () => void;
+  onInventoryClick: (clientX: number, clientY: number) => void;
+  onInventoryMove: (clientX: number, clientY: number) => void;
+  onInventoryWheel: (deltaY: number, clientX: number, clientY: number) => void;
   
   // General controls
   onEscape: () => void;
@@ -100,6 +110,7 @@ interface PanelEventCallbacks {
          │ Route based on state:
          │ • mapEnabled?
          │ • grimoireEnabled?
+         │ • inventoryEnabled?
          │ • inputsBlocked?
          │
          ▼
@@ -126,24 +137,29 @@ interface PanelEventCallbacks {
 
 ## 🔧 Cambios en GameEngine
 
-### Métodos Nuevos (11 callbacks)
+### Métodos Nuevos (15 callbacks)
 
-1. **handleMapToggle()**: Toggle map, play sound, close grimoire if open
+1. **handleMapToggle()**: Toggle map, play sound, close grimoire/inventory if open
 2. **handleMapClick(x, y)**: Hit test viewport, select target from map
 3. **handleMapMove(x, y)**: Update cursor, hover detection
 4. **handleMapWheel(delta, x, y)**: Zoom map viewport
-5. **handleGrimoireToggle()**: Toggle grimoire, play sound, close map if open
+5. **handleGrimoireToggle()**: Toggle grimoire, play sound, close map/inventory if open
 6. **handleGrimoireClick(x, y)**: Select spell from grimoire
 7. **handleGrimoireMove(x, y)**: Update grimoire cursor
-8. **handleEscape()**: Close panels or clear target selection
-9. **handleCameraMode(mode)**: Switch camera (orbit/follow/free/chase)
-10. **handle3DClick(event)**: 3D targeting when no panel active
-11. **updateShipControls(key, pressed)**: Ship thrust/rotation controls (pre-existente)
+8. **handleInventoryToggle()**: Toggle inventory, aplicar cooldown (`inventoryReopenAllowedAtMs`), cerrar otros paneles
+9. **handleInventoryClick(x, y)**: Interactuar con slots/scrollbars del HUD de inventario
+10. **handleInventoryMove(x, y)**: Hover states y tooltips dentro del panel
+11. **handleInventoryWheel(delta, x, y)**: Scroll columna de carga sin propagar al documento
+12. **handleEscape()**: Close panels (inventory > grimoire > map) o clear target selection
+13. **handleCameraMode(mode)**: Switch camera (orbit/follow/free/chase)
+14. **handle3DClick(event)**: 3D targeting when no panel active
+15. **updateShipControls(key, pressed)**: Ship thrust/rotation controls (pre-existente)
 
 ### Métodos Deprecados (convertidos a stubs)
 
 - `updateMapClickBinding()` → ahora llama a `panelEventCoordinator.setMapEnabled()`
 - `updateGrimoirePointerBinding()` → ahora llama a `panelEventCoordinator.setGrimoireEnabled()`
+- `updateInventoryPointerBinding()` → ahora llama a `panelEventCoordinator.setInventoryEnabled()`
 - `updateCanvasCursor()` → sin cambios (cursor styling todavía en GameEngine, FASE 6d)
 
 **Razón para mantener stubs**: Múltiples call sites en código legacy (debug, handleKeyDown). Eliminarlos completamente requeriría refactor más profundo (FASE 6b).
@@ -156,6 +172,7 @@ interface PanelEventCallbacks {
 
 - ✅ **M key**: Abre/cierra mapa con sonidos `ui_map_open/close`
 - ✅ **L key**: Abre/cierra grimorio con sonidos `ui_grimoire_open/close`
+- ✅ **I key**: Abre/cierra inventario, respeta cooldown `inventoryReopenAllowedAtMs`
 - ✅ **Mutual exclusivity**: Abrir uno cierra el otro automáticamente
 - ✅ **Escape**: Cierra panel activo con sonido apropiado
 - ✅ **Map click**: Selecciona objetos del mapa (excepto nave)
@@ -163,6 +180,8 @@ interface PanelEventCallbacks {
 - ✅ **Map wheel**: Zoom en mapa sin afectar cámara 3D
 - ✅ **Grimoire click**: Selecciona hechizo con sonido `ui_select_glyph`
 - ✅ **Grimoire hover**: Muestra outline en glyphs con sonido `ui_outline_hover`
+- ✅ **Inventory scroll**: Wheel bloquea scroll global y recorre la columna derecha
+- ✅ **Inventory interactions**: Click/hover en slots actualiza highlights sin afectar 3D
 - ✅ **3D click**: Targeting funciona cuando ningún panel está activo
 - ✅ **0/7/8/9 keys**: Cambio de modo de cámara (debug/orbit/follow/free/chase)
 - ✅ **Ship controls**: Thrusters/rotation funcionan correctamente
@@ -180,7 +199,9 @@ No errors found.
 
 ### 1. **Scope Limitado a Event Routing**
 
-**Decisión**: Extraer SOLO la lógica de binding/routing de eventos, NO state management/audio/cursor.
+**Decisión (2024)**: Extraer SOLO la lógica de binding/routing de eventos, NO state management/audio/cursor.
+
+**Actualización (2025)**: Añadir inventario mantuvo esta regla; el coordinador solo creció en callbacks/flags sin absorber lógica de cooldowns (que sigue en `GameStateStore`).
 
 **Razón**: 
 - Simplificar PR (Single Responsibility)
@@ -219,10 +240,12 @@ No errors found.
 
 ### 4. **Estado Minimal en Coordinator**
 
-**Decisión**: Solo 3 flags de estado en PanelEventCoordinator:
+**Decisión original**: Solo 3 flags de estado en PanelEventCoordinator:
 - `mapEnabled`
 - `grimoireEnabled`
 - `inputsBlocked`
+
+**Actualización**: Se añadió `inventoryEnabled` siguiendo el mismo patrón (setter explícito, sin derivar lógica interna).
 
 **Razón**:
 - ✅ Suficiente para routing de eventos
@@ -278,7 +301,7 @@ No errors found.
 ## 📚 Referencias
 
 - **Código**: `src/app/services/ui/panel-event-coordinator.service.ts`
-- **Integration**: `src/app/game/GameEngine.ts` líneas 6383-6638
+- **Integration**: `src/app/game/GameEngine.ts` (ver secciones `setupPanelEventCoordinator`, `handleInventoryToggle`)
 - **Tests**: Manual testing (automated tests PENDIENTES)
 - **Related docs**: 
   - `Audio_Sistema_Arquitectura.md` (audio integration)
@@ -289,12 +312,12 @@ No errors found.
 
 ## ✅ Checklist de Completitud
 
-- [x] PanelEventCoordinator service creado (200 líneas)
-- [x] 11 callbacks implementados en GameEngine
+- [x] PanelEventCoordinator service creado (~230 líneas)
+- [x] 15 callbacks implementados en GameEngine (map, grimorio, inventario, generales)
 - [x] setupPanelEventCoordinator() inicializa coordinador
 - [x] Métodos legacy convertidos a stubs
 - [x] Compilación exitosa (0 errores)
-- [x] Manual testing completo (12 casos)
+- [x] Manual testing completo (14 casos, incluye inventario)
 - [x] GameEngine reducido en 288 líneas (-4.5%)
 - [x] Documentación de FASE 6 completa
 - [x] Código legacy marcado como `@deprecated`
@@ -302,5 +325,5 @@ No errors found.
 
 ---
 
-**Conclusión**: FASE 6 cumplió su objetivo de externalizar event routing sin romper funcionalidad existente. La reducción de complejidad es moderada (-4.5%) pero la ganancia en testabilidad y separación de responsabilidades es significativa. Las siguientes fases (6b-6d) continuarán reduciendo GameEngine.ts hasta alcanzar un tamaño manejable (~5,500 líneas target).
+**Conclusión**: FASE 6 cumplió su objetivo de externalizar event routing sin romper funcionalidad existente. La reducción de complejidad es moderada (-4.5%) pero la ganancia en testabilidad y separación de responsabilidades es significativa. La ampliación de Nov 2025 validó el diseño: agregar inventario solo requirió extender callbacks/flags, sin reabrir la arquitectura base. Las siguientes fases (6b-6d) continuarán reduciendo GameEngine.ts hasta alcanzar un tamaño manejable (~5,500 líneas target).
 

@@ -26,7 +26,7 @@ export class GameInputHandler {
    * Inicializa el estado de las teclas
    */
   private initializeKeyState(): void {
-  const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', 'h', 't', 'm', 'l', '+', '=', '-', '_', 'shift', 'control', 'escape', '0', '7', '8', '9'];
+  const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', 'h', 't', 'm', 'l', 'i', '+', '=', '-', '_', 'shift', 'control', 'escape', '0', '7', '8', '9'];
     gameKeys.forEach(key => {
       this.keyState[key.toLowerCase()] = false;
     });

@@ -1,4 +1,14 @@
-import { InventorySnapshot, EquipmentSlot, EquipmentSlotState, PersonalGearSlot, RarityTier } from '../types/inventory.types';
+import {
+  InventorySnapshot,
+  EquipmentSlot,
+  EquipmentSlotState,
+  PersonalGearSlot,
+  RarityTier,
+  InventoryPanelRegion,
+  InventoryRegionBounds,
+  InventorySelection,
+  InventoryActionType
+} from '../types/inventory.types';
 
 export class InventoryPanel {
   private readonly gl: WebGL2RenderingContext;
@@ -16,6 +26,8 @@ export class InventoryPanel {
   private scrollOffset = 0;
   private scrollTarget = 0;
   private maxScroll = 0;
+  private regions: InventoryPanelRegion[] = [];
+  private selection: InventorySelection | null = null;
 
   constructor(gl: WebGL2RenderingContext, width: number = 1024, height: number = 1024) {
     this.gl = gl;
@@ -64,11 +76,46 @@ export class InventoryPanel {
     this.scrollTarget = 0;
   }
 
+  public pickRegionAtCursor(): InventoryPanelRegion | null {
+    if (this.cursorPx == null || this.cursorPy == null) {
+      return null;
+    }
+    return this.pickRegionAt(this.cursorPx, this.cursorPy);
+  }
+
+  public setSelection(selection: InventorySelection | null): void {
+    this.selection = selection;
+    if (this.enabled && this.snapshot) {
+      this.paint();
+      this.uploadTexture();
+    }
+  }
+
+  public getSelection(): InventorySelection | null {
+    return this.selection;
+  }
+
   public update(snapshot: InventorySnapshot | null): void {
     if (!snapshot) {
       return;
     }
     this.snapshot = snapshot;
+    const currentSelection = this.selection;
+    if (currentSelection) {
+      if (currentSelection.kind === 'personal' && currentSelection.index >= snapshot.personalGear.length) {
+        this.selection = null;
+      } else if (currentSelection.kind === 'cargo') {
+        const stillExists = snapshot.cargo.some(entry => entry.id === currentSelection.entryId);
+        if (!stillExists) {
+          this.selection = null;
+        }
+      } else if (currentSelection.kind === 'equipment') {
+        const stillEquipped = snapshot.equipment[currentSelection.slot];
+        if (!stillEquipped) {
+          this.selection = null;
+        }
+      }
+    }
     this.scrollOffset += (this.scrollTarget - this.scrollOffset) * 0.2;
     this.paint();
     this.uploadTexture();
@@ -145,6 +192,7 @@ export class InventoryPanel {
     if (!snapshot) return;
     const c = this.ctx;
     const { width: W, height: H } = this.canvas;
+    this.regions = [];
 
     c.save();
     const bg = c.createLinearGradient(0, 0, W, H);
@@ -156,10 +204,13 @@ export class InventoryPanel {
     const leftW = Math.floor(W * 0.35);
     const centerW = Math.floor(W * 0.4);
     const rightW = W - leftW - centerW;
+    const footerHeight = 90;
+    const contentHeight = Math.max(0, H - footerHeight);
 
-    this.drawCharacterColumn(c, 0, 0, leftW, H, snapshot);
-    this.drawEquipmentColumn(c, leftW, 0, centerW, H, snapshot);
-    this.drawCargoColumn(c, leftW + centerW, 0, rightW, H, snapshot);
+    this.drawCharacterColumn(c, 0, 0, leftW, contentHeight, snapshot);
+    this.drawEquipmentColumn(c, leftW, 0, centerW, contentHeight, snapshot);
+    this.drawCargoColumn(c, leftW + centerW, 0, rightW, contentHeight, snapshot);
+    this.drawFooter(c, 0, contentHeight, W, footerHeight, snapshot);
     c.restore();
   }
 
@@ -182,10 +233,17 @@ export class InventoryPanel {
 
     const slotYStart = 200;
     let offsetY = slotYStart;
-    for (const gear of snapshot.personalGear) {
-      this.drawGearCard(c, gear.slot, gear.label, gear.description, gear.rarity, 24, offsetY, w - 48, 60);
+    snapshot.personalGear.forEach((gear, index) => {
+      const isSelected = this.selection?.kind === 'personal' && this.selection.index === index;
+      this.drawGearCard(c, gear.slot, gear.label, gear.description, gear.rarity, 24, offsetY, w - 48, 60, isSelected);
+      this.registerRegion({
+        kind: 'personal',
+        index,
+        slot: gear.slot,
+        bounds: { x: x + 24, y: y + offsetY, w: w - 48, h: 60 }
+      });
       offsetY += 72;
-    }
+    });
     c.restore();
   }
 
@@ -217,7 +275,13 @@ export class InventoryPanel {
       const col = idx % 2;
       const px = 24 + col * (cardWidth + 24);
       const py = 72 + row * (cardHeight + 20);
-      this.drawEquipmentCard(c, slot, snapshot.equipment[slot], px, py, cardWidth, cardHeight);
+      const isSelected = this.selection?.kind === 'equipment' && this.selection.slot === slot;
+      this.drawEquipmentCard(c, slot, snapshot.equipment[slot], px, py, cardWidth, cardHeight, isSelected);
+      this.registerRegion({
+        kind: 'equipment',
+        slot,
+        bounds: { x: x + px, y: y + py, w: cardWidth, h: cardHeight }
+      });
       idx++;
     }
     c.restore();
@@ -257,7 +321,13 @@ export class InventoryPanel {
 
     let yOffset = listY - this.scrollOffset;
     for (const entry of snapshot.cargo) {
-      this.drawCargoRow(c, entry, 24, yOffset, w - 48, rowHeight);
+      const isSelected = this.selection?.kind === 'cargo' && this.selection.entryId === entry.id;
+      this.drawCargoRow(c, entry, 24, yOffset, w - 48, rowHeight, isSelected);
+      this.registerRegion({
+        kind: 'cargo',
+        entryId: entry.id,
+        bounds: { x: x + 24, y: y + yOffset, w: w - 48, h: rowHeight }
+      });
       yOffset += rowHeight + 10;
     }
     c.restore();
@@ -295,7 +365,8 @@ export class InventoryPanel {
     x: number,
     y: number,
     w: number,
-    h: number
+    h: number,
+    selected: boolean = false
   ): void {
     c.save();
     c.globalAlpha = 0.9;
@@ -303,6 +374,12 @@ export class InventoryPanel {
     c.fillRect(x, y, w, h);
     c.fillStyle = 'rgba(0,0,0,0.25)';
     c.fillRect(x, y, 6, h);
+
+    if (selected) {
+      c.strokeStyle = '#f97316';
+      c.lineWidth = 3;
+      c.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    }
 
     c.fillStyle = '#040713';
     c.font = '600 14px "Segoe UI", sans-serif';
@@ -325,13 +402,20 @@ export class InventoryPanel {
     x: number,
     y: number,
     w: number,
-    h: number
+    h: number,
+    selected: boolean = false
   ): void {
     c.save();
     c.fillStyle = 'rgba(255,255,255,0.05)';
     c.fillRect(x, y, w, h);
     c.strokeStyle = 'rgba(255,255,255,0.15)';
     c.strokeRect(x, y, w, h);
+
+    if (selected) {
+      c.strokeStyle = '#f97316';
+      c.lineWidth = 3;
+      c.strokeRect(x + 1.5, y + 1.5, w - 3, h - 3);
+    }
 
     c.font = '600 14px "Segoe UI", sans-serif';
     c.fillStyle = '#8ea3d8';
@@ -359,12 +443,26 @@ export class InventoryPanel {
     c.restore();
   }
 
-  private drawCargoRow(c: CanvasRenderingContext2D, entry: InventorySnapshot['cargo'][number], x: number, y: number, w: number, h: number): void {
+  private drawCargoRow(
+    c: CanvasRenderingContext2D,
+    entry: InventorySnapshot['cargo'][number],
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    selected: boolean = false
+  ): void {
     c.save();
     c.fillStyle = 'rgba(8,11,24,0.9)';
     c.fillRect(x, y, w, h);
     c.strokeStyle = 'rgba(255,255,255,0.08)';
     c.strokeRect(x, y, w, h);
+
+    if (selected) {
+      c.strokeStyle = '#f97316';
+      c.lineWidth = 2;
+      c.strokeRect(x + 1, y + 1, w - 2, h - 2);
+    }
 
     c.fillStyle = '#f7f9ff';
     c.font = '600 15px "Segoe UI", sans-serif';
@@ -380,6 +478,92 @@ export class InventoryPanel {
     c.font = '11px "Segoe UI", sans-serif';
     c.fillText(entry.rarity, x + w - 85, y + 25);
     c.restore();
+  }
+
+  private drawFooter(
+    c: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    w: number,
+    h: number,
+    snapshot: InventorySnapshot
+  ): void {
+    c.save();
+    c.translate(x, y);
+    c.fillStyle = 'rgba(4,7,19,0.95)';
+    c.fillRect(0, 0, w, h);
+    c.strokeStyle = 'rgba(255,255,255,0.08)';
+    c.strokeRect(0, 0, w, h);
+
+    c.fillStyle = '#9ba4c6';
+    c.font = '500 16px "Segoe UI", sans-serif';
+    c.fillText('Selección', 24, 30);
+    c.fillStyle = '#f4f9ff';
+    c.font = '600 22px "Segoe UI", sans-serif';
+    c.fillText(this.describeSelection(snapshot), 24, 60);
+
+    const buttonWidth = 240;
+    const buttonHeight = 52;
+    const buttonX = w - buttonWidth - 32;
+    const buttonY = (h - buttonHeight) / 2;
+    const enabled = !!this.selection;
+
+    c.fillStyle = enabled ? '#f87171' : 'rgba(148,163,184,0.25)';
+    c.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+    c.strokeStyle = enabled ? '#fecaca' : 'rgba(255,255,255,0.15)';
+    c.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+
+    c.fillStyle = enabled ? '#0f172a' : '#94a3b8';
+    c.font = '600 18px "Segoe UI", sans-serif';
+    c.fillText('Expulsar carga/equipo', buttonX + 16, buttonY + 32);
+
+    this.registerRegion({
+      kind: 'action',
+      action: InventoryActionType.JETTISON,
+      enabled,
+      bounds: { x: x + buttonX, y: y + buttonY, w: buttonWidth, h: buttonHeight }
+    });
+
+    c.restore();
+  }
+
+  private describeSelection(snapshot: InventorySnapshot): string {
+    const selection = this.selection;
+    if (!selection) {
+      return 'Selecciona un slot de carga o módulo.';
+    }
+    if (selection.kind === 'cargo') {
+      const entry = snapshot.cargo.find(item => item.id === selection.entryId);
+      return entry ? `Carga · ${entry.label}` : 'Carga desconocida';
+    }
+    if (selection.kind === 'equipment') {
+      const state = snapshot.equipment[selection.slot];
+      const moduleLabel = state ? state.label : 'Vacío';
+      return `${this.prettySlot(selection.slot)} · ${moduleLabel}`;
+    }
+    const gear = snapshot.personalGear[selection.index];
+    if (gear) {
+      return `${this.prettyPersonalSlot(gear.slot)} · ${gear.label}`;
+    }
+    return 'Selección no válida';
+  }
+
+  private registerRegion(region: InventoryPanelRegion): void {
+    this.regions.push(region);
+  }
+
+  private pickRegionAt(x: number, y: number): InventoryPanelRegion | null {
+    for (let i = this.regions.length - 1; i >= 0; i--) {
+      const region = this.regions[i];
+      if (this.pointInBounds(region.bounds, x, y)) {
+        return region;
+      }
+    }
+    return null;
+  }
+
+  private pointInBounds(bounds: InventoryRegionBounds, px: number, py: number): boolean {
+    return px >= bounds.x && px <= bounds.x + bounds.w && py >= bounds.y && py <= bounds.y + bounds.h;
   }
 
   private rarityFill(rarity: RarityTier): string {

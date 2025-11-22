@@ -50,7 +50,13 @@ import { CharacterProfileService } from '../services/game/character-profile.serv
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
 import { getDisplayLabelFromTargetType } from './types/game-object.types';
-import { EquipmentSlot, InventorySnapshot } from './types/inventory.types';
+import {
+  EquipmentSlot,
+  InventorySnapshot,
+  InventorySelection,
+  InventoryPanelRegion,
+  InventoryActionType
+} from './types/inventory.types';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -78,6 +84,7 @@ export class GameEngine {
   private systemPanel: SolarSystemPanel | null = null;
   private grimoirePanel: GrimoirePanel | null = null;
   private inventoryPanel: InventoryPanel | null = null;
+  private inventorySelection: InventorySelection | null = null;
   public overlayRenderer: ScreenOverlayRenderer | null = null;
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   public voidJumpActive: boolean = false;
@@ -5303,6 +5310,7 @@ export class GameEngine {
           try {
             this.inventoryPanel.setEnabled(false);
             this.inventoryPanel.resetScroll();
+            this.clearInventorySelection();
             this.gameState.inventoryReopenAllowedAtMs = now + 1000;
             this.updateInventoryPointerBinding();
             this.updateCanvasCursor();
@@ -5375,6 +5383,7 @@ export class GameEngine {
           try {
             this.inventoryPanel.setEnabled(false);
             this.inventoryPanel.resetScroll();
+            this.clearInventorySelection();
             this.gameState.inventoryReopenAllowedAtMs = now + 1000;
             this.updateInventoryPointerBinding();
             this.updateCanvasCursor();
@@ -7122,6 +7131,7 @@ export class GameEngine {
       if (this.inventoryPanel?.isEnabled()) {
         this.inventoryPanel.setEnabled(false);
         this.inventoryPanel.resetScroll();
+        this.clearInventorySelection();
         this.gameState.inventoryReopenAllowedAtMs = now + 1000;
         this.updateInventoryPointerBinding();
         this.updateCanvasCursor();
@@ -7230,6 +7240,7 @@ export class GameEngine {
       if (this.inventoryPanel?.isEnabled()) {
         this.inventoryPanel.setEnabled(false);
         this.inventoryPanel.resetScroll();
+        this.clearInventorySelection();
         this.gameState.inventoryReopenAllowedAtMs = now + 1000;
         this.updateInventoryPointerBinding();
         this.updateCanvasCursor();
@@ -7297,6 +7308,7 @@ export class GameEngine {
       }
       this.inventoryPanel.resetScroll();
       this.inventoryPanel.setEnabled(true);
+      this.clearInventorySelection();
       this.refreshInventoryPanelSnapshot();
       try {
         this.audio?.play('ui_inventory_open', { bus: 'ui', volume: 0.55 });
@@ -7306,6 +7318,7 @@ export class GameEngine {
     } else {
       this.inventoryPanel.setEnabled(false);
       this.inventoryPanel.resetScroll();
+      this.clearInventorySelection();
       this.gameState.inventoryReopenAllowedAtMs = now + 1000;
       try {
         this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.5 });
@@ -7318,8 +7331,38 @@ export class GameEngine {
     this.updateCanvasCursor();
   }
 
-  private handleInventoryClick(_clientX: number, _clientY: number): void {
-    // Reserved for interactive slots; currently no click actions
+  private handleInventoryClick(clientX: number, clientY: number): void {
+    if (!this.inventoryPanel || !this.inventoryPanel.isEnabled() || !this.gl || !this.domCanvas) {
+      return;
+    }
+
+    const rect = this.domCanvas.getBoundingClientRect();
+    try {
+      this.inventoryPanel.setCursorFromViewport(
+        clientX,
+        clientY,
+        rect,
+        (this.gl.canvas as HTMLCanvasElement).width,
+        (this.gl.canvas as HTMLCanvasElement).height
+      );
+    } catch {}
+
+    const region = this.inventoryPanel.pickRegionAtCursor();
+    if (!region) {
+      this.clearInventorySelection();
+      return;
+    }
+
+    if (region.kind === 'action') {
+      if (region.enabled) {
+        this.handleInventoryAction(region.action);
+      } else {
+        try { this.audio?.play('ui_error_small', { bus: 'ui', volume: 0.3 }); } catch {}
+      }
+      return;
+    }
+
+    this.applyInventorySelection(region);
   }
 
   private handleInventoryMove(clientX: number, clientY: number): void {
@@ -7357,6 +7400,99 @@ export class GameEngine {
     } catch {}
   }
 
+  private applyInventorySelection(region: InventoryPanelRegion): void {
+    let selection: InventorySelection | null = null;
+    switch (region.kind) {
+      case 'cargo':
+        selection = { kind: 'cargo', entryId: region.entryId };
+        break;
+      case 'equipment':
+        selection = { kind: 'equipment', slot: region.slot };
+        break;
+      case 'personal':
+        selection = { kind: 'personal', index: region.index };
+        break;
+      default:
+        selection = null;
+    }
+
+    if (!selection) {
+      this.clearInventorySelection();
+      return;
+    }
+
+    this.inventorySelection = selection;
+    try {
+      this.inventoryPanel?.setSelection(selection);
+    } catch {}
+
+    try { this.audio?.play('ui_inventory_open', { bus: 'ui', volume: 0.25 }); } catch {}
+  }
+
+  private handleInventoryAction(action: InventoryActionType): void {
+    switch (action) {
+      case InventoryActionType.JETTISON:
+        this.jettisonSelectedInventoryItem();
+        break;
+      default:
+        this.logger.log(LogLevel.WARN, LogCategory.HUD, 'Unhandled inventory action', { action });
+    }
+  }
+
+  private jettisonSelectedInventoryItem(): void {
+    const selection = this.inventorySelection;
+    if (!selection) {
+      this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Jettison requested with no selection');
+      return;
+    }
+
+    if (selection.kind === 'cargo') {
+      const entry = this.gameState.cargoManifest.find(item => item.id === selection.entryId);
+      if (!entry) {
+        this.logger.log(LogLevel.WARN, LogCategory.HUD, 'Cargo selection missing from manifest', { selection });
+        this.clearInventorySelection();
+        return;
+      }
+      const removedUnits = this.spaceship?.removeCargo(entry.units) ?? 0;
+      this.cargoHoldService.removeCargoEntry(entry.id);
+      this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Cargo jettisoned', {
+        entryId: entry.id,
+        label: entry.label,
+        removedUnits
+      });
+    } else if (selection.kind === 'equipment') {
+      const slotState = this.gameState.equipmentLoadout[selection.slot];
+      if (!slotState) {
+        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Equipment slot already empty', { slot: selection.slot });
+      } else {
+        this.gameState.setEquipmentSlot(selection.slot, null);
+        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Equipment jettisoned', {
+          slot: selection.slot,
+          label: slotState.label
+        });
+      }
+    } else if (selection.kind === 'personal') {
+      const removed = this.gameState.removePersonalGearAtIndex(selection.index);
+      if (!removed) {
+        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Personal gear index invalid', { index: selection.index });
+      } else {
+        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Personal gear jettisoned', {
+          slot: removed.slot,
+          label: removed.label
+        });
+      }
+    }
+
+    try { this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.4 }); } catch {}
+    this.clearInventorySelection();
+    this.refreshInventoryPanelSnapshot();
+  }
+
+  private clearInventorySelection(): void {
+    this.inventorySelection = null;
+    try { this.inventoryPanel?.setSelection(null); } catch {}
+  }
+
   private handleEscape(): void {
     // Close any open panel
     if (this.systemPanel?.isEnabled()) {
@@ -7376,6 +7512,7 @@ export class GameEngine {
     if (this.inventoryPanel?.isEnabled()) {
       this.inventoryPanel.setEnabled(false);
       this.inventoryPanel.resetScroll();
+      this.clearInventorySelection();
       this.gameState.inventoryReopenAllowedAtMs = performance.now() + 1000;
       this.updateInventoryPointerBinding();
       try { this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.5 }); } catch {}

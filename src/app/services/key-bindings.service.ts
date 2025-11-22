@@ -5,7 +5,7 @@ export type GameAction =
   | 'yaw_left' | 'yaw_right'
   | 'roll_left' | 'roll_right'
   | 'accelerate' | 'brake'
-  | 'map' | 'pause' | 'book' | 'spell'
+  | 'map' | 'pause' | 'book' | 'spell' | 'inventory'
   | 'target_next' | 'target_prev'
   | 'camera_7' | 'camera_8' | 'camera_9' | 'camera_0'
   | 'stats_overlay'
@@ -28,6 +28,7 @@ const DEFAULT_BINDINGS: Record<GameAction, string> = {
   map: 'm',
   pause: 'p',
   book: 'l',
+  inventory: 'i',
   spell: 'h',
   target_next: 't',
   target_prev: 'shift+t',

@@ -751,6 +751,52 @@ if (name === 'A') {
 
 ---
 
+## 13. Sistema de Inventario y Carga
+
+### Principios Clave
+- **Store único:** `GameStateStore` es la única fuente de verdad para `characterProfile`, `personalGear`, `equipmentLoadout`, `cargoManifest` y cooldowns (`inventoryReopenAllowedAtMs`). Ningún panel muta estado directamente; siempre usar los mutadores (`setCharacterProfile`, `upsertCargoEntry`, etc.).
+- **Enums exhaustivos:** `EquipmentSlot`, `CargoItemType`, `PersonalGearSlot`, `RarityTier` y `InventoryPanelAction` encapsulan todas las opciones. Evitar strings sueltos en paneles o servicios.
+- **Servicios delgados:** `CargoHoldService` y `CharacterProfileService` únicamente traducen eventos de juego a mutaciones del store. No formatean UI ni realizan side-effects fuera de logging.
+- **Snapshots inmutables:** `GameEngine.buildInventorySnapshot()` clona objetos/arrays antes de entregarlos al panel. Regla: nunca pasar referencias del store directamente a `InventoryPanel.update()`.
+- **Resets simétricos:** Cualquier flujo que agregue datos (conversión de asteroides, equipamiento dinámico) debe definir su contraflujo (`clearManifest`, `removeCargoEntry`, `resetLoadout`). Esto mantiene la integridad al recrear la nave o reiniciar la partida.
+
+### Patrones Recomendados
+1. **Type-safe builders** para paneles:
+   ```typescript
+   function buildCargoCapacity(ship: Spaceship) {
+     const pct = clamp((ship.cargoCapacityCurrent / ship.cargoCapacityMax) * 100, 0, 200);
+     return { current: ship.cargoCapacityCurrent, max: ship.cargoCapacityMax, pct };
+   }
+   ```
+   Mantiene la lógica de normalización encapsulada y testeable.
+
+2. **Factories para entries** en el servicio de carga:
+   ```typescript
+   const entry: CargoManifestEntry = {
+     id: buildCargoId(target.id),
+     type: resolveCargoType(target),
+     rarity: resolveRarity(target.massTons),
+     mass: storedMass,
+     label: `${target.label} @ ${storedMass.toFixed(1)}u`
+   };
+   this.gameState.upsertCargoEntry(entry);
+   ```
+
+3. **DTOs de panel** segregados de entidades runtime: `InventorySnapshot` no expone `Spaceship` ni `Asteroid`; solo datos planos.
+4. **Mutadores indexados para equipo personal**: `removePersonalGearAtIndex(index)` elimina la entrada exacta que se está renderizando; evita comparaciones por label que podrían duplicarse.
+
+### Errores Comunes a Evitar
+- Recalcular capacidad o totals en el panel (duplicación). Siempre derivarlos del store o `Spaceship` central.
+- Mutar arrays del store con `push`/`splice` fuera de los mutadores. Usar copias (`[...current, newEntry]`).
+- Compartir referencias de `CargoManifestEntry` entre HUD y lógica de juego. Si un entry necesita metadata adicional, extender el tipo centralizado en `inventory.types.ts`.
+
+### Referencias complementarias
+- `documentacion/Sistema_Cargo_Inventory.md` (flujo completo)
+- `src/app/services/game/cargo-hold.service.ts`
+- `src/app/game/GameEngine.ts` (`convertAsteroidToCargo`, `buildInventorySnapshot`)
+
+---
+
 ## Resumen
 
 ### Reglas de Oro
@@ -781,10 +827,11 @@ Y se debe:
 - `src/app/game/types/game-object.types.ts` - Sistema de tipos
 - `src/app/game/game-objects/` - Todos los GameObjects
 - `src/app/game/GameObject.ts` - Clase base
+- `documentacion/Sistema_Cargo_Inventory.md` - Profundiza en inventario/carga
 - Este documento - `documentacion/CleanCode_Arquitectura.md`
 
 ---
 
-**Última actualización:** 19 de Noviembre, 2025  
-**Autor:** Sistema de IA (Claude Sonnet 4.5) + Desarrollador (Olles)  
+**Última actualización:** 23 de Noviembre, 2025  
+**Autor:** Sistema de IA (GPT-5.1-Codex) + Desarrollador (Olles)  
 **Proyecto:** AtroPELLO - Juego espacial 3D WebGL

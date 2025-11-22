@@ -82,3 +82,29 @@ export interface InventorySnapshot {
   cargo: CargoManifestEntry[];
   cargoCapacity: { current: number; max: number; pct: number };
 }
+
+/** Acción disponible desde el panel de inventario. */
+export enum InventoryActionType {
+  JETTISON = 'JETTISON'
+}
+
+/** Coordenadas rectangulares dentro del canvas del panel. */
+export interface InventoryRegionBounds {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** Área interactiva del panel (slots, filas de carga, botones). */
+export type InventoryPanelRegion =
+  | { kind: 'cargo'; entryId: string; bounds: InventoryRegionBounds }
+  | { kind: 'equipment'; slot: EquipmentSlot; bounds: InventoryRegionBounds }
+  | { kind: 'personal'; index: number; slot: PersonalGearSlot; bounds: InventoryRegionBounds }
+  | { kind: 'action'; action: InventoryActionType; enabled: boolean; bounds: InventoryRegionBounds };
+
+/** Selección actual dentro del panel. */
+export type InventorySelection =
+  | { kind: 'cargo'; entryId: string }
+  | { kind: 'equipment'; slot: EquipmentSlot }
+  | { kind: 'personal'; index: number };

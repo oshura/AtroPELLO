@@ -486,6 +486,21 @@ export class GameStateStore {
     this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'Personal gear updated', { count: this.personalGear.length });
   }
 
+  /** Elimina un ítem de equipo personal por índice. */
+  removePersonalGearAtIndex(index: number): PersonalGearItem | null {
+    if (index < 0 || index >= this.personalGear.length) {
+      return null;
+    }
+    const [removed] = this.personalGear.splice(index, 1);
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'personalGear', index } });
+    this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Personal gear removed', {
+      index,
+      slot: removed.slot,
+      label: removed.label
+    });
+    return removed;
+  }
+
   /** Define o vacía un slot de equipo de la nave. */
   setEquipmentSlot(slot: EquipmentSlot, state: EquipmentSlotState | null): void {
     this.equipmentLoadout[slot] = state ? { ...state, slot } : null;
