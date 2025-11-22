@@ -993,6 +993,12 @@ export class GameEngine {
     try {
       // Crear nave del jugador en el origen
       this.spaceship = new Spaceship({ x: 0, y: 0, z: 0 });
+      this.spaceship.cargoCapacityCurrent = 0;
+      try {
+        this.cargoHoldService.clearManifest();
+      } catch (e) {
+        this.logger.log(LogLevel.WARN, LogCategory.HUD, 'No se pudo limpiar el manifiesto de carga al crear la nave', e);
+      }
       
       // Registrar callback reactivo para verificación automática de muerte
       this.spaceship.setHealthChangeCallback((newHealth: number, oldHealth: number) => {
@@ -6032,6 +6038,14 @@ export class GameEngine {
       });
       try { this.hudManager?.addMarqueeMessage?.('Carga completa - libera espacio'); } catch {}
       return false;
+    }
+    try {
+      this.cargoHoldService.registerAsteroidConversion(target, stored);
+      if (this.inventoryPanel?.isEnabled()) {
+        this.refreshInventoryPanelSnapshot();
+      }
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.HUD, 'Cargo manifest update failed', e);
     }
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Asteroid converted to cargo', {
       targetId: target.id,

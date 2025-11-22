@@ -531,6 +531,9 @@ export class GameStateStore {
     this.planets.length = 0;
     this.portals.length = 0;
     this.planetDebris.length = 0;
+    if (this.cargoManifest.length) {
+      this.setCargoManifest([]);
+    }
     
     // Resetear entidades principales
     this.spaceship = null;
