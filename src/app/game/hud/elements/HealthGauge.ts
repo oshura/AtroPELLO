@@ -9,7 +9,7 @@ export interface ShipHealthSnapshot {
  */
 export class HealthGauge {
   private readonly width = 150;
-  private readonly height = 56;
+  private readonly height = 72;
   private readonly smoothingAlpha = 0.2;
   private currentValue = 0;
   private targetValue = 0;
@@ -84,9 +84,9 @@ export class HealthGauge {
 
     // Progress bar
     const barWidth = this.width - 40;
-    const barHeight = 10;
+    const barHeight = 14;
     const barX = -halfW + 20;
-    const barY = halfH - barHeight - 8;
+    const barY = halfH - barHeight - 12;
     ctx.strokeStyle = 'rgba(255,255,255,0.4)';
     ctx.lineWidth = 1;
     ctx.strokeRect(barX, barY, barWidth, barHeight);
