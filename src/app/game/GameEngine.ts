@@ -3095,17 +3095,27 @@ export class GameEngine {
     // Establecer un color base por defecto para lit en el frame (evita depender de draws previos)
     this.shaderManager.setLitColor(new Float32Array([0.7, 0.75, 0.8]));
 
-    // Renderizar nave con shader texturizado
+    // Renderizar haz de disrupción antes de la nave para que quede por debajo de la cabina
+    if (this.disruptionBeam && this.disruptionBeam.active) {
+      this.renderDisruptionBeam();
+      // Restaurar el shader lit para continuar dibujando geometría opaca
+      this.shaderManager.useLitProgram();
+      this.shaderManager.setLighting(
+        this.lightDirection,
+        this.lightColor,
+        this.ambientColor,
+        this.ambientStrength
+      );
+      this.shaderManager.setSpecular(new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]), 0.15, 32.0);
+      this.shaderManager.setLitColor(new Float32Array([0.7, 0.75, 0.8]));
+    }
+
+    // Renderizar nave con shader texturizado (por encima del beam)
   this.renderSpaceship();
     
     // Renderizar efectos de partículas en programa básico (usa additive blending)
     // Asegurar que el estado de la nave/asteroides no se contamine
     this.particleEffects.render(this.camera);
-    
-    // Renderizar haz de disrupción si está activo
-    if (this.disruptionBeam && this.disruptionBeam.active) {
-      this.renderDisruptionBeam();
-    }
     
     // Reforzar de nuevo programa lit y su iluminación tras partículas
     this.shaderManager.useLitProgram();
