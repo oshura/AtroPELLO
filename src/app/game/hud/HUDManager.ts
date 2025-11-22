@@ -6,6 +6,7 @@ import { VelocityBar } from './elements/VelocityBar';
 import { Compass } from './elements/Compass';
 import { NavigationSphere } from './elements/NavigationSphere';
 import { SpeedometerDigital } from './elements/SpeedometerDigital';
+import { HealthGauge } from './elements/HealthGauge';
 import { MarqueePanel } from './elements/MarqueePanel';
 import { TargetingSystem, TargetInfo } from '../types/targeting.types';
 import { TargetPanel, TargetPanelState, Relation } from './elements/TargetPanel';
@@ -26,6 +27,7 @@ export class HUDManager {
   private compass: Compass;
   private navigationSphere: NavigationSphere;
   private speedometer: SpeedometerDigital;
+  private healthGauge: HealthGauge;
   private marqueePanel: MarqueePanel;
   private targetPanel: TargetPanel;
   
@@ -49,6 +51,7 @@ export class HUDManager {
     this.compass = new Compass();
     this.navigationSphere = new NavigationSphere();
     this.speedometer = new SpeedometerDigital();
+    this.healthGauge = new HealthGauge();
     this.marqueePanel = new MarqueePanel();
   this.targetPanel = new TargetPanel();
     GameLogger.debug(LogCategory.HUD, 'Elementos HUD creados');
@@ -135,6 +138,7 @@ export class HUDManager {
   this.speedometer.setRiteActive(riteActive);
   this.speedometer.update(gameData.speed);
   this.marqueePanel.update(); // Sin parámetros, usa su lógica interna
+  this.healthGauge.update(gameData.shipHealth ?? null);
     
     // Renderizar todos los elementos en la textura
     // Guardar temporalmente energía del vacío para el render
@@ -442,6 +446,12 @@ export class HUDManager {
     // Definir layout del HUD (1024x768)
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
+    const sideMargin = 28;
+    const weaponsPanelWidth = Math.round(280 * 0.75);
+    const weaponsPanelHeight = Math.round(56 * 2.5);
+    const weaponsPanelX = sideMargin;
+    const weaponsPanelY = sideMargin + 24;
+    const weaponsPanelRightEdge = weaponsPanelX + weaponsPanelWidth;
     
     // === MARQUEE PANEL === (reemplaza "SPEEDOMETER TEST")
     // Posición: parte superior central (ahora más grande: 450x80)
@@ -458,6 +468,23 @@ export class HUDManager {
       y: 200  // Bajada adicional para evitar solaparse con el marquee
     };
     this.compass.render(ctx, compassPos);
+
+    const shipHealth = (this as any)._shipHealthHUD as { current: number; max: number; pct: number } | null;
+    if (shipHealth) {
+      const dims = this.healthGauge.getDimensions();
+      const gapFromWeapons = 32;
+      const gapFromCompass = 48;
+      const areaLeft = weaponsPanelRightEdge + gapFromWeapons;
+      const areaRight = compassPos.x - gapFromCompass;
+      const minX = areaLeft + dims.width / 2;
+      const maxX = areaRight - dims.width / 2;
+      let gaugeX = minX;
+      if (maxX > minX) {
+        gaugeX = (minX + maxX) / 2;
+      }
+      const gaugeY = compassPos.y - dims.height * 0.4;
+      this.healthGauge.render(ctx, { x: gaugeX, y: gaugeY });
+    }
 
     // Salud y portal wireframe eliminados (diseño pendiente de redefinición)
 
@@ -538,13 +565,10 @@ export class HUDManager {
     // Always reserve symmetric space on the left side
     {
       const weapons: any[] = (this as any)._weaponsHUD as any[];
-      const meterW = Math.round(280 * 0.75); // same width as energy bar (210px)
-      const meterHBase = 56; // base height matching energy bar
-      const meterH = Math.round(meterHBase * 2.5); // 2.5x vertical size
-      const margin = 28; // side/top margin
-      const xL = margin;
-      // Place with a slightly larger top margin to account for perspective
-      const yL = margin + 24; // lowered slightly for better balance
+      const meterW = weaponsPanelWidth;
+      const meterH = weaponsPanelHeight;
+      const xL = weaponsPanelX;
+      const yL = weaponsPanelY;
 
       // background
       ctx.save();

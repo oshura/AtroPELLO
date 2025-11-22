@@ -372,22 +372,30 @@ export class GameEngine {
     return suns;
   }
 
-  private getSunsWithinDistance(maxDistance: number): Array<{ sun: Sun; distance: number }> {
+  private getSunRadius(sun: Sun): number {
+    const scaleRadius = Number.isFinite((sun as any)?.scale?.x) ? (sun as any).scale.x : null;
+    const explicitRadius = Number.isFinite((sun as any)?.radius) ? (sun as any).radius : null;
+    const radius = scaleRadius ?? explicitRadius ?? 0;
+    return Math.max(0, radius);
+  }
+
+  private getSunsWithinDistance(maxDistance: number): Array<{ sun: Sun; distanceToCenter: number; surfaceDistance: number }> {
     if (!this.spaceship) {
       return [];
     }
     const shipPos = this.spaceship.position;
-    const damaging: Array<{ sun: Sun; distance: number }> = [];
+    const damaging: Array<{ sun: Sun; distanceToCenter: number; surfaceDistance: number }> = [];
     for (const sun of this.collectActiveSuns()) {
       const dx = sun.position.x - shipPos.x;
       const dy = sun.position.y - shipPos.y;
       const dz = sun.position.z - shipPos.z;
-      const distance = Math.hypot(dx, dy, dz);
-      if (distance <= maxDistance) {
-        damaging.push({ sun, distance });
+      const distanceToCenter = Math.hypot(dx, dy, dz);
+      const surfaceDistance = Math.max(0, distanceToCenter - this.getSunRadius(sun));
+      if (surfaceDistance <= maxDistance) {
+        damaging.push({ sun, distanceToCenter, surfaceDistance });
       }
     }
-    return damaging.sort((a, b) => a.distance - b.distance);
+    return damaging.sort((a, b) => a.surfaceDistance - b.surfaceDistance);
   }
 
   private handleSunProximityDamage(deltaTime: number): void {
@@ -427,7 +435,7 @@ export class GameEngine {
 
     let totalDamage = 0;
     for (const entry of damaging) {
-      const closeness = this.SUN_DAMAGE_THRESHOLD - entry.distance;
+      const closeness = Math.max(0, this.SUN_DAMAGE_THRESHOLD - entry.surfaceDistance);
       const bonus = Math.floor(closeness / this.SUN_DAMAGE_STEP_DISTANCE);
       totalDamage += 1 + Math.max(0, bonus);
     }
@@ -442,7 +450,8 @@ export class GameEngine {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Sun proximity damage applied', {
       totalDamage,
       damagingSuns: damaging.length,
-      distances: damaging.map(d => Math.round(d.distance)),
+      surfaceDistances: damaging.map(d => Math.round(d.surfaceDistance)),
+      centerDistances: damaging.map(d => Math.round(d.distanceToCenter)),
       healthBefore: previousHealth,
       healthAfter: this.spaceship.healthCurrent,
     });
