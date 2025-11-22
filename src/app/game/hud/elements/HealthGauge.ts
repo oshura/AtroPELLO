@@ -57,7 +57,7 @@ export class HealthGauge {
 
     // Red cross icon
     ctx.save();
-    ctx.translate(-halfW + 20, -halfH + 18);
+    ctx.translate(-halfW + 20, -halfH + 26);
     ctx.fillStyle = '#ff4d4d';
     ctx.fillRect(-4, -12, 8, 24);
     ctx.fillRect(-12, -4, 24, 8);
@@ -68,19 +68,27 @@ export class HealthGauge {
     ctx.font = '10px "Share Tech Mono", monospace';
     ctx.textAlign = 'left';
     ctx.textBaseline = 'top';
-    ctx.fillText('SHIP HEALTH', -halfW + 36, -halfH + 4);
+    ctx.fillText('SHIP HEALTH', -halfW + 36, -halfH + 6);
 
     // Current health readout
     ctx.font = 'bold 20px "Share Tech Mono", monospace';
     ctx.textBaseline = 'middle';
     const currentText = this.formatValue(this.currentValue);
     const currentWidth = ctx.measureText(currentText).width;
-    ctx.fillText(currentText, -halfW + 36, -halfH + 22);
+    ctx.save();
+    ctx.translate(-halfW + 36, -halfH + 28);
+    ctx.scale(1, 1.5);
+    ctx.fillText(currentText, 0, 0);
+    ctx.restore();
 
-    ctx.font = '11px "Share Tech Mono", monospace';
+    ctx.font = '12px "Share Tech Mono", monospace';
     ctx.fillStyle = 'rgba(255,255,255,0.7)';
     const maxText = `/ ${this.formatValue(this.maxValue)}`;
-    ctx.fillText(maxText, -halfW + 36 + currentWidth + 6, -halfH + 22);
+    ctx.save();
+    ctx.translate(-halfW + 36 + currentWidth + 8, -halfH + 30);
+    ctx.scale(1, 1.5);
+    ctx.fillText(maxText, 0, 0);
+    ctx.restore();
 
     // Progress bar
     const barWidth = this.width - 38;
@@ -105,7 +113,11 @@ export class HealthGauge {
     ctx.font = '12px "Share Tech Mono", monospace';
     ctx.textAlign = 'right';
     ctx.textBaseline = 'bottom';
-    ctx.fillText(`${Math.round(pct * 100)}%`, barX + barWidth, barY - 2);
+    ctx.save();
+    ctx.translate(barX + barWidth, barY - 2);
+    ctx.scale(1, 1.5);
+    ctx.fillText(`${Math.round(pct * 100)}%`, 0, 0);
+    ctx.restore();
 
     ctx.restore();
   }
