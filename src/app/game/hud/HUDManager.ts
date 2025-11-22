@@ -478,7 +478,7 @@ export class HUDManager {
       const areaRight = compassPos.x - gapFromCompass;
       const minX = areaLeft + dims.width / 2;
       const maxX = areaRight - dims.width / 2;
-      let gaugeX = minX + 2;
+      let gaugeX = minX + 18;
       if (gaugeX > maxX) {
         gaugeX = Math.max(minX, maxX);
       }
