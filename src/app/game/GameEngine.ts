@@ -111,6 +111,10 @@ export class GameEngine {
   private hoverAudioMuted: boolean = false;
   private panelInputsLocked: boolean = false;
   private precastChantDurationMs: number | null = null;
+  private sunExposureTimerMs: number = 0;
+  private readonly SUN_DAMAGE_INTERVAL_MS: number = 5000;
+  private readonly SUN_DAMAGE_THRESHOLD: number = 3000;
+  private readonly SUN_DAMAGE_STEP_DISTANCE: number = 100;
   
   // Objetos del juego - MIGRATED TO GameStateStore
   // Acceso via this.gameState.spaceship, this.gameState.independentAsteroids, etc.
@@ -347,6 +351,110 @@ export class GameEngine {
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'handlePortalTraversal error', e);
     }
+  }
+
+  private collectActiveSuns(): Sun[] {
+    const suns: Sun[] = [];
+    const seen = new Set<string>();
+    const pushSun = (sun: Sun | null) => {
+      if (!sun || seen.has(sun.id)) {
+        return;
+      }
+      seen.add(sun.id);
+      suns.push(sun);
+    };
+    pushSun(this.gameState.sun);
+    for (const planet of this.gameState.planets) {
+      if (planet?.getType?.() === GameObjectType.SUN) {
+        pushSun(planet as Sun);
+      }
+    }
+    return suns;
+  }
+
+  private getSunsWithinDistance(maxDistance: number): Array<{ sun: Sun; distance: number }> {
+    if (!this.spaceship) {
+      return [];
+    }
+    const shipPos = this.spaceship.position;
+    const damaging: Array<{ sun: Sun; distance: number }> = [];
+    for (const sun of this.collectActiveSuns()) {
+      const dx = sun.position.x - shipPos.x;
+      const dy = sun.position.y - shipPos.y;
+      const dz = sun.position.z - shipPos.z;
+      const distance = Math.hypot(dx, dy, dz);
+      if (distance <= maxDistance) {
+        damaging.push({ sun, distance });
+      }
+    }
+    return damaging.sort((a, b) => a.distance - b.distance);
+  }
+
+  private handleSunProximityDamage(deltaTime: number): void {
+    if (!this.spaceship) {
+      this.sunExposureTimerMs = 0;
+      return;
+    }
+    const nearby = this.getSunsWithinDistance(this.SUN_DAMAGE_THRESHOLD);
+    if (!nearby.length) {
+      this.sunExposureTimerMs = 0;
+      return;
+    }
+
+    this.sunExposureTimerMs += deltaTime * 1000;
+    while (this.sunExposureTimerMs >= this.SUN_DAMAGE_INTERVAL_MS) {
+      this.sunExposureTimerMs -= this.SUN_DAMAGE_INTERVAL_MS;
+      this.applySunDamageTick();
+      if (!this.spaceship || this.spaceship.healthCurrent <= 0) {
+        break;
+      }
+      const stillNear = this.getSunsWithinDistance(this.SUN_DAMAGE_THRESHOLD);
+      if (!stillNear.length) {
+        this.sunExposureTimerMs = 0;
+        break;
+      }
+    }
+  }
+
+  private applySunDamageTick(): void {
+    if (!this.spaceship) {
+      return;
+    }
+    const damaging = this.getSunsWithinDistance(this.SUN_DAMAGE_THRESHOLD);
+    if (!damaging.length) {
+      return;
+    }
+
+    let totalDamage = 0;
+    for (const entry of damaging) {
+      const closeness = this.SUN_DAMAGE_THRESHOLD - entry.distance;
+      const bonus = Math.floor(closeness / this.SUN_DAMAGE_STEP_DISTANCE);
+      totalDamage += 1 + Math.max(0, bonus);
+    }
+
+    if (totalDamage <= 0) {
+      return;
+    }
+
+    const previousHealth = this.spaceship.healthCurrent;
+    this.spaceship.healthCurrent = Math.max(0, this.spaceship.healthCurrent - totalDamage);
+
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Sun proximity damage applied', {
+      totalDamage,
+      damagingSuns: damaging.length,
+      distances: damaging.map(d => Math.round(d.distance)),
+      healthBefore: previousHealth,
+      healthAfter: this.spaceship.healthCurrent,
+    });
+
+    try {
+      this.hudManager?.addMarqueeMessage?.(
+        `Radiación solar: -${totalDamage}u (${this.spaceship.healthCurrent}/${this.spaceship.healthMax})`
+      );
+    } catch {}
+
+    const vignetteBoost = Math.min(0.4, totalDamage / 25);
+    this.impactVignetteLevel = Math.min(1, this.impactVignetteLevel + vignetteBoost);
   }
 
   /**
@@ -1348,6 +1456,7 @@ export class GameEngine {
   // Capture ship position before integration for portal plane crossing tests
   try { this.lastShipPos = { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }; } catch {}
   this.spaceship.update(deltaTime);
+  this.handleSunProximityDamage(deltaTime);
 
     // Update independent asteroids (ejected from clusters after collision)
     this.updateIndependentAsteroids(deltaTime);
