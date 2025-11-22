@@ -65,6 +65,8 @@ interface WikiEntry {
       width: 100%;
       min-height: 100%;
       background: #0a0a0f;
+      user-select: none;
+      -webkit-user-select: none;
     }
 
     .wiki-container {
@@ -180,6 +182,8 @@ interface WikiEntry {
       color: #00ff41;
       outline: none;
       transition: all 0.3s;
+      user-select: text;
+      -webkit-user-select: text;
     }
 
     .search-input::placeholder {

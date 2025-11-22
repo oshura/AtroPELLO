@@ -30,6 +30,7 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
   public showDeathDialog = false;
   public showControlsDialog = false;
   private pausedByWiki = false;
+  private wikiActive = false;
 
   constructor(
     private stateManager: GameStateManager,
@@ -51,6 +52,8 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
       .pipe(filter(event => event instanceof NavigationEnd))
       .subscribe((event: NavigationEnd) => {
         const isWiki = event.url.startsWith('/wiki');
+        this.wikiActive = isWiki;
+        this.updateInputEnabled();
         
         if (isWiki && this.gameState === GameState.RUNNING) {
           this.logger.info(LogCategory.GAME_LOOP, 'Auto-pausing for wiki');
@@ -132,7 +135,7 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
         const gameEngine = this.gameInitializer.getGameEngine();
         if (gameEngine) {
           this.inputHandler.setGameEngine(gameEngine);
-          this.inputHandler.setInputEnabled(true);
+          this.updateInputEnabled();
           this.uiManager.initializeDebugCollector(gameEngine);
           // Also initialize the stats overlay with engine for richer data
           this.uiManager.initializeStatsOverlay(gameEngine);
@@ -141,7 +144,7 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
         // Configurar listeners de estado
         this.stateManager.onStateChange((state: GameState) => {
           this.uiManager.showGameStateMessage(state);
-          this.inputHandler.setInputEnabled(state === GameState.RUNNING);
+          this.updateInputEnabled(state);
         });
 
         // Cambiar a estado listo
@@ -173,6 +176,9 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
    */
   @HostListener('window:keydown', ['$event'])
   handleKeyDown(event: KeyboardEvent): void {
+    if (this.shouldIgnoreGlobalInput(event)) {
+      return;
+    }
     // Manejar teclas especiales del componente
     if (event.key === 'Escape') {
       // Si algún modal de opciones está visible y rebinding activo, el propio componente lo maneja; no cerrar aquí
@@ -235,6 +241,9 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
 
   @HostListener('window:keyup', ['$event'])
   handleKeyUp(event: KeyboardEvent): void {
+    if (this.shouldIgnoreGlobalInput(event)) {
+      return;
+    }
     // Delegar al input handler
     const handled = this.inputHandler.handleKeyUp(event);
     if (handled) {
@@ -244,11 +253,41 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
 
   @HostListener('wheel', ['$event'])
   handleWheel(event: WheelEvent): void {
+    if (this.shouldIgnoreGlobalInput(event)) {
+      return;
+    }
     // Delegar al input handler para zoom
     const handled = this.inputHandler.handleWheel(event);
     if (handled) {
       event.preventDefault();
     }
+  }
+
+  private updateInputEnabled(stateOverride?: GameState): void {
+    const state = stateOverride ?? this.stateManager.getCurrentState();
+    const enable = state === GameState.RUNNING && !this.wikiActive;
+    this.inputHandler.setInputEnabled(enable);
+  }
+
+  private shouldIgnoreGlobalInput(event: Event): boolean {
+    if (this.wikiActive) {
+      return true;
+    }
+    return this.isEditableTarget(event.target);
+  }
+
+  private isEditableTarget(target: EventTarget | null): boolean {
+    if (!target || !(target instanceof HTMLElement)) {
+      return false;
+    }
+    const tag = target.tagName?.toLowerCase();
+    if (tag && (tag === 'input' || tag === 'textarea' || tag === 'select')) {
+      return true;
+    }
+    if (target.isContentEditable) {
+      return true;
+    }
+    return !!target.closest('input, textarea, select, [contenteditable="true"]');
   }
 
   /**
