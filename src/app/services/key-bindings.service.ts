@@ -80,10 +80,25 @@ export class KeyBindingsService {
   /** Lookup action for a given key string (normalized) */
   findActionForKey(key: string): GameAction | null {
     const norm = this.normalizeKey(key);
-    const alt = norm.startsWith('shift+') ? norm.replace(/^shift\+/, '') : norm;
-    for (const [action, bound] of Object.entries(this.bindings) as [GameAction,string][]) {
-      if ((bound === norm || bound === alt) && bound) return action;
+    const hasShift = norm.startsWith('shift+');
+    const unshifted = hasShift ? norm.replace(/^shift\+/, '') : null;
+
+    // Pass 1: require exact match (so explicit Shift bindings take precedence)
+    for (const [action, bound] of Object.entries(this.bindings) as [GameAction, string][]) {
+      if (bound && bound === norm) {
+        return action;
+      }
     }
+
+    // Pass 2: if the pressed key included Shift but no explicit binding, allow fallback to the plain key
+    if (hasShift && unshifted) {
+      for (const [action, bound] of Object.entries(this.bindings) as [GameAction, string][]) {
+        if (bound && !bound.startsWith('shift+') && bound === unshifted) {
+          return action;
+        }
+      }
+    }
+
     return null;
   }
 
