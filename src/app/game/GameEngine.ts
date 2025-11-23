@@ -5410,42 +5410,9 @@ export class GameEngine {
       this.handleInventoryToggle();
       return;
     }
-    // Escape: cerrar mapa/grimorio si están activos; si no, limpiar target actual
+    // Escape: cerrar paneles (mapa, grimorio, inventario) o limpiar selección
     if (key.toLowerCase() === 'escape') {
-      if (this.systemPanel && this.systemPanel.isEnabled()) {
-        this.systemPanel.setEnabled(false);
-        this.gameState.mapReopenAllowedAtMs = performance.now() + 1000;
-        // Play map close sound
-        try {
-          if (this.audio) {
-            this.audio.play('ui_map_close', { bus: 'ui', volume: 0.6 });
-          }
-        } catch (e) {
-          this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Map close sound failed', e);
-        }
-        try { this.updateMapClickBinding(); } catch {}
-        try { this.updateCanvasCursor(); } catch {}
-        // Mantener selección actual al cerrar mapa con Escape
-        return;
-      }
-      if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
-        this.grimoirePanel.setEnabled(false);
-        this.gameState.grimoireReopenAllowedAtMs = performance.now() + 1000;
-        // Play grimoire close sound
-        try {
-          if (this.audio) {
-            this.audio.play('ui_grimoire_close', { bus: 'ui', volume: 0.6 });
-          }
-        } catch (e) {
-          this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Grimoire close sound failed', e);
-        }
-        try { this.updateGrimoirePointerBinding(); } catch {}
-        try { this.updateCanvasCursor(); } catch {}
-        // Mantener selección actual al cerrar grimorio con Escape
-        return;
-      }
-      // No panels open: treat Escape as clear-target
-      this.clearTargetSelection();
+      this.handleEscape();
       return;
     }
     // Fase 2: lanzar hechizo con 'h' (desde el grimorio o recordando el seleccionado)

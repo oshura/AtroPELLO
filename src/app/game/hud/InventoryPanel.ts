@@ -3,7 +3,6 @@ import {
   EquipmentSlot,
   EquipmentSlotState,
   PersonalGearSlot,
-  RarityTier,
   InventoryPanelRegion,
   InventoryRegionBounds,
   InventorySelection,
@@ -281,7 +280,7 @@ export class InventoryPanel {
     let offsetY = personalTitleY + this.scaleY(24);
     snapshot.personalGear.forEach((gear, index) => {
       const isSelected = this.selection?.kind === 'personal' && this.selection.index === index;
-      this.drawGearCard(c, gear.slot, gear.label, gear.description, gear.rarity, 24, offsetY, w - 48, cardHeight, isSelected);
+      this.drawGearCard(c, gear.slot, gear.label, gear.description, 24, offsetY, w - 48, cardHeight, isSelected);
       this.registerRegion({
         kind: 'personal',
         index,
@@ -426,7 +425,6 @@ export class InventoryPanel {
     slot: PersonalGearSlot,
     label: string,
     description: string | undefined,
-    rarity: RarityTier,
     x: number,
     y: number,
     w: number,
@@ -434,8 +432,9 @@ export class InventoryPanel {
     selected: boolean = false
   ): void {
     c.save();
-    c.globalAlpha = 0.9;
-    c.fillStyle = this.rarityFill(rarity);
+    const palette = this.getPersonalSlotPalette(slot);
+    c.globalAlpha = 0.95;
+    c.fillStyle = palette.fill;
     c.fillRect(x, y, w, h);
     c.fillStyle = 'rgba(0,0,0,0.25)';
     c.fillRect(x, y, 6, h);
@@ -448,15 +447,15 @@ export class InventoryPanel {
 
     const baseHeight = 60;
     const scale = h / baseHeight;
-    c.fillStyle = '#040713';
+    c.fillStyle = palette.slot;
     c.font = '600 14px "Segoe UI", sans-serif';
     this.drawTallText(c, this.prettyPersonalSlot(slot), x + 12, y + 20 * scale);
-    c.fillStyle = '#0f172a';
+    c.fillStyle = palette.title;
     c.font = '600 16px "Segoe UI", sans-serif';
     const labelY = y + 40 * scale;
     this.drawTallText(c, label, x + 12, labelY);
     if (description) {
-      c.fillStyle = '#1f2937';
+      c.fillStyle = palette.body;
       c.font = '13px "Segoe UI", sans-serif';
       const descGap = this.scaleY(22);
       const maxDescY = y + h - this.scaleY(8);
@@ -667,12 +666,6 @@ export class InventoryPanel {
     c.font = '13px "Segoe UI", sans-serif';
     this.drawTallText(c, `${entry.massTons.toFixed(0)} t · ${entry.units}u`, x + 12, y + 42 * scale);
 
-    const chip = this.rarityAccent(entry.rarity);
-    c.fillStyle = chip;
-    c.fillRect(x + w - 90, y + 12 * scale, 70, 18 * scale);
-    c.fillStyle = '#020617';
-    c.font = '11px "Segoe UI", sans-serif';
-    this.drawTallText(c, entry.rarity, x + w - 85, y + 25 * scale);
     c.restore();
   }
 
@@ -765,21 +758,41 @@ export class InventoryPanel {
     return px >= bounds.x && px <= bounds.x + bounds.w && py >= bounds.y && py <= bounds.y + bounds.h;
   }
 
-  private rarityFill(rarity: RarityTier): string {
-    switch (rarity) {
-      case RarityTier.UNIQUE: return '#c084fc';
-      case RarityTier.RARE: return '#60a5fa';
-      case RarityTier.UNCOMMON: return '#34d399';
-      default: return '#94a3b8';
-    }
-  }
-
-  private rarityAccent(rarity: RarityTier): string {
-    switch (rarity) {
-      case RarityTier.UNIQUE: return '#a855f7';
-      case RarityTier.RARE: return '#3b82f6';
-      case RarityTier.UNCOMMON: return '#10b981';
-      default: return '#94a3b8';
+  private getPersonalSlotPalette(slot: PersonalGearSlot): {
+    fill: string;
+    slot: string;
+    title: string;
+    body: string;
+  } {
+    switch (slot) {
+      case PersonalGearSlot.SUIT:
+        return {
+          fill: '#0d1b3d',
+          slot: '#7dd3fc',
+          title: '#e0f2ff',
+          body: '#bfdbfe'
+        };
+      case PersonalGearSlot.BOOTS:
+        return {
+          fill: '#0f2318',
+          slot: '#4ade80',
+          title: '#d1fae5',
+          body: '#a7f3d0'
+        };
+      case PersonalGearSlot.ACCESSORY:
+        return {
+          fill: '#2a1031',
+          slot: '#f9a8d4',
+          title: '#fde4ff',
+          body: '#fbcfe8'
+        };
+      default:
+        return {
+          fill: '#1e293b',
+          slot: '#cbd5f5',
+          title: '#f8fafc',
+          body: '#cbd5f5'
+        };
     }
   }
 
