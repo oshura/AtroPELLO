@@ -11,7 +11,6 @@ export enum PersonalGearSlot {
 export enum EquipmentSlot {
   CORE = 'CORE',
   REACTOR = 'REACTOR',
-  ENGINE = 'ENGINE',
   WINGS = 'WINGS',
   HULL = 'HULL',
   SHIELD = 'SHIELD',

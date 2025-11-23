@@ -594,24 +594,17 @@ export class GameStateStore {
     return {
       [EquipmentSlot.CORE]: {
         slot: EquipmentSlot.CORE,
-        label: 'Núcleo Basilisco v2',
+        label: 'Cabina Basilisco v2',
         rarity: RarityTier.RARE,
         integrityPct: 92,
-        description: 'Matraz taquiónico estabilizado para rituales prolongados.'
+        description: 'Centro de control y computación integrado de la nave.'
       },
       [EquipmentSlot.REACTOR]: {
         slot: EquipmentSlot.REACTOR,
-        label: 'Reactor Cyclopean',
+        label: 'Thruster Cyclopean',
         rarity: RarityTier.EPIC,
         integrityPct: 87,
-        description: 'Convierte masa residual en empuje silencioso.'
-      },
-      [EquipmentSlot.ENGINE]: {
-        slot: EquipmentSlot.ENGINE,
-        label: 'Motores Venter Mk.II',
-        rarity: RarityTier.UNCOMMON,
-        integrityPct: 78,
-        description: 'Confiables aunque temperamentales en vacío profundo.'
+        description: 'Convierte energía del vacío en empuje silencioso para todo el fuselaje.'
       },
       [EquipmentSlot.WINGS]: null,
       [EquipmentSlot.HULL]: {

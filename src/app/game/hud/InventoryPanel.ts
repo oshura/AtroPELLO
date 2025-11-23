@@ -16,6 +16,11 @@ export class InventoryPanel {
   private readonly ctx: CanvasRenderingContext2D;
   private readonly verticalScale = 1.25;
   private readonly textHeightScale = 1.25;
+  private readonly unavailableSlots = new Set<EquipmentSlot>([
+    EquipmentSlot.SHIELD,
+    EquipmentSlot.DRONE_BAY,
+    EquipmentSlot.AUXILIARY
+  ]);
   private texture: WebGLTexture | null = null;
   private vao: WebGLVertexArrayObject | null = null;
   private vbo: WebGLBuffer | null = null;
@@ -289,7 +294,6 @@ export class InventoryPanel {
     const order: EquipmentSlot[] = [
       EquipmentSlot.CORE,
       EquipmentSlot.REACTOR,
-      EquipmentSlot.ENGINE,
       EquipmentSlot.WINGS,
       EquipmentSlot.HULL,
       EquipmentSlot.SHIELD,
@@ -475,6 +479,8 @@ export class InventoryPanel {
     c.fillStyle = '#8ea3d8';
     this.drawTallText(c, this.prettySlot(slot), x + 12, y + 20 * scale);
 
+    const isUnavailable = this.unavailableSlots.has(slot);
+
     if (state) {
       c.fillStyle = '#fafbff';
       c.font = '600 18px "Segoe UI", sans-serif';
@@ -490,9 +496,18 @@ export class InventoryPanel {
       c.font = '12px "Segoe UI", sans-serif';
       this.drawTallText(c, `${Math.round(state.integrityPct)}%`, x + w - 48, y + h - 30 * scale);
     } else {
-      c.fillStyle = 'rgba(255,255,255,0.2)';
-      c.font = 'italic 15px "Segoe UI", sans-serif';
-      this.drawTallText(c, 'Slot vacío', x + 12, y + 50 * scale);
+      if (isUnavailable) {
+        c.fillStyle = 'rgba(255,255,255,0.35)';
+        c.font = '600 16px "Segoe UI", sans-serif';
+        this.drawTallText(c, 'N/A', x + 12, y + 34 * scale);
+        c.font = '500 13px "Segoe UI", sans-serif';
+        c.fillStyle = 'rgba(148,163,184,0.8)';
+        this.drawTallText(c, 'No integrado en este fuselaje', x + 12, y + 56 * scale);
+      } else {
+        c.fillStyle = 'rgba(255,255,255,0.2)';
+        c.font = 'italic 15px "Segoe UI", sans-serif';
+        this.drawTallText(c, 'Slot vacío', x + 12, y + 50 * scale);
+      }
     }
     c.restore();
   }
@@ -594,8 +609,11 @@ export class InventoryPanel {
     }
     if (selection.kind === 'equipment') {
       const state = snapshot.equipment[selection.slot];
-      const moduleLabel = state ? state.label : 'Vacío';
-      return `${this.prettySlot(selection.slot)} · ${moduleLabel}`;
+      if (state) {
+        return `${this.prettySlot(selection.slot)} · ${state.label}`;
+      }
+      const unavailable = this.unavailableSlots.has(selection.slot);
+      return `${this.prettySlot(selection.slot)} · ${unavailable ? 'N/A' : 'Vacío'}`;
     }
     const gear = snapshot.personalGear[selection.index];
     if (gear) {
@@ -669,9 +687,8 @@ export class InventoryPanel {
 
   private prettySlot(slot: EquipmentSlot): string {
     switch (slot) {
-      case EquipmentSlot.CORE: return 'Núcleo';
-      case EquipmentSlot.REACTOR: return 'Reactor';
-      case EquipmentSlot.ENGINE: return 'Motores';
+      case EquipmentSlot.CORE: return 'Núcleo / Cabina';
+      case EquipmentSlot.REACTOR: return 'Thruster';
       case EquipmentSlot.WINGS: return 'Alas';
       case EquipmentSlot.HULL: return 'Fuselaje';
       case EquipmentSlot.SHIELD: return 'Escudos';
