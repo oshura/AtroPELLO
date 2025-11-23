@@ -15,6 +15,7 @@ export class InventoryPanel {
   private readonly canvas: HTMLCanvasElement;
   private readonly ctx: CanvasRenderingContext2D;
   private readonly verticalScale = 1.25;
+  private readonly textHeightScale = 1.25;
   private texture: WebGLTexture | null = null;
   private vao: WebGLVertexArrayObject | null = null;
   private vbo: WebGLBuffer | null = null;
@@ -246,7 +247,7 @@ export class InventoryPanel {
     c.font = '600 30px "Segoe UI", sans-serif';
     c.fillStyle = '#f2f5ff';
     const nameY = this.scaleY(48);
-    c.fillText(snapshot.character.name, 24, nameY);
+    this.drawTallText(c, snapshot.character.name, 24, nameY);
 
     const healthY = nameY + this.scaleY(32);
     this.drawStatBar(c, 'Salud', snapshot.character.health, '#4ade80', 24, healthY, w - 48);
@@ -256,7 +257,7 @@ export class InventoryPanel {
     c.font = '500 18px "Segoe UI", sans-serif';
     c.fillStyle = '#9aa4c4';
     const personalTitleY = sanityY + this.scaleY(56);
-    c.fillText('Equipo Personal', 24, personalTitleY);
+    this.drawTallText(c, 'Equipo Personal', 24, personalTitleY);
 
     const cardHeight = this.scaleY(75);
     const cardSpacing = this.scaleY(90);
@@ -283,7 +284,7 @@ export class InventoryPanel {
 
     c.font = '500 22px "Segoe UI", sans-serif';
     c.fillStyle = '#cdd5ff';
-    c.fillText('Módulos de Nave', 24, 40);
+    this.drawTallText(c, 'Módulos de Nave', 24, 40);
 
     const order: EquipmentSlot[] = [
       EquipmentSlot.CORE,
@@ -339,7 +340,7 @@ export class InventoryPanel {
 
     c.font = '500 22px "Segoe UI", sans-serif';
     c.fillStyle = '#f4f9ff';
-    c.fillText('Carga', 20, 40);
+    this.drawTallText(c, 'Carga', 20, 40);
 
     const gaugeWidth = w - 40;
     const pct = snapshot.cargoCapacity.pct;
@@ -350,7 +351,7 @@ export class InventoryPanel {
     c.fillRect(20, 54, (gaugeWidth * Math.min(100, Math.max(0, pct))) / 100, 14);
     c.fillStyle = '#aab5d5';
     c.font = '500 14px "Segoe UI", sans-serif';
-    c.fillText(`${snapshot.cargoCapacity.current} / ${snapshot.cargoCapacity.max} u`, 20, 88);
+    this.drawTallText(c, `${snapshot.cargoCapacity.current} / ${snapshot.cargoCapacity.max} u`, 20, 88);
 
     const listY = 110;
     const availableHeight = h - listY - 20;
@@ -392,7 +393,7 @@ export class InventoryPanel {
     c.save();
     c.font = '500 14px "Segoe UI", sans-serif';
     c.fillStyle = '#a7b5d8';
-    c.fillText(label, x, y);
+    this.drawTallText(c, label, x, y);
     const topGap = this.scaleY(12);
     const barHeight = this.scaleY(14);
     c.fillStyle = 'rgba(255,255,255,0.1)';
@@ -400,7 +401,7 @@ export class InventoryPanel {
     c.fillStyle = color;
     c.fillRect(x, y + topGap, (width * Math.max(0, Math.min(100, value))) / 100, barHeight);
     c.fillStyle = '#dde5ff';
-    c.fillText(`${Math.round(value)}%`, x + width - 54, y);
+    this.drawTallText(c, `${Math.round(value)}%`, x + width - 54, y);
     c.restore();
   }
 
@@ -433,15 +434,15 @@ export class InventoryPanel {
     const scale = h / baseHeight;
     c.fillStyle = '#040713';
     c.font = '600 14px "Segoe UI", sans-serif';
-    c.fillText(this.prettyPersonalSlot(slot), x + 12, y + 20 * scale);
+    this.drawTallText(c, this.prettyPersonalSlot(slot), x + 12, y + 20 * scale);
     c.fillStyle = '#0f172a';
     c.font = '600 16px "Segoe UI", sans-serif';
-    c.fillText(label, x + 12, y + 40 * scale);
+    this.drawTallText(c, label, x + 12, y + 40 * scale);
     if (description) {
       c.fillStyle = '#1f2937';
       c.font = '13px "Segoe UI", sans-serif';
       const descY = Math.min(y + 58 * scale, y + h - 16);
-      c.fillText(description, x + 12, descY);
+      this.drawTallText(c, description, x + 12, descY);
     }
     c.restore();
   }
@@ -472,26 +473,26 @@ export class InventoryPanel {
     const scale = h / baseHeight;
     c.font = '600 14px "Segoe UI", sans-serif';
     c.fillStyle = '#8ea3d8';
-    c.fillText(this.prettySlot(slot), x + 12, y + 20 * scale);
+    this.drawTallText(c, this.prettySlot(slot), x + 12, y + 20 * scale);
 
     if (state) {
       c.fillStyle = '#fafbff';
       c.font = '600 18px "Segoe UI", sans-serif';
-      c.fillText(state.label, x + 12, y + 46 * scale);
+      this.drawTallText(c, state.label, x + 12, y + 46 * scale);
       c.fillStyle = '#9aa4c4';
       c.font = '14px "Segoe UI", sans-serif';
       if (state.description) {
-        c.fillText(state.description, x + 12, y + 66 * scale);
+        this.drawTallText(c, state.description, x + 12, y + 66 * scale);
       }
       c.fillStyle = this.rarityAccent(state.rarity);
       c.fillRect(x + 12, y + h - 22 * scale, (w - 24) * Math.max(0, Math.min(100, state.integrityPct)) / 100, 8 * scale);
       c.fillStyle = '#637195';
       c.font = '12px "Segoe UI", sans-serif';
-      c.fillText(`${Math.round(state.integrityPct)}%`, x + w - 48, y + h - 30 * scale);
+      this.drawTallText(c, `${Math.round(state.integrityPct)}%`, x + w - 48, y + h - 30 * scale);
     } else {
       c.fillStyle = 'rgba(255,255,255,0.2)';
       c.font = 'italic 15px "Segoe UI", sans-serif';
-      c.fillText('Slot vacío', x + 12, y + 50 * scale);
+      this.drawTallText(c, 'Slot vacío', x + 12, y + 50 * scale);
     }
     c.restore();
   }
@@ -521,17 +522,17 @@ export class InventoryPanel {
     c.font = '600 15px "Segoe UI", sans-serif';
     const baseHeight = 60;
     const scale = h / baseHeight;
-    c.fillText(entry.label, x + 12, y + 24 * scale);
+    this.drawTallText(c, entry.label, x + 12, y + 24 * scale);
     c.fillStyle = '#9ba4c6';
     c.font = '13px "Segoe UI", sans-serif';
-    c.fillText(`${entry.massTons.toFixed(0)} t · ${entry.units}u`, x + 12, y + 42 * scale);
+    this.drawTallText(c, `${entry.massTons.toFixed(0)} t · ${entry.units}u`, x + 12, y + 42 * scale);
 
     const chip = this.rarityAccent(entry.rarity);
     c.fillStyle = chip;
     c.fillRect(x + w - 90, y + 12 * scale, 70, 18 * scale);
     c.fillStyle = '#020617';
     c.font = '11px "Segoe UI", sans-serif';
-    c.fillText(entry.rarity, x + w - 85, y + 25 * scale);
+    this.drawTallText(c, entry.rarity, x + w - 85, y + 25 * scale);
     c.restore();
   }
 
@@ -552,10 +553,10 @@ export class InventoryPanel {
 
     c.fillStyle = '#9ba4c6';
     c.font = '500 16px "Segoe UI", sans-serif';
-    c.fillText('Selección', 24, 30);
+    this.drawTallText(c, 'Selección', 24, 30);
     c.fillStyle = '#f4f9ff';
     c.font = '600 22px "Segoe UI", sans-serif';
-    c.fillText(this.describeSelection(snapshot), 24, 60);
+    this.drawTallText(c, this.describeSelection(snapshot), 24, 60);
 
     const buttonWidth = 240;
     const buttonHeight = 52;
@@ -570,7 +571,7 @@ export class InventoryPanel {
 
     c.fillStyle = enabled ? '#0f172a' : '#94a3b8';
     c.font = '600 18px "Segoe UI", sans-serif';
-    c.fillText('Expulsar carga/equipo', buttonX + 16, buttonY + 32);
+    this.drawTallText(c, 'Expulsar carga/equipo', buttonX + 16, buttonY + 32);
 
     this.registerRegion({
       kind: 'action',
@@ -639,6 +640,18 @@ export class InventoryPanel {
       case RarityTier.UNCOMMON: return '#10b981';
       default: return '#94a3b8';
     }
+  }
+
+  private drawTallText(c: CanvasRenderingContext2D, text: string, x: number, y: number): void {
+    if (!text) return;
+    if (Math.abs(this.textHeightScale - 1) < 0.001) {
+      c.fillText(text, x, y);
+      return;
+    }
+    c.save();
+    c.scale(1, this.textHeightScale);
+    c.fillText(text, x, y / this.textHeightScale);
+    c.restore();
   }
 
   private scaleY(value: number): number {
