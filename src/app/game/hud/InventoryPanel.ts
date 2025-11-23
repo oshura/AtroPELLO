@@ -6,7 +6,8 @@ import {
   InventoryPanelRegion,
   InventoryRegionBounds,
   InventorySelection,
-  InventoryActionType
+  InventoryActionType,
+  CargoItemType
 } from '../types/inventory.types';
 
 export class InventoryPanel {
@@ -743,10 +744,18 @@ export class InventoryPanel {
     c.font = '600 15px "Segoe UI", sans-serif';
     const baseHeight = 60;
     const scale = h / baseHeight;
-    this.drawTallText(c, entry.label, x + 12, y + 24 * scale);
+    const composition = entry.notes || entry.label;
+    this.drawTallText(c, composition, x + 12, y + 24 * scale);
+
     c.fillStyle = '#9ba4c6';
     c.font = '13px "Segoe UI", sans-serif';
-    this.drawTallText(c, `${entry.massTons.toFixed(0)} t · ${entry.units}u`, x + 12, y + 42 * scale);
+    const descriptorY = y + 42 * scale;
+    this.drawTallText(c, this.describeCargoType(entry.type), x + 12, descriptorY);
+
+    c.save();
+    c.textAlign = 'right';
+    this.drawTallText(c, `${entry.units}u`, x + w - 12, descriptorY);
+    c.restore();
 
     c.restore();
   }
@@ -905,6 +914,24 @@ export class InventoryPanel {
     c.ellipse(x, y, 2.4, 4, 0, 0, Math.PI * 2);
     c.fill();
     c.restore();
+  }
+
+  private describeCargoType(type: CargoItemType): string {
+    switch (type) {
+      case CargoItemType.RAW_MATERIAL:
+        return 'Raw material';
+      case CargoItemType.ARTIFACT:
+        return 'Artifact';
+      case CargoItemType.ORGANIC_SAMPLE:
+        return 'Organic sample';
+      case CargoItemType.ENERGY_CORE:
+        return 'Energy core';
+      case CargoItemType.CONTRABAND:
+        return 'Contraband';
+      case CargoItemType.UNKNOWN:
+      default:
+        return 'Unknown cargo';
+    }
   }
 
   private drawTallText(c: CanvasRenderingContext2D, text: string, x: number, y: number): void {
