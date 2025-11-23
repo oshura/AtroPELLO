@@ -69,8 +69,7 @@ export class CargoHoldService {
 
   private resolveRarity(asteroid: Asteroid): RarityTier {
     const mass = this.resolveMass(asteroid);
-    if (mass >= 2000) return RarityTier.LEGENDARY;
-    if (mass >= 800) return RarityTier.EPIC;
+    if (mass >= 800) return RarityTier.UNIQUE;
     if (mass >= 300) return RarityTier.RARE;
     if (mass >= 120) return RarityTier.UNCOMMON;
     return RarityTier.COMMON;

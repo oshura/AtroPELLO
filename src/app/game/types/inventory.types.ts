@@ -23,8 +23,7 @@ export enum RarityTier {
   COMMON = 'COMMON',
   UNCOMMON = 'UNCOMMON',
   RARE = 'RARE',
-  EPIC = 'EPIC',
-  LEGENDARY = 'LEGENDARY'
+  UNIQUE = 'UNIQUE'
 }
 
 /** Tipos de carga que puede transportar la nave. */

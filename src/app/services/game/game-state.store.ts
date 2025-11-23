@@ -137,13 +137,13 @@ export class GameStateStore {
       slot: PersonalGearSlot.SUIT,
       label: 'Traje Explorador Mk.III',
       description: 'Fibra trenzada con aislamiento básico.',
-      rarity: RarityTier.UNCOMMON
+      rarity: RarityTier.UNIQUE
     },
     {
       slot: PersonalGearSlot.BOOTS,
       label: 'Boots LunarGrip',
       description: 'Amortiguan golpes y sellan atmósferas dudosas.',
-      rarity: RarityTier.COMMON
+      rarity: RarityTier.UNIQUE
     }
   ];
 
@@ -595,7 +595,7 @@ export class GameStateStore {
       [EquipmentSlot.CORE]: {
         slot: EquipmentSlot.CORE,
         label: 'Cabina Basilisco v2',
-        rarity: RarityTier.RARE,
+        rarity: RarityTier.UNIQUE,
         description: 'Centro de control y computación integrado.',
         capabilities: [
           'Telemetría panorámica de sobrepresión y targeting routines.'
@@ -604,7 +604,7 @@ export class GameStateStore {
       [EquipmentSlot.REACTOR]: {
         slot: EquipmentSlot.REACTOR,
         label: 'Thruster Cyclopean',
-        rarity: RarityTier.EPIC,
+        rarity: RarityTier.UNIQUE,
         description: 'Convierte vacío densificado en empuje silencioso.',
         capabilities: []
       },
@@ -612,7 +612,7 @@ export class GameStateStore {
       [EquipmentSlot.HULL]: {
         slot: EquipmentSlot.HULL,
         label: 'Placas Umbra-Lattice',
-        rarity: RarityTier.RARE,
+        rarity: RarityTier.UNIQUE,
         description: 'Paneles alveolares que difunden impacto cinético.',
         capabilities: []
       },

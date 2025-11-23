@@ -755,8 +755,7 @@ export class InventoryPanel {
 
   private rarityFill(rarity: RarityTier): string {
     switch (rarity) {
-      case RarityTier.LEGENDARY: return '#fcd34d';
-      case RarityTier.EPIC: return '#c084fc';
+      case RarityTier.UNIQUE: return '#fcd34d';
       case RarityTier.RARE: return '#60a5fa';
       case RarityTier.UNCOMMON: return '#34d399';
       default: return '#94a3b8';
@@ -765,8 +764,7 @@ export class InventoryPanel {
 
   private rarityAccent(rarity: RarityTier): string {
     switch (rarity) {
-      case RarityTier.LEGENDARY: return '#fbbf24';
-      case RarityTier.EPIC: return '#a855f7';
+      case RarityTier.UNIQUE: return '#fbbf24';
       case RarityTier.RARE: return '#3b82f6';
       case RarityTier.UNCOMMON: return '#10b981';
       default: return '#94a3b8';
