@@ -574,9 +574,10 @@ export class HUDManager {
       ctx.fillStyle = 'rgba(255,255,255,0.8)';
       ctx.lineWidth = 1;
       ctx.font = '12px Segoe UI, Roboto, sans-serif';
-      ctx.textAlign = 'center';
+      ctx.textAlign = 'left';
       ctx.textBaseline = 'top';
       const labelY = y1 + meterH + 8;
+      const labelOffset = 6;
       ticks.forEach(p => {
         const xTick = x1 + (1 - p) * meterW; // 100% at left, 25% near right
         // draw vertical tick spanning through bar and slightly below
@@ -586,7 +587,7 @@ export class HUDManager {
         ctx.stroke();
         // label text under the tick
         const pctLabel = Math.round(p * 100) + '%';
-        ctx.fillText(pctLabel, xTick, labelY);
+        ctx.fillText(pctLabel, xTick + labelOffset, labelY);
       });
       // etiqueta: draw above the bar with vertical-only stretch (safe with save/restore)
       ctx.fillStyle = 'rgba(255,255,255,0.95)';

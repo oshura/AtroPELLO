@@ -116,13 +116,14 @@ interface Planet {
         <h2>🛬 Landing Mechanics</h2>
         <p>Landing on planets is a precision maneuver:</p>
         <ul>
-          <li><strong>Approach Speed:</strong> Must be less than 2 units/frame for safe landing</li>
-          <li><strong>Angle:</strong> Approach perpendicular to surface (within 30°)</li>
-          <li><strong>Landing Zone:</strong> Must be within planet's bounding sphere</li>
-          <li><strong>Success:</strong> Ship docks on surface, can explore or depart</li>
-          <li><strong>Failure:</strong> High-speed collision causes damage</li>
+          <li><strong>Approach Speed:</strong> Bleed velocity down to 5 units/sec or lower while you sit in the landing window.</li>
+          <li><strong>Distance:</strong> Slip inside the planet's collision sphere and get within 50 units of the surface.</li>
+          <li><strong>Orientation:</strong> Keep the nose roughly tangent to the surface (within ~60° of perpendicular) so you are not spearing the crust.</li>
+          <li><strong>Stability Hold:</strong> Maintain those conditions for at least 0.25 seconds to arm the green <em>Land</em> pilot light.</li>
+          <li><strong>Threat Pilot:</strong> The red pilot stays lit if hull integrity is below 25%, void energy is under 10 units, or an enemy sits within 500 units—clear it before attempting a touch-down.</li>
+          <li><strong>Initiation:</strong> Once Land is ready (and threats are cleared), pressing Enter will trigger the scripted docking sequence (in progress).</li>
         </ul>
-        <p class="tbd"><strong>TBD:</strong> Landing UI, surface exploration, resource gathering, planet-specific missions</p>
+        <p class="tbd"><strong>TBD:</strong> Landing cinematic, surface exploration, resource harvesting, and planet-specific mission hooks.</p>
       </section>
     </div>
   `,
