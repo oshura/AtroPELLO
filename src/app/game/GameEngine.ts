@@ -7290,7 +7290,7 @@ export class GameEngine {
       this.refreshInventoryPanelSnapshot();
       this.inventoryHoverKey = null;
       try {
-        this.audio?.play('ui_map_open', { bus: 'ui', volume: 0.6 });
+        this.audio?.play('ui_inventory_open', { bus: 'ui', volume: 0.6 });
       } catch (e) {
         this.logger.log(LogLevel.DEBUG, LogCategory.AUDIO, 'Inventory open sound failed', e);
       }
@@ -7301,7 +7301,7 @@ export class GameEngine {
       this.gameState.inventoryReopenAllowedAtMs = now + 1000;
       this.inventoryHoverKey = null;
       try {
-        this.audio?.play('ui_map_close', { bus: 'ui', volume: 0.6 });
+        this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.6 });
       } catch (e) {
         this.logger.log(LogLevel.DEBUG, LogCategory.AUDIO, 'Inventory close sound failed', e);
       }
@@ -7538,7 +7538,7 @@ export class GameEngine {
       this.gameState.inventoryReopenAllowedAtMs = performance.now() + 1000;
       this.updateInventoryPointerBinding();
       this.inventoryHoverKey = null;
-      try { this.audio?.play('ui_map_close', { bus: 'ui', volume: 0.6 }); } catch {}
+      try { this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.6 }); } catch {}
       return;
     }
     
