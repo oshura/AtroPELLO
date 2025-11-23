@@ -11,6 +11,7 @@ import { CargoGauge } from './elements/CargoGauge';
 import { MarqueePanel } from './elements/MarqueePanel';
 import { TargetingSystem, TargetInfo } from '../types/targeting.types';
 import { TargetPanel, TargetPanelState, Relation } from './elements/TargetPanel';
+import { LandingIndicatorsSnapshot } from '../types/landing.types';
 
 /**
  * Administrador principal del sistema HUD
@@ -32,6 +33,7 @@ export class HUDManager {
   private cargoGauge: CargoGauge;
   private marqueePanel: MarqueePanel;
   private targetPanel: TargetPanel;
+  private landingIndicators = { landingReady: false, threatActive: false };
   
   // Geometría del plano HUD
   private hudGeometry: { vertices: Float32Array; indices: Uint16Array } | null = null;
@@ -282,6 +284,13 @@ export class HUDManager {
     return this.marqueePanel.getCurrentMessage();
   }
 
+  /**
+   * Actualiza los pilotos de aterrizaje/amenaza situados junto al marquee.
+   */
+  public setLandingIndicators(snapshot: LandingIndicatorsSnapshot): void {
+    this.landingIndicators = { ...snapshot };
+  }
+
   // === MÉTODOS PÚBLICOS PARA SISTEMA DE TARGETING ===
   
   /**
@@ -453,7 +462,7 @@ export class HUDManager {
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
     const sideMargin = 28;
-    const weaponsPanelWidth = Math.round(280 * 0.75);
+    const weaponsPanelWidth = Math.round(280 * 0.65);
     const weaponsPanelHeight = Math.round(56 * 2.5);
     const weaponsPanelX = sideMargin;
     const weaponsPanelY = sideMargin + 24;
@@ -463,6 +472,26 @@ export class HUDManager {
     // Posición: parte superior central (ahora más grande: 450x80)
     const marqueeX = centerX - 225; // Centrar panel de 450px
     const marqueeY = 20;
+    const { width: marqueeWidth, height: marqueeHeight } = this.marqueePanel.getDimensions();
+    const landingPilotX = marqueeX - 32;
+    const threatPilotX = marqueeX + marqueeWidth + 32;
+    const pilotY = marqueeY + marqueeHeight / 2;
+    this.drawPilotLight(ctx, landingPilotX, pilotY, {
+      label: 'Land',
+      active: this.landingIndicators.landingReady,
+      onColor: '#22c55e',
+      offColor: '#0f1f12',
+      glowColor: 'rgba(34,197,94,0.45)',
+      radius: 10
+    });
+    this.drawPilotLight(ctx, threatPilotX, pilotY, {
+      label: 'Threat',
+      active: this.landingIndicators.threatActive,
+      onColor: '#ef4444',
+      offColor: '#2c0f0f',
+      glowColor: 'rgba(239,68,68,0.45)',
+      radius: 10
+    });
     this.marqueePanel.render(ctx, marqueeX, marqueeY);
     
     // (El velocímetro superior derecho se elimina; ahora se duplican sobre cada barra)
@@ -513,7 +542,7 @@ export class HUDManager {
     const vem = (this as any)._voidEnergyHUD as { current: number; max: number; pct: number } | undefined;
     if (vem) {
       // 25% shorter horizontally, double thickness vertically
-      const meterW = Math.round(280 * 0.75); // 210px
+      const meterW = weaponsPanelWidth; // mirror weapons panel width to keep edge breathing room
       const meterH = 56; // double previous 28px height
       const margin = 28; // side/top margin
       const x1 = canvas.width - meterW - margin;
@@ -879,6 +908,45 @@ export class HUDManager {
         Timestamp: ${new Date().toLocaleTimeString()}
       `;
     }
+  }
+
+  private drawPilotLight(
+    ctx: CanvasRenderingContext2D,
+    centerX: number,
+    centerY: number,
+    options: { label: string; active: boolean; onColor: string; offColor: string; glowColor: string; radius?: number }
+  ): void {
+    const radius = options.radius ?? 14;
+    ctx.save();
+
+    if (options.active) {
+      const glow = ctx.createRadialGradient(centerX, centerY, radius * 0.6, centerX, centerY, radius * 1.8);
+      glow.addColorStop(0, options.glowColor);
+      glow.addColorStop(1, 'rgba(0,0,0,0)');
+      ctx.fillStyle = glow;
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, radius * 1.6, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.fillStyle = options.active ? options.onColor : options.offColor;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(centerX, centerY, radius + 2, 0, Math.PI * 2);
+    ctx.stroke();
+
+    ctx.fillStyle = options.active ? '#f8fafc' : 'rgba(226,232,240,0.7)';
+    ctx.font = '600 14px "Segoe UI", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'top';
+    ctx.fillText(options.label, centerX, centerY + radius + 4);
+
+    ctx.restore();
   }
 
   /**

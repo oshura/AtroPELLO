@@ -21,6 +21,7 @@ import {
   PersonalGearSlot,
   RarityTier
 } from '../../game/types/inventory.types';
+import { LandingStatus, LandingThreatState } from '../../game/types/landing.types';
 
 /**
  * Evento de cambio de estado del juego
@@ -174,6 +175,12 @@ export class GameStateStore {
 
   /** Timestamp mínimo para reabrir inventario (cooldown) */
   public inventoryReopenAllowedAtMs: number = 0;
+
+  /** Resultado más reciente de la evaluación de aterrizaje. */
+  public landingStatus: LandingStatus = { ready: false, context: null };
+
+  /** Estado de amenazas que bloquean o desaconsejan el aterrizaje. */
+  public landingThreat: LandingThreatState = { active: false, reasons: [] };
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  MAPPINGS & CACHES
@@ -533,6 +540,22 @@ export class GameStateStore {
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'cargo', entryId } });
     return true;
   }
+
+  /** Actualiza el estado de preparación de aterrizaje utilizado por el HUD. */
+  setLandingStatus(status: LandingStatus): void {
+    this.landingStatus = {
+      ready: status.ready,
+      context: status.context ? { ...status.context } : null
+    };
+  }
+
+  /** Actualiza las amenazas detectadas para el piloto rojo del HUD. */
+  setLandingThreat(state: LandingThreatState): void {
+    this.landingThreat = {
+      active: state.active,
+      reasons: [...state.reasons]
+    };
+  }
   
   /**
    * Limpia todo el estado del juego (reset completo).
@@ -561,6 +584,8 @@ export class GameStateStore {
     this.lastFrameTime = 0;
     this.mapReopenAllowedAtMs = 0;
     this.grimoireReopenAllowedAtMs = 0;
+    this.landingStatus = { ready: false, context: null };
+    this.landingThreat = { active: false, reasons: [] };
     
     // Limpiar mapeos
     this.collisionCooldowns.clear();

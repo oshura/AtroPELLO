@@ -57,6 +57,7 @@ import {
   InventoryPanelRegion,
   InventoryActionType
 } from './types/inventory.types';
+import { LandingStatus, LandingThreatState } from './types/landing.types';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -98,6 +99,15 @@ export class GameEngine {
   // Defers a map selection when the user clicks immediately after opening the map
   // before the id->target mapping has been rebuilt in the first render pass.
   private pendingMapSelectId: string | null = null;
+  private landingStatus: LandingStatus = { ready: false, context: null };
+  private landingThreat: LandingThreatState = { active: false, reasons: [] };
+  private landingCandidatePlanetId: string | null = null;
+  private landingCandidateStartMs: number | null = null;
+  private readonly LANDING_DISTANCE_THRESHOLD = 50;
+  private readonly LANDING_SPEED_THRESHOLD = 5;
+  private readonly LANDING_ALIGNMENT_MAX_DOT = 0.5; // cos(60°) tolerance from perfect parallel
+  private readonly LANDING_READY_HOLD_MS = 250;
+  private readonly LANDING_THREAT_RADIUS = 500;
   // Central logger
   public readonly logger: LoggingService;
   public _targetDetailsCache: Record<string, any> = {};
@@ -394,6 +404,156 @@ export class GameEngine {
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'handlePortalTraversal error', e);
     }
+  }
+
+  private updateLandingTelemetry(availableTargets: ITargetable[]): void {
+    const status = this.computeLandingStatus();
+    this.landingStatus = status;
+    this.gameState.setLandingStatus(status);
+
+    const threat = this.computeLandingThreat(availableTargets);
+    this.landingThreat = threat;
+    this.gameState.setLandingThreat(threat);
+
+    try {
+      this.hudManager?.setLandingIndicators({
+        landingReady: status.ready,
+        threatActive: threat.active
+      });
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.HUD, 'Landing indicators update failed', e);
+    }
+  }
+
+  private computeLandingStatus(): LandingStatus {
+    if (!this.spaceship || !this.gameState.planets.length) {
+      this.landingCandidateStartMs = null;
+      this.landingCandidatePlanetId = null;
+      return { ready: false, context: null };
+    }
+
+    const shipPos = this.spaceship.position;
+    let bestPlanet: Planet | null = null;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    let bestRadius = 0;
+
+    for (const planet of this.gameState.planets) {
+      const radius = Math.max(1, planet.scale?.x ?? planet.scale?.y ?? planet.scale?.z ?? 0);
+      const dx = planet.position.x - shipPos.x;
+      const dy = planet.position.y - shipPos.y;
+      const dz = planet.position.z - shipPos.z;
+      const centerDist = Math.hypot(dx, dy, dz);
+      const surface = centerDist - radius;
+      if (surface < bestDistance) {
+        bestPlanet = planet;
+        bestDistance = surface;
+        bestRadius = radius;
+      }
+    }
+
+    if (!bestPlanet) {
+      this.landingCandidateStartMs = null;
+      this.landingCandidatePlanetId = null;
+      return { ready: false, context: null };
+    }
+
+    const planet = bestPlanet;
+    const dx = shipPos.x - planet.position.x;
+    const dy = shipPos.y - planet.position.y;
+    const dz = shipPos.z - planet.position.z;
+    const centerDist = Math.hypot(dx, dy, dz);
+    const surfaceDistance = centerDist - bestRadius;
+    const normal = centerDist > 0 ? this.normalize({ x: dx, y: dy, z: dz }) : { x: 0, y: 1, z: 0 };
+    const surfacePoint = {
+      x: planet.position.x + normal.x * bestRadius,
+      y: planet.position.y + normal.y * bestRadius,
+      z: planet.position.z + normal.z * bestRadius
+    };
+    const forward = this.normalize({ ...this.spaceship.forwardDirection });
+    const alignmentDot = forward.x * normal.x + forward.y * normal.y + forward.z * normal.z;
+    const relativeSpeed = Math.abs(this.spaceship.currentSpeed);
+
+    const meetsDistance = surfaceDistance <= this.LANDING_DISTANCE_THRESHOLD;
+    const meetsSpeed = relativeSpeed <= this.LANDING_SPEED_THRESHOLD;
+    const meetsAlignment = Math.abs(alignmentDot) <= this.LANDING_ALIGNMENT_MAX_DOT;
+    const meetsAll = meetsDistance && meetsSpeed && meetsAlignment;
+
+    const now = performance.now();
+    if (!meetsAll) {
+      this.landingCandidateStartMs = null;
+      this.landingCandidatePlanetId = null;
+    } else {
+      if (this.landingCandidatePlanetId !== planet.id) {
+        this.landingCandidatePlanetId = planet.id;
+        this.landingCandidateStartMs = now;
+      } else if (this.landingCandidateStartMs == null) {
+        this.landingCandidateStartMs = now;
+      }
+    }
+
+    const ready = Boolean(
+      meetsAll &&
+      this.landingCandidateStartMs !== null &&
+      now - this.landingCandidateStartMs >= this.LANDING_READY_HOLD_MS
+    );
+
+    const context: LandingStatus['context'] = {
+      planetId: planet.id,
+      planetName: planet.getDisplayName(),
+      planetType: planet.planetType,
+      radius: bestRadius,
+      distanceToSurface: surfaceDistance,
+      relativeSpeed,
+      alignmentDot,
+      surfaceNormal: normal,
+      surfacePoint,
+      lastUpdatedMs: now
+    };
+
+    return { ready, context };
+  }
+
+  private computeLandingThreat(availableTargets: ITargetable[]): LandingThreatState {
+    const reasons: string[] = [];
+    if (!this.spaceship) {
+      return { active: false, reasons };
+    }
+
+    const hullPct = this.spaceship.healthMax > 0
+      ? this.spaceship.healthCurrent / this.spaceship.healthMax
+      : 1;
+    if (hullPct < 0.25) {
+      reasons.push('Hull integrity critical');
+    }
+
+    if (this.spaceship.voidEnergyCurrent < 10) {
+      reasons.push('Void reserves low');
+    }
+
+    try {
+      const shipPos = this.spaceship.position;
+      const enemyNearby = availableTargets.some(target => {
+        if (!target || !target.position) {
+          return false;
+        }
+        const relation = this.relationService.getRelation(target);
+        if (relation !== 'enemy') {
+          return false;
+        }
+        const dx = target.position.x - shipPos.x;
+        const dy = target.position.y - shipPos.y;
+        const dz = target.position.z - shipPos.z;
+        const dist = Math.hypot(dx, dy, dz);
+        return dist <= this.LANDING_THREAT_RADIUS;
+      });
+      if (enemyNearby) {
+        reasons.push('Enemy nearby');
+      }
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'Landing threat proximity check failed', e);
+    }
+
+    return { active: reasons.length > 0, reasons };
   }
 
   private collectActiveSuns(): Sun[] {
@@ -2017,6 +2177,8 @@ export class GameEngine {
     const inventoryOccludes = this.inventoryPanel?.containsPoint?.(mousePos.x, mousePos.y) ?? false;
     const skipDetection = mapOccludes || grimoireOccludes || inventoryOccludes;
     
+      this.updateLandingTelemetry(availableTargets);
+
     // Update adaptive targeting system (performs detection and maintains mouse velocity)
     if (this.adaptiveTargeting) {
       this.adaptiveTargeting.update(deltaTime, availableTargets, mousePos, skipDetection);

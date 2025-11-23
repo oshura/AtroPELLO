@@ -132,4 +132,8 @@ export class MarqueePanel {
     this.scrollSpeed = Math.max(0.1, Math.min(5, speed));
   }
 
+  public getDimensions(): { width: number; height: number } {
+    return { width: this.panelWidth, height: this.panelHeight };
+  }
+
 }
