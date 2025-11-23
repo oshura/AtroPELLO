@@ -85,6 +85,7 @@ export class GameEngine {
   private grimoirePanel: GrimoirePanel | null = null;
   private inventoryPanel: InventoryPanel | null = null;
   private inventorySelection: InventorySelection | null = null;
+  private inventoryHoverKey: string | null = null;
   public overlayRenderer: ScreenOverlayRenderer | null = null;
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   public voidJumpActive: boolean = false;
@@ -2013,7 +2014,8 @@ export class GameEngine {
     // Check if any UI panel occludes the 3D scene (prevents 3D hover when interacting with panels)
     const mapOccludes = this.systemPanel?.containsPoint?.(mousePos.x, mousePos.y) ?? false;
     const grimoireOccludes = this.grimoirePanel?.containsPoint?.(mousePos.x, mousePos.y) ?? false;
-    const skipDetection = mapOccludes || grimoireOccludes;
+    const inventoryOccludes = this.inventoryPanel?.containsPoint?.(mousePos.x, mousePos.y) ?? false;
+    const skipDetection = mapOccludes || grimoireOccludes || inventoryOccludes;
     
     // Update adaptive targeting system (performs detection and maintains mouse velocity)
     if (this.adaptiveTargeting) {
@@ -7072,10 +7074,8 @@ export class GameEngine {
       if (!this.domCanvas) return;
       const gOn = !!(this.grimoirePanel && this.grimoirePanel.isEnabled());
       const invOn = !!(this.inventoryPanel && this.inventoryPanel.isEnabled());
-      if (gOn) {
+      if (gOn || invOn) {
         this.domCanvas.style.cursor = 'none';
-      } else if (invOn) {
-        this.domCanvas.style.cursor = 'default';
       } else {
         this.domCanvas.style.cursor = '';
       }
@@ -7321,8 +7321,9 @@ export class GameEngine {
       this.inventoryPanel.setEnabled(true);
       this.clearInventorySelection();
       this.refreshInventoryPanelSnapshot();
+      this.inventoryHoverKey = null;
       try {
-        this.audio?.play('ui_inventory_open', { bus: 'ui', volume: 0.55 });
+        this.audio?.play('ui_map_open', { bus: 'ui', volume: 0.6 });
       } catch (e) {
         this.logger.log(LogLevel.DEBUG, LogCategory.AUDIO, 'Inventory open sound failed', e);
       }
@@ -7331,8 +7332,9 @@ export class GameEngine {
       this.inventoryPanel.resetScroll();
       this.clearInventorySelection();
       this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+      this.inventoryHoverKey = null;
       try {
-        this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.5 });
+        this.audio?.play('ui_map_close', { bus: 'ui', volume: 0.6 });
       } catch (e) {
         this.logger.log(LogLevel.DEBUG, LogCategory.AUDIO, 'Inventory close sound failed', e);
       }
@@ -7359,6 +7361,7 @@ export class GameEngine {
     } catch {}
 
     const region = this.inventoryPanel.pickRegionAtCursor();
+    this.updateInventoryHoverState(region);
     if (!region) {
       this.clearInventorySelection();
       return;
@@ -7390,6 +7393,8 @@ export class GameEngine {
         (this.gl.canvas as HTMLCanvasElement).width,
         (this.gl.canvas as HTMLCanvasElement).height
       );
+      const hoveredRegion = this.inventoryPanel.pickRegionAtCursor();
+      this.updateInventoryHoverState(hoveredRegion);
     } catch {}
   }
 
@@ -7437,7 +7442,54 @@ export class GameEngine {
       this.inventoryPanel?.setSelection(selection);
     } catch {}
 
-    try { this.audio?.play('ui_inventory_open', { bus: 'ui', volume: 0.25 }); } catch {}
+    try { this.audio?.play('ui_outline_select', { bus: 'ui', volume: 0.35 }); } catch {}
+  }
+
+  private updateInventoryHoverState(region: InventoryPanelRegion | null): void {
+    const key = this.getInventoryRegionKey(region);
+    if (key === this.inventoryHoverKey) {
+      return;
+    }
+    this.inventoryHoverKey = key;
+    if (!region || !key) {
+      return;
+    }
+    if (this.isInventoryRegionSelected(region)) {
+      return;
+    }
+    try { this.audio?.play('ui_outline_hover', { bus: 'ui', volume: 0.28 }); } catch {}
+  }
+
+  private getInventoryRegionKey(region: InventoryPanelRegion | null): string | null {
+    if (!region) {
+      return null;
+    }
+    switch (region.kind) {
+      case 'cargo':
+        return `cargo:${region.entryId}`;
+      case 'equipment':
+        return `equipment:${region.slot}`;
+      case 'personal':
+        return `personal:${region.index}`;
+      default:
+        return null;
+    }
+  }
+
+  private isInventoryRegionSelected(region: InventoryPanelRegion): boolean {
+    if (!this.inventorySelection) {
+      return false;
+    }
+    switch (region.kind) {
+      case 'cargo':
+        return this.inventorySelection.kind === 'cargo' && this.inventorySelection.entryId === region.entryId;
+      case 'equipment':
+        return this.inventorySelection.kind === 'equipment' && this.inventorySelection.slot === region.slot;
+      case 'personal':
+        return this.inventorySelection.kind === 'personal' && this.inventorySelection.index === region.index;
+      default:
+        return false;
+    }
   }
 
   private handleInventoryAction(action: InventoryActionType): void {
@@ -7494,7 +7546,7 @@ export class GameEngine {
       }
     }
 
-    try { this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.4 }); } catch {}
+    try { this.audio?.play('ui_outline_clear', { bus: 'ui', volume: 0.4 }); } catch {}
     this.clearInventorySelection();
     this.refreshInventoryPanelSnapshot();
   }
@@ -7526,7 +7578,8 @@ export class GameEngine {
       this.clearInventorySelection();
       this.gameState.inventoryReopenAllowedAtMs = performance.now() + 1000;
       this.updateInventoryPointerBinding();
-      try { this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.5 }); } catch {}
+      this.inventoryHoverKey = null;
+      try { this.audio?.play('ui_map_close', { bus: 'ui', volume: 0.6 }); } catch {}
       return;
     }
     

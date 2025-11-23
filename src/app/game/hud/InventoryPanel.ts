@@ -54,6 +54,9 @@ export class InventoryPanel {
     this.enabled = value;
     if (!value) {
       this.resetScroll();
+      this.cursorPx = null;
+      this.cursorPy = null;
+      this.regions = [];
     }
   }
 
@@ -65,15 +68,18 @@ export class InventoryPanel {
     return this.enabled;
   }
 
-  public containsPoint(): boolean {
+  public containsPoint(_x?: number, _y?: number): boolean {
     return this.enabled;
   }
 
-  public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
-    const x = ((clientX - rect.left) / Math.max(1, rect.width)) * viewportW;
-    const y = ((clientY - rect.top) / Math.max(1, rect.height)) * viewportH;
-    this.cursorPx = (x / viewportW) * this.canvas.width;
-    this.cursorPy = (y / viewportH) * this.canvas.height;
+  public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, _viewportW: number, _viewportH: number): void {
+    const normX = (clientX - rect.left) / Math.max(1, rect.width);
+    const normY = (clientY - rect.top) / Math.max(1, rect.height);
+    const clampedX = Math.max(0, Math.min(1, normX));
+    const clampedY = Math.max(0, Math.min(1, normY));
+    this.cursorPx = clampedX * this.canvas.width;
+    this.cursorPy = clampedY * this.canvas.height;
+    this.refreshTexture();
   }
 
   public handleWheelFromViewport(deltaY: number): void {
@@ -104,6 +110,14 @@ export class InventoryPanel {
     this.equipmentScrollTarget = 0;
   }
 
+  private refreshTexture(): void {
+    if (!this.enabled || !this.snapshot) {
+      return;
+    }
+    this.paint();
+    this.uploadTexture();
+  }
+
   public pickRegionAtCursor(): InventoryPanelRegion | null {
     if (this.cursorPx == null || this.cursorPy == null) {
       return null;
@@ -113,10 +127,7 @@ export class InventoryPanel {
 
   public setSelection(selection: InventorySelection | null): void {
     this.selection = selection;
-    if (this.enabled && this.snapshot) {
-      this.paint();
-      this.uploadTexture();
-    }
+    this.refreshTexture();
   }
 
   public getSelection(): InventorySelection | null {
@@ -240,6 +251,7 @@ export class InventoryPanel {
     this.drawEquipmentColumn(c, leftW, 0, centerW, contentHeight, snapshot);
     this.drawCargoColumn(c, leftW + centerW, 0, rightW, contentHeight, snapshot);
     this.drawFooter(c, 0, contentHeight, W, footerHeight, snapshot);
+    this.drawCursor(c);
     c.restore();
   }
 
@@ -755,7 +767,7 @@ export class InventoryPanel {
 
   private rarityFill(rarity: RarityTier): string {
     switch (rarity) {
-      case RarityTier.UNIQUE: return '#fcd34d';
+      case RarityTier.UNIQUE: return '#c084fc';
       case RarityTier.RARE: return '#60a5fa';
       case RarityTier.UNCOMMON: return '#34d399';
       default: return '#94a3b8';
@@ -764,11 +776,45 @@ export class InventoryPanel {
 
   private rarityAccent(rarity: RarityTier): string {
     switch (rarity) {
-      case RarityTier.UNIQUE: return '#fbbf24';
+      case RarityTier.UNIQUE: return '#a855f7';
       case RarityTier.RARE: return '#3b82f6';
       case RarityTier.UNCOMMON: return '#10b981';
       default: return '#94a3b8';
     }
+  }
+
+  private drawCursor(c: CanvasRenderingContext2D): void {
+    if (!this.enabled || this.cursorPx == null || this.cursorPy == null) {
+      return;
+    }
+    const x = this.cursorPx;
+    const y = this.cursorPy;
+    c.save();
+    const glow = c.createRadialGradient(x, y, 0, x, y, 26);
+    glow.addColorStop(0, 'rgba(250,245,255,0.85)');
+    glow.addColorStop(1, 'rgba(148,87,190,0)');
+    c.fillStyle = glow;
+    c.beginPath();
+    c.arc(x, y, 22, 0, Math.PI * 2);
+    c.fill();
+
+    c.strokeStyle = 'rgba(192,132,252,0.95)';
+    c.lineWidth = 2;
+    c.beginPath();
+    c.arc(x, y, 12, 0, Math.PI * 2);
+    c.stroke();
+
+    c.fillStyle = '#f8f5ff';
+    c.beginPath();
+    c.arc(x, y, 3, 0, Math.PI * 2);
+    c.fill();
+
+    c.lineWidth = 1.8;
+    c.beginPath();
+    c.moveTo(x + 6, y + 10);
+    c.lineTo(x + 22, y + 32);
+    c.stroke();
+    c.restore();
   }
 
   private drawTallText(c: CanvasRenderingContext2D, text: string, x: number, y: number): void {
