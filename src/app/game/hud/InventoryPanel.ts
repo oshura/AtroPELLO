@@ -790,30 +790,25 @@ export class InventoryPanel {
     const x = this.cursorPx;
     const y = this.cursorPy;
     c.save();
-    const glow = c.createRadialGradient(x, y, 0, x, y, 26);
-    glow.addColorStop(0, 'rgba(250,245,255,0.85)');
-    glow.addColorStop(1, 'rgba(148,87,190,0)');
+    const glow = c.createRadialGradient(x, y, 0, x, y, 22);
+    glow.addColorStop(0, 'rgba(152,218,255,0.9)');
+    glow.addColorStop(1, 'rgba(16,164,255,0)');
     c.fillStyle = glow;
+
     c.beginPath();
-    c.arc(x, y, 22, 0, Math.PI * 2);
+    c.ellipse(x, y, 11, 16, 0, 0, Math.PI * 2);
     c.fill();
 
-    c.strokeStyle = 'rgba(192,132,252,0.95)';
-    c.lineWidth = 2;
-    c.beginPath();
-    c.arc(x, y, 12, 0, Math.PI * 2);
-    c.stroke();
-
-    c.fillStyle = '#f8f5ff';
-    c.beginPath();
-    c.arc(x, y, 3, 0, Math.PI * 2);
-    c.fill();
-
+    c.strokeStyle = 'rgba(56,189,248,0.95)';
     c.lineWidth = 1.8;
     c.beginPath();
-    c.moveTo(x + 6, y + 10);
-    c.lineTo(x + 22, y + 32);
+    c.ellipse(x, y, 8, 12, 0, 0, Math.PI * 2);
     c.stroke();
+
+    c.fillStyle = '#e0f7ff';
+    c.beginPath();
+    c.ellipse(x, y, 2.4, 4, 0, 0, Math.PI * 2);
+    c.fill();
     c.restore();
   }
 
