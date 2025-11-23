@@ -455,8 +455,7 @@ export class OutlineRenderer {
         vec2 ndc = vec2((posPx.x / u_screenSize.x) * 2.0 - 1.0,
                         1.0 - (posPx.y / u_screenSize.y) * 2.0);
         gl_Position = vec4(ndc, 0.0, 1.0);
-        // Aplicar solo flip vertical; mantener orientación horizontal
-        v_uv = vec2(a_uv.x, 1.0 - a_uv.y);
+        v_uv = a_uv;
       }
     `;
     const fs = `#version 300 es
@@ -479,11 +478,11 @@ export class OutlineRenderer {
 
     // Quad centrado [-0.5,0.5]
     const verts = new Float32Array([
-      // x, y,   u, v  (UVs mapeadas a canvas sin UNPACK_FLIP_Y: v=1 es la parte superior del canvas)
-      -0.5, -0.5, 0, 1, // top-left
-       0.5, -0.5, 1, 1, // top-right
-       0.5,  0.5, 1, 0, // bottom-right
-      -0.5,  0.5, 0, 0  // bottom-left
+      // x, y,   u, v (UVs straight through; textures are uploaded with UNPACK_FLIP_Y)
+      -0.5, -0.5, 0, 0, // top-left
+       0.5, -0.5, 1, 0, // top-right
+       0.5,  0.5, 1, 1, // bottom-right
+      -0.5,  0.5, 0, 1  // bottom-left
     ]);
     const idx = new Uint16Array([0,1,2, 0,2,3]);
     this.labelVAO = this.gl.createVertexArray();
@@ -513,8 +512,7 @@ export class OutlineRenderer {
       uniform mat4 u_proj;
       out vec2 v_uv;
       void main(){
-        // Flip vertical para alinear canvas (origen arriba-izquierda) con UV estándar
-        v_uv = vec2(a_uv.x, 1.0 - a_uv.y);
+        v_uv = a_uv;
         gl_Position = u_proj * u_view * u_model * vec4(a_pos, 1.0);
       }
     `;
@@ -538,7 +536,7 @@ export class OutlineRenderer {
 
     // Quad unitario en XY con UVs estándar (top v=1), centraremos con model matrix
     const verts = new Float32Array([
-      // x, y, z,  u, v
+      // x, y, z,  u, v (standard UVs; textures already flipped on upload)
       -0.5, -0.5, 0,  0, 0,
        0.5, -0.5, 0,  1, 0,
        0.5,  0.5, 0,  1, 1,
@@ -833,10 +831,13 @@ export class OutlineRenderer {
       ctx.fillText(text, W/2, H/2);
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
-      // Subir a textura (sin flip Y; UV ya lo corrige el VS)
+      // Subir a textura sincronizando flip para que el canvas (origen arriba-izquierda) quede derecho
       this.gl.bindTexture(this.gl.TEXTURE_2D, entry.tex);
-      this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
+      let prevFlip = false;
+      try { prevFlip = !!this.gl.getParameter(this.gl.UNPACK_FLIP_Y_WEBGL); } catch {}
+      try { this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, 1); } catch {}
       this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, entry.canvas);
+      try { this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, prevFlip ? 1 : 0); } catch {}
       entry.lastText = text;
       entry.lastColorKey = colorCss;
     }
@@ -1128,11 +1129,13 @@ export class OutlineRenderer {
       ctx.fillText(healthPctLabel, W - padX, bottomTextY);
       ctx.shadowColor = 'transparent';
       ctx.shadowBlur = 0;
-      // Subir a textura
-  this.gl.bindTexture(this.gl.TEXTURE_2D, entry.tex);
-  // Asegurar orientación consistente: no realizar UNPACK_FLIP_Y, usamos UVs ya corregidas
-  this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, false);
-  this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, entry.canvas);
+        // Subir a textura invirtiendo filas para mantener orientación correcta
+      this.gl.bindTexture(this.gl.TEXTURE_2D, entry.tex);
+      let prevFlip = false;
+      try { prevFlip = !!this.gl.getParameter(this.gl.UNPACK_FLIP_Y_WEBGL); } catch {}
+      try { this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, 1); } catch {}
+      this.gl.texImage2D(this.gl.TEXTURE_2D, 0, this.gl.RGBA, this.gl.RGBA, this.gl.UNSIGNED_BYTE, entry.canvas);
+      try { this.gl.pixelStorei(this.gl.UNPACK_FLIP_Y_WEBGL, prevFlip ? 1 : 0); } catch {}
   entry.lastType = typeLabel;
   entry.lastDist = distLabel;
   entry.lastColorKey = textColorCss;

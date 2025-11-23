@@ -86,7 +86,7 @@ export class TargetOutline2DRenderer {
                1.0 - (posPx.y / u_screenSize.y) * 2.0
              );
              gl_Position = vec4(ndc, 0.0, 1.0);
-             v_uv = a_pos + 0.5;
+             v_uv = vec2(a_pos.x + 0.5, 0.5 - a_pos.y);
            }`
         : `precision highp float;
            attribute vec2 a_pos;
@@ -101,7 +101,7 @@ export class TargetOutline2DRenderer {
                1.0 - (posPx.y / u_screenSize.y) * 2.0
              );
              gl_Position = vec4(ndc, 0.0, 1.0);
-             v_uv = a_pos + 0.5;
+             v_uv = vec2(a_pos.x + 0.5, 0.5 - a_pos.y);
            }`
     );
 
@@ -283,9 +283,17 @@ export class TargetOutline2DRenderer {
   private uploadTextureFor(texture: WebGLTexture): void {
     const gl: any = this.gl!;
     gl.bindTexture(gl.TEXTURE_2D, texture);
-    // Use premultiplied alpha for consistent blending
-    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
+    // Preserve previous unpack state before touching globals
+    let prevFlip = false;
+    let prevPremult = false;
+    try { prevFlip = !!gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL); } catch {}
+    try { prevPremult = !!gl.getParameter(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL); } catch {}
+    try { gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, 1); } catch {}
+    try { gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, 1); } catch {}
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, this.canvas);
+    // Restore unpack flags to avoid surprising other renderers
+    try { gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, prevFlip ? 1 : 0); } catch {}
+    try { gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, prevPremult ? 1 : 0); } catch {}
     gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
