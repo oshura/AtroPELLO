@@ -136,12 +136,12 @@ export class GameStateStore {
     {
       slot: PersonalGearSlot.SUIT,
       label: 'Traje Explorador Mk.III',
-      description: 'Fibra trenzada con aislamiento arcano básico.',
+      description: 'Fibra trenzada con aislamiento básico.',
       rarity: RarityTier.UNCOMMON
     },
     {
       slot: PersonalGearSlot.BOOTS,
-      label: 'Boots Cauterizadas',
+      label: 'Boots LunarGrip',
       description: 'Amortiguan golpes y sellan atmósferas dudosas.',
       rarity: RarityTier.COMMON
     }
