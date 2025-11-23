@@ -5,6 +5,7 @@ import { GameAnimation } from './types';
 import { GameLogger } from '../../utils/GameLogger';
 import { LogCategory } from '../../../services/logging.service';
 import { SpellType } from '../../types/spell.types';
+import { LandingApproachContext } from '../../types/landing.types';
 
 @Injectable({ providedIn: 'root' })
 export class AnimationManagerService {
@@ -15,6 +16,7 @@ export class AnimationManagerService {
   private cachedDisruptionRiteCtor: ({ new(): GameAnimation }) | null = null;
   private cachedAnchoringPulseCtor: ({ new(): GameAnimation }) | null = null;
   private cachedVoidKinesisCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedLandingSequenceCtor: ({ new(): GameAnimation }) | null = null;
   private flashImages: string[] = [
     '/assets/Athathoth.jpg',
     '/assets/GreatCthulhu.jpg',
@@ -32,6 +34,7 @@ export class AnimationManagerService {
     this.preloadDisruptionRite();
     this.preloadAnchoringPulse();
     this.preloadVoidKinesis();
+    this.preloadLandingSequence();
   }
 
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
@@ -321,6 +324,45 @@ export class AnimationManagerService {
         const mod = await import('./void-kinesis.animation');
         const Anim = (mod as any).VoidKinesisAnimation as { new(): GameAnimation };
         this.cachedVoidKinesisCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  public startLandingSequence(engine: GameEngine, context: LandingApproachContext): boolean {
+    if (this.current && this.current.name !== 'blocking-delay') {
+      return false;
+    }
+    const launch = (Ctor: { new(): GameAnimation }) => {
+      const anim = new Ctor();
+      try { (anim as any).configure?.(context); } catch {}
+      anim.start(engine);
+      this.current = anim;
+    };
+    if (this.cachedLandingSequenceCtor) {
+      launch(this.cachedLandingSequenceCtor);
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./landing-sequence.animation');
+        const Anim = (mod as any).LandingSequenceAnimation as { new(): GameAnimation };
+        this.cachedLandingSequenceCtor = Anim;
+        launch(Anim);
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load LandingSequenceAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadLandingSequence(): void {
+    (async () => {
+      try {
+        const mod = await import('./landing-sequence.animation');
+        const Anim = (mod as any).LandingSequenceAnimation as { new(): GameAnimation };
+        this.cachedLandingSequenceCtor = Anim;
       } catch { /* ignore */ }
     })();
   }

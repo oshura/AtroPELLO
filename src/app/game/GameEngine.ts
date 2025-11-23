@@ -57,7 +57,7 @@ import {
   InventoryPanelRegion,
   InventoryActionType
 } from './types/inventory.types';
-import { LandingStatus, LandingThreatState } from './types/landing.types';
+import { LandingApproachContext, LandingStatus, LandingThreatState } from './types/landing.types';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -101,6 +101,8 @@ export class GameEngine {
   private pendingMapSelectId: string | null = null;
   private landingStatus: LandingStatus = { ready: false, context: null };
   private landingThreat: LandingThreatState = { active: false, reasons: [] };
+  private landingSequenceActive: boolean = false;
+  private landingSequenceContext: LandingApproachContext | null = null;
   private landingCandidatePlanetId: string | null = null;
   private landingCandidateStartMs: number | null = null;
   private readonly LANDING_DISTANCE_THRESHOLD = 50;
@@ -404,6 +406,7 @@ export class GameEngine {
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'handlePortalTraversal error', e);
     }
+
   }
 
   private updateLandingTelemetry(availableTargets: ITargetable[]): void {
@@ -554,6 +557,55 @@ export class GameEngine {
     }
 
     return { active: reasons.length > 0, reasons };
+  }
+
+  private tryStartLandingSequence(): boolean {
+    if (this.landingSequenceActive) {
+      return true;
+    }
+    if (!this.landingStatus.ready || !this.landingStatus.context) {
+      return false;
+    }
+    if (this.landingThreat.active) {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing blocked by threat', {
+        reasons: [...this.landingThreat.reasons]
+      });
+      try { this.showPlaceholderText('AMENAZA DETECTADA - ESTABILIZA ANTES DE ATERRIZAR', 2200); } catch {}
+      return true;
+    }
+    if (!this.animationManager.startLandingSequence(this, this.landingStatus.context)) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Landing sequence request rejected (animation busy)');
+      return false;
+    }
+    return true;
+  }
+
+  public notifyLandingSequenceStarted(context: LandingApproachContext): void {
+    this.landingSequenceActive = true;
+    this.landingSequenceContext = context;
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing sequence initiated', {
+      planetId: context.planetId,
+      planetName: context.planetName
+    });
+    try {
+      const label = context.planetName ? `LANDING: ${context.planetName}` : 'LANDING SEQUENCE';
+      this.hudManager?.addMarqueeMessage(label);
+    } catch {}
+  }
+
+  public notifyLandingSequenceFinished(outcome: 'landed' | 'aborted'): void {
+    this.landingSequenceActive = false;
+    this.landingSequenceContext = null;
+    this.landingCandidatePlanetId = null;
+    this.landingCandidateStartMs = null;
+    const resetStatus: LandingStatus = { ready: false, context: null };
+    this.landingStatus = resetStatus;
+    try { this.gameState.setLandingStatus(resetStatus); } catch {}
+    const message = outcome === 'landed'
+      ? 'SECUENCIA DE ATERRIZAJE COMPLETA (WIP)'
+      : 'ATERRIZAJE CANCELADO';
+    try { this.showPlaceholderText(message, 2000); } catch {}
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing sequence finished', { outcome });
   }
 
   private collectActiveSuns(): Sun[] {
@@ -5420,6 +5472,12 @@ export class GameEngine {
     } else if (key === '9') {
       this.camera.setCameraMode(CameraMode.REAR_TRACKING);
       return;
+    }
+
+    if (key.toLowerCase() === 'enter') {
+      if (this.tryStartLandingSequence()) {
+        return;
+      }
     }
 
     // Manejo de controles de nave
