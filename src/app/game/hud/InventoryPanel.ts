@@ -530,9 +530,6 @@ export class InventoryPanel {
     c.font = '500 14px "Segoe UI", sans-serif';
     c.fillStyle = '#a7b5d8';
     this.drawTallText(c, 'Cordura', x, y);
-    c.fillStyle = '#dde5ff';
-    c.font = '600 18px "Segoe UI", sans-serif';
-    this.drawTallText(c, `${Math.round(Math.max(0, Math.min(100, sanity)))}%`, x + width - 72, y);
 
     const frameY = y + this.scaleY(26);
     const frameH = this.scaleY(140);
@@ -566,14 +563,6 @@ export class InventoryPanel {
       const cellX = x + horizontalPad + col * (cellWidth + gap);
       const cellY = frameY + verticalPad + row * (cellHeight + gap);
 
-      c.save();
-      c.beginPath();
-      c.rect(cellX, cellY, cellWidth, cellHeight);
-      c.clip();
-      c.fillStyle = value === clampedValue ? 'rgba(96,165,250,0.18)' : 'transparent';
-      c.fillRect(cellX, cellY, cellWidth, cellHeight);
-      c.restore();
-
       c.fillStyle = '#020617';
       this.drawTallText(c, `${value}`, cellX + cellWidth / 2, cellY + cellHeight / 2);
 
@@ -584,7 +573,7 @@ export class InventoryPanel {
           c,
           cellX + cellWidth / 2,
           cellY + cellHeight / 2,
-          Math.min(cellWidth, cellHeight) * 0.68,
+          Math.min(cellWidth, cellHeight) * 0.9,
           sanity
         );
       }
