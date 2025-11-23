@@ -546,8 +546,12 @@ export class InventoryPanel {
     const totalValues = 99;
     const cols = Math.ceil(totalValues / rows);
     const gap = 4;
-    const cellWidth = (width - gap * (cols - 1)) / cols;
-    const cellHeight = (frameH - gap * (rows - 1)) / rows;
+    const horizontalPad = 12;
+    const verticalPad = 8;
+    const innerWidth = width - horizontalPad * 2;
+    const innerHeight = frameH - verticalPad * 2;
+    const cellWidth = (innerWidth - gap * (cols - 1)) / cols;
+    const cellHeight = (innerHeight - gap * (rows - 1)) / rows;
     const clampedValue = Math.max(1, Math.min(99, Math.round(sanity)));
 
     c.font = '600 10px "Segoe UI", sans-serif';
@@ -559,8 +563,8 @@ export class InventoryPanel {
       const index = value - 1;
       const row = Math.floor(index / cols);
       const col = index % cols;
-      const cellX = x + col * (cellWidth + gap);
-      const cellY = frameY + row * (cellHeight + gap);
+      const cellX = x + horizontalPad + col * (cellWidth + gap);
+      const cellY = frameY + verticalPad + row * (cellHeight + gap);
 
       c.save();
       c.beginPath();

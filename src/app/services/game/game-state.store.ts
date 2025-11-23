@@ -605,7 +605,7 @@ export class GameStateStore {
         slot: EquipmentSlot.REACTOR,
         label: 'Thruster Cyclopean',
         rarity: RarityTier.EPIC,
-        description: 'Convierte vacío densificado en empuje silencioso para todo el fuselaje.',
+        description: 'Convierte vacío densificado en empuje silencioso.',
         capabilities: []
       },
       [EquipmentSlot.WINGS]: null,
