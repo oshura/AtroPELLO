@@ -534,39 +534,59 @@ export class InventoryPanel {
     c.font = '600 18px "Segoe UI", sans-serif';
     this.drawTallText(c, `${Math.round(Math.max(0, Math.min(100, sanity)))}%`, x + width - 72, y);
 
-    const gridTop = y + this.scaleY(26);
-    const cellSize = this.scaleY(42);
-    const gap = this.scaleY(10);
-    const cols = 3;
-    const rows = 3;
-    const values = [10, 20, 30, 40, 50, 60, 70, 80, 90];
-    const bucketSize = 100 / values.length;
-    const clampedSanity = Math.max(0, Math.min(99.999, sanity));
-    const highlightIndex = Math.min(values.length - 1, Math.floor(clampedSanity / bucketSize));
+    const frameY = y + this.scaleY(26);
+    const frameH = this.scaleY(140);
+    c.fillStyle = '#fbfdff';
+    c.fillRect(x, frameY, width, frameH);
+    c.strokeStyle = 'rgba(15,23,42,0.65)';
+    c.lineWidth = 3;
+    c.strokeRect(x, frameY, width, frameH);
 
-    for (let idx = 0; idx < values.length; idx++) {
-      const row = Math.floor(idx / cols);
-      const col = idx % cols;
-      const cellX = x + col * (cellSize + gap);
-      const cellY = gridTop + row * (cellSize + gap);
+    const rows = 5;
+    const totalValues = 99;
+    const cols = Math.ceil(totalValues / rows);
+    const gap = 4;
+    const cellWidth = (width - gap * (cols - 1)) / cols;
+    const cellHeight = (frameH - gap * (rows - 1)) / rows;
+    const clampedValue = Math.max(1, Math.min(99, Math.round(sanity)));
 
-      c.fillStyle = idx === highlightIndex ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.05)';
-      c.fillRect(cellX, cellY, cellSize, cellSize);
-      c.strokeStyle = 'rgba(255,255,255,0.15)';
-      c.strokeRect(cellX, cellY, cellSize, cellSize);
+    c.font = '600 10px "Segoe UI", sans-serif';
+    c.textAlign = 'center';
+    c.textBaseline = 'middle';
+    c.fillStyle = '#020617';
 
-      c.fillStyle = '#f8fbff';
-      c.font = '600 14px "Segoe UI", sans-serif';
-      this.drawTallText(c, `${values[idx]}`, cellX + 10, cellY + cellSize / 2 + 4);
+    for (let value = 1; value <= totalValues; value++) {
+      const index = value - 1;
+      const row = Math.floor(index / cols);
+      const col = index % cols;
+      const cellX = x + col * (cellWidth + gap);
+      const cellY = frameY + row * (cellHeight + gap);
 
-      if (idx === highlightIndex) {
-        c.strokeStyle = '#bfdbfe';
-        c.lineWidth = 2;
-        this.drawHandCircle(c, cellX + cellSize / 2, cellY + cellSize / 2, cellSize * 0.6, sanity);
+      c.save();
+      c.beginPath();
+      c.rect(cellX, cellY, cellWidth, cellHeight);
+      c.clip();
+      c.fillStyle = value === clampedValue ? 'rgba(96,165,250,0.18)' : 'transparent';
+      c.fillRect(cellX, cellY, cellWidth, cellHeight);
+      c.restore();
+
+      c.fillStyle = '#020617';
+      this.drawTallText(c, `${value}`, cellX + cellWidth / 2, cellY + cellHeight / 2);
+
+      if (value === clampedValue) {
+        c.strokeStyle = '#60a5fa';
+        c.lineWidth = 1.8;
+        this.drawHandCircle(
+          c,
+          cellX + cellWidth / 2,
+          cellY + cellHeight / 2,
+          Math.min(cellWidth, cellHeight) * 0.45,
+          sanity
+        );
       }
     }
 
-    const bottom = gridTop + rows * cellSize + (rows - 1) * gap;
+    const bottom = frameY + frameH;
     c.restore();
     return bottom;
   }
@@ -587,6 +607,7 @@ export class InventoryPanel {
         c.lineTo(px, py);
       }
     }
+    c.closePath();
     c.stroke();
     c.restore();
   }
