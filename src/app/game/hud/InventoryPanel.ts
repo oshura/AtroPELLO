@@ -35,6 +35,9 @@ export class InventoryPanel {
   private equipmentScrollOffset = 0;
   private equipmentScrollTarget = 0;
   private equipmentMaxScroll = 0;
+  private personalScrollOffset = 0;
+  private personalScrollTarget = 0;
+  private personalMaxScroll = 0;
   private regions: InventoryPanelRegion[] = [];
   private selection: InventorySelection | null = null;
 
@@ -86,8 +89,11 @@ export class InventoryPanel {
     const leftW = Math.floor(this.canvas.width * 0.35);
     const centerW = Math.floor(this.canvas.width * 0.4);
     const rightBoundary = leftW + centerW;
-    const applyScroll = (target: 'equipment' | 'cargo') => {
-      if (target === 'equipment') {
+    const applyScroll = (target: 'personal' | 'equipment' | 'cargo') => {
+      if (target === 'personal') {
+        this.personalScrollTarget += deltaY * 0.35;
+        this.personalScrollTarget = Math.max(0, Math.min(this.personalMaxScroll, this.personalScrollTarget));
+      } else if (target === 'equipment') {
         this.equipmentScrollTarget += deltaY * 0.35;
         this.equipmentScrollTarget = Math.max(0, Math.min(this.equipmentMaxScroll, this.equipmentScrollTarget));
       } else {
@@ -95,7 +101,9 @@ export class InventoryPanel {
         this.cargoScrollTarget = Math.max(0, Math.min(this.cargoMaxScroll, this.cargoScrollTarget));
       }
     };
-    if (pointerX >= leftW && pointerX < rightBoundary) {
+    if (pointerX < leftW) {
+      applyScroll('personal');
+    } else if (pointerX < rightBoundary) {
       applyScroll('equipment');
     } else {
       applyScroll('cargo');
@@ -107,6 +115,8 @@ export class InventoryPanel {
     this.cargoScrollTarget = 0;
     this.equipmentScrollOffset = 0;
     this.equipmentScrollTarget = 0;
+    this.personalScrollOffset = 0;
+    this.personalScrollTarget = 0;
   }
 
   private refreshTexture(): void {
@@ -156,6 +166,7 @@ export class InventoryPanel {
     }
     this.cargoScrollOffset += (this.cargoScrollTarget - this.cargoScrollOffset) * 0.2;
     this.equipmentScrollOffset += (this.equipmentScrollTarget - this.equipmentScrollOffset) * 0.2;
+    this.personalScrollOffset += (this.personalScrollTarget - this.personalScrollOffset) * 0.2;
     this.paint();
     this.uploadTexture();
   }
@@ -277,18 +288,46 @@ export class InventoryPanel {
 
     const cardHeight = this.scaleY(75);
     const cardSpacing = this.scaleY(90);
-    let offsetY = personalTitleY + this.scaleY(24);
-    snapshot.personalGear.forEach((gear, index) => {
-      const isSelected = this.selection?.kind === 'personal' && this.selection.index === index;
-      this.drawGearCard(c, gear.slot, gear.label, gear.description, 24, offsetY, w - 48, cardHeight, isSelected);
-      this.registerRegion({
-        kind: 'personal',
-        index,
-        slot: gear.slot,
-        bounds: { x: x + 24, y: y + offsetY, w: w - 48, h: cardHeight }
-      });
+    const listStartY = personalTitleY + this.scaleY(24);
+    const availableHeight = Math.max(0, h - listStartY - this.scaleY(24));
+    const personalRows = this.buildPersonalRows(snapshot.personalGear);
+    const totalHeight = personalRows.length > 0
+      ? cardHeight + Math.max(0, personalRows.length - 1) * cardSpacing
+      : 0;
+    this.personalMaxScroll = Math.max(0, totalHeight - availableHeight);
+    this.personalScrollTarget = Math.max(0, Math.min(this.personalScrollTarget, this.personalMaxScroll));
+    this.personalScrollOffset = Math.max(0, Math.min(this.personalScrollOffset, this.personalMaxScroll));
+
+    c.save();
+    c.beginPath();
+    c.rect(24, listStartY, w - 48, availableHeight);
+    c.clip();
+
+    let offsetY = listStartY - this.personalScrollOffset;
+    personalRows.forEach(row => {
+      const isSelected = row.index != null && this.selection?.kind === 'personal' && this.selection.index === row.index;
+      this.drawGearCard(c, row.slot, row.label, row.description, 24, offsetY, w - 48, cardHeight, isSelected, row.empty);
+      if (row.index != null) {
+        this.registerRegion({
+          kind: 'personal',
+          index: row.index,
+          slot: row.slot,
+          bounds: { x: x + 24, y: y + offsetY, w: w - 48, h: cardHeight }
+        });
+      }
       offsetY += cardSpacing;
     });
+
+    c.restore();
+
+    if (this.personalMaxScroll > 0) {
+      const contentHeight = Math.max(1, totalHeight);
+      const barHeight = Math.max(30, (availableHeight / contentHeight) * availableHeight);
+      const barY = listStartY + (this.personalScrollOffset / this.personalMaxScroll) * (availableHeight - barHeight);
+      c.fillStyle = 'rgba(255,255,255,0.25)';
+      c.fillRect(w - 16, barY, 6, barHeight);
+    }
+
     c.restore();
   }
 
@@ -420,16 +459,51 @@ export class InventoryPanel {
     c.restore();
   }
 
+  private buildPersonalRows(personalGear: InventorySnapshot['personalGear']): Array<{
+    slot: PersonalGearSlot;
+    label?: string;
+    description?: string;
+    index: number | null;
+    empty: boolean;
+  }> {
+    type PersonalRow = {
+      slot: PersonalGearSlot;
+      label?: string;
+      description?: string;
+      index: number | null;
+      empty: boolean;
+    };
+    const rows: PersonalRow[] = personalGear.map((gear, index) => ({
+      slot: gear.slot,
+      label: gear.label,
+      description: gear.description,
+      index,
+      empty: false
+    }));
+    const accessoryCount = rows.filter(row => row.slot === PersonalGearSlot.ACCESSORY).length;
+    for (let i = accessoryCount; i < 3; i++) {
+      rows.push({
+        slot: PersonalGearSlot.ACCESSORY,
+        label: undefined,
+        description: undefined,
+        index: null,
+        empty: true
+      });
+    }
+    return rows;
+  }
+
   private drawGearCard(
     c: CanvasRenderingContext2D,
     slot: PersonalGearSlot,
-    label: string,
+    label: string | undefined,
     description: string | undefined,
     x: number,
     y: number,
     w: number,
     h: number,
-    selected: boolean = false
+    selected: boolean = false,
+    empty: boolean = false
   ): void {
     c.save();
     const palette = this.getPersonalSlotPalette(slot);
@@ -450,9 +524,17 @@ export class InventoryPanel {
     c.fillStyle = palette.slot;
     c.font = '600 14px "Segoe UI", sans-serif';
     this.drawTallText(c, this.prettyPersonalSlot(slot), x + 12, y + 20 * scale);
+    const labelY = y + 40 * scale;
+    if (empty || !label) {
+      c.fillStyle = 'rgba(248,250,252,0.85)';
+      c.font = 'italic 15px "Segoe UI", sans-serif';
+      this.drawTallText(c, 'Slot vacío', x + 12, labelY);
+      c.restore();
+      return;
+    }
+
     c.fillStyle = palette.title;
     c.font = '600 16px "Segoe UI", sans-serif';
-    const labelY = y + 40 * scale;
     this.drawTallText(c, label, x + 12, labelY);
     if (description) {
       c.fillStyle = palette.body;
@@ -695,21 +777,21 @@ export class InventoryPanel {
     const buttonHeight = 52;
     const buttonX = w - buttonWidth - 32;
     const buttonY = (h - buttonHeight) / 2;
-    const enabled = !!this.selection;
+    const canJettison = this.selection?.kind === 'cargo' || this.selection?.kind === 'personal';
 
-    c.fillStyle = enabled ? '#f87171' : 'rgba(148,163,184,0.25)';
+    c.fillStyle = canJettison ? '#f87171' : 'rgba(148,163,184,0.25)';
     c.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
-    c.strokeStyle = enabled ? '#fecaca' : 'rgba(255,255,255,0.15)';
+    c.strokeStyle = canJettison ? '#fecaca' : 'rgba(255,255,255,0.15)';
     c.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
 
-    c.fillStyle = enabled ? '#0f172a' : '#94a3b8';
+    c.fillStyle = canJettison ? '#0f172a' : '#94a3b8';
     c.font = '600 18px "Segoe UI", sans-serif';
     this.drawTallText(c, 'Expulsar carga/equipo', buttonX + 16, buttonY + 32);
 
     this.registerRegion({
       kind: 'action',
       action: InventoryActionType.JETTISON,
-      enabled,
+      enabled: canJettison,
       bounds: { x: x + buttonX, y: y + buttonY, w: buttonWidth, h: buttonHeight }
     });
 

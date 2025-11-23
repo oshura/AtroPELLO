@@ -7491,16 +7491,8 @@ export class GameEngine {
         removedUnits
       });
     } else if (selection.kind === 'equipment') {
-      const slotState = this.gameState.equipmentLoadout[selection.slot];
-      if (!slotState) {
-        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Equipment slot already empty', { slot: selection.slot });
-      } else {
-        this.gameState.setEquipmentSlot(selection.slot, null);
-        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Equipment jettisoned', {
-          slot: selection.slot,
-          label: slotState.label
-        });
-      }
+      this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Equipment slots cannot be jettisoned', { slot: selection.slot });
+      return;
     } else if (selection.kind === 'personal') {
       const removed = this.gameState.removePersonalGearAtIndex(selection.index);
       if (!removed) {
