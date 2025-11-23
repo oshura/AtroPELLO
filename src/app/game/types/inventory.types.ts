@@ -49,8 +49,8 @@ export interface EquipmentSlotState {
   slot: EquipmentSlot;
   label: string;
   rarity: RarityTier;
-  integrityPct: number; // 0-100
   description?: string;
+  capabilities?: string[];
 }
 
 /** Elementos del inventario personal (incluye traje/botas dedicados). */
@@ -80,6 +80,11 @@ export interface InventorySnapshot {
   personalGear: PersonalGearItem[];
   cargo: CargoManifestEntry[];
   cargoCapacity: { current: number; max: number; pct: number };
+  shipStats?: {
+    acceleration: number;
+    topSpeed: number;
+    health: { current: number; max: number };
+  };
 }
 
 /** Acción disponible desde el panel de inventario. */

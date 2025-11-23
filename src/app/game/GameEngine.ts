@@ -7038,6 +7038,16 @@ export class GameEngine {
     const current = ship ? ship.cargoCapacityCurrent : 0;
     const max = ship ? ship.cargoCapacityMax : 0;
     const pct = max > 0 ? (current / max) * 100 : 0;
+    const shipStats = ship
+      ? {
+          acceleration: ship.acceleration,
+          topSpeed: ship.maxSpeed,
+          health: {
+            current: Math.max(0, Math.round(ship.healthCurrent)),
+            max: Math.max(1, Math.round(ship.healthMax))
+          }
+        }
+      : undefined;
 
     return {
       character: { ...this.gameState.characterProfile },
@@ -7048,7 +7058,8 @@ export class GameEngine {
         current,
         max,
         pct: Math.max(0, Math.min(200, pct))
-      }
+      },
+      shipStats
     };
   }
 

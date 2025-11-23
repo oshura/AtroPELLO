@@ -256,12 +256,12 @@ export class InventoryPanel {
 
     const healthY = nameY + this.scaleY(32);
     this.drawStatBar(c, 'Salud', snapshot.character.health, '#4ade80', 24, healthY, w - 48);
-    const sanityY = healthY + this.scaleY(48);
-    this.drawStatBar(c, 'Cordura', snapshot.character.sanity, '#60a5fa', 24, sanityY, w - 48);
+    const sanityY = healthY + this.scaleY(68);
+    const sanityBottom = this.drawSanityGrid(c, snapshot.character.sanity, 24, sanityY, w - 48);
 
     c.font = '500 18px "Segoe UI", sans-serif';
     c.fillStyle = '#9aa4c4';
-    const personalTitleY = sanityY + this.scaleY(56);
+    const personalTitleY = sanityBottom + this.scaleY(48);
     this.drawTallText(c, 'Equipo Personal', 24, personalTitleY);
 
     const cardHeight = this.scaleY(75);
@@ -317,7 +317,7 @@ export class InventoryPanel {
     let yOffset = listY - this.equipmentScrollOffset;
     for (const slot of order) {
       const isSelected = this.selection?.kind === 'equipment' && this.selection.slot === slot;
-      this.drawEquipmentCard(c, slot, snapshot.equipment[slot], 24, yOffset, cardWidth, cardHeight, isSelected);
+      this.drawEquipmentCard(c, slot, snapshot.equipment[slot], 24, yOffset, cardWidth, cardHeight, isSelected, snapshot);
       this.registerRegion({
         kind: 'equipment',
         slot,
@@ -445,7 +445,7 @@ export class InventoryPanel {
     if (description) {
       c.fillStyle = '#1f2937';
       c.font = '13px "Segoe UI", sans-serif';
-      const descY = Math.min(y + 58 * scale, y + h - 16);
+      const descY = Math.min(y + 70 * scale, y + h - 16);
       this.drawTallText(c, description, x + 12, descY);
     }
     c.restore();
@@ -459,7 +459,8 @@ export class InventoryPanel {
     y: number,
     w: number,
     h: number,
-    selected: boolean = false
+    selected: boolean = false,
+    snapshot: InventorySnapshot
   ): void {
     c.save();
     c.fillStyle = 'rgba(255,255,255,0.05)';
@@ -485,16 +486,28 @@ export class InventoryPanel {
       c.fillStyle = '#fafbff';
       c.font = '600 18px "Segoe UI", sans-serif';
       this.drawTallText(c, state.label, x + 12, y + 46 * scale);
-      c.fillStyle = '#9aa4c4';
-      c.font = '14px "Segoe UI", sans-serif';
+      let textY = y + 70 * scale;
       if (state.description) {
-        this.drawTallText(c, state.description, x + 12, y + 66 * scale);
+        c.fillStyle = '#9aa4c4';
+        c.font = '14px "Segoe UI", sans-serif';
+        this.drawTallText(c, state.description, x + 12, textY);
+        textY += 20 * scale;
       }
-      c.fillStyle = this.rarityAccent(state.rarity);
-      c.fillRect(x + 12, y + h - 22 * scale, (w - 24) * Math.max(0, Math.min(100, state.integrityPct)) / 100, 8 * scale);
-      c.fillStyle = '#637195';
-      c.font = '12px "Segoe UI", sans-serif';
-      this.drawTallText(c, `${Math.round(state.integrityPct)}%`, x + w - 48, y + h - 30 * scale);
+
+      const capabilityLines: string[] = [];
+      if (state.capabilities?.length) {
+        capabilityLines.push(...state.capabilities);
+      }
+      capabilityLines.push(...this.getDynamicCapabilityLines(slot, snapshot));
+
+      if (capabilityLines.length) {
+        c.fillStyle = '#7c8bad';
+        c.font = '12px "Segoe UI", sans-serif';
+        capabilityLines.forEach(line => {
+          this.drawTallText(c, `- ${line}`, x + 12, textY);
+          textY += 16 * scale;
+        });
+      }
     } else {
       if (isUnavailable) {
         c.fillStyle = 'rgba(255,255,255,0.35)';
@@ -510,6 +523,89 @@ export class InventoryPanel {
       }
     }
     c.restore();
+  }
+
+  private drawSanityGrid(c: CanvasRenderingContext2D, sanity: number, x: number, y: number, width: number): number {
+    c.save();
+    c.font = '500 14px "Segoe UI", sans-serif';
+    c.fillStyle = '#a7b5d8';
+    this.drawTallText(c, 'Cordura', x, y);
+    c.fillStyle = '#dde5ff';
+    c.font = '600 18px "Segoe UI", sans-serif';
+    this.drawTallText(c, `${Math.round(Math.max(0, Math.min(100, sanity)))}%`, x + width - 72, y);
+
+    const gridTop = y + this.scaleY(26);
+    const cellSize = this.scaleY(42);
+    const gap = this.scaleY(10);
+    const cols = 3;
+    const rows = 3;
+    const values = [10, 20, 30, 40, 50, 60, 70, 80, 90];
+    const bucketSize = 100 / values.length;
+    const clampedSanity = Math.max(0, Math.min(99.999, sanity));
+    const highlightIndex = Math.min(values.length - 1, Math.floor(clampedSanity / bucketSize));
+
+    for (let idx = 0; idx < values.length; idx++) {
+      const row = Math.floor(idx / cols);
+      const col = idx % cols;
+      const cellX = x + col * (cellSize + gap);
+      const cellY = gridTop + row * (cellSize + gap);
+
+      c.fillStyle = idx === highlightIndex ? 'rgba(96,165,250,0.2)' : 'rgba(255,255,255,0.05)';
+      c.fillRect(cellX, cellY, cellSize, cellSize);
+      c.strokeStyle = 'rgba(255,255,255,0.15)';
+      c.strokeRect(cellX, cellY, cellSize, cellSize);
+
+      c.fillStyle = '#f8fbff';
+      c.font = '600 14px "Segoe UI", sans-serif';
+      this.drawTallText(c, `${values[idx]}`, cellX + 10, cellY + cellSize / 2 + 4);
+
+      if (idx === highlightIndex) {
+        c.strokeStyle = '#bfdbfe';
+        c.lineWidth = 2;
+        this.drawHandCircle(c, cellX + cellSize / 2, cellY + cellSize / 2, cellSize * 0.6, sanity);
+      }
+    }
+
+    const bottom = gridTop + rows * cellSize + (rows - 1) * gap;
+    c.restore();
+    return bottom;
+  }
+
+  private drawHandCircle(c: CanvasRenderingContext2D, cx: number, cy: number, radius: number, seed: number): void {
+    c.save();
+    c.beginPath();
+    const steps = 32;
+    for (let i = 0; i <= steps; i++) {
+      const angle = (i / steps) * Math.PI * 2;
+      const wobble = Math.sin(angle * 3 + seed * 0.1) * radius * 0.08;
+      const r = radius - 4 + wobble;
+      const px = cx + Math.cos(angle) * r;
+      const py = cy + Math.sin(angle) * r;
+      if (i === 0) {
+        c.moveTo(px, py);
+      } else {
+        c.lineTo(px, py);
+      }
+    }
+    c.stroke();
+    c.restore();
+  }
+
+  private getDynamicCapabilityLines(slot: EquipmentSlot, snapshot: InventorySnapshot): string[] {
+    const lines: string[] = [];
+    const stats = snapshot.shipStats;
+
+    if (slot === EquipmentSlot.REACTOR && stats) {
+      lines.push(`Thrust: ${stats.acceleration.toFixed(1)} u/s`);
+      lines.push(`Top speed: ${stats.topSpeed.toFixed(1)} u/s`);
+    }
+
+    if (slot === EquipmentSlot.HULL && stats) {
+      lines.push(`Structure: ${stats.health.max}`);
+      lines.push(`Cargo capacity: ${snapshot.cargoCapacity.max}`);
+    }
+
+    return lines;
   }
 
   private drawCargoRow(

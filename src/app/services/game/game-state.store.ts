@@ -596,23 +596,25 @@ export class GameStateStore {
         slot: EquipmentSlot.CORE,
         label: 'Cabina Basilisco v2',
         rarity: RarityTier.RARE,
-        integrityPct: 92,
-        description: 'Centro de control y computación integrado de la nave.'
+        description: 'Centro de control y computación integrado.',
+        capabilities: [
+          'Telemetría panorámica de sobrepresión y targeting routines.'
+        ]
       },
       [EquipmentSlot.REACTOR]: {
         slot: EquipmentSlot.REACTOR,
         label: 'Thruster Cyclopean',
         rarity: RarityTier.EPIC,
-        integrityPct: 87,
-        description: 'Convierte energía del vacío en empuje silencioso para todo el fuselaje.'
+        description: 'Convierte vacío densificado en empuje silencioso para todo el fuselaje.',
+        capabilities: []
       },
       [EquipmentSlot.WINGS]: null,
       [EquipmentSlot.HULL]: {
         slot: EquipmentSlot.HULL,
         label: 'Placas Umbra-Lattice',
         rarity: RarityTier.RARE,
-        integrityPct: 64,
-        description: 'Disipa impacto cinético en patrones hexagonales.'
+        description: 'Paneles alveolares que difunden impacto cinético.',
+        capabilities: []
       },
       [EquipmentSlot.SHIELD]: null,
       [EquipmentSlot.DRONE_BAY]: null,
