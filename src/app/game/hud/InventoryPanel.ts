@@ -441,11 +441,14 @@ export class InventoryPanel {
     this.drawTallText(c, this.prettyPersonalSlot(slot), x + 12, y + 20 * scale);
     c.fillStyle = '#0f172a';
     c.font = '600 16px "Segoe UI", sans-serif';
-    this.drawTallText(c, label, x + 12, y + 40 * scale);
+    const labelY = y + 40 * scale;
+    this.drawTallText(c, label, x + 12, labelY);
     if (description) {
       c.fillStyle = '#1f2937';
       c.font = '13px "Segoe UI", sans-serif';
-      const descY = Math.min(y + 70 * scale, y + h - 16);
+      const descGap = this.scaleY(22);
+      const maxDescY = y + h - this.scaleY(8);
+      const descY = Math.min(labelY + descGap, maxDescY);
       this.drawTallText(c, description, x + 12, descY);
     }
     c.restore();
