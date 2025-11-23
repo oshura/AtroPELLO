@@ -574,13 +574,13 @@ export class InventoryPanel {
       this.drawTallText(c, `${value}`, cellX + cellWidth / 2, cellY + cellHeight / 2);
 
       if (value === clampedValue) {
-        c.strokeStyle = '#60a5fa';
-        c.lineWidth = 1.8;
+        c.strokeStyle = '#0f0f10';
+        c.lineWidth = 1.6;
         this.drawHandCircle(
           c,
           cellX + cellWidth / 2,
           cellY + cellHeight / 2,
-          Math.min(cellWidth, cellHeight) * 0.45,
+          Math.min(cellWidth, cellHeight) * 0.68,
           sanity
         );
       }
@@ -597,8 +597,8 @@ export class InventoryPanel {
     const steps = 32;
     for (let i = 0; i <= steps; i++) {
       const angle = (i / steps) * Math.PI * 2;
-      const wobble = Math.sin(angle * 3 + seed * 0.1) * radius * 0.08;
-      const r = radius - 4 + wobble;
+      const wobble = Math.sin(angle * 3 + seed * 0.1) * radius * 0.12;
+      const r = Math.max(2, radius * 0.85 + wobble);
       const px = cx + Math.cos(angle) * r;
       const py = cy + Math.sin(angle) * r;
       if (i === 0) {
