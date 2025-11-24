@@ -16,11 +16,12 @@ export class CharacterProfileService {
     this.gameState.setCharacterProfile(profile);
   }
 
-  /** Aplica delta a salud/cordura. */
-  adjustVitals(delta: { sanity?: number; health?: number }): void {
+  /** Aplica delta a salud/cordura/memoria. */
+  adjustVitals(delta: { sanity?: number; health?: number; memory?: number }): void {
     const next = {
       sanity: delta.sanity !== undefined ? this.gameState.characterProfile.sanity + delta.sanity : undefined,
-      health: delta.health !== undefined ? this.gameState.characterProfile.health + delta.health : undefined
+      health: delta.health !== undefined ? this.gameState.characterProfile.health + delta.health : undefined,
+      memory: delta.memory !== undefined ? this.gameState.characterProfile.memory + delta.memory : undefined
     };
     this.gameState.updateCharacterVitals(next);
   }

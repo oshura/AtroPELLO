@@ -129,7 +129,8 @@ export class GameStateStore {
   public characterProfile: CharacterProfile = {
     name: 'Harvey Walters',
     sanity: 58,
-    health: 100
+    health: 100,
+    memory: 0
   };
 
   /** Equipo personal (incluye slots dedicados de traje/botas) */
@@ -465,23 +466,28 @@ export class GameStateStore {
     this.characterProfile = {
       name: profile.name || this.characterProfile.name,
       sanity: this.clampPercent(profile.sanity ?? this.characterProfile.sanity),
-      health: this.clampPercent(profile.health ?? this.characterProfile.health)
+      health: this.clampPercent(profile.health ?? this.characterProfile.health),
+      memory: this.clampPercent(profile.memory ?? this.characterProfile.memory)
     };
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character' } });
     this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Character profile updated', {
       name: this.characterProfile.name,
       sanity: this.characterProfile.sanity,
-      health: this.characterProfile.health
+      health: this.characterProfile.health,
+      memory: this.characterProfile.memory
     });
   }
 
   /** Ajusta parcialmente valores de cordura/salud sin reemplazar el perfil completo. */
-  updateCharacterVitals(partial: Partial<Pick<CharacterProfile, 'sanity' | 'health'>>): void {
+  updateCharacterVitals(partial: Partial<Pick<CharacterProfile, 'sanity' | 'health' | 'memory'>>): void {
     if (typeof partial.sanity === 'number') {
       this.characterProfile.sanity = this.clampPercent(partial.sanity);
     }
     if (typeof partial.health === 'number') {
       this.characterProfile.health = this.clampPercent(partial.health);
+    }
+    if (typeof partial.memory === 'number') {
+      this.characterProfile.memory = this.clampPercent(partial.memory);
     }
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character' } });
   }

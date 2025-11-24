@@ -3,3 +3,17 @@ Si pegas un salto void jump, automaticamente hay una posibilidad del 33% de que 
 Los primigenios siempre tienen animosidad 'enemy'. Pueden entrar en combate con la nave o aterrizar en un planeta. 
 Si aterrizas en un planeta con primigenio, habrás que luchar con él en el planeta. 
 Y puede haber convertido la poblacion en fanaticos, ojo.
+
+
+
+Vamos a darle salsa al juego.
+Al personaje le puedes añadir una barra de memoria? 
+Digamos que seria como la salud pero empieza de 0 y va hasta el 100%. 
+Es para medir el progreso de juego que haya hehcho el jugador. 
+Cada fragmento de historia qeu revele su pasado la llenará hasta el 100%. Luego será descubrir en que se ha convertido cuando llegue al 100%, como end-game content, y como puedes acabar el juego: Restaurando la tierra y repoblandola, te quedas a vivir con ellos y terminas o continuas la exploracion espacial. O buscas un planeta habitable sin habitante y lo poblas. Para ello necesitas poder clonarte. Vagar eternamente por los confines del universo si consigues el sigil de vida eterna. O descubrir toda la fisica y la verdad de los soles, las estrellas, y manejar su energia para alterar el tiempo y detenerte a ti mismos y a tu secta destruyendo la nave nodriza. Luego puedes detruir el grimorio y vivir con los humanos en este nuevo devenir o continuar tu viaje por la estrellas defendiendo y devorando mundos para vagar por los confines del universo.
+
+Luego estan los dioses primigenisos, que eliminandolos se elimina todo mal. Ya no mas semillas ni otros seres poseiendo civilizaciones.
+Porque son los que envian desde el 'otro lado' las semillas y seres a poseer planetas y destruirte.
+
+Añadimos una experiencia y un nivel al personaje. La experiencia, inicialmente 0, es un valor entre 0 y 100 para empezar. Luego será entre 0 y 200, luego 0 y 300 luego 0 y 500 (Fibonachi), etc etc. Nunca se puede bajar de 0, y no se pierden niveles, por lo que una vez adquirido uno, la barra como mucho puede bajar a 0 y nada más.
+El nivel es 0 para empezar, e irá subiendo a medida que se completen barras de experiencia. Cada nave enemiga destruida dará 25 puntos, cada primigenio abatido en planeta 50 puntos. Cada aterrizaje en un nuevo planeta 3 puntos. Descubir una nueva raaza en un planeta 100 puntos. Lanzar un hechizo 1 punto normalemnte (portal 5). Morir -50 puntos. Así que la experiencia, nivel y memoria son elementos que no se reinicializan al hacer respawn.

@@ -29,10 +29,11 @@ Void Kinesis  ───┘
 
 | Campo | Detalle | Origen |
 |-------|---------|--------|
-| `characterProfile` | `{ name, sanity(0-100), health(0-100) }` | `GameStateStore` (default Harvey Walters 58/100) |
+| `characterProfile` | `{ name, sanity(0-100), health(0-100), memory(0-100) }` | `GameStateStore` (default Harvey Walters 58/100, memoria 0%) |
 | `personalGear` | Lista de `PersonalGearItem` con `slot`, `label`, `rarity` | `CharacterProfileService.setPersonalGear()` |
 
 - **Mutadores**: `setCharacterProfile`, `updateCharacterVitals`, `replacePersonalGear`.
+- **Memoria**: barra adicional que comienza en 0% y representa el progreso narrativo; se incrementa con `updateCharacterVitals({ memory: ... })`.
 - **Eventos**: Cada mutación emite `stateChanged$` con `type = 'inventory-updated'` y `metadata.scope` apropiado.
 
 ## 3. Equipamiento de la Nave

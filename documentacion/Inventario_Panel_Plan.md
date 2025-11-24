@@ -11,6 +11,7 @@
   - `nombre`: string ("Harvey Walters").
   - `cordura`: número entre 0 y 100 (default **58**).
   - `salud`: número entre 0 y 100 (default **100**).
+  - `memoria`: número entre 0 y 100 (default **0**, representa progreso narrativo desbloqueado por fragmentos de historia).
 - Equipo personal:
   - Lista corta de piezas (por ahora free-form) mostrada junto al perfil.
   - Slots dedicados: `Traje` y `Botas` renderizados como tarjetas destacadas dentro de la columna izquierda.

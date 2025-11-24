@@ -313,7 +313,9 @@ export class InventoryPanel {
 
     const healthY = nameY + this.scaleY(32);
     this.drawStatBar(c, 'Salud', snapshot.character.health, '#4ade80', 24, healthY, w - 48);
-    const sanityY = healthY + this.scaleY(68);
+    const memoryY = healthY + this.scaleY(68);
+    this.drawStatBar(c, 'Memoria', snapshot.character.memory, '#38bdf8', 24, memoryY, w - 48);
+    const sanityY = memoryY + this.scaleY(68);
     const sanityBottom = this.drawSanityGrid(c, snapshot.character.sanity, 24, sanityY, w - 48);
 
     c.font = '500 18px "Segoe UI", sans-serif';
