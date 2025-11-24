@@ -92,7 +92,7 @@ export class BillboardRenderer {
   public getRingTexture(key: string = 'ring-default'): WebGLTexture {
     const existing = this.textures.get(key);
     if (existing) return existing;
-    const tex = this.createRingTexture();
+    const tex = this.createRingTexture('full', key);
     this.textures.set(key, tex);
     return tex;
   }
@@ -102,7 +102,7 @@ export class BillboardRenderer {
     const keyUpper = `${key}-upper`;
     const existing = this.textures.get(keyUpper);
     if (existing) return existing;
-    const tex = this.createRingTexture('upper');
+    const tex = this.createRingTexture('upper', key);
     this.textures.set(keyUpper, tex);
     return tex;
   }
@@ -112,7 +112,7 @@ export class BillboardRenderer {
     const keyLower = `${key}-lower`;
     const existing = this.textures.get(keyLower);
     if (existing) return existing;
-    const tex = this.createRingTexture('lower');
+    const tex = this.createRingTexture('lower', key);
     this.textures.set(keyLower, tex);
     return tex;
   }
@@ -299,18 +299,20 @@ export class BillboardRenderer {
     return this.uploadCanvasTexture(cnv);
   }
 
-  private createRingTexture(half: 'upper' | 'lower' | 'full' = 'full'): WebGLTexture {
+  private createRingTexture(half: 'upper' | 'lower' | 'full' = 'full', key: string = 'ring-default'): WebGLTexture {
     const size = 256; // larger for cleaner edges
     const cnv = document.createElement('canvas'); cnv.width = size; cnv.height = size;
     const ctx = cnv.getContext('2d')!;
     ctx.clearRect(0,0,size,size);
     const cx = size/2, cy = size/2;
     // Ellipse scale to suggest tilt
-    const ellipseYScale = 0.58;
-    const outerR = size * 0.47;
-    const innerR = size * 0.30;
+    let ellipseYScale = 0.58;
+    let outerR = size * 0.47;
+    let innerR = size * 0.30;
+    let feather = 8;
+    let noiseRange = 18;
     // Base ring color palette (subtle beige/gray)
-    const bands = [
+    let bands = [
       { w: 1.00, color: 'rgba(210,200,180,0.75)' },
       { w: 0.92, color: 'rgba(220,210,190,0.85)' },
       { w: 0.84, color: 'rgba(205,195,175,0.90)' },
@@ -318,6 +320,20 @@ export class BillboardRenderer {
       { w: 0.68, color: 'rgba(200,190,170,0.92)' },
       { w: 0.60, color: 'rgba(215,205,185,0.85)' }
     ];
+
+    if (key === 'ring-earth') {
+      ellipseYScale = 0.72; // Slightly more face-on for a subtle halo
+      outerR = size * 0.40;
+      innerR = size * 0.34;
+      feather = 4;
+      noiseRange = 10;
+      bands = [
+        { w: 1.00, color: 'rgba(170,210,255,0.55)' },
+        { w: 0.92, color: 'rgba(130,190,255,0.65)' },
+        { w: 0.84, color: 'rgba(120,170,240,0.70)' },
+        { w: 0.76, color: 'rgba(180,220,255,0.60)' }
+      ];
+    }
     // Draw outer soft fade
     ctx.save();
     ctx.translate(cx, cy); ctx.scale(1, ellipseYScale);
@@ -342,7 +358,6 @@ export class BillboardRenderer {
       ctx.fill('evenodd');
     }
     // Soft edges: feather outer and inner boundaries
-    const feather = 8;
     for (let k = 0; k < feather; k++) {
       const a = (feather - k) / feather * 0.08;
       ctx.fillStyle = `rgba(255,255,255,${a})`;
@@ -360,11 +375,10 @@ export class BillboardRenderer {
     ctx.restore();
     // Add a slight noise grain to break perfect uniformity
     ctx.save();
-    const noiseAlpha = 0.06;
     const img = ctx.getImageData(0,0,size,size);
     const d = img.data;
     for (let i=0; i<d.length; i+=4) {
-      const n = (Math.random()*2 - 1) * 18; // +/- 18
+      const n = (Math.random()*2 - 1) * noiseRange; // +/- noiseRange
       d[i] = Math.min(255, Math.max(0, d[i] + n));
       d[i+1] = Math.min(255, Math.max(0, d[i+1] + n));
       d[i+2] = Math.min(255, Math.max(0, d[i+2] + n));

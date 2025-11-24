@@ -4400,8 +4400,9 @@ export class GameEngine {
         const Rw = (p as any).scale?.x ?? 1;
         let diameterPx = (2 * Rw * viewportH) / (Math.max(1e-3, distCam) * fovV);
         diameterPx = Math.max(8, Math.min(256, diameterPx));
-        // Textura: especial para Tierra partida, genérica circular para otros (tint = blanco)
-  const isEarthSplit = (p as any).planetType === 'Tierra';
+          // Textura: especial para Tierra partida, genérica circular para otros (tint = blanco)
+        const isEarthSplit = (p as any).planetType === 'Tierra';
+          const isEarthBillboard = isEarthSplit || p.id === 'planet-earth';
         // Calcular dirección de luz desde el Sol al planeta para iluminación dinámica
         let lightDir: { x: number; y: number; z: number } | undefined;
         if (this.gameState.sun) {
@@ -4458,6 +4459,21 @@ export class GameEngine {
         const upB = { x: right.y*fwdU.z - right.z*fwdU.y, y: right.z*fwdU.x - right.x*fwdU.z, z: right.x*fwdU.y - right.y*fwdU.x };
         // If planet is Ringed (e.g., Saturn), draw ring in two parts: upper half behind, lower half in front
         const isRinged = ((p as any)?.planetType === PlanetType.Ringed || String((p as any)?.planetType||'').toLowerCase()==='ringed');
+        const earthRingDiameterPx = isEarthBillboard ? Math.min(320, diameterPx * 1.25) : 0;
+        if (isEarthBillboard) {
+          const ringTexUpper = this.billboardRenderer.getRingTextureUpper('ring-earth');
+          this.billboardRenderer.render(
+            p.position,
+            earthRingDiameterPx,
+            cam.viewMatrix,
+            cam.projectionMatrix,
+            cam.position,
+            upB,
+            right,
+            [0.85,0.95,1,0.7],
+            ringTexUpper
+          );
+        }
         if (isRinged) {
           const ringTexUpper = this.billboardRenderer.getRingTextureUpper('ring-saturn');
           const ringDiameterPx = Math.min(384, diameterPx * 2.2);
@@ -4499,6 +4515,20 @@ export class GameEngine {
             upB,
             right,
             [1,1,1,0.98],
+            ringTexLower
+          );
+        }
+        if (isEarthBillboard) {
+          const ringTexLower = this.billboardRenderer.getRingTextureLower('ring-earth');
+          this.billboardRenderer.render(
+            p.position,
+            earthRingDiameterPx,
+            cam.viewMatrix,
+            cam.projectionMatrix,
+            cam.position,
+            upB,
+            right,
+            [0.85,0.95,1,0.85],
             ringTexLower
           );
         }
