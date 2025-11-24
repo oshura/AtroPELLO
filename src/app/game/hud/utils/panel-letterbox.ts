@@ -17,6 +17,12 @@ export interface PanelLetterbox {
   offsetY: number;
 }
 
+export interface PanelLetterboxOptions {
+  horizontalScale?: number;
+}
+
+export const PANEL_HORIZONTAL_STRETCH = 1.75;
+
 export interface PanelCoordMap {
   mapX: number;
   mapY: number;
@@ -32,11 +38,14 @@ export function computePanelLetterbox(
   viewportW: number,
   viewportH: number,
   textureW: number,
-  textureH: number
+  textureH: number,
+  options?: PanelLetterboxOptions
 ): PanelLetterbox {
   const safeViewportW = Math.max(1, viewportW);
   const safeViewportH = Math.max(1, viewportH);
-  const texAspect = textureW / Math.max(1, textureH);
+  const horizontalScale = options?.horizontalScale ?? 1;
+  const scaledTextureW = textureW * horizontalScale;
+  const texAspect = scaledTextureW / Math.max(1, textureH);
   const viewportAspect = safeViewportW / safeViewportH;
 
   let width = safeViewportW;
@@ -73,13 +82,14 @@ export function mapViewportPointToCanvas(
   viewportW: number,
   viewportH: number,
   textureW: number,
-  textureH: number
+  textureH: number,
+  options?: PanelLetterboxOptions
 ): PanelCoordMap {
   const safeRectW = Math.max(1, rect.width);
   const safeRectH = Math.max(1, rect.height);
   const px = ((clientX - rect.left) / safeRectW) * viewportW;
   const py = ((clientY - rect.top) / safeRectH) * viewportH;
-  const letterbox = computePanelLetterbox(viewportW, viewportH, textureW, textureH);
+  const letterbox = computePanelLetterbox(viewportW, viewportH, textureW, textureH, options);
 
   const inside =
     px >= letterbox.x && px <= letterbox.x + letterbox.width &&

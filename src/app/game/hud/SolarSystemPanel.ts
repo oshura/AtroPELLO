@@ -2,7 +2,7 @@ import { Vector3 } from '../../types/game.types';
 import { GameLogger } from '../utils/GameLogger';
 import { LogCategory } from '../../services/logging.service';
 import { GameObjectCategory, getCategoryIcon } from '../types/game-object.types';
-import { computePanelLetterbox, mapViewportPointToCanvas } from './utils/panel-letterbox';
+import { computePanelLetterbox, mapViewportPointToCanvas, PANEL_HORIZONTAL_STRETCH } from './utils/panel-letterbox';
 
 /**
  * SolarSystemPanel: renders a full-screen, opaque top-down map of the solar system
@@ -89,7 +89,8 @@ export class SolarSystemPanel {
       viewportW,
       viewportH,
       this.canvas.width,
-      this.canvas.height
+      this.canvas.height,
+      { horizontalScale: PANEL_HORIZONTAL_STRETCH }
     );
     if (!mapped.inside) {
       this.cursorPx = null;
@@ -125,7 +126,8 @@ export class SolarSystemPanel {
       viewportW,
       viewportH,
       this.canvas.width,
-      this.canvas.height
+      this.canvas.height,
+      { horizontalScale: PANEL_HORIZONTAL_STRETCH }
     );
     if (!mapped.inside) {
       return;
@@ -686,7 +688,13 @@ export class SolarSystemPanel {
 
     const safeW = Math.max(1, Math.floor(viewportW));
     const safeH = Math.max(1, Math.floor(viewportH));
-    const letterbox = computePanelLetterbox(safeW, safeH, this.canvas.width, this.canvas.height);
+    const letterbox = computePanelLetterbox(
+      safeW,
+      safeH,
+      this.canvas.width,
+      this.canvas.height,
+      { horizontalScale: PANEL_HORIZONTAL_STRETCH }
+    );
     gl.viewport(0, 0, safeW, safeH);
 
     gl.useProgram(this.program);
@@ -721,7 +729,8 @@ export class SolarSystemPanel {
       viewportW,
       viewportH,
       this.canvas.width,
-      this.canvas.height
+      this.canvas.height,
+      { horizontalScale: PANEL_HORIZONTAL_STRETCH }
     );
     if (!mapped.inside) {
       return null;

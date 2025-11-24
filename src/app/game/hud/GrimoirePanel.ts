@@ -1,7 +1,7 @@
 import { Vector3 } from '../../types/game.types';
 import { SpellType, SpellState, isSpellType } from '../types/spell.types';
 import { AudioEngineService } from '../../services/audio/audio-engine.service';
-import { computePanelLetterbox, mapViewportPointToCanvas } from './utils/panel-letterbox';
+import { computePanelLetterbox, mapViewportPointToCanvas, PANEL_HORIZONTAL_STRETCH } from './utils/panel-letterbox';
 
 /**
  * GrimoirePanel: full-screen, opaque panel rendering an ancient open book
@@ -112,7 +112,8 @@ export class GrimoirePanel {
       viewportW,
       viewportH,
       this.canvas.width,
-      this.canvas.height
+      this.canvas.height,
+      { horizontalScale: PANEL_HORIZONTAL_STRETCH }
     );
     if (!mapped.inside) {
       this.cursorPx = null;
@@ -354,7 +355,13 @@ export class GrimoirePanel {
     gl.disable(gl.BLEND);
     const safeW = Math.max(1, Math.floor(viewportW));
     const safeH = Math.max(1, Math.floor(viewportH));
-    const letterbox = computePanelLetterbox(safeW, safeH, this.canvas.width, this.canvas.height);
+    const letterbox = computePanelLetterbox(
+      safeW,
+      safeH,
+      this.canvas.width,
+      this.canvas.height,
+      { horizontalScale: PANEL_HORIZONTAL_STRETCH }
+    );
     gl.viewport(0, 0, safeW, safeH);
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
