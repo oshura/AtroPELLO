@@ -4130,7 +4130,7 @@ export class GameEngine {
   const created = EarthSplitPlanet.createWithDebris(`planet-earth`, 'azul_marino', radius, pos, 150, 320);
   planetObj = created.planet;
   planetObj.customName = 'Earth';
-        planetObj.probabilityOfLifePct = 100;
+        planetObj.probabilityOfLifePct = 0;
         // Registrar offsets locales para que los debris sigan a la Tierra
         const arr: Array<{ obj: MegaAsteroid; local: { x: number; y: number; z: number } }> = [];
         for (const m of created.debris) {
