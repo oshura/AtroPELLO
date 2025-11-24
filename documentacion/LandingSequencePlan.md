@@ -2,6 +2,13 @@
 
 This document outlines the HUD indicators, eligibility checks, cinematic flow, and UI required to support manual landings initiated by the player.
 
+## Estado actual (23 nov 2025)
+
+- ✅ Indicadores HUD `Landing/Threat` implementados junto al marquee y alimentados por `hudManager.setLandingIndicators`.
+- ✅ Detección de elegibilidad + amenazas integrada en `GameEngine` (distancia, velocidad, alineación y radio de amenazas) con gatillo por `Enter` reutilizando `AnimationManager.startLandingSequence`.
+- ✅ Animación completa de aterrizaje (fade a negro + handoff) y apertura del panel de aterrizaje.
+- ✅ UI `landing-panel` con acciones (`Despegar`) y animación de despegue + restauración de control.
+
 ## 1. HUD Indicators Next to the Marquee Panel
 
 | Indicator | Visuals | Location | Activation |

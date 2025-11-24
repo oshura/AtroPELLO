@@ -17,6 +17,7 @@ export class AnimationManagerService {
   private cachedAnchoringPulseCtor: ({ new(): GameAnimation }) | null = null;
   private cachedVoidKinesisCtor: ({ new(): GameAnimation }) | null = null;
   private cachedLandingSequenceCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedTakeoffSequenceCtor: ({ new(): GameAnimation }) | null = null;
   private flashImages: string[] = [
     '/assets/Athathoth.jpg',
     '/assets/GreatCthulhu.jpg',
@@ -35,6 +36,7 @@ export class AnimationManagerService {
     this.preloadAnchoringPulse();
     this.preloadVoidKinesis();
     this.preloadLandingSequence();
+    this.preloadTakeoffSequence();
   }
 
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
@@ -363,6 +365,45 @@ export class AnimationManagerService {
         const mod = await import('./landing-sequence.animation');
         const Anim = (mod as any).LandingSequenceAnimation as { new(): GameAnimation };
         this.cachedLandingSequenceCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  public startTakeoffSequence(engine: GameEngine, context: LandingApproachContext): boolean {
+    if (this.current && this.current.name !== 'blocking-delay') {
+      return false;
+    }
+    const launch = (Ctor: { new(): GameAnimation }) => {
+      const anim = new Ctor();
+      try { (anim as any).configure?.(context); } catch {}
+      anim.start(engine);
+      this.current = anim;
+    };
+    if (this.cachedTakeoffSequenceCtor) {
+      launch(this.cachedTakeoffSequenceCtor);
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./takeoff-sequence.animation');
+        const Anim = (mod as any).TakeoffSequenceAnimation as { new(): GameAnimation };
+        this.cachedTakeoffSequenceCtor = Anim;
+        launch(Anim);
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load TakeoffSequenceAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadTakeoffSequence(): void {
+    (async () => {
+      try {
+        const mod = await import('./takeoff-sequence.animation');
+        const Anim = (mod as any).TakeoffSequenceAnimation as { new(): GameAnimation };
+        this.cachedTakeoffSequenceCtor = Anim;
       } catch { /* ignore */ }
     })();
   }

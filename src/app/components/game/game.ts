@@ -6,15 +6,17 @@ import { Modal } from '../modal/modal';
 import { DeathDialogComponent, DeathDialogAction } from '../dialogs/death-dialog/death-dialog';
 import { WelcomeDialogComponent } from '../dialogs/welcome-dialog/welcome-dialog';
 import { ControlsDialogComponent } from '../dialogs/controls-dialog/controls-dialog';
+import { LandingPanelComponent } from '../landing-panel/landing-panel';
 import { GameStateManager, GameState } from '../../services/game/game-state.service';
 import { GameInputHandler } from '../../services/game/game-input.service';
 import { GameInitializer } from '../../services/game/game-initializer.service';
 import { GameUIManager } from '../../services/game/game-ui.service';
 import { LoggingService, LogCategory } from '../../services/logging.service';
+import { LandingApproachContext } from '../../game/types/landing.types';
 
 @Component({
   selector: 'app-game',
-  imports: [CommonModule, Modal, DeathDialogComponent, WelcomeDialogComponent, ControlsDialogComponent],
+  imports: [CommonModule, Modal, DeathDialogComponent, WelcomeDialogComponent, ControlsDialogComponent, LandingPanelComponent],
   templateUrl: './game.html',
   styleUrl: './game.scss'
 })
@@ -29,6 +31,8 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
   // Dialog states
   public showDeathDialog = false;
   public showControlsDialog = false;
+  public showLandingPanel = false;
+  public landingPanelContext: LandingApproachContext | null = null;
   private pausedByWiki = false;
   private wikiActive = false;
 
@@ -44,6 +48,52 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
   ) {
     // Expose this instance globally for GameEngine access
     (globalThis as any).GameComponentInstance = this;
+  }
+
+  /** Called from GameEngine once landing cinematic fades to black */
+  public openLandingPanel(context: LandingApproachContext): void {
+    this.logger.info(LogCategory.GAME_LOOP, 'Landing panel opening', { planetId: context.planetId });
+    this.landingPanelContext = context;
+    this.showLandingPanel = true;
+    this.inputHandler.setInputEnabled(false);
+    this.cdr.detectChanges();
+  }
+
+  public onLandingStay(): void {
+    this.closeLandingPanel();
+  }
+
+  public onLandingTakeoff(): void {
+    const engine = this.gameInitializer.getGameEngine();
+    if (!engine) {
+      this.logger.warn(LogCategory.GAME_LOOP, 'Cannot start takeoff: GameEngine unavailable');
+      return;
+    }
+    const takeoffFn = (engine as any).startTakeoffSequence;
+    if (typeof takeoffFn === 'function') {
+      try {
+        const started = !!takeoffFn.call(engine);
+        if (started) {
+          this.closeLandingPanel();
+        } else {
+          this.logger.warn(LogCategory.GAME_LOOP, 'Takeoff sequence request was rejected');
+        }
+      } catch (error) {
+        this.logger.error(LogCategory.GAME_LOOP, 'Takeoff sequence start failed', error);
+      }
+    } else {
+      this.logger.warn(LogCategory.GAME_LOOP, 'Takeoff sequence not wired yet');
+    }
+  }
+
+  private closeLandingPanel(): void {
+    const wasVisible = this.showLandingPanel;
+    this.showLandingPanel = false;
+    this.landingPanelContext = null;
+    if (wasVisible) {
+      this.updateInputEnabled();
+      this.cdr.detectChanges();
+    }
   }
 
   ngOnInit() {

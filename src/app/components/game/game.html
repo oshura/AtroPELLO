@@ -52,3 +52,11 @@
     </button>
   </div>
 </app-modal>
+
+<!-- Landing panel shown after cinematic touchdown -->
+<app-landing-panel
+  [visible]="showLandingPanel"
+  [context]="landingPanelContext"
+  (takeoff)="onLandingTakeoff()"
+  (stay)="onLandingStay()">
+</app-landing-panel>

@@ -18,24 +18,23 @@ function smoothstep(t: number): number {
   return c * c * (3 - 2 * c);
 }
 
-export class LandingSequenceAnimation implements GameAnimation {
-  public readonly name = 'landing-sequence';
-
+export class TakeoffSequenceAnimation implements GameAnimation {
+  public readonly name = 'takeoff-sequence';
   private context!: LandingApproachContext;
   private blocking = true;
   private elapsed = 0;
-  private readonly approachDuration = 2.4; // seconds to glide toward anchor point
-  private readonly glideDuration = 3.0; // scripted lateral drift
-  private readonly fadeDuration = 1.0; // fade to black once aligned
+  private readonly prepDuration = 1.0;
+  private readonly ascentDuration = 4.0;
+  private readonly exitDuration = 2.0;
 
-  private shipStart!: Vector3;
-  private approachEnd!: Vector3;
-  private glideEnd!: Vector3;
-  private glideDir!: Vector3;
+  private burrowTarget!: Vector3;
+  private ascentTarget!: Vector3;
+  private exitTarget!: Vector3;
+  private tangentDir!: Vector3;
 
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
-  private overlayAlpha = 0;
+  private overlayAlpha = 1;
 
   private savedShipDynamics: { acceleration: number; deceleration: number; maxSpeed: number } | null = null;
 
@@ -55,12 +54,14 @@ export class LandingSequenceAnimation implements GameAnimation {
       deceleration: ship.deceleration,
       maxSpeed: ship.maxSpeed
     };
-    ship.acceleration = 5;
-    ship.deceleration = 7;
+
+    ship.acceleration = Math.max(6, ship.acceleration);
+    ship.deceleration = Math.max(6, ship.deceleration);
+    ship.maxSpeed = Math.max(ship.maxSpeed, 28);
     ship.targetSpeed = 0;
-    ship.currentSpeed = Math.min(ship.currentSpeed, 8);
+    ship.currentSpeed = 0;
     ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
-    ship.thrusterState = ThrusterState.BRAKING;
+    ship.thrusterState = ThrusterState.IDLE;
     ship.voidEnergyPaused = true;
     ship.controls.forward = false;
     ship.controls.backward = false;
@@ -78,25 +79,30 @@ export class LandingSequenceAnimation implements GameAnimation {
     this.prevCameraMode = engine.camera?.getCurrentMode?.() ?? null;
     engine.camera?.setCameraMode?.(CameraMode.COCKPIT);
 
-    this.shipStart = { ...ship.position };
     const normal = this.normalize(this.context.surfaceNormal);
-    const altitude = Math.max(6, Math.min(60, this.context.radius * 0.04));
-    this.approachEnd = {
-      x: this.context.surfacePoint.x + normal.x * altitude,
-      y: this.context.surfacePoint.y + normal.y * altitude,
-      z: this.context.surfacePoint.z + normal.z * altitude
+    const surfacePoint = { ...this.context.surfacePoint };
+    const burrowDepth = Math.max(5, this.context.radius * 0.01);
+    const ascendHeight = Math.max(120, this.context.radius * 0.2);
+    const exitDrift = Math.max(80, this.context.radius * 0.12);
+    this.burrowTarget = {
+      x: surfacePoint.x - normal.x * burrowDepth,
+      y: surfacePoint.y - normal.y * burrowDepth,
+      z: surfacePoint.z - normal.z * burrowDepth
     };
-
-    this.glideDir = this.computeGlideDirection(ship.forwardDirection, normal);
-    const glideDistance = Math.max(30, Math.min(220, this.context.radius * 0.12));
-    this.glideEnd = {
-      x: this.approachEnd.x + this.glideDir.x * glideDistance,
-      y: this.approachEnd.y + this.glideDir.y * glideDistance,
-      z: this.approachEnd.z + this.glideDir.z * glideDistance
+    this.ascentTarget = {
+      x: surfacePoint.x + normal.x * ascendHeight,
+      y: surfacePoint.y + normal.y * ascendHeight,
+      z: surfacePoint.z + normal.z * ascendHeight
+    };
+    this.tangentDir = this.computeTangentDirection(ship.forwardDirection, normal);
+    this.exitTarget = {
+      x: this.ascentTarget.x + this.tangentDir.x * exitDrift,
+      y: this.ascentTarget.y + this.tangentDir.y * exitDrift,
+      z: this.ascentTarget.z + this.tangentDir.z * exitDrift
     };
 
     this.installKeyBlockers();
-    engine.notifyLandingSequenceStarted?.(this.context);
+    engine.notifyTakeoffSequenceStarted(this.context);
   }
 
   public update(engine: GameEngine, dt: number): boolean {
@@ -104,38 +110,38 @@ export class LandingSequenceAnimation implements GameAnimation {
     if (!ship || !this.context) {
       return true;
     }
-
     this.elapsed += dt;
     const normal = this.normalize(this.context.surfaceNormal);
 
-    if (this.elapsed <= this.approachDuration) {
-      const k = smoothstep(this.elapsed / Math.max(0.001, this.approachDuration));
-      const pos = this.lerpVec(this.shipStart, this.approachEnd, k);
-      this.applyShipPose(ship, pos, normal, this.glideDir, 0);
+    if (this.elapsed <= this.prepDuration) {
+      const t = smoothstep(this.elapsed / Math.max(0.001, this.prepDuration));
+      const pos = this.lerpVec(this.context.surfacePoint, this.burrowTarget, t);
+      this.applyShipPose(ship, pos, normal, normal, -10);
       ship.thrusterState = ThrusterState.BRAKING;
-      ship.currentSpeed = lerp(ship.currentSpeed, 0, clamp01(dt * 4));
       ship.targetSpeed = 0;
-    } else if (this.elapsed <= this.approachDuration + this.glideDuration) {
-      const localT = (this.elapsed - this.approachDuration) / Math.max(0.001, this.glideDuration);
-      const pos = this.lerpVec(this.approachEnd, this.glideEnd, smoothstep(localT));
-      const flare = 12 * smoothstep(localT);
-      this.applyShipPose(ship, pos, normal, this.glideDir, flare);
+      ship.currentSpeed = lerp(ship.currentSpeed, 0, clamp01(dt * 6));
+      this.overlayAlpha = 1;
+    } else if (this.elapsed <= this.prepDuration + this.ascentDuration) {
+      const localT = (this.elapsed - this.prepDuration) / Math.max(0.001, this.ascentDuration);
+      const pos = this.lerpVec(this.burrowTarget, this.ascentTarget, smoothstep(localT));
+      this.applyShipPose(ship, pos, normal, this.tangentDir, 8);
       ship.thrusterState = ThrusterState.CRUISING;
-      ship.targetSpeed = 5;
-      ship.currentSpeed = 5;
+      ship.targetSpeed = lerp(0, 18, clamp01(localT));
+      ship.currentSpeed = ship.targetSpeed;
+      this.overlayAlpha = lerp(1, 0.2, clamp01(localT));
+    } else if (this.elapsed <= this.prepDuration + this.ascentDuration + this.exitDuration) {
+      const localT = (this.elapsed - (this.prepDuration + this.ascentDuration)) / Math.max(0.001, this.exitDuration);
+      const pos = this.lerpVec(this.ascentTarget, this.exitTarget, smoothstep(localT));
+      this.applyShipPose(ship, pos, normal, this.tangentDir, 2);
+      ship.thrusterState = ThrusterState.CRUISING;
+      ship.targetSpeed = lerp(18, this.savedShipDynamics?.maxSpeed ?? 24, clamp01(localT));
+      ship.currentSpeed = ship.targetSpeed;
+      this.overlayAlpha = lerp(0.2, 0, clamp01(localT));
     } else {
-      const fadeT = (this.elapsed - (this.approachDuration + this.glideDuration)) / Math.max(0.001, this.fadeDuration);
-      this.overlayAlpha = clamp01(fadeT);
-      this.applyShipPose(ship, this.glideEnd, normal, this.glideDir, 12);
-      ship.thrusterState = ThrusterState.IDLE;
-      ship.currentSpeed = 0;
-      ship.targetSpeed = 0;
-    }
-
-    if (this.elapsed >= this.approachDuration + this.glideDuration + this.fadeDuration) {
       this.finish(engine, false);
       return true;
     }
+
     return false;
   }
 
@@ -166,31 +172,26 @@ export class LandingSequenceAnimation implements GameAnimation {
       ship.acceleration = this.savedShipDynamics.acceleration;
       ship.deceleration = this.savedShipDynamics.deceleration;
       ship.maxSpeed = this.savedShipDynamics.maxSpeed;
-      ship.targetSpeed = 0;
-      ship.currentSpeed = 0;
-      ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
+      ship.targetSpeed = ship.maxSpeed * 0.3;
+      ship.currentSpeed = ship.targetSpeed;
       ship.voidEnergyPaused = false;
-      ship.thrusterState = ThrusterState.IDLE;
+      ship.thrusterState = ThrusterState.CRUISING;
     }
     this.savedShipDynamics = null;
 
     try { this.inputBlockers.forEach(fn => fn()); } catch {}
     this.inputBlockers = [];
 
-    // Keep collisions disabled through landed state; only re-enable if sequence aborts
-    if (aborted) {
-      engine.collisionsDisabled = false;
-    } else {
-      engine.collisionsDisabled = true;
-    }
+    engine.collisionsDisabled = false;
     if (engine.camera && this.prevCameraMode !== null) {
       try { engine.camera.setCameraMode(this.prevCameraMode); } catch {}
     }
     this.prevCameraMode = null;
 
-    const outcome = aborted ? 'aborted' : 'landed';
-    try { engine.notifyLandingSequenceFinished?.(outcome, aborted ? null : this.context); } catch {}
+    this.overlayAlpha = 0;
     this.blocking = false;
+    const outcome = aborted ? 'aborted' : 'completed';
+    try { engine.notifyTakeoffSequenceFinished(outcome as 'completed' | 'aborted', this.context); } catch {}
   }
 
   private installKeyBlockers(): void {
@@ -219,7 +220,7 @@ export class LandingSequenceAnimation implements GameAnimation {
     return { x: v.x / len, y: v.y / len, z: v.z / len };
   }
 
-  private computeGlideDirection(forward: Vector3, normal: Vector3): Vector3 {
+  private computeTangentDirection(forward: Vector3, normal: Vector3): Vector3 {
     const dot = forward.x * normal.x + forward.y * normal.y + forward.z * normal.z;
     let tangent = {
       x: forward.x - normal.x * dot,
@@ -228,7 +229,7 @@ export class LandingSequenceAnimation implements GameAnimation {
     };
     const len = Math.hypot(tangent.x, tangent.y, tangent.z);
     if (len < 1e-3) {
-      // build arbitrary perpendicular vector
+      // choose arbitrary perpendicular vector
       const axis = Math.abs(normal.y) > 0.5 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
       tangent = {
         x: normal.y * axis.z - normal.z * axis.y,

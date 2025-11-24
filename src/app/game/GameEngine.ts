@@ -91,6 +91,7 @@ export class GameEngine {
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   public voidJumpActive: boolean = false;
   public collisionsDisabled: boolean = false;
+  private landingDamageSuppressed: boolean = false;
   public portalRenderer: any = null; // PortalRenderer instance
   // Runtime toggle to enable/disable the 2D outliner overlay for performance testing
   private outlinerEnabled: boolean = true;
@@ -103,6 +104,8 @@ export class GameEngine {
   private landingThreat: LandingThreatState = { active: false, reasons: [] };
   private landingSequenceActive: boolean = false;
   private landingSequenceContext: LandingApproachContext | null = null;
+  private landingTouchdownContext: LandingApproachContext | null = null;
+  private takeoffSequenceActive: boolean = false;
   private landingCandidatePlanetId: string | null = null;
   private landingCandidateStartMs: number | null = null;
   private readonly LANDING_DISTANCE_THRESHOLD = 50;
@@ -583,6 +586,8 @@ export class GameEngine {
   public notifyLandingSequenceStarted(context: LandingApproachContext): void {
     this.landingSequenceActive = true;
     this.landingSequenceContext = context;
+    this.landingTouchdownContext = null;
+    this.setLandingDamageSuppressed(true, 'landing-sequence-start');
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing sequence initiated', {
       planetId: context.planetId,
       planetName: context.planetName
@@ -593,7 +598,7 @@ export class GameEngine {
     } catch {}
   }
 
-  public notifyLandingSequenceFinished(outcome: 'landed' | 'aborted'): void {
+  public notifyLandingSequenceFinished(outcome: 'landed' | 'aborted', context?: LandingApproachContext | null): void {
     this.landingSequenceActive = false;
     this.landingSequenceContext = null;
     this.landingCandidatePlanetId = null;
@@ -601,11 +606,89 @@ export class GameEngine {
     const resetStatus: LandingStatus = { ready: false, context: null };
     this.landingStatus = resetStatus;
     try { this.gameState.setLandingStatus(resetStatus); } catch {}
-    const message = outcome === 'landed'
-      ? 'SECUENCIA DE ATERRIZAJE COMPLETA (WIP)'
-      : 'ATERRIZAJE CANCELADO';
-    try { this.showPlaceholderText(message, 2000); } catch {}
+    if (outcome === 'landed' && context) {
+      this.setLandingDamageSuppressed(true, 'landing-touchdown');
+      this.handleLandingTouchdown(context);
+    } else {
+      this.landingTouchdownContext = null;
+      this.setLandingDamageSuppressed(false, 'landing-aborted');
+      try { this.showPlaceholderText('ATERRIZAJE CANCELADO', 2000); } catch {}
+    }
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing sequence finished', { outcome });
+  }
+
+  public notifyTakeoffSequenceStarted(context: LandingApproachContext): void {
+    this.takeoffSequenceActive = true;
+    this.setLandingDamageSuppressed(true, 'takeoff-sequence-start');
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Takeoff sequence initiated', {
+      planetId: context.planetId,
+      planetName: context.planetName
+    });
+    try {
+      const label = context.planetName ? `TAKEOFF: ${context.planetName}` : 'TAKEOFF SEQUENCE';
+      this.hudManager?.addMarqueeMessage(label);
+    } catch {}
+  }
+
+  public notifyTakeoffSequenceFinished(outcome: 'completed' | 'aborted', context?: LandingApproachContext | null): void {
+    this.takeoffSequenceActive = false;
+    const resolvedContext = context ?? this.landingTouchdownContext;
+    if (outcome === 'completed') {
+      this.landingTouchdownContext = null;
+      this.collisionsDisabled = false;
+      this.setLandingDamageSuppressed(false, 'takeoff-completed');
+      try { this.showPlaceholderText('DESPEGUE COMPLETADO', 2000); } catch {}
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Takeoff sequence completed');
+    } else {
+      this.landingTouchdownContext = resolvedContext || null;
+      // Stay invulnerable to terrain until another attempt or manual exit
+      this.collisionsDisabled = true;
+      this.setLandingDamageSuppressed(true, 'takeoff-aborted');
+      try { this.showPlaceholderText('DESPEGUE ABORTADO', 2200); } catch {}
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff sequence aborted');
+    }
+  }
+
+  private handleLandingTouchdown(context: LandingApproachContext): void {
+    this.landingTouchdownContext = context;
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing touchdown registered', {
+      planetId: context.planetId,
+      planetName: context.planetName
+    });
+    try {
+      const gameComponent = (globalThis as any).GameComponentInstance;
+      if (gameComponent && typeof gameComponent.openLandingPanel === 'function') {
+        gameComponent.openLandingPanel(context);
+        return;
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Landing panel open failed', error);
+    }
+    const label = context.planetName ? `Aterrizaje completado: ${context.planetName}` : 'Aterrizaje completado';
+    try { this.showPlaceholderText(`${label} (panel no disponible)`, 2200); } catch {}
+  }
+
+  public startTakeoffSequence(): boolean {
+    if (!this.landingTouchdownContext) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff requested without landing context');
+      try { this.showPlaceholderText('DESPEGUE BLOQUEADO - SIN PLANETA', 2000); } catch {}
+      return false;
+    }
+    if (this.landingSequenceActive) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff blocked: landing sequence still active');
+      try { this.showPlaceholderText('ATERRIZAJE EN PROCESO', 2000); } catch {}
+      return false;
+    }
+    if (this.takeoffSequenceActive) {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Takeoff already in progress');
+      return true;
+    }
+    if (!this.animationManager.startTakeoffSequence(this, this.landingTouchdownContext)) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff animation rejected (busy)');
+      try { this.showPlaceholderText('DESPEGUE BLOQUEADO - SISTEMA OCUPADO', 2200); } catch {}
+      return false;
+    }
+    return true;
   }
 
   private collectActiveSuns(): Sun[] {
@@ -654,7 +737,7 @@ export class GameEngine {
   }
 
   private handleSunProximityDamage(deltaTime: number): void {
-    if (!this.spaceship) {
+    if (!this.spaceship || this.isLandingDamageSuppressed()) {
       this.sunExposureTimerMs = 0;
       return;
     }
@@ -2586,7 +2669,9 @@ export class GameEngine {
    * Detecta colisiones entre objetos
    */
   private checkCollisions(): void {
-    if (!this.spaceship) return;
+    if (!this.spaceship || this.collisionsDisabled || this.isLandingDamageSuppressed()) {
+      return;
+    }
     const now = performance.now();
     // Debug: log ship bounding sphere status once per second
     if (Math.floor(now / 1000) % 5 === 0 && !this._lastCollisionLogSec || Math.floor(now / 1000) !== this._lastCollisionLogSec) {
@@ -5406,6 +5491,21 @@ export class GameEngine {
       normals[ix] = nx / len; normals[ix + 1] = ny / len; normals[ix + 2] = nz / len;
     }
     return normals;
+  }
+
+  private setLandingDamageSuppressed(active: boolean, reason?: string): void {
+    if (this.landingDamageSuppressed === active) {
+      return;
+    }
+    this.landingDamageSuppressed = active;
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing damage suppression toggled', {
+      active,
+      reason
+    });
+  }
+
+  private isLandingDamageSuppressed(): boolean {
+    return this.landingDamageSuppressed;
   }
 
   /**
