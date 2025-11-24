@@ -1,6 +1,7 @@
 import { Vector3 } from '../../types/game.types';
 import { SpellType, SpellState, isSpellType } from '../types/spell.types';
 import { AudioEngineService } from '../../services/audio/audio-engine.service';
+import { computePanelLetterbox, mapViewportPointToCanvas } from './utils/panel-letterbox';
 
 /**
  * GrimoirePanel: full-screen, opaque panel rendering an ancient open book
@@ -18,6 +19,7 @@ export class GrimoirePanel {
   private vbo: WebGLBuffer | null = null;
   private ibo: WebGLBuffer | null = null;
   private program: WebGLProgram | null = null;
+  private uvTransformLoc: WebGLUniformLocation | null = null;
   private enabled: boolean = false;
   private cursorPx: number | null = null;
   private cursorPy: number | null = null;
@@ -103,11 +105,22 @@ export class GrimoirePanel {
    */
   public containsPoint(_x: number, _y: number): boolean { return this.isInteractive(); }
   public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
-    // Convert to canvas pixel coords (texture covers full viewport)
-    const x = ((clientX - rect.left) / Math.max(1, rect.width)) * viewportW;
-    const y = ((clientY - rect.top) / Math.max(1, rect.height)) * viewportH;
-    this.cursorPx = (x / viewportW) * this.canvas.width;
-    this.cursorPy = (y / viewportH) * this.canvas.height;
+    const mapped = mapViewportPointToCanvas(
+      clientX,
+      clientY,
+      rect,
+      viewportW,
+      viewportH,
+      this.canvas.width,
+      this.canvas.height
+    );
+    if (!mapped.inside) {
+      this.cursorPx = null;
+      this.cursorPy = null;
+      return;
+    }
+    this.cursorPx = mapped.mapX;
+    this.cursorPy = mapped.mapY;
   }
 
   // Expose hovered spell type for casting
@@ -215,12 +228,13 @@ export class GrimoirePanel {
 
     // Simple textured quad shader
     const vsSrc = `#version 300 es\nprecision mediump float;\nlayout(location=0) in vec2 a_pos;\nlayout(location=1) in vec2 a_uv;\nout vec2 v_uv;\nvoid main(){ v_uv = a_uv; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
-    const fsSrc = `#version 300 es\nprecision mediump float;\nuniform sampler2D u_tex;\nin vec2 v_uv;\nout vec4 frag;\nvoid main(){ frag = texture(u_tex, v_uv); }`;
+    const fsSrc = `#version 300 es\nprecision mediump float;\nuniform sampler2D u_tex;\nuniform vec4 u_uvTransform;\nin vec2 v_uv;\nout vec4 frag;\nvoid main(){\n  vec2 coverage = max(u_uvTransform.xy, vec2(0.0001));\n  vec2 uv = (v_uv - u_uvTransform.zw) / coverage;\n  uv = clamp(uv, vec2(0.0), vec2(1.0));\n  frag = texture(u_tex, uv);\n}`;
     const vs = gl.createShader(gl.VERTEX_SHADER)!; gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
     const fs = gl.createShader(gl.FRAGMENT_SHADER)!; gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
     const prog = gl.createProgram()!; gl.attachShader(prog, vs); gl.attachShader(prog, fs); gl.linkProgram(prog);
     gl.deleteShader(vs); gl.deleteShader(fs);
     this.program = prog;
+    this.uvTransformLoc = gl.getUniformLocation(prog, 'u_uvTransform');
 
     // Enable attributes
     const stride = 4 * 4;
@@ -338,14 +352,24 @@ export class GrimoirePanel {
     const prevDepth = gl.isEnabled(gl.DEPTH_TEST);
     gl.disable(gl.DEPTH_TEST);
     gl.disable(gl.BLEND);
+    const safeW = Math.max(1, Math.floor(viewportW));
+    const safeH = Math.max(1, Math.floor(viewportH));
+    const letterbox = computePanelLetterbox(safeW, safeH, this.canvas.width, this.canvas.height);
+    gl.viewport(0, 0, safeW, safeH);
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     const loc = gl.getUniformLocation(this.program, 'u_tex');
     gl.uniform1i(loc, 0);
+    if (this.uvTransformLoc) {
+      const coverageX = Math.max(letterbox.coverageX, 1e-4);
+      const coverageY = Math.max(letterbox.coverageY, 1e-4);
+      gl.uniform4f(this.uvTransformLoc, coverageX, coverageY, letterbox.offsetX, letterbox.offsetY);
+    }
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
     gl.bindVertexArray(null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
     if (prevBlend) gl.enable(gl.BLEND); else gl.disable(gl.BLEND);
     if (prevDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
   }

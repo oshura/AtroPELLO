@@ -9,6 +9,7 @@ import {
   InventoryActionType,
   CargoItemType
 } from '../types/inventory.types';
+import { computePanelLetterbox, mapViewportPointToCanvas } from './utils/panel-letterbox';
 
 export class InventoryPanel {
   private readonly gl: WebGL2RenderingContext;
@@ -26,6 +27,7 @@ export class InventoryPanel {
   private vbo: WebGLBuffer | null = null;
   private ibo: WebGLBuffer | null = null;
   private program: WebGLProgram | null = null;
+  private uvTransformLoc: WebGLUniformLocation | null = null;
   private enabled = false;
   private cursorPx: number | null = null;
   private cursorPy: number | null = null;
@@ -75,18 +77,32 @@ export class InventoryPanel {
     return this.enabled;
   }
 
-  public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, _viewportW: number, _viewportH: number): void {
-    const normX = (clientX - rect.left) / Math.max(1, rect.width);
-    const normY = (clientY - rect.top) / Math.max(1, rect.height);
-    const clampedX = Math.max(0, Math.min(1, normX));
-    const clampedY = Math.max(0, Math.min(1, normY));
-    this.cursorPx = clampedX * this.canvas.width;
-    this.cursorPy = clampedY * this.canvas.height;
+  public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
+    const mapped = mapViewportPointToCanvas(
+      clientX,
+      clientY,
+      rect,
+      viewportW,
+      viewportH,
+      this.canvas.width,
+      this.canvas.height
+    );
+    if (!mapped.inside) {
+      this.cursorPx = null;
+      this.cursorPy = null;
+      this.refreshTexture();
+      return;
+    }
+    this.cursorPx = mapped.mapX;
+    this.cursorPy = mapped.mapY;
     this.refreshTexture();
   }
 
   public handleWheelFromViewport(deltaY: number): void {
-    const pointerX = this.cursorPx ?? 0;
+    if (this.cursorPx == null) {
+      return;
+    }
+    const pointerX = this.cursorPx;
     const leftW = Math.floor(this.canvas.width * 0.35);
     const centerW = Math.floor(this.canvas.width * 0.4);
     const rightBoundary = leftW + centerW;
@@ -175,17 +191,27 @@ export class InventoryPanel {
   public render(viewportW: number, viewportH: number): void {
     if (!this.enabled || !this.texture || !this.program || !this.vao) return;
     const gl = this.gl;
+    const safeW = Math.max(1, Math.floor(viewportW));
+    const safeH = Math.max(1, Math.floor(viewportH));
+    const letterbox = computePanelLetterbox(safeW, safeH, this.canvas.width, this.canvas.height);
+    gl.viewport(0, 0, safeW, safeH);
     gl.useProgram(this.program);
     gl.bindVertexArray(this.vao);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     const loc = gl.getUniformLocation(this.program, 'u_tex');
     gl.uniform1i(loc, 0);
+    if (this.uvTransformLoc) {
+      const coverageX = Math.max(letterbox.coverageX, 1e-4);
+      const coverageY = Math.max(letterbox.coverageY, 1e-4);
+      gl.uniform4f(this.uvTransformLoc, coverageX, coverageY, letterbox.offsetX, letterbox.offsetY);
+    }
     const prevDepth = gl.isEnabled(gl.DEPTH_TEST);
     gl.disable(gl.DEPTH_TEST);
     gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0);
     if (prevDepth) gl.enable(gl.DEPTH_TEST);
     gl.bindVertexArray(null);
+    gl.bindTexture(gl.TEXTURE_2D, null);
   }
 
   private initGLResources(): void {
@@ -216,7 +242,7 @@ export class InventoryPanel {
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
 
     const vsSrc = `#version 300 es\nprecision mediump float;\nlayout(location=0) in vec2 a_pos;\nlayout(location=1) in vec2 a_uv;\nout vec2 v_uv;\nvoid main(){ v_uv = a_uv; gl_Position = vec4(a_pos, 0.0, 1.0); }`;
-    const fsSrc = `#version 300 es\nprecision mediump float;\nuniform sampler2D u_tex;\nin vec2 v_uv;\nout vec4 frag;\nvoid main(){ frag = texture(u_tex, v_uv); }`;
+    const fsSrc = `#version 300 es\nprecision mediump float;\nuniform sampler2D u_tex;\nuniform vec4 u_uvTransform;\nin vec2 v_uv;\nout vec4 frag;\nvoid main(){\n  vec2 coverage = max(u_uvTransform.xy, vec2(0.0001));\n  vec2 uv = (v_uv - u_uvTransform.zw) / coverage;\n  uv = clamp(uv, vec2(0.0), vec2(1.0));\n  frag = texture(u_tex, uv);\n}`;
     const vs = gl.createShader(gl.VERTEX_SHADER)!;
     gl.shaderSource(vs, vsSrc);
     gl.compileShader(vs);
@@ -229,6 +255,7 @@ export class InventoryPanel {
     gl.linkProgram(this.program!);
     gl.deleteShader(vs);
     gl.deleteShader(fs);
+    this.uvTransformLoc = gl.getUniformLocation(this.program!, 'u_uvTransform');
 
     const stride = 4 * 4;
     gl.enableVertexAttribArray(0);
