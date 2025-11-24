@@ -12,6 +12,8 @@
   - `cordura`: número entre 0 y 100 (default **58**).
   - `salud`: número entre 0 y 100 (default **100**).
   - `memoria`: número entre 0 y 100 (default **0**, representa progreso narrativo desbloqueado por fragmentos de historia).
+  - `nivel`: entero que inicia en **0** y aumenta al completar cada barra de experiencia.
+  - `experiencia`: valor dinámico `0..experienceMax` (caps Fibonacci-like: 100→200→300→500→...), más `experienceMax` para la barra actual.
 - Equipo personal:
   - Lista corta de piezas (por ahora free-form) mostrada junto al perfil.
   - Slots dedicados: `Traje` y `Botas` renderizados como tarjetas destacadas dentro de la columna izquierda.

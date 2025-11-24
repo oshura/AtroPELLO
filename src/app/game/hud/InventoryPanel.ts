@@ -310,12 +310,30 @@ export class InventoryPanel {
     c.fillStyle = '#f2f5ff';
     const nameY = this.scaleY(48);
     this.drawTallText(c, snapshot.character.name, 24, nameY);
+    const levelLabel = `Nivel ${snapshot.character.level}`;
+    c.save();
+    c.textAlign = 'right';
+    c.font = '600 20px "Segoe UI", sans-serif';
+    c.fillStyle = '#cdd5ff';
+    c.fillText(levelLabel, w - 24, nameY);
+    c.restore();
 
     const healthY = nameY + this.scaleY(32);
     this.drawStatBar(c, 'Salud', snapshot.character.health, '#4ade80', 24, healthY, w - 48);
     const memoryY = healthY + this.scaleY(68);
     this.drawStatBar(c, 'Memoria', snapshot.character.memory, '#38bdf8', 24, memoryY, w - 48);
-    const sanityY = memoryY + this.scaleY(68);
+    const experienceY = memoryY + this.scaleY(68);
+    this.drawStatBar(
+      c,
+      'Experiencia',
+      snapshot.character.experience,
+      '#facc15',
+      24,
+      experienceY,
+      w - 48,
+      { max: Math.max(1, snapshot.character.experienceMax), format: 'ratio' }
+    );
+    const sanityY = experienceY + this.scaleY(68);
     const sanityBottom = this.drawSanityGrid(c, snapshot.character.sanity, 24, sanityY, w - 48);
 
     c.font = '500 18px "Segoe UI", sans-serif';
@@ -480,7 +498,16 @@ export class InventoryPanel {
     c.restore();
   }
 
-  private drawStatBar(c: CanvasRenderingContext2D, label: string, value: number, color: string, x: number, y: number, width: number): void {
+  private drawStatBar(
+    c: CanvasRenderingContext2D,
+    label: string,
+    value: number,
+    color: string,
+    x: number,
+    y: number,
+    width: number,
+    options?: { max?: number; format?: 'percent' | 'ratio' }
+  ): void {
     c.save();
     c.font = '500 14px "Segoe UI", sans-serif';
     c.fillStyle = '#a7b5d8';
@@ -490,9 +517,16 @@ export class InventoryPanel {
     c.fillStyle = 'rgba(255,255,255,0.1)';
     c.fillRect(x, y + topGap, width, barHeight);
     c.fillStyle = color;
-    c.fillRect(x, y + topGap, (width * Math.max(0, Math.min(100, value))) / 100, barHeight);
+    const maxValue = options?.max ?? 100;
+    const normalized = maxValue <= 0 ? 0 : Math.max(0, Math.min(1, value / maxValue));
+    c.fillRect(x, y + topGap, width * normalized, barHeight);
     c.fillStyle = '#dde5ff';
-    this.drawTallText(c, `${Math.round(value)}%`, x + width - 54, y);
+    const format = options?.format ?? 'percent';
+    const displayText = format === 'ratio'
+      ? `${Math.max(0, Math.round(value))}/${Math.max(1, Math.round(maxValue))}`
+      : `${Math.round(normalized * 100)}%`;
+    const valueX = x + width - this.scaleY(80);
+    this.drawTallText(c, displayText, valueX, y);
     c.restore();
   }
 

@@ -13,7 +13,7 @@ The panel expects a fully materialized snapshot each frame via `update(snapshot)
 
 | Field | Notes |
 | --- | --- |
-| `character` | Pilot name plus health/memory/sanity values feeding the left stats column. |
+| `character` | Pilot name + level plus health/memory/experience/sanity values feeding the left stats column. |
 | `equipment` | Record keyed by `EquipmentSlot` (`CORE`, `HULL`, etc.) storing `EquipmentSlotState` (label, description, capabilities, rarity). Null entries render as empty slots. |
 | `personalGear` | Ordered array of worn gear; `PersonalGearSlot` drives palette & placeholder rows. Missing accessory rows are auto-padded to keep three placeholders visible. |
 | `cargo` | Manifest of `CargoManifestEntry`; IDs are mirrored in selection regions so the panel can keep a stable highlight even when the list shifts. |
@@ -32,7 +32,7 @@ Everything else (`voidEnergy`, relations, etc.) never enters this panel; keep sn
 3. **Upload**: `uploadTexture()` copies the canvas into the bound WebGL texture so the HUD quad updates next frame.
 
 ### Column Details
-- **Character Stats**: stacked bars for health and memory (0-100%) followed by the sanity grid; values come straight from `snapshot.character` so narrative progress can animate the new memory bar without layout changes.
+- **Character Stats**: stacked bars for health and memory (0-100%), the new experience ratio bar (value / experienceMax), and finally the sanity grid; `snapshot.character.level` renders next to the pilot name.
 - **Personal Gear**: uses `buildPersonalRows()` to append placeholder accessories. `getPersonalSlotPalette()` supplies color blocks per slot type, and selected cards render an orange outline.
 - **Equipment**: fixed order defined inline; cards show slot name, module label, description/capabilities, or "Slot vacío" / "N/A" as appropriate. Scrollbar heights are computed from content vs viewport heights.
 - **Cargo**: rows call `drawCargoRow()`, which now titles each row with the composition/notes text (defaults to the label) and shows a descriptor derived from `CargoItemType` (`describeCargoType()`). Unit counts are right-aligned, matching the latest UX request.

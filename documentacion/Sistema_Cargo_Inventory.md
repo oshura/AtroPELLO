@@ -29,11 +29,13 @@ Void Kinesis  ───┘
 
 | Campo | Detalle | Origen |
 |-------|---------|--------|
-| `characterProfile` | `{ name, sanity(0-100), health(0-100), memory(0-100) }` | `GameStateStore` (default Harvey Walters 58/100, memoria 0%) |
+| `characterProfile` | `{ name, sanity(0-100), health(0-100), memory(0-100), level, experience(0..experienceMax), experienceMax }` | `GameStateStore` (default Harvey Walters 58/100, memoria 0%, nivel 0, exp 0/100) |
 | `personalGear` | Lista de `PersonalGearItem` con `slot`, `label`, `rarity` | `CharacterProfileService.setPersonalGear()` |
 
 - **Mutadores**: `setCharacterProfile`, `updateCharacterVitals`, `replacePersonalGear`.
 - **Memoria**: barra adicional que comienza en 0% y representa el progreso narrativo; se incrementa con `updateCharacterVitals({ memory: ... })`.
+- **Experiencia/Nivel**: `adjustExperience(delta)` gestiona una barra reiniciable (0 → cap) y sube `level` usando umbrales tipo Fibonacci (100, 200, 300, 500, ...). Nunca baja de 0 ni reduce el nivel ya ganado.
+- **Eventos de XP**: `CharacterProfileService.registerExperienceEvent()` codifica los valores: nave enemiga +25, primigenio abatido +50, nuevo planeta +3, nueva raza +100, hechizo +1 (portal +5), muerte −50.
 - **Eventos**: Cada mutación emite `stateChanged$` con `type = 'inventory-updated'` y `metadata.scope` apropiado.
 
 ## 3. Equipamiento de la Nave

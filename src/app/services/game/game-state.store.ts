@@ -130,7 +130,10 @@ export class GameStateStore {
     name: 'Harvey Walters',
     sanity: 58,
     health: 100,
-    memory: 0
+    memory: 0,
+    level: 0,
+    experience: 0,
+    experienceMax: 100
   };
 
   /** Equipo personal (incluye slots dedicados de traje/botas) */
@@ -154,6 +157,8 @@ export class GameStateStore {
 
   /** Manifiesto de carga granular mostrado en el panel */
   public cargoManifest: CargoManifestEntry[] = [];
+  /** Cache de umbrales de experiencia por nivel (estilo Fibonacci) */
+  private experienceCapsCache: number[] = [100, 200];
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  GAME STATE FLAGS
@@ -463,18 +468,27 @@ export class GameStateStore {
 
   /** Reemplaza completamente el perfil del piloto. */
   setCharacterProfile(profile: CharacterProfile): void {
+    const level = this.normalizeLevel(profile.level ?? this.characterProfile.level ?? 0);
+    const experienceMax = this.resolveExperienceCap(profile.experienceMax, level);
+    const experience = this.clampExperience(profile.experience ?? this.characterProfile.experience ?? 0, experienceMax);
     this.characterProfile = {
       name: profile.name || this.characterProfile.name,
       sanity: this.clampPercent(profile.sanity ?? this.characterProfile.sanity),
       health: this.clampPercent(profile.health ?? this.characterProfile.health),
-      memory: this.clampPercent(profile.memory ?? this.characterProfile.memory)
+      memory: this.clampPercent(profile.memory ?? this.characterProfile.memory),
+      level,
+      experience,
+      experienceMax
     };
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character' } });
     this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Character profile updated', {
       name: this.characterProfile.name,
       sanity: this.characterProfile.sanity,
       health: this.characterProfile.health,
-      memory: this.characterProfile.memory
+      memory: this.characterProfile.memory,
+      level: this.characterProfile.level,
+      experience: this.characterProfile.experience,
+      experienceMax: this.characterProfile.experienceMax
     });
   }
 
@@ -490,6 +504,29 @@ export class GameStateStore {
       this.characterProfile.memory = this.clampPercent(partial.memory);
     }
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character' } });
+  }
+
+  /** Ajusta la experiencia del piloto aplicando reglas de nivel. */
+  adjustExperience(delta: number, metadata?: { reason?: string }): void {
+    if (!Number.isFinite(delta) || delta === 0) {
+      return;
+    }
+
+    if (delta > 0) {
+      this.applyExperienceGain(delta);
+    } else {
+      const nextValue = this.characterProfile.experience + delta;
+      this.characterProfile.experience = Math.max(0, nextValue);
+    }
+
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character', reason: metadata?.reason ?? 'experience' } });
+    this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Experience adjusted', {
+      delta,
+      reason: metadata?.reason,
+      level: this.characterProfile.level,
+      experience: this.characterProfile.experience,
+      experienceMax: this.characterProfile.experienceMax
+    });
   }
 
   /** Reemplaza la lista de equipo personal (traje, botas, accesorios). */
@@ -619,6 +656,64 @@ export class GameStateStore {
   private clampPercent(value: number): number {
     if (!Number.isFinite(value)) return 0;
     return Math.max(0, Math.min(100, value));
+  }
+
+  private clampExperience(value: number, max: number): number {
+    if (!Number.isFinite(value) || max <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.min(max, value));
+  }
+
+  private normalizeLevel(value: number): number {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return Math.max(0, Math.floor(value));
+  }
+
+  private resolveExperienceCap(candidate: number | undefined, level: number): number {
+    if (typeof candidate === 'number' && candidate > 0) {
+      return candidate;
+    }
+    return this.getExperienceCapForLevel(level);
+  }
+
+  private getExperienceCapForLevel(level: number): number {
+    if (level < this.experienceCapsCache.length) {
+      return this.experienceCapsCache[level];
+    }
+    while (this.experienceCapsCache.length <= level) {
+      const len = this.experienceCapsCache.length;
+      const next = this.experienceCapsCache[len - 1] + this.experienceCapsCache[len - 2];
+      this.experienceCapsCache.push(next);
+    }
+    return this.experienceCapsCache[level];
+  }
+
+  private applyExperienceGain(amount: number): void {
+    let remaining = amount;
+    while (remaining > 0) {
+      const needed = this.characterProfile.experienceMax - this.characterProfile.experience;
+      if (needed <= 0) {
+        this.promoteLevel();
+        continue;
+      }
+      if (remaining < needed) {
+        this.characterProfile.experience += remaining;
+        remaining = 0;
+      } else {
+        this.characterProfile.experience += needed;
+        remaining -= needed;
+        this.promoteLevel();
+      }
+    }
+  }
+
+  private promoteLevel(): void {
+    this.characterProfile.level += 1;
+    this.characterProfile.experience = 0;
+    this.characterProfile.experienceMax = this.getExperienceCapForLevel(this.characterProfile.level);
   }
 
   private createDefaultEquipmentLoadout(): Record<EquipmentSlot, EquipmentSlotState | null> {

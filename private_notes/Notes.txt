@@ -17,3 +17,18 @@ Porque son los que envian desde el 'otro lado' las semillas y seres a poseer pla
 
 Añadimos una experiencia y un nivel al personaje. La experiencia, inicialmente 0, es un valor entre 0 y 100 para empezar. Luego será entre 0 y 200, luego 0 y 300 luego 0 y 500 (Fibonachi), etc etc. Nunca se puede bajar de 0, y no se pierden niveles, por lo que una vez adquirido uno, la barra como mucho puede bajar a 0 y nada más.
 El nivel es 0 para empezar, e irá subiendo a medida que se completen barras de experiencia. Cada nave enemiga destruida dará 25 puntos, cada primigenio abatido en planeta 50 puntos. Cada aterrizaje en un nuevo planeta 3 puntos. Descubir una nueva raaza en un planeta 100 puntos. Lanzar un hechizo 1 punto normalemnte (portal 5). Morir -50 puntos. Así que la experiencia, nivel y memoria son elementos que no se reinicializan al hacer respawn.
+
+
+Vale, empecemos algunos wires con elementos que ya tenemos. A la clase planeta añadele una propiedad tipo enumerada inhabitants. Va a ser de NONE, MI_GO, YIG, LENG, ORGANISMO_VEGETAL, ANGELES_DESCARNADOS, PROFUNDOS, ANTIGUOS, DOHLE, CHTHONIAN, GULES, GHASTS, VAMPIRO_ESTELAR, BYHKEE, ... y la lista de criaturas 'menores' del lore de HP Lovecraft que no sean los dioses primigenios como CHTHULHU, ATHATHOTH, YOGSOTHOTH, CHTUGHA, ni los primigenios que envia cada uno de ellos CHTHULHU - Semillas_estelares, ATHATHOTH - (ninguno), YOGSOTHOTH - Shoggots, CHTUGHA - Vampiros_fuego
+
+
+
+Vale, empecemos algunos wires con elementos que ya tenemos. A la clase planeta añadele una propiedad tipo enumerada inhabitants. Va a ser de NONE, MI_GO, YIG, LENG, ORGANISMO_VEGETAL, ANGELES_DESCARNADOS, PROFUNDOS, ANTIGUOS, DOHLE, CHTHONIAN, GULES, GHASTS, VAMPIRO_ESTELAR, BYHKEE, ... y la lista de criaturas 'menores' del lore de HP Lovecraft que no sean los dioses primigenios como CHTHULHU, ATHATHOTH, YOGSOTHOTH, CHTUGHA, ni los primigenios que envia cada uno de ellos CHTHULHU - Semillas_estelares, ATHATHOTH - (ninguno), YOGSOTHOTH - Shoggots, CHTUGHA - Vampiros_fuego.
+Creame enumerados de criaturas inhabitants, de dioses primigenios, de seres menores y lista de mapping dioses con seres menores (CTHULHU - Semillas...).
+Luego quiero que le añadas a la clase planeta, una propiedad del tipo de 'seres menores'. 
+Y otra propiedad boleana de visitado.
+Mecanica: si la nave aterriza en el planeta, y no estava visitado, se suma los puntos de experiencia por aterrizar, 3, y se marca como visitado.
+Al crear los planetas de los sistemas solares que vayamos creando, incluso los del sistema solar humano inicial, quiero que se use el porcentaje asignado al planeta de probability of life para hacer un random entre 1 y 100, y si es menor o igual el resultado al porcentaje de probabilidad, aleatoriamente le asignas a la propiedad inhabitants una raza del enumerado, y si es superior, NONE. 
+Quiero otra propiedad en planeta que sea boolean, life_scanned, y otra creature_scanned. Si el jugador tiene capacidad de escanear por si hay vida, o consigue contactar con un ser si baja de la nave y lo encuentra, se marca como life_scaned. Si el jugador puede escanear primigenios en el planeta o baja de la nave y se lo encuentra, se marca creature_scanned. Si no hay 'ser menor', y llega uno al planeta, se desmarca creature_scanned y se almacena en la propiedad del tipo de 'seres menores'. Si ya hay uno, no va a poder nunca 'aterrizar' otro ser menor, va a tener qeu hacer otra cosa en la partida del juego.
+Son detalles del planeta que no quiero que se muestren en el HUD del target seleccionado ni en los del panel del mapa si es que el planeta no se ha escaneado para inhabitants o seres menores (los boleanos a true).
+Pillas la mecanica de razas, dioses primigenios (que ya los diseñaremos, como megaboses),

@@ -2,6 +2,26 @@ import { Injectable } from '@angular/core';
 import { GameStateStore } from './game-state.store';
 import { CharacterProfile, PersonalGearItem } from '../../game/types/inventory.types';
 
+export enum ExperienceEventType {
+  ENEMY_SHIP_DESTROYED = 'enemy-ship-destroyed',
+  PRIMIGENIO_DEFEATED_PLANET = 'primigenio-defeated-planet',
+  PLANET_LANDING = 'planet-landing',
+  NEW_SPECIES_DISCOVERED = 'new-species-discovered',
+  SPELL_CAST = 'spell-cast',
+  PORTAL_SPELL = 'portal-spell',
+  PLAYER_DEATH = 'player-death'
+}
+
+const EXPERIENCE_EVENT_VALUES: Record<ExperienceEventType, number> = {
+  [ExperienceEventType.ENEMY_SHIP_DESTROYED]: 25,
+  [ExperienceEventType.PRIMIGENIO_DEFEATED_PLANET]: 50,
+  [ExperienceEventType.PLANET_LANDING]: 3,
+  [ExperienceEventType.NEW_SPECIES_DISCOVERED]: 100,
+  [ExperienceEventType.SPELL_CAST]: 1,
+  [ExperienceEventType.PORTAL_SPELL]: 5,
+  [ExperienceEventType.PLAYER_DEATH]: -50
+};
+
 @Injectable({ providedIn: 'root' })
 export class CharacterProfileService {
   constructor(private readonly gameState: GameStateStore) {}
@@ -24,6 +44,20 @@ export class CharacterProfileService {
       memory: delta.memory !== undefined ? this.gameState.characterProfile.memory + delta.memory : undefined
     };
     this.gameState.updateCharacterVitals(next);
+  }
+
+  /** Aplica experiencia directa con un motivo opcional para logging. */
+  awardExperience(points: number, reason: string = 'manual'): void {
+    this.gameState.adjustExperience(points, { reason });
+  }
+
+  /** Registra eventos comunes descritos en documentación (destruir naves, aterrizar, etc.). */
+  registerExperienceEvent(event: ExperienceEventType): void {
+    const delta = EXPERIENCE_EVENT_VALUES[event];
+    if (delta === undefined) {
+      return;
+    }
+    this.gameState.adjustExperience(delta, { reason: event });
   }
 
   /** Reemplaza la lista de equipo personal mostrada junto al perfil. */

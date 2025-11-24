@@ -42,6 +42,9 @@ export interface CharacterProfile {
   sanity: number; // 0-100
   health: number; // 0-100
   memory: number; // 0-100
+  level: number;
+  experience: number;
+  experienceMax: number;
 }
 
 /** Estado de un slot de equipo de la nave. */
