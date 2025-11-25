@@ -569,13 +569,18 @@ export class SolarSystemPanel {
         const prettyKey = (k: string) => k.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
         const prettyVal = (v: any) => (typeof v === 'number') ? (Number.isFinite(v) ? v.toFixed(2) : String(v)) : (Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v)));
         const pushDetail = (text: string) => { if (text && detailLines.length < 12) detailLines.push(text); };
+        const lifeIntelKnown = !!d['planetLifeIntelKnown'];
+        const hasKnownSpecies = !!d['planetHasKnownSpecies'];
+        const showLifeProbability = !lifeIntelKnown;
         const pushIntelLine = (key: string, label: string) => {
           const raw = d[key];
           if (typeof raw === 'string' && raw.trim().length) {
             pushDetail(`${label}: ${raw}`);
           }
         };
-        pushIntelLine('planetInhabitantsDisplay', 'Habitantes');
+        if (lifeIntelKnown && hasKnownSpecies) {
+          pushIntelLine('planetInhabitantsDisplay', 'Habitantes');
+        }
         pushIntelLine('planetLesserBeingDisplay', 'Ser menor');
         if (typeof d['planetVisited'] === 'boolean') {
           pushDetail(`Visitado: ${d['planetVisited'] ? 'Sí' : 'No'}`);
@@ -597,11 +602,14 @@ export class SolarSystemPanel {
         })();
         if (volMu !== null) pushDetail(`Volume: ${volMu.toFixed(2)} Mu³`);
         const voidMass = d['voidMassUnits']; if (typeof voidMass === 'number' && isFinite(voidMass)) pushDetail(`Void mass: ${Math.max(0, Math.round(voidMass))}u`);
-        const pol = d['probabilityOfLifePct']; if (typeof pol === 'number') pushDetail(`Probability of Life: ${Math.max(0, Math.min(100, Math.round(pol)))}%`);
+        const pol = d['probabilityOfLifePct'];
+        if (showLifeProbability && typeof pol === 'number') {
+          pushDetail(`Probability of Life: ${Math.max(0, Math.min(100, Math.round(pol)))}%`);
+        }
         // Generic remaining keys (skip internal ones and already shown)
         for (const [k, v] of Object.entries(d)) {
           const lk = k.toLowerCase();
-          if (lk === 'healthpct' || lk === 'healthcurrent' || lk === 'healthmax' || lk === 'volumemu' || lk === 'volumegu' || lk === 'voidmassunits' || lk === 'probabilityoflifepct' || lk === 'previewstatus' || lk === 'type' || lk === 'name' || lk === 'planetinhabitantsdisplay' || lk === 'planetlesserbeingdisplay' || lk === 'planetlifeintelknown' || lk === 'planetcreatureintelknown' || lk === 'planetvisited') continue; // albedo removido
+          if (lk === 'healthpct' || lk === 'healthcurrent' || lk === 'healthmax' || lk === 'volumemu' || lk === 'volumegu' || lk === 'voidmassunits' || lk === 'probabilityoflifepct' || lk === 'previewstatus' || lk === 'type' || lk === 'name' || lk === 'planetinhabitantsdisplay' || lk === 'planetlesserbeingdisplay' || lk === 'planetlifeintelknown' || lk === 'planetcreatureintelknown' || lk === 'planetvisited' || lk === 'planethasknownspecies') continue; // albedo removido
           pushDetail(`${prettyKey(k)}: ${prettyVal(v)}`);
         }
 

@@ -188,13 +188,18 @@ export class TargetPanel {
   const detailsScaleY = 1.0; // sin estirar verticalmente para evitar desplazamientos
   const lineHeight = 42; // altura de línea aumentada proporcionalmente (1.5x de 28px)
     const lines: string[] = [];
+    const lifeIntelKnown = !!details?.['planetLifeIntelKnown'];
+    const hasKnownSpecies = !!details?.['planetHasKnownSpecies'];
+    const showLifeProbability = !lifeIntelKnown;
     const pushIntelLine = (label: string, key: string) => {
       const raw = (details as any)[key];
       if (typeof raw === 'string' && raw.trim().length) {
         lines.push(`${label}: ${raw}`);
       }
     };
-    pushIntelLine('Habitantes', 'planetInhabitantsDisplay');
+    if (lifeIntelKnown && hasKnownSpecies) {
+      pushIntelLine('Habitantes', 'planetInhabitantsDisplay');
+    }
     pushIntelLine('Ser menor', 'planetLesserBeingDisplay');
     if (typeof details?.['planetVisited'] === 'boolean') {
       lines.push(`Visitado: ${details['planetVisited'] ? 'Sí' : 'No'}`);
@@ -204,7 +209,7 @@ export class TargetPanel {
       // Filtrar claves internas y datos de salud (se muestran en la barra)
       if (key === 'previewStatus' || key === 'type' || key === 'name') continue;
       if (key === 'healthPct' || key === 'healthCurrent' || key === 'healthMax') continue; // Salud solo en barra
-      if (key === 'planetInhabitantsDisplay' || key === 'planetLesserBeingDisplay' || key === 'planetLifeIntelKnown' || key === 'planetCreatureIntelKnown' || key === 'planetVisited') continue;
+      if (key === 'planetInhabitantsDisplay' || key === 'planetLesserBeingDisplay' || key === 'planetLifeIntelKnown' || key === 'planetCreatureIntelKnown' || key === 'planetVisited' || key === 'planetHasKnownSpecies') continue;
       // Albedo eliminado: no procesar
         // Volume en Mu con etiqueta fija
         if (key === 'volumeMu') {
@@ -229,8 +234,10 @@ export class TargetPanel {
       }
       // Probability of Life: X%
       if (key === 'probabilityOfLifePct') {
-        const pct = Math.max(0, Math.min(100, Math.round(Number(value))));
-        lines.push(`Probability of Life: ${pct}%`);
+        if (showLifeProbability) {
+          const pct = Math.max(0, Math.min(100, Math.round(Number(value))));
+          lines.push(`Probability of Life: ${pct}%`);
+        }
         continue;
       }
       lines.push(`${this.prettyKey(key)}: ${this.prettyVal(value)}`);

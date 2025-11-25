@@ -2698,11 +2698,13 @@ export class GameEngine {
       planetLesserBeingDisplay: 'Desconocido',
       planetLifeIntelKnown: false,
       planetCreatureIntelKnown: false,
+      planetHasKnownSpecies: false,
       planetVisited: false,
     };
     if (!target) return defaults;
 
     const inhabitantsKey = target.inhabitants ?? PlanetInhabitants.NONE;
+    const hasKnownSpecies = !!target.lifeScanned && inhabitantsKey !== PlanetInhabitants.NONE;
     const inhabitantsDisplay = (() => {
       if (!target.lifeScanned) {
         return 'Desconocido';
@@ -2730,6 +2732,7 @@ export class GameEngine {
       planetLesserBeingDisplay: lesserBeingDisplay,
       planetLifeIntelKnown: !!target.lifeScanned,
       planetCreatureIntelKnown: !!target.creatureScanned,
+      planetHasKnownSpecies: hasKnownSpecies,
       planetVisited: !!target.visited,
     };
   }
