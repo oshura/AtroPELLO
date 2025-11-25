@@ -334,7 +334,14 @@ export class InventoryPanel {
       { max: Math.max(1, snapshot.character.experienceMax), format: 'ratio' }
     );
     const sanityY = experienceY + this.scaleY(68);
-    const sanityBottom = this.drawSanityGrid(c, snapshot.character.sanity, 24, sanityY, w - 48);
+    const sanityBottom = this.drawSanityGrid(
+      c,
+      snapshot.character.sanity,
+      snapshot.sanityLimits,
+      24,
+      sanityY,
+      w - 48
+    );
 
     c.font = '500 18px "Segoe UI", sans-serif';
     c.fillStyle = '#9aa4c4';
@@ -692,7 +699,14 @@ export class InventoryPanel {
     c.restore();
   }
 
-  private drawSanityGrid(c: CanvasRenderingContext2D, sanity: number, x: number, y: number, width: number): number {
+  private drawSanityGrid(
+    c: CanvasRenderingContext2D,
+    sanity: number,
+    limits: InventorySnapshot['sanityLimits'],
+    x: number,
+    y: number,
+    width: number
+  ): number {
     c.save();
     c.font = '500 14px "Segoe UI", sans-serif';
     c.fillStyle = '#a7b5d8';
@@ -707,7 +721,10 @@ export class InventoryPanel {
     c.strokeRect(x, frameY, width, frameH);
 
     const rows = 5;
-    const totalValues = 99;
+    const baseMax = limits?.base ?? 99;
+    const reserved = Math.max(0, Math.min((baseMax - 1), Math.round(limits?.reserved ?? 0)));
+    const effectiveCap = Math.max(1, baseMax - reserved);
+    const totalValues = baseMax;
     const cols = Math.ceil(totalValues / rows);
     const gap = 4;
     const horizontalPad = 12;
@@ -716,12 +733,11 @@ export class InventoryPanel {
     const innerHeight = frameH - verticalPad * 2;
     const cellWidth = (innerWidth - gap * (cols - 1)) / cols;
     const cellHeight = (innerHeight - gap * (rows - 1)) / rows;
-    const clampedValue = Math.max(1, Math.min(99, Math.round(sanity)));
+    const clampedValue = Math.max(1, Math.min(baseMax, Math.round(sanity)));
 
     c.font = '600 10px "Segoe UI", sans-serif';
     c.textAlign = 'center';
     c.textBaseline = 'middle';
-    c.fillStyle = '#020617';
 
     for (let value = 1; value <= totalValues; value++) {
       const index = value - 1;
@@ -729,8 +745,16 @@ export class InventoryPanel {
       const col = index % cols;
       const cellX = x + horizontalPad + col * (cellWidth + gap);
       const cellY = frameY + verticalPad + row * (cellHeight + gap);
+      const isReserved = value > effectiveCap;
 
-      c.fillStyle = '#020617';
+      if (isReserved) {
+        c.save();
+        c.fillStyle = 'rgba(212,168,60,0.2)';
+        c.fillRect(cellX, cellY, cellWidth, cellHeight);
+        c.restore();
+      }
+
+      c.fillStyle = isReserved ? '#d4af37' : '#020617';
       this.drawTallText(c, `${value}`, cellX + cellWidth / 2, cellY + cellHeight / 2);
 
       if (value === clampedValue) {

@@ -33,7 +33,7 @@ import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { GrimoirePanel } from './hud/GrimoirePanel';
 import { InventoryPanel } from './hud/InventoryPanel';
-import { SpellType } from './types/spell.types';
+import { SpellType, getSpellSanityCost } from './types/spell.types';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
@@ -138,6 +138,7 @@ export class GameEngine {
   private readonly LANDING_ALIGNMENT_MAX_DOT = 0.5; // cos(60°) tolerance from perfect parallel
   private readonly LANDING_READY_HOLD_MS = 250;
   private readonly LANDING_THREAT_RADIUS = 500;
+  private readonly GLYPH_SCAN_RANGE = 500;
   // Central logger
   public readonly logger: LoggingService;
   public _targetDetailsCache: Record<string, any> = {};
@@ -3526,6 +3527,11 @@ export class GameEngine {
    */
   public respawnGame(): void {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn initiated - regenerating solar system');
+    try {
+      this.characterProfileService.registerExperienceEvent(ExperienceEventType.PLAYER_DEATH);
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to apply respawn XP penalty', error);
+    }
     
     // Reset death flag
     this.deathInProgress = false;
@@ -6031,19 +6037,13 @@ export class GameEngine {
     // Fase 2: lanzar hechizo con 'h' (desde el grimorio o recordando el seleccionado)
     if (key.toLowerCase() === 'h') {
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as SpellType | null;
-        const spell = selected; // Do not fall back to hovered; require explicit selection
+        const spell = (this.grimoirePanel as any).getSelectedSpellType?.() as SpellType | null;
         if (!spell) {
-          // Nada seleccionado: no hacer nada
           return;
         }
-        // Immediately clear selection upon pressing 'h'
         try { (this.grimoirePanel as any)?.clearSelection?.(); } catch {}
-        // Capturar target actual/hovered en el momento del casteo (si aplica al hechizo)
         const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
-        // Cerrar el grimorio y volver a la escena 3D con cámara '0'
         try { this.grimoirePanel.setEnabled(false); } catch {}
-        // Play grimoire close sound when casting spell
         try {
           if (this.audio) {
             this.audio.play('ui_grimoire_close', { bus: 'ui', volume: 0.6 });
@@ -6053,208 +6053,21 @@ export class GameEngine {
         }
         try { this.updateGrimoirePointerBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
-  // Ir a cámara 0 si no lo está ya
-  if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
-    this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
-  }
-  const isSpeedRite = (spell === SpellType.SPEED);
-  const precastDelayMs = this.getPrecastChantDurationMs();
-  if (!isSpeedRite) {
-    // Bloquear controles mientras dura el canto IaIa
-    this.animationManager.startBlockingDelay(precastDelayMs, { spellType: spell });
-  }
-  // Reproducir sonido de pre-ritual
-  try {
-    if (this.audio) {
-      this.audio.play('sfx_precast_ritual', { bus: 'sfx', volume: 0.7 });
-    }
-  } catch (e) {
-    this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Pre-cast ritual sound failed', e);
-  }
-  if (isSpeedRite) {
-    this.triggerSpeedRiteInstantly();
-    return;
-  }
-  // Esperar a que termine el canto IaIa antes de ejecutar efectos
-        setTimeout(() => {
-          if (spell === SpellType.LONGJUMP) {
-            // Verificar energía del vacío antes de intentar el salto
-            if (!this.spaceship || this.spaceship.voidEnergyCurrent < 50) {
-              this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
-              return;
-            }
-            if (target) {
-              const center = (() => {
-                const anyT: any = target as any;
-                if (anyT.boundingSphere?.center) return { ...anyT.boundingSphere.center };
-                if (anyT.position) return { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z };
-                return { x: 0, y: 0, z: 0 };
-              })();
-              const dx = center.x - this.spaceship.position.x;
-              const dy = center.y - this.spaceship.position.y;
-              const dz = center.z - this.spaceship.position.z;
-              const dist = Math.hypot(dx, dy, dz);
-              if (dist > 4000) {
-                // Consumir 50u y lanzar animación de salto
-                this.spaceship.voidEnergyCurrent = Math.max(0, this.spaceship.voidEnergyCurrent - 50);
-                this.animationManager.startVoidJump(this, target);
-              } else {
-                this.logger.log(LogLevel.INFO, LogCategory.TARGETING, '[VoidJump] Target demasiado cerca (<4000u)', { distance: Math.round(dist) });
-                this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
-              }
-            } else {
-              // Sin target válido: placeholder
-              this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
-            }
-          } else if (spell === SpellType.GATE_RITE) {
-            // Gate Rite: requiere planeta seleccionado y distancia ≤ 50u a la superficie
-            const t = target as any;
-            const isPlanet = typeof t?.getTargetType === 'function' && String(t.getTargetType?.()) === 'planet';
-            if (!isPlanet) { this.showPlaceholderText('GATE RITE REQUIERE PLANETA', 2000); return; }
-            const center = t.position as {x:number;y:number;z:number};
-            const R = Math.max(1, (t.scale?.x ?? t.radius ?? 0));
-            const dx = center.x - this.spaceship.position.x;
-            const dy = center.y - this.spaceship.position.y;
-            const dz = center.z - this.spaceship.position.z;
-            const dCenter = Math.hypot(dx, dy, dz);
-            const surf = dCenter - R;
-            if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
-            // Iniciar Gate Rite tras el pre-focus ya hecho (2s bloqueados)
-            // Limpiar selección de target para que la cinemática se vea limpia
-            try { this.clearTargetSelection(); } catch {}
-            try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
-          } else if (spell === SpellType.ETERNAL_RITE) {
-            // Eternal Rite: ritual suicide animation (reduces health internally)
-            try { this.animationManager.startEternalRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'EternalRite start error', e); }
-          } else if (spell === SpellType.ANCHORING_PULSE) {
-            this.castAnchoringPulse(target ?? null);
-          } else if (spell === SpellType.VOID_KINESIS) {
-            this.castVoidKinesis(target ?? null);
-          } else if (spell === SpellType.DISRUPT) {
-            // Material Disruption Rite: beam attack animation
-            if (target && this.spaceship) {
-              const anyT: any = target as any;
-              const targetPos = anyT.boundingSphere?.center ? { ...anyT.boundingSphere.center } : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : null);
-              if (targetPos) {
-                const dx = targetPos.x - this.spaceship.position.x;
-                const dy = targetPos.y - this.spaceship.position.y;
-                const dz = targetPos.z - this.spaceship.position.z;
-                const dist = Math.hypot(dx, dy, dz);
-                if (dist <= 50) {
-                  // Start disruption rite animation (starts beam internally)
-                  try { this.animationManager.startDisruptionRite(this, target); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'DisruptionRite start error', e); }
-                } else {
-                  this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
-                }
-              }
-            } else {
-              this.showPlaceholderText('NO VALID TARGET', 1500);
-            }
-          }
-        }, precastDelayMs);
+        this.initiateSpellCast(spell, target);
         return;
       }
-      // Si el grimorio no está abierto: usar el hechizo seleccionado persistente (si existe)
       if (this.grimoirePanel) {
-        const selected = (this.grimoirePanel as any).getSelectedSpellType?.() as SpellType | null;
-        if (!selected) return;
-        // Immediately clear selection upon pressing 'h'
+        const spell = (this.grimoirePanel as any).getSelectedSpellType?.() as SpellType | null;
+        if (!spell) return;
         try { (this.grimoirePanel as any)?.clearSelection?.(); } catch {}
-        // Capturar target antes de cerrar mapa (si abierto) para Void Jump / Gate Rite
         const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
-        // Si el mapa está abierto, cerrarlo y aplicar cooldown igual que con escape
         if (this.systemPanel && this.systemPanel.isEnabled()) {
           this.systemPanel.setEnabled(false);
           this.gameState.mapReopenAllowedAtMs = performance.now() + 1000;
           try { this.updateMapClickBinding(); } catch {}
           try { this.updateCanvasCursor(); } catch {}
         }
-        // Cambiar cámara y ejecutar tras 2s, igual que cuando se castea desde el grimorio (modo externo inmóvil)
-        if (this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
-          this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
-        }
-        const isSpeedRite = selected === SpellType.SPEED;
-        const precastDelayMs = this.getPrecastChantDurationMs();
-        if (!isSpeedRite) {
-          this.animationManager.startBlockingDelay(precastDelayMs, { spellType: selected });
-        }
-        // Reproducir sonido de pre-ritual
-        try {
-          if (this.audio) {
-            this.audio.play('sfx_precast_ritual', { bus: 'sfx', volume: 0.7 });
-          }
-        } catch (e) {
-          this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Pre-cast ritual sound failed', e);
-        }
-        if (isSpeedRite) {
-          this.triggerSpeedRiteInstantly();
-          return;
-        }
-        setTimeout(() => {
-          if (selected === SpellType.LONGJUMP) {
-            if (!this.spaceship || this.spaceship.voidEnergyCurrent < 50) {
-              this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
-              return;
-            }
-            if (target) {
-              const anyT: any = target as any;
-              const center = anyT.boundingSphere?.center ? { ...anyT.boundingSphere.center } : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : { x: 0, y: 0, z: 0 });
-              const dx = center.x - this.spaceship.position.x;
-              const dy = center.y - this.spaceship.position.y;
-              const dz = center.z - this.spaceship.position.z;
-              const dist = Math.hypot(dx, dy, dz);
-              if (dist > 4000) {
-                this.spaceship.voidEnergyCurrent = Math.max(0, this.spaceship.voidEnergyCurrent - 50);
-                this.animationManager.startVoidJump(this, target);
-              } else {
-                this.logger.log(LogLevel.INFO, LogCategory.TARGETING, '[VoidJump] Target demasiado cerca (<4000u)', { distance: Math.round(dist) });
-                this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
-              }
-            } else {
-              this.showPlaceholderText('ANIMATION NUMBER 2.', 2000);
-            }
-          } else if (selected === SpellType.GATE_RITE) {
-            const t = target as any;
-            const isPlanet = typeof t?.getTargetType === 'function' && String(t.getTargetType?.()) === 'planet';
-            if (!isPlanet) { this.showPlaceholderText('GATE RITE REQUIERE PLANETA', 2000); return; }
-            const center = t.position as {x:number;y:number;z:number};
-            const R = Math.max(1, (t.scale?.x ?? t.radius ?? 0));
-            const dx = center.x - this.spaceship.position.x;
-            const dy = center.y - this.spaceship.position.y;
-            const dz = center.z - this.spaceship.position.z;
-            const dCenter = Math.hypot(dx, dy, dz);
-            const surf = dCenter - R;
-            if (surf > 50) { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); return; }
-            try { this.clearTargetSelection(); } catch {}
-            try { this.animationManager.startGateRite(this, t); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e); }
-          } else if (selected === SpellType.ETERNAL_RITE) {
-            // Eternal Rite: ritual suicide animation
-            try { this.animationManager.startEternalRite(this); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'EternalRite start error', e); }
-          } else if (selected === SpellType.ANCHORING_PULSE) {
-            this.castAnchoringPulse(target ?? null);
-          } else if (selected === SpellType.VOID_KINESIS) {
-            this.castVoidKinesis(target ?? null);
-          } else if (selected === SpellType.DISRUPT) {
-            // Material Disruption Rite
-            if (target && this.spaceship) {
-              const anyT: any = target as any;
-              const targetPos = anyT.boundingSphere?.center ? { ...anyT.boundingSphere.center } : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : null);
-              if (targetPos) {
-                const dx = targetPos.x - this.spaceship.position.x;
-                const dy = targetPos.y - this.spaceship.position.y;
-                const dz = targetPos.z - this.spaceship.position.z;
-                const dist = Math.hypot(dx, dy, dz);
-                if (dist <= 50) {
-                  try { this.animationManager.startDisruptionRite(this, target); } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'DisruptionRite start error', e); }
-                } else {
-                  this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
-                }
-              }
-            } else {
-              this.showPlaceholderText('NO VALID TARGET', 1500);
-            }
-          }
-        }, precastDelayMs);
+        this.initiateSpellCast(spell, target);
         return;
       }
       return;
@@ -6283,6 +6096,92 @@ export class GameEngine {
     const dy = point.y - this.spaceship.position.y;
     const dz = point.z - this.spaceship.position.z;
     return Math.hypot(dx, dy, dz);
+  }
+
+  private initiateSpellCast(spell: SpellType, target: ITargetable | null): void {
+    if (this.camera && this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
+      this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+    }
+    const precastDelayMs = this.getPrecastChantDurationMs();
+    const requiresChant = spell !== SpellType.SPEED;
+    if (requiresChant) {
+      try {
+        this.animationManager.startBlockingDelay(precastDelayMs, { spellType: spell });
+      } catch (e) {
+        this.logger.log(LogLevel.WARN, LogCategory.ANIMATION, 'Blocking delay failed for spell', { spell, error: e });
+      }
+    }
+    try {
+      if (this.audio) {
+        this.audio.play('sfx_precast_ritual', { bus: 'sfx', volume: 0.7 });
+      }
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Pre-cast ritual sound failed', e);
+    }
+    if (!requiresChant) {
+      this.triggerSpeedRiteInstantly();
+      this.applySpellSanityCost(spell);
+      return;
+    }
+    setTimeout(() => this.resolveSpellCast(spell, target), precastDelayMs);
+  }
+
+  private resolveSpellCast(spell: SpellType, target: ITargetable | null): void {
+    const executed = this.performSpellEffect(spell, target);
+    if (executed) {
+      this.applySpellSanityCost(spell);
+    }
+  }
+
+  private performSpellEffect(spell: SpellType, target: ITargetable | null): boolean {
+    switch (spell) {
+      case SpellType.LONGJUMP:
+        return this.performLongJump(target);
+      case SpellType.GATE_RITE:
+        return this.performGateRite(target);
+      case SpellType.ETERNAL_RITE:
+        try {
+          this.animationManager.startEternalRite(this);
+          return true;
+        } catch (e) {
+          this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'Eternal Rite start error', e);
+          return false;
+        }
+      case SpellType.ANCHORING_PULSE:
+        return this.castAnchoringPulse(target ?? null);
+      case SpellType.VOID_KINESIS:
+        return this.castVoidKinesis(target ?? null);
+      case SpellType.DISRUPT:
+        return this.performDisruptionRite(target);
+      case SpellType.SPECIES_SCAN:
+        return this.castSpeciesScanGlyph(target ?? null);
+      case SpellType.CREATURE_SCAN:
+        return this.castCreatureScanGlyph(target ?? null);
+      case SpellType.SPEED:
+        this.triggerSpeedRiteInstantly();
+        return true;
+      default:
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Unhandled spell cast', { spell });
+        return false;
+    }
+  }
+
+  private applySpellSanityCost(spell: SpellType): void {
+    const cost = getSpellSanityCost(spell);
+    const amount = Math.max(0, cost?.temp ?? 0);
+    if (amount === 0) {
+      return;
+    }
+    try {
+      this.characterProfileService.adjustVitals({ sanity: -amount });
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Spell sanity cost applied', {
+        spell,
+        amount,
+        sanityAfter: this.gameState.characterProfile.sanity,
+      });
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to apply spell sanity cost', { spell, error });
+    }
   }
 
   private isAsteroidTarget(target: any): target is Asteroid {
@@ -6837,62 +6736,242 @@ export class GameEngine {
     return applied;
   }
 
-  private castAnchoringPulse(target: ITargetable | null): void {
+  private performLongJump(target: ITargetable | null): boolean {
     if (!this.spaceship) {
-      return;
+      try { this.showPlaceholderText('ANIMATION NUMBER 2.', 2000); } catch {}
+      return false;
+    }
+    if (this.spaceship.voidEnergyCurrent < 50) {
+      try { this.showPlaceholderText('ENERGÍA DEL VACÍO INSUFICIENTE (50u)', 2000); } catch {}
+      return false;
+    }
+    if (!target) {
+      try { this.showPlaceholderText('ANIMATION NUMBER 2.', 2000); } catch {}
+      return false;
+    }
+    const targetPos = this.getTargetPosition(target);
+    if (!targetPos) {
+      try { this.showPlaceholderText('ANIMATION NUMBER 2.', 2000); } catch {}
+      return false;
+    }
+    const dist = this.getDistanceFromShip(targetPos);
+    if (dist <= 4000) {
+      this.logger.log(LogLevel.INFO, LogCategory.TARGETING, '[VoidJump] Target demasiado cerca (<4000u)', { distance: Math.round(dist) });
+      try { this.showPlaceholderText('ANIMATION NUMBER 2.', 2000); } catch {}
+      return false;
+    }
+    this.spaceship.voidEnergyCurrent = Math.max(0, this.spaceship.voidEnergyCurrent - 50);
+    try {
+      this.animationManager.startVoidJump(this, target);
+      return true;
+    } catch (e) {
+      this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'Void Jump start error', e);
+      return false;
+    }
+  }
+
+  private performGateRite(target: ITargetable | null): boolean {
+    if (!this.spaceship) {
+      try { this.showPlaceholderText('GATE RITE REQUIERE PLANETA', 2000); } catch {}
+      return false;
+    }
+    const asAny = target as any;
+    const isPlanet = typeof asAny?.getTargetType === 'function' && String(asAny.getTargetType()) === 'planet';
+    if (!isPlanet) {
+      try { this.showPlaceholderText('GATE RITE REQUIERE PLANETA', 2000); } catch {}
+      return false;
+    }
+    const center = asAny.position as { x: number; y: number; z: number };
+    const radius = Math.max(1, (asAny.scale?.x ?? asAny.radius ?? 0));
+    const dx = center.x - this.spaceship.position.x;
+    const dy = center.y - this.spaceship.position.y;
+    const dz = center.z - this.spaceship.position.z;
+    const distToCenter = Math.hypot(dx, dy, dz);
+    const surfaceOffset = distToCenter - radius;
+    if (surfaceOffset > 50) {
+      try { this.showPlaceholderText('DEMASIADO LEJOS DEL PLANETA (>50u)', 2000); } catch {}
+      return false;
+    }
+    try { this.clearTargetSelection(); } catch {}
+    try {
+      this.animationManager.startGateRite(this, asAny);
+      return true;
+    } catch (e) {
+      this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'GateRite start error', e);
+      return false;
+    }
+  }
+
+  private performDisruptionRite(target: ITargetable | null): boolean {
+    if (!target || !this.spaceship) {
+      try { this.showPlaceholderText('NO VALID TARGET', 1500); } catch {}
+      return false;
+    }
+    const targetPos = this.getTargetPosition(target);
+    if (!targetPos) {
+      try { this.showPlaceholderText('NO VALID TARGET', 1500); } catch {}
+      return false;
+    }
+    const dist = this.getDistanceFromShip(targetPos);
+    if (dist > 50) {
+      try { this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500); } catch {}
+      return false;
+    }
+    try {
+      this.animationManager.startDisruptionRite(this, target);
+      return true;
+    } catch (e) {
+      this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'DisruptionRite start error', e);
+      return false;
+    }
+  }
+
+  private castSpeciesScanGlyph(target: ITargetable | null): boolean {
+    const validated = this.validateGlyphScanTarget(target);
+    if (!validated) {
+      return false;
+    }
+    const { planet, surfaceDistance } = validated;
+    const previouslyLifeScanned = !!planet.lifeScanned;
+    try { planet.markLifeScanned(); } catch { (planet as any).lifeScanned = true; }
+    if (!previouslyLifeScanned && planet.inhabitants && planet.inhabitants !== PlanetInhabitants.NONE) {
+      try { this.characterProfileService.registerExperienceEvent(ExperienceEventType.NEW_SPECIES_DISCOVERED); } catch {}
+    }
+    const inhabitantLabel = planet.inhabitants && planet.inhabitants !== PlanetInhabitants.NONE
+      ? (PLANET_INHABITANT_LABELS[planet.inhabitants] ?? 'Habitantes detectados')
+      : PLANET_INHABITANT_LABELS[PlanetInhabitants.NONE];
+    const planetName = typeof planet.getDisplayName === 'function'
+      ? planet.getDisplayName()
+      : (planet.customName ?? planet.id ?? 'Planeta');
+    const sanityCost = getSpellSanityCost(SpellType.SPECIES_SCAN);
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Glyph species scan executed', {
+      planetId: planet.id,
+      inhabitants: inhabitantLabel,
+      surfaceDistance,
+      sanityCost: sanityCost.temp,
+    });
+    try {
+      this.showPlaceholderText(`AUGURIO DE HABITANTES:\n${planetName} · ${inhabitantLabel}`, 2600);
+    } catch {}
+    return true;
+  }
+
+  private castCreatureScanGlyph(target: ITargetable | null): boolean {
+    const validated = this.validateGlyphScanTarget(target);
+    if (!validated) {
+      return false;
+    }
+    const { planet, surfaceDistance } = validated;
+    const previouslyCreatureScanned = !!planet.creatureScanned;
+    try { planet.markCreatureScanned(); } catch { (planet as any).creatureScanned = true; }
+    const hasLesserBeing = planet.lesserBeing && planet.lesserBeing !== LesserBeing.NONE;
+    const creatureLabel = hasLesserBeing
+      ? (LESSER_BEING_LABELS[planet.lesserBeing as LesserBeing] ?? 'Presencia anómala detectada')
+      : LESSER_BEING_LABELS[LesserBeing.NONE];
+    const planetName = typeof planet.getDisplayName === 'function'
+      ? planet.getDisplayName()
+      : (planet.customName ?? planet.id ?? 'Planeta');
+    const sanityCost = getSpellSanityCost(SpellType.CREATURE_SCAN);
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Glyph creature scan executed', {
+      planetId: planet.id,
+      lesserBeing: creatureLabel,
+      surfaceDistance,
+      sanityCost: sanityCost.temp,
+      newlyScanned: !previouslyCreatureScanned,
+    });
+    const headline = hasLesserBeing ? 'SER MENOR REVELADO' : 'SER MENOR NO DETECTADO';
+    try {
+      this.showPlaceholderText(`${headline}:\n${planetName} · ${creatureLabel}`, 2600);
+    } catch {}
+    return true;
+  }
+
+  private validateGlyphScanTarget(target: ITargetable | null): { planet: Planet; surfaceDistance: number } | null {
+    if (!this.spaceship) {
+      try { this.showPlaceholderText('Escáner ritual inactivo (sin nave)', 1600); } catch {}
+      return null;
+    }
+    if (!target) {
+      try { this.showPlaceholderText('Selecciona un planeta para escanear', 1600); } catch {}
+      return null;
+    }
+    const asAny = target as any;
+    const targetType = typeof asAny?.getTargetType === 'function' ? asAny.getTargetType() : null;
+    const isPlanet = targetType === TargetType.PLANET || asAny?.getType?.() === GameObjectType.PLANET;
+    if (!isPlanet) {
+      try { this.showPlaceholderText('El objetivo actual no es un planeta escaneable', 1700); } catch {}
+      return null;
+    }
+    const planet = asAny as Planet;
+    const surfaceDistance = this.getSurfaceDistanceToPlanet(planet);
+    if (surfaceDistance == null || surfaceDistance > this.GLYPH_SCAN_RANGE) {
+      const readable = surfaceDistance != null ? Math.round(surfaceDistance) : '∞';
+      try { this.showPlaceholderText(`Planeta fuera de alcance (${readable}u)`, 1700); } catch {}
+      return null;
+    }
+    return { planet, surfaceDistance };
+  }
+
+  private castAnchoringPulse(target: ITargetable | null): boolean {
+    if (!this.spaceship) {
+      return false;
     }
     if (!target || !this.isAsteroidTarget(target)) {
       this.showPlaceholderText('ANCHORING PULSE REQUIERE ASTEROIDE', 1500);
-      return;
+      return false;
     }
     const pos = this.getTargetPosition(target);
     if (!pos) {
       this.showPlaceholderText('SIN POSICIÓN VÁLIDA', 1500);
-      return;
+      return false;
     }
     if (this.getDistanceFromShip(pos) > 50) {
       this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
-      return;
+      return false;
     }
     const requiredCargo = this.calculateCargoYieldFromAsteroid(target);
     if (this.spaceship.cargoCapacityRemaining < requiredCargo) {
       this.showPlaceholderText(`BODEGA SIN ESPACIO (${requiredCargo}u)`, 2000);
-      return;
+      return false;
     }
     try {
       this.animationManager.startAnchoringPulse(this, target);
+      return true;
     } catch (e) {
       this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'Anchoring Pulse animation failed', e);
+      return false;
     }
   }
 
-  private castVoidKinesis(target: ITargetable | null): void {
+  private castVoidKinesis(target: ITargetable | null): boolean {
     if (!this.spaceship) {
-      return;
+      return false;
     }
     if (!target || !this.isAsteroidTarget(target)) {
       this.showPlaceholderText('VOID KINESIS REQUIERE ASTEROIDE', 1500);
-      return;
+      return false;
     }
     const pos = this.getTargetPosition(target);
     if (!pos) {
       this.showPlaceholderText('SIN POSICIÓN VÁLIDA', 1500);
-      return;
+      return false;
     }
     if (this.getDistanceFromShip(pos) > 50) {
       this.showPlaceholderText('TARGET TOO FAR (>50u)', 1500);
-      return;
+      return false;
     }
     const voidGainInfo = this.calculateVoidEnergyGainFromAsteroid(target);
     const projectedVoid = this.spaceship.voidEnergyCurrent + voidGainInfo.gain;
     if (projectedVoid > this.spaceship.voidEnergyMax) {
       this.showPlaceholderText('RESERVA DEL VACÍO LLENA', 2000);
-      return;
+      return false;
     }
     try {
       this.animationManager.startVoidKinesis(this, target);
+      return true;
     } catch (e) {
       this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'Void Kinesis animation failed', e);
+      return false;
     }
   }
 
@@ -7641,7 +7720,12 @@ export class GameEngine {
         max,
         pct: Math.max(0, Math.min(200, pct))
       },
-      shipStats
+      shipStats,
+      sanityLimits: {
+        base: this.gameState.getSanityBaseMax(),
+        reserved: this.gameState.getSanityReservedFromSpells(),
+        effective: this.gameState.getSanityCap()
+      }
     };
   }
 

@@ -10,6 +10,8 @@ Este documento describe el libro del grimorio (UI), el flujo de lanzamiento de h
 - Hechizos disponibles
   - Rito Doble de Tiempo (Double Phased Time Rite)
   - Salto al Vacío (Void Jump)
+  - Augurio de Habitantes (Glyph Species Scan)
+  - Revelación del Ser Menor (Glyph Creature Scan)
 - Integración con HUD / Brújula
 - Aspectos técnicos (archivos y servicios)
 - Pruebas rápidas
@@ -58,6 +60,7 @@ Notas:
 
 - La nave dispone de Energía del Vacío: `max = 100`, `actual = 100` al inicio.
 - Algunos hechizos consumen este recurso. Si no hay suficiente energía, el lanzamiento se cancela tras el pre‑cast mostrando la animación placeholder.
+- Los glifos de escaneo (habitantes / ser menor) consumen 50u y respetan el mismo alcance que la bahía auxiliar (≤ 500u desde la superficie).
 
 ## Hechizos disponibles
 
@@ -84,6 +87,26 @@ Estados y bordes:
   - Si `energía < 50`: tras el pre‑cast de 2s se muestra la animación placeholder y se aborta.
   - Si el objetivo es inválido o está demasiado cerca: también se aborta tras el placeholder.
   - En caso válido: se inicia la secuencia/animación de salto y se descuenta la energía.
+
+  ### 3) Augurio de Habitantes (Glyph Species Scan)
+
+  - Efecto: revela la especie dominante de un planeta objetivo y marca el intel de habitantes como conocido (equivale al escáner auxiliar de vida).
+  - Costo: 50 unidades de Energía del Vacío.
+  - Alcance: debe mantenerse a ≤ 500u de la superficie del planeta objetivo.
+  - Requisitos adicionales:
+    - El objetivo debe ser un planeta válido; de lo contrario el lanzamiento se aborta.
+    - Si es la primera vez que se revela una especie distinta de `NONE`, concede el evento de experiencia `NEW_SPECIES_DISCOVERED` igual que el escáner auxiliar.
+  - Resultado: muestra un overlay con el nombre del planeta y el label de la especie detectada.
+
+  ### 4) Revelación del Ser Menor (Glyph Creature Scan)
+
+  - Efecto: detecta y fija el ser menor activo (si existe) en el planeta objetivo, marcando el intel de criatura como conocido.
+  - Costo: 50 unidades de Energía del Vacío.
+  - Alcance: ≤ 500u desde la superficie del planeta (mismas reglas que el Augurio y el escáner auxiliar).
+  - Requisitos:
+    - Solo planetas escaneables son válidos; se muestra placeholder si el target es inválido o está fuera de rango.
+    - Consume energía únicamente cuando la verificación de objetivo/distancia ha sido satisfactoria.
+  - Resultado: overlay diegético indicando si se reveló una presencia o se confirmó la ausencia (`SER MENOR REVELADO` / `SER MENOR NO DETECTADO`).
 
 ## Integración con HUD / Brújula
 
@@ -112,6 +135,10 @@ Estados y bordes:
 - Volver a pulsar `h` antes de expirar para refrescar la duración.
 - Dejar expirar: comprobar que se oculta el contador y se restauran límites/curvas.
 - Probar Salto al Vacío con energía suficiente (≥ 50) y con energía insuficiente (< 50) para validar ambos caminos.
+- Seleccionar los glifos de Augurio/Revelación y probar:
+  - Target cercano (≤ 500u) vs. fuera de rango para confirmar los placeholders.
+  - Consumo de 50u por lanzamiento exitoso y actualización de intel (habitantes/ser menor) en HUD y documentación del planeta.
+  - Confirmar que el escaneo ritual respeta el bloqueo de inputs/pre‑cast de 2s.
 - Verificar la lógica de selección: tras pulsar `h` la selección desaparece; nuevas pulsaciones de `h` no hacen nada hasta volver a seleccionar un glifo.
 
 ---

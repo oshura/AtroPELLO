@@ -55,6 +55,8 @@ export const SPELL_BEHAVIOR_MAP: Record<SpellType, SpellBehavior> = {
     hideOutliners: false,
     muteHoverAudio: false,
   }),
+  [SpellType.SPECIES_SCAN]: createBehavior(SpellType.SPECIES_SCAN),
+  [SpellType.CREATURE_SCAN]: createBehavior(SpellType.CREATURE_SCAN),
 };
 
 export function getSpellBehavior(spell?: SpellType | null): SpellBehavior {

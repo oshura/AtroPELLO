@@ -88,6 +88,11 @@ export interface InventorySnapshot {
     topSpeed: number;
     health: { current: number; max: number };
   };
+  sanityLimits?: {
+    base: number;
+    reserved: number;
+    effective: number;
+  };
 }
 
 /** Acción disponible desde el panel de inventario. */

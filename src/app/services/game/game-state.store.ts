@@ -22,6 +22,7 @@ import {
   RarityTier
 } from '../../game/types/inventory.types';
 import { LandingStatus, LandingThreatState } from '../../game/types/landing.types';
+import { SpellType, getSpellSanityCost } from '../../game/types/spell.types';
 
 /**
  * Evento de cambio de estado del juego
@@ -159,6 +160,8 @@ export class GameStateStore {
   public cargoManifest: CargoManifestEntry[] = [];
   /** Cache de umbrales de experiencia por nivel (estilo Fibonacci) */
   private experienceCapsCache: number[] = [100, 200];
+  private readonly SANITY_BASE_MAX = 99;
+  public readonly knownSpells: Set<SpellType> = new Set(Object.values(SpellType));
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  GAME STATE FLAGS
@@ -473,7 +476,7 @@ export class GameStateStore {
     const experience = this.clampExperience(profile.experience ?? this.characterProfile.experience ?? 0, experienceMax);
     this.characterProfile = {
       name: profile.name || this.characterProfile.name,
-      sanity: this.clampPercent(profile.sanity ?? this.characterProfile.sanity),
+      sanity: this.clampSanity(profile.sanity ?? this.characterProfile.sanity),
       health: this.clampPercent(profile.health ?? this.characterProfile.health),
       memory: this.clampPercent(profile.memory ?? this.characterProfile.memory),
       level,
@@ -495,7 +498,7 @@ export class GameStateStore {
   /** Ajusta parcialmente valores de cordura/salud sin reemplazar el perfil completo. */
   updateCharacterVitals(partial: Partial<Pick<CharacterProfile, 'sanity' | 'health' | 'memory'>>): void {
     if (typeof partial.sanity === 'number') {
-      this.characterProfile.sanity = this.clampPercent(partial.sanity);
+      this.characterProfile.sanity = this.clampSanity(partial.sanity);
     }
     if (typeof partial.health === 'number') {
       this.characterProfile.health = this.clampPercent(partial.health);
@@ -599,6 +602,51 @@ export class GameStateStore {
       reasons: [...state.reasons]
     };
   }
+
+  /** Marca un hechizo como aprendido y recalcula la reserva de cordura máxima. */
+  learnSpell(spell: SpellType): void {
+    if (this.knownSpells.has(spell)) {
+      return;
+    }
+    this.knownSpells.add(spell);
+    this.enforceSanityCeiling();
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'spells', action: 'learn', spell } });
+  }
+
+  /** Elimina un hechizo aprendido, liberando cordura máxima. */
+  forgetSpell(spell: SpellType): void {
+    if (!this.knownSpells.delete(spell)) {
+      return;
+    }
+    this.enforceSanityCeiling();
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'spells', action: 'forget', spell } });
+  }
+
+  hasSpell(spell: SpellType): boolean {
+    return this.knownSpells.has(spell);
+  }
+
+  getKnownSpells(): SpellType[] {
+    return Array.from(this.knownSpells);
+  }
+
+  getSanityBaseMax(): number {
+    return this.SANITY_BASE_MAX;
+  }
+
+  getSanityReservedFromSpells(): number {
+    let total = 0;
+    for (const spell of this.knownSpells) {
+      total += getSpellSanityCost(spell).max;
+    }
+    const maxReservable = Math.max(0, this.SANITY_BASE_MAX - 1);
+    return Math.max(0, Math.min(maxReservable, total));
+  }
+
+  getSanityCap(): number {
+    const reserved = this.getSanityReservedFromSpells();
+    return Math.max(1, this.SANITY_BASE_MAX - reserved);
+  }
   
   /**
    * Limpia todo el estado del juego (reset completo).
@@ -656,6 +704,21 @@ export class GameStateStore {
   private clampPercent(value: number): number {
     if (!Number.isFinite(value)) return 0;
     return Math.max(0, Math.min(100, value));
+  }
+
+  private clampSanity(value: number): number {
+    if (!Number.isFinite(value)) {
+      return Math.max(1, Math.min(this.getSanityCap(), 0));
+    }
+    return Math.max(1, Math.min(this.getSanityCap(), Math.round(value)));
+  }
+
+  private enforceSanityCeiling(): void {
+    const capped = this.clampSanity(this.characterProfile.sanity);
+    if (capped !== this.characterProfile.sanity) {
+      this.characterProfile.sanity = capped;
+      this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character', reason: 'sanity-cap' } });
+    }
   }
 
   private clampExperience(value: number, max: number): number {

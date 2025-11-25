@@ -1,5 +1,5 @@
 import { Vector3 } from '../../types/game.types';
-import { SpellType, SpellState, isSpellType } from '../types/spell.types';
+import { SpellType, SpellState, isSpellType, getSpellSanityCost } from '../types/spell.types';
 import { AudioEngineService } from '../../services/audio/audio-engine.service';
 import { computePanelLetterbox, mapViewportPointToCanvas, PANEL_HORIZONTAL_STRETCH } from './utils/panel-letterbox';
 
@@ -48,7 +48,9 @@ export class GrimoirePanel {
     [SpellType.ETERNAL_RITE, SpellState.AVAILABLE],
     [SpellType.DISRUPT, SpellState.AVAILABLE],
     [SpellType.ANCHORING_PULSE, SpellState.AVAILABLE],
-    [SpellType.VOID_KINESIS, SpellState.AVAILABLE]
+    [SpellType.VOID_KINESIS, SpellState.AVAILABLE],
+    [SpellType.SPECIES_SCAN, SpellState.AVAILABLE],
+    [SpellType.CREATURE_SCAN, SpellState.AVAILABLE]
   ]);
   private selectedSpell: SpellType | null = null;
   // Reading mode animation (zoom + slight tilt)
@@ -159,7 +161,9 @@ export class GrimoirePanel {
       SpellType.ETERNAL_RITE,
       SpellType.DISRUPT,
       SpellType.ANCHORING_PULSE,
-      SpellType.VOID_KINESIS
+      SpellType.VOID_KINESIS,
+      SpellType.SPECIES_SCAN,
+      SpellType.CREATURE_SCAN
     ];
     allSpells.forEach(k => {
       const currentState = this.spellStates.get(k);
@@ -183,7 +187,9 @@ export class GrimoirePanel {
       SpellType.ETERNAL_RITE,
       SpellType.DISRUPT,
       SpellType.ANCHORING_PULSE,
-      SpellType.VOID_KINESIS
+      SpellType.VOID_KINESIS,
+      SpellType.SPECIES_SCAN,
+      SpellType.CREATURE_SCAN
     ];
     allSpells.forEach(k => {
       const currentState = this.spellStates.get(k);
@@ -499,10 +505,10 @@ export class GrimoirePanel {
           const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
           c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
           c.shadowBlur = 22;
-          this.drawSpeedRune(c, p.x, p.y, p.r*0.9, '#00d5ff');
+          this.drawSpeedRune(c, p.x, p.y, p.r*0.76, '#00d5ff');
           c.restore();
         } else {
-          this.drawSpeedRune(c, p.x, p.y, p.r*0.9);
+          this.drawSpeedRune(c, p.x, p.y, p.r*0.76);
         }
       }
       else if (p.type === SpellType.LONGJUMP) {
@@ -511,10 +517,10 @@ export class GrimoirePanel {
           const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
           c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
           c.shadowBlur = 22;
-          this.drawLongJumpRune(c, p.x, p.y, p.r*0.9, '#00d5ff');
+          this.drawLongJumpRune(c, p.x, p.y, p.r*0.76, '#00d5ff');
           c.restore();
         } else {
-          this.drawLongJumpRune(c, p.x, p.y, p.r*0.9);
+          this.drawLongJumpRune(c, p.x, p.y, p.r*0.76);
         }
       }
       else if (p.type === SpellType.GATE_RITE) {
@@ -523,10 +529,10 @@ export class GrimoirePanel {
           const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 3.4));
           c.shadowColor = `rgba(255,140,0,${pulse.toFixed(3)})`;
           c.shadowBlur = 26;
-          this.drawGateRiteRune(c, p.x, p.y, p.r*0.9, '#ff8c00');
+          this.drawGateRiteRune(c, p.x, p.y, p.r*0.76, '#ff8c00');
           c.restore();
         } else {
-          this.drawGateRiteRune(c, p.x, p.y, p.r*0.9);
+          this.drawGateRiteRune(c, p.x, p.y, p.r*0.76);
         }
       }
       else if (p.type === SpellType.ETERNAL_RITE) {
@@ -535,10 +541,10 @@ export class GrimoirePanel {
           const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 2.8));
           c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
           c.shadowBlur = 22;
-          this.drawEternalRite(c, p.x, p.y, p.r*0.9, '#00d5ff');
+          this.drawEternalRite(c, p.x, p.y, p.r*0.76, '#00d5ff');
           c.restore();
         } else {
-          this.drawEternalRite(c, p.x, p.y, p.r*0.9);
+          this.drawEternalRite(c, p.x, p.y, p.r*0.76);
         }
       }
       else if (p.type === SpellType.DISRUPT) {
@@ -547,10 +553,10 @@ export class GrimoirePanel {
           const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.2));
           c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
           c.shadowBlur = 22;
-          this.drawDisruptRune(c, p.x, p.y, p.r*0.9, '#00d5ff');
+          this.drawDisruptRune(c, p.x, p.y, p.r*0.76, '#00d5ff');
           c.restore();
         } else {
-          this.drawDisruptRune(c, p.x, p.y, p.r*0.9);
+          this.drawDisruptRune(c, p.x, p.y, p.r*0.76);
         }
       }
       else if (p.type === SpellType.ANCHORING_PULSE) {
@@ -559,10 +565,10 @@ export class GrimoirePanel {
           const pulse = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
           c.shadowColor = `rgba(0,160,255,${pulse.toFixed(3)})`;
           c.shadowBlur = 26;
-          this.drawAnchoringPulseRune(c, p.x, p.y, p.r*0.9, '#00b8ff');
+          this.drawAnchoringPulseRune(c, p.x, p.y, p.r*0.76, '#00b8ff');
           c.restore();
         } else {
-          this.drawAnchoringPulseRune(c, p.x, p.y, p.r*0.9);
+          this.drawAnchoringPulseRune(c, p.x, p.y, p.r*0.76);
         }
       }
       else if (p.type === SpellType.VOID_KINESIS) {
@@ -571,19 +577,46 @@ export class GrimoirePanel {
           const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 3.6));
           c.shadowColor = `rgba(255,40,40,${pulse.toFixed(3)})`;
           c.shadowBlur = 28;
-          this.drawVoidKinesisRune(c, p.x, p.y, p.r*0.9, '#ff3737');
+          this.drawVoidKinesisRune(c, p.x, p.y, p.r*0.76, '#ff3737');
           c.restore();
         } else {
-          this.drawVoidKinesisRune(c, p.x, p.y, p.r*0.9);
+          this.drawVoidKinesisRune(c, p.x, p.y, p.r*0.76);
         }
       }
-      else if (p.type === 'eye') this.drawEye(c, p.x, p.y, p.r*1.0);
-      else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, p.r*0.7);
-      else if (p.type === 'ignis') this.drawIgnis(c, p.x, p.y, p.r*0.85);
-      else if (p.type === 'lux') this.drawLux(c, p.x, p.y, p.r*0.85);
-      else if (p.type === 'vinculum') this.drawVinculum(c, p.x, p.y, p.r*0.85);
-      else if (p.type === 'tempus') this.drawTempus(c, p.x, p.y, p.r*0.85);
+      else if (p.type === SpellType.SPECIES_SCAN) {
+        if (state === SpellState.EQUIPPED) {
+          c.save();
+          const pulse = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(this.t * 3.2));
+          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
+          c.shadowBlur = 24;
+          this.drawSpeciesScanRune(c, p.x, p.y, p.r*0.76, '#00d5ff');
+          c.restore();
+        } else {
+          this.drawSpeciesScanRune(c, p.x, p.y, p.r*0.76);
+        }
+      }
+      else if (p.type === SpellType.CREATURE_SCAN) {
+        if (state === SpellState.EQUIPPED) {
+          c.save();
+          const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 2.9));
+          c.shadowColor = `rgba(255,120,0,${pulse.toFixed(3)})`;
+          c.shadowBlur = 24;
+          this.drawCreatureScanRune(c, p.x, p.y, p.r*0.76, '#ff9a1a');
+          c.restore();
+        } else {
+          this.drawCreatureScanRune(c, p.x, p.y, p.r*0.76);
+        }
+      }
+      else if (p.type === 'eye') this.drawEye(c, p.x, p.y, p.r*0.86);
+      else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, p.r*0.6);
+      else if (p.type === 'ignis') this.drawIgnis(c, p.x, p.y, p.r*0.72);
+      else if (p.type === 'lux') this.drawLux(c, p.x, p.y, p.r*0.72);
+      else if (p.type === 'vinculum') this.drawVinculum(c, p.x, p.y, p.r*0.72);
+      else if (p.type === 'tempus') this.drawTempus(c, p.x, p.y, p.r*0.72);
       c.globalAlpha = alphaBefore;
+      if (isSpellType(p.type)) {
+        this.drawGlyphSanityCost(c, p.x, p.y, p.r, p.type, state);
+      }
       // tentacle intentionally avoided (had per-frame randomness)
       if (i === this.hoveredIconIndex) {
         this.drawIconHover(c, p.x, p.y, p.r);
@@ -710,9 +743,9 @@ export class GrimoirePanel {
     this.iconPlacements.push({ type: SpellType.ETERNAL_RITE, x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.45, s: 1.0, r: rL*0.95 });
     this.iconPlacements.push({ type: SpellType.DISRUPT, x: lp.x + lp.w*0.68, y: lp.y + lp.h*0.62, s: 1.0, r: rL*0.92 });
     this.iconPlacements.push({ type: SpellType.ANCHORING_PULSE, x: lp.x + lp.w*0.46, y: lp.y + lp.h*0.70, s: 1.0, r: rL*0.92 });
-    this.iconPlacements.push({ type: 'lux',   x: lp.x + lp.w*0.38, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
-    // Right page (spare spaces): vinculum (upper-left), tempus (lower-left)
-    this.iconPlacements.push({ type: 'vinculum', x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
+    this.iconPlacements.push({ type: SpellType.SPECIES_SCAN, x: lp.x + lp.w*0.38, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
+    // Right page (spare spaces): nueva runa de criatura (upper-left), tempus (lower-left)
+    this.iconPlacements.push({ type: SpellType.CREATURE_SCAN, x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
     this.iconPlacements.push({ type: 'tempus',   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
     this.iconPlacements.push({ type: SpellType.VOID_KINESIS, x: rp.x + rp.w*0.72, y: rp.y + rp.h*0.50, s: 1.0, r: rR*1.05 });
 
@@ -944,6 +977,88 @@ export class GrimoirePanel {
     c.restore();
   }
 
+  private drawSpeciesScanRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const baseColor = color ?? '#3b2b1f';
+    c.strokeStyle = baseColor; c.lineWidth = 2;
+    // Outer circle
+    c.beginPath(); c.arc(0, 0, r, 0, Math.PI*2); c.stroke();
+    // Inner guide ring
+    c.globalAlpha = 0.65;
+    c.beginPath(); c.arc(0, 0, r*0.8, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 1;
+    // Double helix rails
+    const helixHeight = r * 1.4;
+    const steps = 18;
+    c.lineWidth = 2.2;
+    for (let rail = -1; rail <= 1; rail += 2) {
+      c.beginPath();
+      for (let i = 0; i <= steps; i++) {
+        const t = i / steps;
+        const yPos = -helixHeight/2 + helixHeight * t;
+        const phase = t * Math.PI * 2 + (rail < 0 ? 0 : Math.PI);
+        const xPos = Math.sin(phase) * r * 0.45;
+        if (i === 0) c.moveTo(xPos, yPos); else c.lineTo(xPos, yPos);
+      }
+      c.stroke();
+    }
+    // Ladder rungs
+    c.lineWidth = 1.6;
+    for (let i = 0; i < steps; i += 2) {
+      const t = i / steps;
+      const yPos = -helixHeight/2 + helixHeight * t;
+      const phase = t * Math.PI * 2;
+      const xOffset = Math.cos(phase) * r * 0.25;
+      c.beginPath();
+      c.moveTo(-xOffset, yPos);
+      c.lineTo(xOffset, yPos);
+      c.stroke();
+    }
+    c.restore();
+  }
+
+  private drawCreatureScanRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const baseColor = color ?? '#3b2b1f';
+    c.strokeStyle = baseColor; c.lineWidth = 2.4;
+    // Outer circle + inner circle
+    c.beginPath(); c.arc(0,0,r,0,Math.PI*2); c.stroke();
+    c.globalAlpha = 0.75;
+    c.beginPath(); c.arc(0,0,r*0.75,0,Math.PI*2); c.stroke();
+    c.globalAlpha = 1;
+    // Stylized eye with tri-pronged claws
+    c.beginPath(); c.ellipse(0,0,r*0.55,r*0.32,0,0,Math.PI*2); c.stroke();
+    c.beginPath(); c.arc(0,0,r*0.18,0,Math.PI*2); c.stroke();
+    c.fillStyle = baseColor; c.beginPath(); c.arc(0,0,r*0.08,0,Math.PI*2); c.fill();
+    // Claw marks (triangles at 120°)
+    const clawCount = 3;
+    for (let i=0;i<clawCount;i++) {
+      const ang = (-Math.PI/2) + i * (2*Math.PI/clawCount);
+      const inner = r*0.85;
+      const outer = r*1.1;
+      c.beginPath();
+      c.moveTo(Math.cos(ang)*inner, Math.sin(ang)*inner);
+      c.lineTo(Math.cos(ang+0.15)*outer, Math.sin(ang+0.15)*outer);
+      c.lineTo(Math.cos(ang-0.15)*outer, Math.sin(ang-0.15)*outer);
+      c.closePath();
+      c.stroke();
+    }
+    // Sigil spokes
+    c.lineWidth = 1.8;
+    for (let i=0;i<6;i++) {
+      const a = i * Math.PI / 3 + this.t * 0.2;
+      const x1 = Math.cos(a) * r*0.2;
+      const y1 = Math.sin(a) * r*0.2;
+      const x2 = Math.cos(a) * r*0.55;
+      const y2 = Math.sin(a) * r*0.55;
+      c.beginPath();
+      c.moveTo(x1,y1);
+      c.lineTo(x2,y2);
+      c.stroke();
+    }
+    c.restore();
+  }
+
   private drawLux(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
     // Sun with rays
     c.save(); c.translate(x,y); c.scale(1, 1.5);
@@ -1099,11 +1214,7 @@ export class GrimoirePanel {
 
   // Parchment frame behind glyphs to mask handwriting and provide a clean space
   private drawGlyphFrame(c: CanvasRenderingContext2D, cx:number, cy:number, r:number, state: SpellState = SpellState.AVAILABLE, equipped: boolean = false): void {
-    // Frame size relative to glyph radius
-    const w = r * 2.2;
-  const h = r * 1.6 * 2.25; // a bit taller for extra clearance (2.10 -> 2.25)
-    const x = Math.round(cx - w/2);
-    const y = Math.round(cy - h/2);
+    const { x, y, w, h } = this.getGlyphFrameRect(cx, cy, r);
     c.save();
     // Shadow to lift the frame slightly
     c.shadowColor = 'rgba(0,0,0,0.25)';
@@ -1137,6 +1248,40 @@ export class GrimoirePanel {
     }
     // Removed 'EQUIPPED' ribbon per request
     c.restore();
+  }
+
+  private drawGlyphSanityCost(
+    c: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    r: number,
+    spell: SpellType,
+    state: SpellState,
+  ): void {
+    const cost = getSpellSanityCost(spell);
+    const tempCost = Math.max(0, cost?.temp ?? 0);
+    const maxCost = Math.max(0, cost?.max ?? 0);
+    const ratioLabel = `${tempCost}/${maxCost}`;
+    const { x, y, w, h } = this.getGlyphFrameRect(cx, cy, r);
+    const anchorX = x + w - 10;
+    const baseY = y + h - 10;
+    c.save();
+    c.textAlign = 'right';
+    c.textBaseline = 'alphabetic';
+    c.font = '700 12px serif';
+    c.fillStyle = state === SpellState.LOCKED ? 'rgba(80,80,80,0.9)' : '#3b1f12';
+    c.shadowColor = 'rgba(0,0,0,0.35)';
+    c.shadowBlur = 2;
+    c.fillText(ratioLabel, anchorX, baseY);
+    c.restore();
+  }
+
+  private getGlyphFrameRect(cx:number, cy:number, r:number): { x:number; y:number; w:number; h:number } {
+    const w = r * 2.2;
+    const h = r * 1.6 * 2.25;
+    const x = Math.round(cx - w/2);
+    const y = Math.round(cy - h/2);
+    return { x, y, w, h };
   }
 
   private drawSpellTooltip(c: CanvasRenderingContext2D, x:number, y:number, type: SpellType | string, state: SpellState): void {

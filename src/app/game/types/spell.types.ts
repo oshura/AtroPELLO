@@ -15,7 +15,9 @@ export enum SpellType {
   ETERNAL_RITE = 'ETERNAL_RITE',
   DISRUPT = 'DISRUPT',
   ANCHORING_PULSE = 'ANCHORING_PULSE',
-  VOID_KINESIS = 'VOID_KINESIS'
+  VOID_KINESIS = 'VOID_KINESIS',
+  SPECIES_SCAN = 'SPECIES_SCAN',
+  CREATURE_SCAN = 'CREATURE_SCAN'
 }
 
 /**
@@ -57,6 +59,8 @@ export function getSpellLabel(spell: SpellType): string {
     case SpellType.DISRUPT: return 'Disrupt';
     case SpellType.ANCHORING_PULSE: return 'Anchoring Pulse';
     case SpellType.VOID_KINESIS: return 'Void Kinesis';
+    case SpellType.SPECIES_SCAN: return 'Augurio de Habitantes';
+    case SpellType.CREATURE_SCAN: return 'Revelación del Ser Menor';
     default: return 'Unknown Spell';
   }
 }
@@ -80,7 +84,34 @@ export function getSpellDescription(spell: SpellType): string {
       return 'Ancla asteroides cercanos y los arrastra a la bodega';
     case SpellType.VOID_KINESIS:
       return 'Condensa asteroides en energía del vacío utilizable';
+    case SpellType.SPECIES_SCAN:
+      return 'Consume cordura temporal para revelar la raza de un planeta escaneado (<500u)';
+    case SpellType.CREATURE_SCAN:
+      return 'Consume cordura temporal para detectar el ser menor activo en un planeta (<500u)';
     default:
       return '';
   }
+}
+
+export interface SpellSanityCost {
+  /** Cordura temporal consumida al completar el hechizo */
+  temp: number;
+  /** Cordura máxima reservada por tener este glifo aprendido */
+  max: number;
+}
+
+export const SPELL_SANITY_COSTS: Record<SpellType, SpellSanityCost> = {
+  [SpellType.SPEED]: { temp: 1, max: 2 },
+  [SpellType.LONGJUMP]: { temp: 2, max: 4 },
+  [SpellType.GATE_RITE]: { temp: 5, max: 5 },
+  [SpellType.ETERNAL_RITE]: { temp: 1, max: 0 },
+  [SpellType.DISRUPT]: { temp: 1, max: 1 },
+  [SpellType.ANCHORING_PULSE]: { temp: 2, max: 3 },
+  [SpellType.VOID_KINESIS]: { temp: 2, max: 3 },
+  [SpellType.SPECIES_SCAN]: { temp: 1, max: 3 },
+  [SpellType.CREATURE_SCAN]: { temp: 1, max: 3 },
+};
+
+export function getSpellSanityCost(spell: SpellType): SpellSanityCost {
+  return SPELL_SANITY_COSTS[spell] ?? { temp: 0, max: 0 };
 }

@@ -112,7 +112,7 @@ export class VelocityBar {
 
   private drawValueText(ctx: CanvasRenderingContext2D, position: { x: number; y: number }, width: number, height: number): void {
     ctx.fillStyle = '#00FF00';
-    ctx.font = '12px monospace';
+    ctx.font = '20px monospace';
     // Centrar el valor justo debajo de la barra, sin desplazamiento lateral
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
