@@ -551,15 +551,24 @@ export class InventoryPanel {
       index: number | null;
       empty: boolean;
     };
-    const rows: PersonalRow[] = personalGear.map((gear, index) => ({
-      slot: gear.slot,
-      label: gear.label,
-      description: gear.description,
-      index,
-      empty: false
-    }));
-    const accessoryCount = rows.filter(row => row.slot === PersonalGearSlot.ACCESSORY).length;
-    for (let i = accessoryCount; i < 3; i++) {
+    const rows: PersonalRow[] = [];
+    let accessoryIncluded = false;
+    personalGear.forEach((gear, index) => {
+      if (gear.slot === PersonalGearSlot.ACCESSORY) {
+        if (accessoryIncluded) {
+          return;
+        }
+        accessoryIncluded = true;
+      }
+      rows.push({
+        slot: gear.slot,
+        label: gear.label,
+        description: gear.description,
+        index,
+        empty: false
+      });
+    });
+    if (!accessoryIncluded) {
       rows.push({
         slot: PersonalGearSlot.ACCESSORY,
         label: undefined,
@@ -746,13 +755,6 @@ export class InventoryPanel {
       const cellX = x + horizontalPad + col * (cellWidth + gap);
       const cellY = frameY + verticalPad + row * (cellHeight + gap);
       const isReserved = value > effectiveCap;
-
-      if (isReserved) {
-        c.save();
-        c.fillStyle = 'rgba(212,168,60,0.2)';
-        c.fillRect(cellX, cellY, cellWidth, cellHeight);
-        c.restore();
-      }
 
       c.fillStyle = isReserved ? '#d4af37' : '#020617';
       this.drawTallText(c, `${value}`, cellX + cellWidth / 2, cellY + cellHeight / 2);
