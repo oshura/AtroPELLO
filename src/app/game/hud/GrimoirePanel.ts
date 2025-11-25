@@ -40,6 +40,7 @@ export class GrimoirePanel {
   private pageWrinkles: Array<Array<{ x:number; y:number }>> = [];
   private hoveredIconIndex: number = -1;
   private previousHoveredIconIndex: number = -1; // Track hover changes for audio
+  private readonly BOOK_HEIGHT_SCALE = 0.9;
   // Spell states and selection
   private spellStates: Map<SpellType, SpellState> = new Map([
     [SpellType.SPEED, SpellState.AVAILABLE],
@@ -282,6 +283,10 @@ export class GrimoirePanel {
   c.translate(W/2, H/2);
   c.scale(this.tScale, this.tScale);
   c.translate(-W/2, -H/2);
+    c.save();
+    c.translate(W/2, H/2);
+    c.scale(1, this.BOOK_HEIGHT_SCALE);
+    c.translate(-W/2, -H/2);
     this.drawBook(c, W, H);
     // Determine hover over icons
     this.hoveredIconIndex = -1;
@@ -306,6 +311,7 @@ export class GrimoirePanel {
     
     // Page content: handwriting + icons (static), plus hover effects
     this.drawPageContent(c, W, H);
+    c.restore();
     c.restore(); // end reading transform scope
     // Tooltip for hovered spell (flip to the left side when hovering glyphs on the right page)
     if (this.hoveredIconIndex >= 0) {
@@ -347,8 +353,9 @@ export class GrimoirePanel {
     let px = x - W/2, py = y - H/2;
     const rx = px; const ry = py; // no rotation, zoom-only
     const invS = 1 / Math.max(1e-6, this.tScale);
+    const invHeight = 1 / Math.max(1e-6, this.BOOK_HEIGHT_SCALE);
     const sx = rx * invS;
-    const sy = ry * invS;
+    const sy = ry * invS * invHeight;
     return { x: sx + W/2, y: sy + H/2 };
   }
 
