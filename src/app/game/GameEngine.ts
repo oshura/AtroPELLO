@@ -2694,8 +2694,8 @@ export class GameEngine {
 
   private buildPlanetIntelDetails(target: Planet | null): Record<string, any> {
     const defaults = {
-      planetInhabitantsDisplay: 'Especie no identificada',
-      planetLesserBeingDisplay: 'Sin datos',
+      planetInhabitantsDisplay: 'Desconocido',
+      planetLesserBeingDisplay: 'Desconocido',
       planetLifeIntelKnown: false,
       planetCreatureIntelKnown: false,
       planetVisited: false,
@@ -2704,22 +2704,22 @@ export class GameEngine {
 
     const inhabitantsKey = target.inhabitants ?? PlanetInhabitants.NONE;
     const inhabitantsDisplay = (() => {
+      if (!target.lifeScanned) {
+        return 'Desconocido';
+      }
       if (inhabitantsKey === PlanetInhabitants.NONE) {
         return PLANET_INHABITANT_LABELS[PlanetInhabitants.NONE];
-      }
-      if (!target.lifeScanned) {
-        return 'Especie no identificada';
       }
       return PLANET_INHABITANT_LABELS[inhabitantsKey] ?? this.humanizeEnumValue(String(inhabitantsKey));
     })();
 
     const hasLesserBeing = target.lesserBeing && target.lesserBeing !== LesserBeing.NONE;
     const lesserBeingDisplay = (() => {
+      if (!target.creatureScanned) {
+        return 'Desconocido';
+      }
       if (!hasLesserBeing) {
         return LESSER_BEING_LABELS[LesserBeing.NONE];
-      }
-      if (!target.creatureScanned) {
-        return 'Presencia anómala sin identificar';
       }
       return LESSER_BEING_LABELS[target.lesserBeing as LesserBeing]
         ?? this.humanizeEnumValue(String(target.lesserBeing));

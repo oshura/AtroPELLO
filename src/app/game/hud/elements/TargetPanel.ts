@@ -196,6 +196,9 @@ export class TargetPanel {
     };
     pushIntelLine('Habitantes', 'planetInhabitantsDisplay');
     pushIntelLine('Ser menor', 'planetLesserBeingDisplay');
+    if (typeof details?.['planetVisited'] === 'boolean') {
+      lines.push(`Visitado: ${details['planetVisited'] ? 'Sí' : 'No'}`);
+    }
     let voidMassLine: string | null = null;
     for (const [key, value] of Object.entries(details)) {
       // Filtrar claves internas y datos de salud (se muestran en la barra)

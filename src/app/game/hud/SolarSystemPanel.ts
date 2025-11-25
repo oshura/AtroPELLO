@@ -577,6 +577,9 @@ export class SolarSystemPanel {
         };
         pushIntelLine('planetInhabitantsDisplay', 'Habitantes');
         pushIntelLine('planetLesserBeingDisplay', 'Ser menor');
+        if (typeof d['planetVisited'] === 'boolean') {
+          pushDetail(`Visitado: ${d['planetVisited'] ? 'Sí' : 'No'}`);
+        }
         // Albedo eliminado: no mostrar
         const hpPct = ((): number | null => {
           if (typeof d['healthPct'] === 'number') return Math.max(0, Math.min(100, Math.round(d['healthPct'])));
