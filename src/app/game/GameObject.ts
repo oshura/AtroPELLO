@@ -1,6 +1,7 @@
 import { Vector3, Color } from '../types/game.types';
 import { TargetType } from './types/targeting.types';
 import { GameObjectType, GameObjectCategory, GameObjectSize, getCategory, getPhysicsSize } from './types/game-object.types';
+import { GameObjectAnimosity } from './types/animosity.types';
 
 /**
  * Clase base para todos los objetos 3D del juego.
@@ -53,6 +54,7 @@ export abstract class GameObject {
 
   // Masa del vacío disponible para conversión (unidades hipotéticas)
   public voidMassUnits: number;
+  public animosity: GameObjectAnimosity = GameObjectAnimosity.NEUTRAL;
 
   // Matrices de transformación (se calculan automáticamente)
   public modelMatrix: Float32Array;
@@ -119,6 +121,10 @@ export abstract class GameObject {
     this.generateVertexColors(); // Generar colores basados en el color del objeto
     this.updateModelMatrix();
     this.computeBoundingSphere();
+  }
+
+  public setAnimosity(value: GameObjectAnimosity): void {
+    this.animosity = value;
   }
 
   /**

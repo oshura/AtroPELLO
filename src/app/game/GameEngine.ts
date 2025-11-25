@@ -60,12 +60,14 @@ import {
 import { LandingApproachContext, LandingStatus, LandingThreatState } from './types/landing.types';
 import {
   LESSER_BEING_LABELS,
-  PLANET_ANIMOSITY_LABELS,
   PLANET_INHABITANT_LABELS,
   LesserBeing,
-  PlanetAnimosity,
   PlanetInhabitants,
 } from './types/cosmic-life.types';
+import {
+  GAME_OBJECT_ANIMOSITY_LABELS,
+  GameObjectAnimosity,
+} from './types/animosity.types';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -2581,8 +2583,9 @@ export class GameEngine {
         ?? this.humanizeEnumValue(String(target.lesserBeing));
     })();
 
-    const animosityDisplay = PLANET_ANIMOSITY_LABELS[target.animosity as PlanetAnimosity]
-      ?? this.humanizeEnumValue(String(target.animosity || 'neutral'));
+    const animosityKey = (target.animosity as GameObjectAnimosity) || GameObjectAnimosity.NEUTRAL;
+    const animosityDisplay = GAME_OBJECT_ANIMOSITY_LABELS[animosityKey]
+      ?? this.humanizeEnumValue(String(animosityKey || 'neutral'));
 
     return {
       planetInhabitantsDisplay: inhabitantsDisplay,

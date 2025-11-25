@@ -4,6 +4,7 @@ import { ITargetable, TargetType } from '../types/targeting.types';
 import { EyeState } from '../types/solar-system.types';
 import { LoggingService, LogCategory, LogLevel } from '../../services/logging.service';
 import { GameObjectType } from '../types/game-object.types';
+import { GameObjectAnimosity } from '../types/animosity.types';
 
 /**
  * Portal: Objeto persistente creado por el Gate Rite.
@@ -52,6 +53,7 @@ export class Portal extends GameObject implements ITargetable {
     this.setType(GameObjectType.PORTAL); // Establecer tipo de GameObject
     this.objectType = TargetType.PORTAL; // Mantener para compatibilidad
     this.color = { r: 0.2, g: 0.8, b: 1.0, a: 1.0 }; // cian arcano
+    this.setAnimosity(GameObjectAnimosity.ENEMY);
     this.radius = radius;
     this.planetRadiusRef = radius;
     this.voidMassUnits = 0;

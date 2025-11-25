@@ -29,12 +29,6 @@ export enum LesserBeing {
   VAMPIRO_FUEGO = 'VAMPIRO_FUEGO'
 }
 
-export enum PlanetAnimosity {
-  FRIENDLY = 'friendly',
-  NEUTRAL = 'neutral',
-  ENEMY = 'enemy'
-}
-
 export const ELDER_GOD_SUMMONS: Record<ElderGod, ReadonlyArray<LesserBeing>> = {
   [ElderGod.CTHULHU]: [LesserBeing.SEMILLAS_ESTELARES],
   [ElderGod.AZATHOTH]: [],
@@ -68,10 +62,4 @@ export const LESSER_BEING_LABELS: Record<LesserBeing, string> = {
   [LesserBeing.SEMILLAS_ESTELARES]: 'Semillas estelares',
   [LesserBeing.SHOGGOTH]: 'Shoggoth',
   [LesserBeing.VAMPIRO_FUEGO]: 'Vampiro de fuego'
-};
-
-export const PLANET_ANIMOSITY_LABELS: Record<PlanetAnimosity, string> = {
-  [PlanetAnimosity.FRIENDLY]: 'Aliada',
-  [PlanetAnimosity.NEUTRAL]: 'Neutral',
-  [PlanetAnimosity.ENEMY]: 'Hostil'
 };

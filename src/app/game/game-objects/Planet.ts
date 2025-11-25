@@ -5,9 +5,9 @@ import { GameObjectType } from '../types/game-object.types';
 import {
   PlanetInhabitants,
   LesserBeing,
-  PlanetAnimosity,
   PLANET_INHABITANT_POOL
 } from '../types/cosmic-life.types';
+import { GameObjectAnimosity } from '../types/animosity.types';
 
 export type PlanetColorName = 'verde' | 'azul_hielo' | 'marron' | 'gris' | 'azul_marino' | 'rojo_carmesi' | 'violeta_oscuro';
 
@@ -34,7 +34,6 @@ export class Planet extends GameObject implements ITargetable {
   public visited: boolean = false;
   public lifeScanned: boolean = false;
   public creatureScanned: boolean = false;
-  public animosity: PlanetAnimosity = PlanetAnimosity.NEUTRAL;
   public orbitCenter: Vector3 = { x: 0, y: 0, z: 0 };
   public semiMajor: number = 60000; // a
   public semiMinor: number = 48000; // b
@@ -91,14 +90,14 @@ export class Planet extends GameObject implements ITargetable {
   public setLesserBeing(being: LesserBeing | null): void {
     if (!being || being === LesserBeing.NONE) {
       this.lesserBeing = null;
-      if (this.animosity === PlanetAnimosity.ENEMY) {
-        this.animosity = PlanetAnimosity.NEUTRAL;
+      if (this.animosity === GameObjectAnimosity.ENEMY) {
+        this.setAnimosity(GameObjectAnimosity.NEUTRAL);
       }
       return;
     }
     this.lesserBeing = being;
     this.creatureScanned = false;
-    this.animosity = PlanetAnimosity.ENEMY;
+    this.setAnimosity(GameObjectAnimosity.ENEMY);
   }
 
   public markVisited(): void {
