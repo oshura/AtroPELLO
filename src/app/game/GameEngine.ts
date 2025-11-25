@@ -7931,11 +7931,19 @@ export class GameEngine {
     if (!this.grimoirePanel || !this.grimoirePanel.isEnabled()) return;
     
     // Set selected spell from hover
-    const spellType = (this.grimoirePanel as any).getHoveredSpellType?.();
-    if (spellType) {
+    const hoveredSpell = (this.grimoirePanel as any).getHoveredSpellType?.();
+    if (hoveredSpell) {
       try {
-        (this.grimoirePanel as any).setSelectedSpellType?.(spellType);
+        (this.grimoirePanel as any).setSelectedSpellType?.(hoveredSpell);
       } catch {}
+      return;
+    }
+
+    // Clicked on empty parchment: clear current selection if any
+    try {
+      (this.grimoirePanel as any).setSelectedSpellType?.(null);
+    } catch {
+      try { (this.grimoirePanel as any).clearSelection?.(); } catch {}
     }
   }
 
