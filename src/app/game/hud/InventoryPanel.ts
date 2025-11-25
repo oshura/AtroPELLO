@@ -3,6 +3,7 @@ import {
   EquipmentSlot,
   EquipmentSlotState,
   PersonalGearSlot,
+  PersonalGearItem,
   InventoryPanelRegion,
   InventoryRegionBounds,
   InventorySelection,
@@ -552,13 +553,11 @@ export class InventoryPanel {
       empty: boolean;
     };
     const rows: PersonalRow[] = [];
-    let accessoryIncluded = false;
+    const accessoryEntries: Array<{ gear: PersonalGearItem; index: number }> = [];
     personalGear.forEach((gear, index) => {
       if (gear.slot === PersonalGearSlot.ACCESSORY) {
-        if (accessoryIncluded) {
-          return;
-        }
-        accessoryIncluded = true;
+        accessoryEntries.push({ gear, index });
+        return;
       }
       rows.push({
         slot: gear.slot,
@@ -568,7 +567,28 @@ export class InventoryPanel {
         empty: false
       });
     });
-    if (!accessoryIncluded) {
+
+    const clampSlots = (value?: number) => {
+      if (typeof value !== 'number' || !Number.isFinite(value)) {
+        return 1;
+      }
+      return Math.max(0, Math.min(3, Math.floor(value)));
+    };
+    const suit = personalGear.find(item => item.slot === PersonalGearSlot.SUIT);
+    const accessoryCapacity = clampSlots(suit?.accessorySlots);
+    const visibleAccessories = accessoryEntries.slice(0, accessoryCapacity);
+
+    visibleAccessories.forEach(({ gear, index }) => {
+      rows.push({
+        slot: PersonalGearSlot.ACCESSORY,
+        label: gear.label,
+        description: gear.description,
+        index,
+        empty: false
+      });
+    });
+
+    for (let i = visibleAccessories.length; i < accessoryCapacity; i++) {
       rows.push({
         slot: PersonalGearSlot.ACCESSORY,
         label: undefined,
@@ -577,6 +597,7 @@ export class InventoryPanel {
         empty: true
       });
     }
+
     return rows;
   }
 

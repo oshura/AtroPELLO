@@ -142,8 +142,9 @@ export class GameStateStore {
     {
       slot: PersonalGearSlot.SUIT,
       label: 'Traje Explorador Mk.III',
-      description: 'Fibra trenzada con aislamiento básico.',
-      rarity: RarityTier.UNIQUE
+      description: 'Fibra trenzada con aislamiento. +1 acc.',
+      rarity: RarityTier.UNIQUE,
+      accessorySlots: 1
     },
     {
       slot: PersonalGearSlot.BOOTS,

@@ -62,6 +62,8 @@ export interface PersonalGearItem {
   label: string;
   description?: string;
   rarity: RarityTier;
+  /** Número de ranuras de accesorio habilitadas por este ítem (solo para trajes). */
+  accessorySlots?: number;
 }
 
 /** Entrada de manifiesto de carga. */
