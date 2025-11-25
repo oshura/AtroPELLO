@@ -134,20 +134,20 @@ Notas:
 - Requisitos: asteroide válido y que la reserva del vacío no esté llena; si el `projectedVoid` excede el máximo se muestra “RESERVA DEL VACÍO LLENA”.
 - Tras una conversión exitosa, el HUD muestra un mensaje de marquee con el incremento aplicado.
 
-### Alma Mater Contact Rite (SPECIES_SCAN)
+### Augurio (SPECIES_SCAN)
 
-- **Nuevo nombre oficial** del glifo de Augurio de Habitantes. Mantiene el mismo identificador `SpellType.SPECIES_SCAN` para el runtime.
+- **Nombre oficial** para el glifo asociado a `SpellType.SPECIES_SCAN`. Mantiene el mismo identificador interno.
 - Efecto: revela la especie dominante del planeta objetivo y marca el intel de habitantes como conocido (`planet.markLifeScanned`).
 - Costes: 1/3 de cordura más 50u de Energía del Vacío cuando el objetivo pasa todas las validaciones.
 - Requisitos: planeta escaneable a ≤ 500u de la superficie (`GLYPH_SCAN_RANGE`), objetivo seleccionado y sin amenazas de validación. Otorga `NEW_SPECIES_DISCOVERED` la primera vez que detecta una especie distinta de `NONE`.
-- Feedback: placeholder `AUGURIO DE HABITANTES` con nombre del planeta y label de habitantes.
+- Feedback: placeholder `AUGURIO` con nombre del planeta y label de habitantes.
 
-### Arcane Contact Rite (CREATURE_SCAN)
+### Revelación (CREATURE_SCAN)
 
-- **Nuevo nombre oficial** del glifo de Revelación del Ser Menor, ahora asociado a `SpellType.CREATURE_SCAN`.
+- **Nombre oficial** del glifo asociado a `SpellType.CREATURE_SCAN`.
 - Efecto: confirma la presencia del ser menor activo en el planeta y marca el intel correspondiente (`planet.markCreatureScanned`).
 - Costes y alcance: idénticos al Alma Mater Contact Rite (1/3 de cordura + 50u de energía, rango ≤ 500u).
-- Resultado: overlay textual `SER MENOR REVELADO` o `SER MENOR NO DETECTADO` junto al nombre del planeta y la etiqueta localizada del ser menor.
+- Resultado: overlay textual `REVELACIÓN` cuando detecta un ser menor y `REVELACIÓN INCONCLUSA` cuando no hay presencia; muestra el nombre del planeta y la etiqueta localizada del ser menor.
 
 ## Integración con HUD / Brújula
 

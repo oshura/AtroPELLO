@@ -59,8 +59,8 @@ export function getSpellLabel(spell: SpellType): string {
     case SpellType.DISRUPT: return 'Disrupt';
     case SpellType.ANCHORING_PULSE: return 'Anchoring Pulse';
     case SpellType.VOID_KINESIS: return 'Void Kinesis';
-    case SpellType.SPECIES_SCAN: return 'Augurio de Habitantes';
-    case SpellType.CREATURE_SCAN: return 'Revelación del Ser Menor';
+    case SpellType.SPECIES_SCAN: return 'Augurio';
+    case SpellType.CREATURE_SCAN: return 'Revelación';
     default: return 'Unknown Spell';
   }
 }

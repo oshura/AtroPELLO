@@ -26,6 +26,10 @@ export const WIKI_ROUTES: Routes = [
     loadComponent: () => import('./pages/planets/planets').then(m => m.PlanetsWikiComponent)
   },
   {
+    path: 'inventory',
+    loadComponent: () => import('./pages/inventory/inventory').then(m => m.InventoryWikiComponent)
+  },
+  {
     path: 'game-rules',
     loadComponent: () => import('./pages/game-rules/game-rules').then(m => m.GameRulesWikiComponent)
   }

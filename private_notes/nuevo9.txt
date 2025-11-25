@@ -1,0 +1,45 @@
+ SpellType Temporal/Maxima
+ SPEED 1/2
+ LONGJUMP 2/4
+ GATE_RITE 5/5
+ ETERNAL_RITE 1/0
+ DISRUPT 1/1
+ ANCHORING_PULSE 2/3
+ VOID_KINESIS 2/3
+ SPECIES_SCAN 1/3
+ CREATURE_SCAN 1/3
+ 
+ 
+ - Colisiones con la teirra partida.
+ - Hechizo de restore planet.
+ - Hechizo de mind flight.
+ - Iniciar sesion:
+	- Y grabar partida y cargar partida.
+ - Landing menus:
+	- Explorar: 
+		- Buscar artefacto: 50% encontrarlo si está o desvelar que no está (+1XP), y 50% salir mal parado y tener que volver a intentarlo (-5 pv).
+		- Encontrar void mass(energy). Como buscar artefacto, 50% llenado a tope del void energy de la nave, 50% de salir mal parado y tener que volver a intentarlo (-5 pv).
+		- Contactar con civilizacion para saber si hay o no: Otra vez igual que buscar artefacto, 50% encontrarla si está o desvelar que no está (+1XP), y 50% salir mal parado y tener que volver a intentarlo (-5 pv).
+		- Encontrar lesserBeing para saber si hay o no: Mas de lo mismo pero peor todavía para el character, 50% de encontrarlo o desvelar que no está, 50% mal parado (-5pv). Pero si está y lo encuentra (-5 cordura temporal)
+	- Animosidad:
+		- Ally: 
+			- Reparar nave a cambio de x(<X) unidades de raw material.
+			- Comerciar -> x unidades de raw material por algun artefacto/traje/botas para equipo personal, o modulo para la nave segun raza.
+			- Profundizar en sabiduria de raza: Obtener glifos de raza.
+			- Misiones especiales de zona.
+			- Compartir tiempo de vida con la raza (COR a max, Salud a max).
+		- Neutral(default):
+			- Reparar nave a cambio de X(>x) unidades de raw material.
+			- Curarse a cambio de X(>x) unidades de raw material.
+			- Misiones de raza para pasar a ally, recuperar COR y SALUD a tope del personaje, y avanzar en historia (++memoria):
+				Conseguir un artefacto de algun planeta:
+					Que se añada el artefacto a uno de los planetas ya descubiertos y se resetee su estado de desvelado si tiene o no artefacto.
+					Si se destruye el planeta, por ejemplo con un portal, mala suerte.
+					
+					
+		- Enemy(xq hay lesserBeing en el planeta):
+			- Luchar con lesserBeing para destruirlo. +50PX. COR a tope, SALUD a la mitad de lo que tenia el PJ.
+ - Dar nombre y desc a los nuevos hechizos.
+ - Donar €€.
+ - Efectos de subir de nivel.
+ - Brujula al revés.

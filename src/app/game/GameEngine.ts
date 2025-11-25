@@ -136,7 +136,7 @@ export class GameEngine {
   private readonly LANDING_DISTANCE_THRESHOLD = 50;
   private readonly LANDING_SPEED_THRESHOLD = 5;
   private readonly LANDING_ALIGNMENT_MAX_DOT = 0.5; // cos(60°) tolerance from perfect parallel
-  private readonly LANDING_READY_HOLD_MS = 250;
+  private readonly LANDING_READY_HOLD_MS = 3000; // require 3s of stability before enabling landing
   private readonly LANDING_THREAT_RADIUS = 500;
   private readonly GLYPH_SCAN_RANGE = 500;
   // Central logger
@@ -2863,7 +2863,13 @@ export class GameEngine {
   const volumeMu = Number((((4.0 / 3.0) * Math.PI * Math.pow(Math.max(0, r), 3)) / 1e6).toFixed(2));
   const voidMassUnits = 2000 + Math.floor(Math.random() * 3001);
   const planetType = p?.planetType ?? (p?.baseColorName ? String(p.baseColorName) : 'unknown');
-  const probabilityOfLifePct = 0;
+  const probabilityOfLifePct = (() => {
+    const raw = Number(p?.probabilityOfLifePct);
+    if (Number.isFinite(raw)) {
+      return Math.max(0, Math.min(100, Math.round(raw)));
+    }
+    return 0;
+  })();
   return { name, planetType, volumeMu, voidMassUnits, probabilityOfLifePct };
     }
     return {};
@@ -6851,7 +6857,7 @@ export class GameEngine {
       sanityCost: sanityCost.temp,
     });
     try {
-      this.showPlaceholderText(`AUGURIO DE HABITANTES:\n${planetName} · ${inhabitantLabel}`, 2600);
+      this.showPlaceholderText(`AUGURIO:\n${planetName} · ${inhabitantLabel}`, 2600);
     } catch {}
     return true;
   }
@@ -6879,7 +6885,7 @@ export class GameEngine {
       sanityCost: sanityCost.temp,
       newlyScanned: !previouslyCreatureScanned,
     });
-    const headline = hasLesserBeing ? 'SER MENOR REVELADO' : 'SER MENOR NO DETECTADO';
+    const headline = hasLesserBeing ? 'REVELACIÓN' : 'REVELACIÓN INCONCLUSA';
     try {
       this.showPlaceholderText(`${headline}:\n${planetName} · ${creatureLabel}`, 2600);
     } catch {}

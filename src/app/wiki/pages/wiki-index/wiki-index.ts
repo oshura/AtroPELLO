@@ -306,6 +306,13 @@ export class WikiIndexComponent implements OnInit {
       keywords: ['ship', 'thruster', 'wings', 'weapons', 'body', 'components']
     },
     {
+      id: 'inventory',
+      title: '📦 Inventory & Pilot',
+      route: 'inventory',
+      description: 'Breakdown of the inventory overlay, pilot stats (salud, memoria, cordura) and jettison rules.',
+      keywords: ['inventory', 'stats', 'cordura', 'cargo', 'personal gear', 'expulsar']
+    },
+    {
       id: 'solar-systems',
       title: '☀️ Solar Systems',
       route: 'solar-systems',

@@ -21,28 +21,47 @@ import { WikiNavigationService } from '../../../services/wiki-navigation.service
       </section>
 
       <section class="rule-section">
-        <h2>🛬 Landing on Planets</h2>
+        <h2>🛬 Aterrizaje manual y pilotos HUD</h2>
         <div class="rule-content">
-          <h3>Requirements</h3>
-          <ul>
-            <li><strong>Speed:</strong> Approach speed must be less than 2 units/frame</li>
-            <li><strong>Angle:</strong> Approach perpendicular to surface (within 30° tolerance)</li>
-            <li><strong>Distance:</strong> Must enter planet's landing zone (bounding sphere + 50 units)</li>
-          </ul>
+          <p>
+            El HUD muestra dos pilotos junto al marquee: <strong>Landing</strong> (verde) cuando la aproximación cumple todos los
+            requisitos y <strong>Threat</strong> (rojo) cuando el motor detecta condiciones peligrosas. Ambos se alimentan de
+            <code>GameEngine.updateLandingTelemetry()</code> cada frame.
+          </p>
 
-          <h3>Procedure</h3>
+          <h3>Checklist para encender el piloto verde</h3>
           <ol>
-            <li>Approach the planet slowly using controlled bursts of thrust</li>
-            <li>Align your ship perpendicular to the planet's surface</li>
-            <li>Reduce speed to near zero as you enter the landing zone</li>
-            <li>Game will auto-dock when conditions are met</li>
+            <li><strong>Reduce la velocidad</strong> por debajo de <code>5 u/s</code> usando freno (S) o pulsos cortos inversos.</li>
+            <li><strong>Alinea la nave</strong> con la normal del planeta: el producto punto debe ser ≤ <code>0.5</code> (≈ ±60° respecto a la perpendicular).</li>
+            <li><strong>Acércate</strong> hasta situarte a ≤ <code>50u</code> de la superficie (distancia centro-radio).</li>
+            <li><strong>Mantén los valores estables</strong> durante al menos <code>3000 ms</code> (<code>LANDING_READY_HOLD_MS</code>, 3&nbsp;s), sin oscillaciones.</li>
           </ol>
 
           <div class="warning">
-            <strong>⚠️ Warning:</strong> High-speed impacts cause catastrophic damage. Approaching too fast will destroy your ship.
+            <strong>Consejo:</strong> cualquier violación reinicia el temporizador interno y el piloto vuelve a apagarse. Ajusta primero velocidad, luego alineación y, por último, distancia.
           </div>
 
-          <p class="tbd"><strong>TBD:</strong> Landing UI with visual indicators, surface exploration mode, departing from planets</p>
+          <h3>Iniciar la secuencia</h3>
+          <ul>
+            <li>Con el piloto verde encendido y <strong>Threat</strong> apagado, pulsa <kbd>Enter</kbd> para llamar a <code>startLandingSequence</code>.</li>
+            <li>El Animation Manager toma el control, bloquea inputs y aplica un flare automático hasta tocar superficie.</li>
+            <li>Tras el touchdown se abre el Landing Panel con opciones de permanecer o despegar; los daños siguen suprimidos hasta completar una orden.</li>
+          </ul>
+
+          <h3>Piloto rojo “Threat”</h3>
+          <p>La luz roja se enciende cuando <code>computeLandingThreat()</code> detecta cualquiera de estos casos:</p>
+          <ul>
+            <li><strong>Enemigos a ≤ 500u:</strong> cualquier objetivo cuyo <code>RelationService</code> marque como enemy.</li>
+            <li><strong>Casco crítico:</strong> <code>healthCurrent / healthMax &lt; 0.25</code>.</li>
+            <li><strong>Energía del Vacío &lt; 10u:</strong> sin reservas suficientes para maniobrar durante la secuencia.</li>
+          </ul>
+          <p>Mientras el piloto rojo esté activo, <code>tryStartLandingSequence</code> bloquea el aterrizaje y muestra el mensaje “AMENAZA DETECTADA - ESTABILIZA ANTES DE ATERRIZAR”.</p>
+          <h4>Cómo despejar la amenaza</h4>
+          <ul>
+            <li>Elimina o aleja los enemigos más allá de 500u (Void Jump/Speed Rite ayudan a reposicionarte).</li>
+            <li>Repara el casco (próximos sistemas) o evita más colisiones hasta volver a ≥25%.</li>
+            <li>Genera Energía del Vacío con Void Kinesis o recoge cápsulas hasta superar las 10u.</li>
+          </ul>
         </div>
       </section>
 

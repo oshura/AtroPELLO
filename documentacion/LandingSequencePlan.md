@@ -28,7 +28,7 @@ Implementation notes:
 
 1. Busca el planeta más cercano calculando `centerDist` y `surfaceDistance = centerDist - radius`.
 2. Requisitos actuales: `surfaceDistance <= 50`, `ship.currentSpeed <= 5`, y `|dot(forward, normal)| <= 0.5` (ángulo ≈ 90° ±30°).
-3. Mantiene un temporizador `LANDING_READY_HOLD_MS` (250ms) para evitar parpadeos al entrar/salir de tolerancias.
+3. Mantiene un temporizador `LANDING_READY_HOLD_MS` (3000 ms) para evitar parpadeos al entrar/salir de tolerancias.
 4. Cuando todo se cumple, almacena `LandingApproachContext` (id, nombre, punto en superficie, normal, radio, métricas) y muestra luz verde.
 5. Cuando falla algún requisito, reinicia el temporizador y apaga el indicador.
 
@@ -37,7 +37,7 @@ Implementation notes:
 1. **Desacelera** por debajo de 5u/s usando thrusters inversos; el HUD muestra la velocidad actual en el panel central.
 2. **Alinea la nave** con la normal de la superficie: el indicador interno usa `|dot(forward, normal)| ≤ 0.5` (≈ ±60°). Practica apuntando tangencialmente y luego ajusta pitch hasta que la lectura de alineamiento en `LandingApproachContext` esté estable.
 3. **Cierra distancia** hasta quedar a ≤ 50u de la superficie. El marcador de distancia en el panel de objetivo ayuda a medirlo.
-4. **Mantén las condiciones** al menos `LANDING_READY_HOLD_MS = 250 ms`. Evita micro entradas que alternen los requisitos; cualquier violación reinicia el temporizador.
+4. **Mantén las condiciones** al menos `LANDING_READY_HOLD_MS = 3000 ms` (≈3 s). Evita micro entradas que alternen los requisitos; cualquier violación reinicia el temporizador.
 5. **Verifica el HUD**: si todo se mantiene estable, `hudManager.setLandingIndicators({ landingReady: true })` encenderá el piloto verde “Landing”.
 
 ## 3. Player Input & State Machine
