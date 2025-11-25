@@ -569,6 +569,15 @@ export class SolarSystemPanel {
         const prettyKey = (k: string) => k.replace(/([A-Z])/g, ' $1').replace(/_/g, ' ').replace(/^./, c => c.toUpperCase());
         const prettyVal = (v: any) => (typeof v === 'number') ? (Number.isFinite(v) ? v.toFixed(2) : String(v)) : (Array.isArray(v) ? v.join(', ') : (typeof v === 'object' ? JSON.stringify(v) : String(v)));
         const pushDetail = (text: string) => { if (text && detailLines.length < 12) detailLines.push(text); };
+        const pushIntelLine = (key: string, label: string) => {
+          const raw = d[key];
+          if (typeof raw === 'string' && raw.trim().length) {
+            pushDetail(`${label}: ${raw}`);
+          }
+        };
+        pushIntelLine('planetInhabitantsDisplay', 'Habitantes');
+        pushIntelLine('planetLesserBeingDisplay', 'Ser menor');
+        pushIntelLine('planetAnimosityDisplay', 'Estado social');
         // Albedo eliminado: no mostrar
         const hpPct = ((): number | null => {
           if (typeof d['healthPct'] === 'number') return Math.max(0, Math.min(100, Math.round(d['healthPct'])));
@@ -590,7 +599,7 @@ export class SolarSystemPanel {
         // Generic remaining keys (skip internal ones and already shown)
         for (const [k, v] of Object.entries(d)) {
           const lk = k.toLowerCase();
-          if (lk === 'healthpct' || lk === 'healthcurrent' || lk === 'healthmax' || lk === 'volumemu' || lk === 'volumegu' || lk === 'voidmassunits' || lk === 'probabilityoflifepct' || lk === 'previewstatus' || lk === 'type' || lk === 'name') continue; // albedo removido
+          if (lk === 'healthpct' || lk === 'healthcurrent' || lk === 'healthmax' || lk === 'volumemu' || lk === 'volumegu' || lk === 'voidmassunits' || lk === 'probabilityoflifepct' || lk === 'previewstatus' || lk === 'type' || lk === 'name' || lk === 'planetinhabitantsdisplay' || lk === 'planetlesserbeingdisplay' || lk === 'planetanimositydisplay' || lk === 'planetlifeintelknown' || lk === 'planetcreatureintelknown' || lk === 'planetvisited') continue; // albedo removido
           pushDetail(`${prettyKey(k)}: ${prettyVal(v)}`);
         }
 

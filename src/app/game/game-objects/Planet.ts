@@ -2,6 +2,12 @@ import { GameObject } from '../GameObject';
 import { Vector3 } from '../../types/game.types';
 import { ITargetable, TargetType } from '../types/targeting.types';
 import { GameObjectType } from '../types/game-object.types';
+import {
+  PlanetInhabitants,
+  LesserBeing,
+  PlanetAnimosity,
+  PLANET_INHABITANT_POOL
+} from '../types/cosmic-life.types';
 
 export type PlanetColorName = 'verde' | 'azul_hielo' | 'marron' | 'gris' | 'azul_marino' | 'rojo_carmesi' | 'violeta_oscuro';
 
@@ -23,6 +29,12 @@ export class Planet extends GameObject implements ITargetable {
   public planetType: PlanetType = PlanetType.Planetoid;
   // Probability of Life in percent [0..100]
   public probabilityOfLifePct: number = 0;
+  public inhabitants: PlanetInhabitants = PlanetInhabitants.NONE;
+  public lesserBeing: LesserBeing | null = null;
+  public visited: boolean = false;
+  public lifeScanned: boolean = false;
+  public creatureScanned: boolean = false;
+  public animosity: PlanetAnimosity = PlanetAnimosity.NEUTRAL;
   public orbitCenter: Vector3 = { x: 0, y: 0, z: 0 };
   public semiMajor: number = 60000; // a
   public semiMinor: number = 48000; // b
@@ -52,6 +64,55 @@ export class Planet extends GameObject implements ITargetable {
     // Importante: regenerar colores por vértice después de asignar this.color
     // (GameObject llama a generateVertexColors() antes de que Planet asigne su color base)
     this.generateVertexColors();
+  }
+
+  /** Roll inhabitants once, based on probability, returning the selected race. */
+  public assignInhabitantsFromProbability(randomFn: () => number = Math.random): PlanetInhabitants {
+    if (this.inhabitants !== PlanetInhabitants.NONE) {
+      return this.inhabitants;
+    }
+    const pct = Math.max(0, Math.min(100, this.probabilityOfLifePct));
+    if (pct <= 0) {
+      this.inhabitants = PlanetInhabitants.NONE;
+      return this.inhabitants;
+    }
+    const roll = Math.floor(randomFn() * 100) + 1;
+    if (roll <= pct) {
+      const pool = PLANET_INHABITANT_POOL;
+      const idx = pool.length > 0 ? Math.floor(randomFn() * pool.length) : -1;
+      this.inhabitants = idx >= 0 ? pool[idx] : PlanetInhabitants.NONE;
+    } else {
+      this.inhabitants = PlanetInhabitants.NONE;
+    }
+    return this.inhabitants;
+  }
+
+  /** Attach or clear a lesser being and adjust animosity flags accordingly. */
+  public setLesserBeing(being: LesserBeing | null): void {
+    if (!being || being === LesserBeing.NONE) {
+      this.lesserBeing = null;
+      if (this.animosity === PlanetAnimosity.ENEMY) {
+        this.animosity = PlanetAnimosity.NEUTRAL;
+      }
+      return;
+    }
+    this.lesserBeing = being;
+    this.creatureScanned = false;
+    this.animosity = PlanetAnimosity.ENEMY;
+  }
+
+  public markVisited(): void {
+    this.visited = true;
+  }
+
+  public markLifeScanned(): void {
+    this.lifeScanned = true;
+  }
+
+  public markCreatureScanned(): void {
+    if (this.lesserBeing) {
+      this.creatureScanned = true;
+    }
   }
 
   public getDisplayName(): string { return this.customName ?? `Planet ${this.baseColorName}`; }

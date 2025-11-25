@@ -45,7 +45,7 @@ import { PanelEventCoordinator } from './services/ui/panel-event-coordinator.ser
 import { SpellIOCoordinator } from './services/spells/spell-io-coordinator.service';
 import { GameStateStore } from '../services/game/game-state.store';
 import { CargoHoldService } from '../services/game/cargo-hold.service';
-import { CharacterProfileService } from '../services/game/character-profile.service';
+import { CharacterProfileService, ExperienceEventType } from '../services/game/character-profile.service';
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
@@ -58,6 +58,14 @@ import {
   InventoryActionType
 } from './types/inventory.types';
 import { LandingApproachContext, LandingStatus, LandingThreatState } from './types/landing.types';
+import {
+  LESSER_BEING_LABELS,
+  PLANET_ANIMOSITY_LABELS,
+  PLANET_INHABITANT_LABELS,
+  LesserBeing,
+  PlanetAnimosity,
+  PlanetInhabitants,
+} from './types/cosmic-life.types';
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -651,6 +659,7 @@ export class GameEngine {
 
   private handleLandingTouchdown(context: LandingApproachContext): void {
     this.landingTouchdownContext = context;
+    this.registerPlanetLandingVisit(context.planetId);
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing touchdown registered', {
       planetId: context.planetId,
       planetName: context.planetName
@@ -666,6 +675,31 @@ export class GameEngine {
     }
     const label = context.planetName ? `Aterrizaje completado: ${context.planetName}` : 'Aterrizaje completado';
     try { this.showPlaceholderText(`${label} (panel no disponible)`, 2200); } catch {}
+  }
+
+  private registerPlanetLandingVisit(planetId?: string | null): void {
+    if (!planetId) {
+      return;
+    }
+    const planet = this.gameState.planets.find(p => p.id === planetId) as Planet | undefined;
+    if (!planet) {
+      return;
+    }
+    const alreadyVisited = planet.visited;
+    try {
+      if (typeof (planet as any).markVisited === 'function') {
+        (planet as any).markVisited();
+      } else {
+        (planet as any).visited = true;
+      }
+    } catch {}
+    if (!alreadyVisited) {
+      try {
+        this.characterProfileService.registerExperienceEvent(ExperienceEventType.PLANET_LANDING);
+      } catch (error) {
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Landing XP registration failed', { planetId, error });
+      }
+    }
   }
 
   public startTakeoffSequence(): boolean {
@@ -1146,6 +1180,7 @@ export class GameEngine {
         }
         if (p.name) planetObj.customName = p.name;
         if (typeof p.probabilityOfLifePct === 'number') (planetObj as any).probabilityOfLifePct = p.probabilityOfLifePct;
+        planetObj.assignInhabitantsFromProbability();
         if (p.orbit) {
           planetObj.orbitCenter = { ...(p.orbit.center || { x: 0, y: 0, z: 0 }) } as any;
           planetObj.semiMajor = p.orbit.semiMajor;
@@ -2410,6 +2445,7 @@ export class GameEngine {
   }
   
       // Include planet-specific hints when selected is a planet
+      const planetIntel = selType === TargetType.PLANET ? this.buildPlanetIntelDetails(selected as Planet) : null;
       const planetHints = (selType === TargetType.PLANET)
         ? {
             planetType: (selected as any).planetType || (baseDetails as any)?.planetType || (selected as any).baseColorName,
@@ -2420,6 +2456,7 @@ export class GameEngine {
               ?? (typeof (baseDetails as any)?.volumeGu === 'number'
                     ? Number(((baseDetails as any).volumeGu * 1000).toFixed(2))
                     : undefined),
+            ...(planetIntel || {}),
           }
         : {};
       // Update health values only every 250ms to reduce overhead (but always include them)
@@ -2508,6 +2545,60 @@ export class GameEngine {
     }
     // Landing mechanic removed
   // Landing windows cleanup call removed
+  }
+
+  private buildPlanetIntelDetails(target: Planet | null): Record<string, any> {
+    const defaults = {
+      planetInhabitantsDisplay: 'Especie no identificada',
+      planetLesserBeingDisplay: 'Sin datos',
+      planetAnimosityDisplay: 'Estado desconocido',
+      planetLifeIntelKnown: false,
+      planetCreatureIntelKnown: false,
+      planetVisited: false,
+    };
+    if (!target) return defaults;
+
+    const inhabitantsKey = target.inhabitants ?? PlanetInhabitants.NONE;
+    const inhabitantsDisplay = (() => {
+      if (inhabitantsKey === PlanetInhabitants.NONE) {
+        return PLANET_INHABITANT_LABELS[PlanetInhabitants.NONE];
+      }
+      if (!target.lifeScanned) {
+        return 'Especie no identificada';
+      }
+      return PLANET_INHABITANT_LABELS[inhabitantsKey] ?? this.humanizeEnumValue(String(inhabitantsKey));
+    })();
+
+    const hasLesserBeing = target.lesserBeing && target.lesserBeing !== LesserBeing.NONE;
+    const lesserBeingDisplay = (() => {
+      if (!hasLesserBeing) {
+        return LESSER_BEING_LABELS[LesserBeing.NONE];
+      }
+      if (!target.creatureScanned) {
+        return 'Presencia anómala sin identificar';
+      }
+      return LESSER_BEING_LABELS[target.lesserBeing as LesserBeing]
+        ?? this.humanizeEnumValue(String(target.lesserBeing));
+    })();
+
+    const animosityDisplay = PLANET_ANIMOSITY_LABELS[target.animosity as PlanetAnimosity]
+      ?? this.humanizeEnumValue(String(target.animosity || 'neutral'));
+
+    return {
+      planetInhabitantsDisplay: inhabitantsDisplay,
+      planetLesserBeingDisplay: lesserBeingDisplay,
+      planetAnimosityDisplay: animosityDisplay,
+      planetLifeIntelKnown: !!target.lifeScanned,
+      planetCreatureIntelKnown: !!target.creatureScanned,
+      planetVisited: !!target.visited,
+    };
+  }
+
+  private humanizeEnumValue(value: string): string {
+    return value
+      .split('_')
+      .map(chunk => chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase())
+      .join(' ');
   }
 
   // Ensure display-friendly properties exist synchronously to avoid one-frame stale labels
@@ -4209,8 +4300,10 @@ export class GameEngine {
       planetObj.orbitU = u0;
       // Velocidad angular orbital ~ a^{-3/2} (heurística kepler)
       planetObj.orbitAngularSpeed = 0.00003 * Math.pow(50000 / a, 1.5);
-      // Rotación propia: 1 vuelta/300s
-  planetObj.angularVelocity.y = (Math.PI * 2) / 300;
+        // Rotación propia: 1 vuelta/300s
+      planetObj.angularVelocity.y = (Math.PI * 2) / 300;
+
+        planetObj.assignInhabitantsFromProbability();
 
   // Assign canonical catalog-like name at construction only if not already named
   try {

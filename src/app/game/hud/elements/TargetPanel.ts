@@ -188,11 +188,21 @@ export class TargetPanel {
   const detailsScaleY = 1.0; // sin estirar verticalmente para evitar desplazamientos
   const lineHeight = 42; // altura de línea aumentada proporcionalmente (1.5x de 28px)
     const lines: string[] = [];
+    const pushIntelLine = (label: string, key: string) => {
+      const raw = (details as any)[key];
+      if (typeof raw === 'string' && raw.trim().length) {
+        lines.push(`${label}: ${raw}`);
+      }
+    };
+    pushIntelLine('Habitantes', 'planetInhabitantsDisplay');
+    pushIntelLine('Ser menor', 'planetLesserBeingDisplay');
+    pushIntelLine('Estado social', 'planetAnimosityDisplay');
     let voidMassLine: string | null = null;
     for (const [key, value] of Object.entries(details)) {
       // Filtrar claves internas y datos de salud (se muestran en la barra)
       if (key === 'previewStatus' || key === 'type' || key === 'name') continue;
       if (key === 'healthPct' || key === 'healthCurrent' || key === 'healthMax') continue; // Salud solo en barra
+      if (key === 'planetInhabitantsDisplay' || key === 'planetLesserBeingDisplay' || key === 'planetAnimosityDisplay' || key === 'planetLifeIntelKnown' || key === 'planetCreatureIntelKnown' || key === 'planetVisited') continue;
       // Albedo eliminado: no procesar
         // Volume en Mu con etiqueta fija
         if (key === 'volumeMu') {

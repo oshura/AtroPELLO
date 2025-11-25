@@ -119,6 +119,7 @@ export class SolarSystemService {
         // Naming and life hints
         if (p.name) (obj as any).customName = p.name;
         if (typeof p.probabilityOfLifePct === 'number') (obj as any).probabilityOfLifePct = p.probabilityOfLifePct;
+        obj.assignInhabitantsFromProbability();
         // Orbit setup
         if (p.orbit) {
           obj.orbitCenter = { ...(p.orbit.center || { x: 0, y: 0, z: 0 }) } as any;
