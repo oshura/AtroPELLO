@@ -7,11 +7,17 @@ Este documento describe el libro del grimorio (UI), el flujo de lanzamiento de h
 - Interfaz y experiencia de usuario
 - Flujo de lanzamiento estandarizado
 - Recursos y restricciones (Energía del Vacío)
+- Tabla de costes (Cordura y recursos)
 - Hechizos disponibles
-  - Rito Doble de Tiempo (Double Phased Time Rite)
-  - Salto al Vacío (Void Jump)
-  - Augurio de Habitantes (Glyph Species Scan)
-  - Revelación del Ser Menor (Glyph Creature Scan)
+  - Rito Doble de Tiempo (Speed Rite / Double Phased Time Rite)
+  - Salto al Vacío (Long Jump / Void Jump)
+  - Gate Rite
+  - Eternal Rite
+  - Disrupt
+  - Anchoring Pulse
+  - Void Kinesis
+  - Alma Mater Contact Rite (SPECIES_SCAN)
+  - Arcane Contact Rite (CREATURE_SCAN)
 - Integración con HUD / Brújula
 - Aspectos técnicos (archivos y servicios)
 - Pruebas rápidas
@@ -62,51 +68,86 @@ Notas:
 - Algunos hechizos consumen este recurso. Si no hay suficiente energía, el lanzamiento se cancela tras el pre‑cast mostrando la animación placeholder.
 - Los glifos de escaneo (habitantes / ser menor) consumen 50u y respetan el mismo alcance que la bahía auxiliar (≤ 500u desde la superficie).
 
+## Tabla de costes (Cordura y recursos)
+
+| Hechizo / Glifo | Cordura temporal (`temp`) | Cordura reservada (`max`) | Energía del Vacío | Requisitos adicionales |
+| --- | --- | --- | --- | --- |
+| Rito Doble de Tiempo | 1 | 2 | 0u | Solo requiere tener la runa aprendida; refresca la duración si ya está activo. |
+| Salto al Vacío | 2 | 4 | 50u | Objetivo a > 4000u; target válido seleccionado; sin animación ocupada. |
+| Gate Rite | 5 | 5 | 0u | Planeta válido a ≤ 50u de la superficie; bloquea inputs durante toda la secuencia. |
+| Eternal Rite | 1 | 0 | 0u | Requiere animador disponible; congela el tiempo salvo la nave. |
+| Disrupt | 1 | 1 | 0u | Target válido (portal/material) dentro de 50u. |
+| Anchoring Pulse | 2 | 3 | 0u | Asteroide en ≤ 50u y bodega con espacio suficiente para el `yield`. |
+| Void Kinesis | 2 | 3 | Genera energía (no consume) | Asteroide en ≤ 50u y reservas del vacío con espacio para el `gain`. |
+| Alma Mater Contact Rite (SPECIES_SCAN) | 1 | 3 | 50u | Planeta escaneable a ≤ 500u de la superficie. |
+| Arcane Contact Rite (CREATURE_SCAN) | 1 | 3 | 50u | Igual que el anterior, pero consulta seres menores. |
+
+> `temp` se descuenta inmediatamente tras ejecutar el efecto; `max` representa la fracción de cordura máxima bloqueada de forma permanente mientras el hechizo permanezca aprendido (se recalcula en `GameStateStore.enforceSanityCeiling`).
+
 ## Hechizos disponibles
 
-### 1) Rito Doble de Tiempo (Double Phased Time Rite)
+### Rito Doble de Tiempo (Speed Rite / Double Phased Time Rite)
 
-- Efecto: duplica temporalmente la velocidad máxima de la nave y sus parámetros de aceleración y frenado.
-- Duración: 120 s. Re‑lanzarlo refresca la duración.
-- Parámetros afectados:
-  - `Spaceship.maxSpeed`: duplicado desde su base (base actual: 10).
-  - `acceleration` y `deceleration`: también duplicados.
-- Al expirar: se restauran los valores originales y se hacen clamps sobre `targetSpeed`/`currentSpeed` para que no superen la base restaurada.
-- HUD/Brújula: muestra un contador digital MM:SS en color carmesí (sangre) centrado verticalmente dentro del anillo de la brújula, sin tapar la aguja. El contador usa “floor” para evitar el estado transitorio “00:01” cuando resta < 1 s.
-- Ocultación: el contador se oculta al llegar a 0 o cuando el efecto no está activo.
+- Efecto principal: duplica temporalmente `maxSpeed`, `acceleration` y `deceleration` de la nave durante 120 s.
+- Costes: 1 punto de cordura temporal, 2 puntos reservados mientras la runa esté aprendida (ver tabla), sin gasto de energía del vacío.
+- HUD: activa un contador MM:SS carmesí en la brújula; se oculta automáticamente al expirar.
+- Re-lanzar antes del final solo refresca la duración, nunca acumula multiplicadores.
+- Al terminar, el motor recalcula velocidades (`targetSpeed` y `currentSpeed`) para impedir overshoot por encima del límite restaurado.
 
-Estados y bordes:
-- Si se relanza antes de expirar, solo se refresca el temporizador; no se acumula el multiplicador.
-- Si expira durante una maniobra, el sistema restaura aceleración/freno y recorta velocidades a la base.
+### Salto al Vacío (Long Jump / Void Jump)
 
-### 2) Salto al Vacío (Void Jump)
+- Efecto principal: ejecuta la animación de salto hacia el objetivo seleccionado y teleporta la nave tras completar la secuencia.
+- Costes: 2 de cordura temporal, 4 reservados y 50u de Energía del Vacío consumidas al validar el objetivo.
+- Requisitos: objetivo válido (planeta/portal/waypoint) situado a más de 4000u de distancia; con menos distancia aparece placeholder “ANIMATION NUMBER 2”.
+- Flujo: si hay energía suficiente, `AnimationManager.startVoidJump` bloquea inputs hasta finalizar. El gasto energético sucede justo antes de disparar la animación.
 
-- Efecto: inicia una secuencia de salto con animación; requiere objetivo válido y condiciones mínimas de distancia.
-- Costo: 50 unidades de Energía del Vacío.
-- Reglas de lanzamiento:
-  - Si `energía < 50`: tras el pre‑cast de 2s se muestra la animación placeholder y se aborta.
-  - Si el objetivo es inválido o está demasiado cerca: también se aborta tras el placeholder.
-  - En caso válido: se inicia la secuencia/animación de salto y se descuenta la energía.
+### Gate Rite
 
-  ### 3) Augurio de Habitantes (Glyph Species Scan)
+- Efecto principal: colapsa el planeta objetivo (≤ 50u de la superficie), genera un portal pentagramado y teleporta la nave a un nuevo sistema enlazado.
+- Costes: 5 de cordura temporal y 5 reservados; no consume Energía del Vacío pero pausa/rellena la reserva durante la secuencia (ver `GateRitePlan.md`).
+- Notas clave: limpia el planeta original del snapshot, crea portales enlazados y recarga void energy al estabilizarse en el destino. Toda la secuencia bloquea inputs y activa supresión de daños.
 
-  - Efecto: revela la especie dominante de un planeta objetivo y marca el intel de habitantes como conocido (equivale al escáner auxiliar de vida).
-  - Costo: 50 unidades de Energía del Vacío.
-  - Alcance: debe mantenerse a ≤ 500u de la superficie del planeta objetivo.
-  - Requisitos adicionales:
-    - El objetivo debe ser un planeta válido; de lo contrario el lanzamiento se aborta.
-    - Si es la primera vez que se revela una especie distinta de `NONE`, concede el evento de experiencia `NEW_SPECIES_DISCOVERED` igual que el escáner auxiliar.
-  - Resultado: muestra un overlay con el nombre del planeta y el label de la especie detectada.
+### Eternal Rite
 
-  ### 4) Revelación del Ser Menor (Glyph Creature Scan)
+- Efecto principal: `AnimationManager.startEternalRite` congela el tiempo para todos los objetos salvo la nave, permitiendo reposicionarse sin amenazas dinámicas.
+- Costes: 1 de cordura temporal sin reserva permanente adicional; no usa energía del vacío.
+- Requisitos: el administrador de animaciones debe estar libre; cualquier error cancela el rito y mantiene la deselección del glifo.
 
-  - Efecto: detecta y fija el ser menor activo (si existe) en el planeta objetivo, marcando el intel de criatura como conocido.
-  - Costo: 50 unidades de Energía del Vacío.
-  - Alcance: ≤ 500u desde la superficie del planeta (mismas reglas que el Augurio y el escáner auxiliar).
-  - Requisitos:
-    - Solo planetas escaneables son válidos; se muestra placeholder si el target es inválido o está fuera de rango.
-    - Consume energía únicamente cuando la verificación de objetivo/distancia ha sido satisfactoria.
-  - Resultado: overlay diegético indicando si se reveló una presencia o se confirmó la ausencia (`SER MENOR REVELADO` / `SER MENOR NO DETECTADO`).
+### Disrupt
+
+- Efecto principal: proyecta un haz sobre un objetivo dentro de 50u (portales, estructuras resonantes o entidades señaladas) para desestabilizarlos.
+- Costes: 1/1 de cordura (temp/reservada) y cero energía del vacío.
+- Requisitos: target válido detectado por el sistema de objetivos; si el objetivo está fuera de rango se muestra “TARGET TOO FAR (>50u)”.
+- El haz dura ~1.5 s (`startDisruptionRite`) y puede combinarse con estados del HUD para representar fallas en portales hostiles.
+
+### Anchoring Pulse
+
+- Efecto principal: captura asteroides cercanos (≤ 50u), los desintegra y registra el material en la bodega (`CargoHoldService.registerAsteroidConversion`).
+- Costes: 2/3 de cordura y cero energía del vacío.
+- Requisitos: asteroide válido, distancia ≤ 50u y suficiente capacidad libre (`cargoCapacityRemaining ≥ yield`). Si la bodega está llena, muestra “BODEGA SIN ESPACIO”.
+- El botón de expulsión del inventario permite revertir manualmente las entradas creadas por este rito.
+
+### Void Kinesis
+
+- Efecto principal: canaliza asteroides (≤ 50u) para convertirlos directamente en Energía del Vacío (`addVoidEnergyFromAsteroid`).
+- Costes: 2/3 de cordura; en lugar de consumir energía, añade entre 8u y `voidUnits * 7` hasta el máximo de la nave.
+- Requisitos: asteroide válido y que la reserva del vacío no esté llena; si el `projectedVoid` excede el máximo se muestra “RESERVA DEL VACÍO LLENA”.
+- Tras una conversión exitosa, el HUD muestra un mensaje de marquee con el incremento aplicado.
+
+### Alma Mater Contact Rite (SPECIES_SCAN)
+
+- **Nuevo nombre oficial** del glifo de Augurio de Habitantes. Mantiene el mismo identificador `SpellType.SPECIES_SCAN` para el runtime.
+- Efecto: revela la especie dominante del planeta objetivo y marca el intel de habitantes como conocido (`planet.markLifeScanned`).
+- Costes: 1/3 de cordura más 50u de Energía del Vacío cuando el objetivo pasa todas las validaciones.
+- Requisitos: planeta escaneable a ≤ 500u de la superficie (`GLYPH_SCAN_RANGE`), objetivo seleccionado y sin amenazas de validación. Otorga `NEW_SPECIES_DISCOVERED` la primera vez que detecta una especie distinta de `NONE`.
+- Feedback: placeholder `AUGURIO DE HABITANTES` con nombre del planeta y label de habitantes.
+
+### Arcane Contact Rite (CREATURE_SCAN)
+
+- **Nuevo nombre oficial** del glifo de Revelación del Ser Menor, ahora asociado a `SpellType.CREATURE_SCAN`.
+- Efecto: confirma la presencia del ser menor activo en el planeta y marca el intel correspondiente (`planet.markCreatureScanned`).
+- Costes y alcance: idénticos al Alma Mater Contact Rite (1/3 de cordura + 50u de energía, rango ≤ 500u).
+- Resultado: overlay textual `SER MENOR REVELADO` o `SER MENOR NO DETECTADO` junto al nombre del planeta y la etiqueta localizada del ser menor.
 
 ## Integración con HUD / Brújula
 

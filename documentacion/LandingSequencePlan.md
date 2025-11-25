@@ -32,6 +32,14 @@ Implementation notes:
 4. Cuando todo se cumple, almacena `LandingApproachContext` (id, nombre, punto en superficie, normal, radio, métricas) y muestra luz verde.
 5. Cuando falla algún requisito, reinicia el temporizador y apaga el indicador.
 
+### 2.1 Checklist para encender el piloto verde
+
+1. **Desacelera** por debajo de 5u/s usando thrusters inversos; el HUD muestra la velocidad actual en el panel central.
+2. **Alinea la nave** con la normal de la superficie: el indicador interno usa `|dot(forward, normal)| ≤ 0.5` (≈ ±60°). Practica apuntando tangencialmente y luego ajusta pitch hasta que la lectura de alineamiento en `LandingApproachContext` esté estable.
+3. **Cierra distancia** hasta quedar a ≤ 50u de la superficie. El marcador de distancia en el panel de objetivo ayuda a medirlo.
+4. **Mantén las condiciones** al menos `LANDING_READY_HOLD_MS = 250 ms`. Evita micro entradas que alternen los requisitos; cualquier violación reinicia el temporizador.
+5. **Verifica el HUD**: si todo se mantiene estable, `hudManager.setLandingIndicators({ landingReady: true })` encenderá el piloto verde “Landing”.
+
 ## 3. Player Input & State Machine
 
 - `GameEngine.handleKeyDown` verifica `Enter` cuando `landingStatus.ready` es true, no hay amenazas activas y `AnimationManager` está libre.
@@ -57,6 +65,13 @@ La clase `LandingSequenceAnimation` ejecuta la coreografía cuando el jugador pr
 3. La energía del vacío es <10u.
 
 Si `threatActive` es true, `tryStartLandingSequence` rechaza la petición y muestra marquee “Amenaza detectada…”.
+
+### 5.1 Checklist del piloto rojo “Threat”
+
+- **Enemy nearby**: comprueba el radar y destruye/aleja los objetivos etiquetados como `relation = enemy` a más de 500u. El cálculo usa la posición actual del ship; moverse unos cientos de unidades suele bastar.
+- **Hull integrity critical**: repara o evita daño hasta que `healthCurrent / healthMax ≥ 0.25`. Aterrizar no es posible mientras el casco esté crítico para impedir exploits.
+- **Void reserves low**: si `voidEnergyCurrent < 10`, ejecuta Void Kinesis, recolecta cápsulas o espera a que se regenere para superar el umbral.
+- El indicador rojo se apaga automáticamente cuando `reasons` queda vacío; hasta entonces, `hudManager.setLandingIndicators` seguirá mostrando el piloto rojo y `tryStartLandingSequence` devolverá temprano.
 
 ## 6. Landed Panel
 

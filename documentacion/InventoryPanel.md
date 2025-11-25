@@ -32,10 +32,60 @@ Everything else (`voidEnergy`, relations, etc.) never enters this panel; keep sn
 3. **Upload**: `uploadTexture()` copies the canvas into the bound WebGL texture so the HUD quad updates next frame.
 
 ### Column Details
-- **Character Stats**: stacked bars for health and memory (0-100%), the new experience ratio bar (value / experienceMax), and finally the sanity grid; `snapshot.character.level` renders next to the pilot name.
-- **Personal Gear**: uses `buildPersonalRows()` to append placeholder accessories. `getPersonalSlotPalette()` supplies color blocks per slot type, and selected cards render an orange outline.
-- **Equipment**: fixed order defined inline; cards show slot name, module label, description/capabilities, or "Slot vacío" / "N/A" as appropriate. Scrollbar heights are computed from content vs viewport heights.
-- **Cargo**: rows call `drawCargoRow()`, which now titles each row with the composition/notes text (defaults to the label) and shows a descriptor derived from `CargoItemType` (`describeCargoType()`). Unit counts are right-aligned, matching the latest UX request.
+
+#### Columna izquierda — Perfil del piloto
+- Cabecera con nombre y nivel, seguida de barras condensadas de Salud, Memoria y Experiencia (esta última se dibuja como `valor / experienceMax`).
+- Bajo las barras se renderiza la cuadrícula de Cordura, que respeta el tope dinámico (`GameStateStore.getSanityCap()`) y resalta los casilleros reservados por hechizos aprendidos.
+- La sección inferior muestra el equipo personal (`buildPersonalRows()`), siempre asegurando que los slots de Accesorio visibles coincidan con la capacidad del traje actual.
+
+#### Columna central — Módulos de nave
+- Sigue un orden fijo de `EquipmentSlot` para que la memoria muscular funcione (“Core”, “Reactor”, “Alas”, etc.).
+- Cada tarjeta imprime el nombre estilizado del slot, el módulo equipado (si existe), descripciones/capacidades dinámicas (`getDynamicCapabilityLines`) y placeholders "Slot vacío" o "N/A" cuando corresponde.
+- Las tarjetas fuera del viewport mantienen regiones de selección para scroll infinito; el scrollbar calcula altura con la razón `visible / total`.
+
+#### Columna derecha — Carga y capacidad
+- Encabezado con barra de capacidad (`current / max`) y gauge translúcido para visualizar cuánto resta antes de saturar la bodega.
+- La lista `cargo` se pinta con `drawCargoRow()`: título = `entry.notes ?? entry.label`, descriptor según `CargoItemType`, unidades alineadas a la derecha y selección resaltada en naranja.
+- El scroll independiente garantiza que las operaciones de Anchoring Pulse y expulsión manual actualicen la posición sin saltos.
+
+#### Footer — Resumen y acciones
+- `describeSelection()` compone un texto breve (`Slot · etiqueta` o `Carga · nombre`).
+- El botón “Expulsar carga/equipo” solo se habilita para selecciones de carga o equipo personal; crea una región `InventoryActionType.JETTISON` que `GameEngine` mapea a la lógica correspondiente.
+
+## Ficha del personaje y estadísticas
+
+El bloque superior izquierdo del panel funciona como ficha del piloto y refleja directamente `GameStateStore.characterProfile`. Cada estadístico tiene reglas de entrada/salida específicas:
+
+### Salud (`health`)
+- Rango 0‑100. Representa la integridad física del piloto y se muestra con una barra verde.
+- Se reduce cuando `CharacterProfileService.adjustVitals({ health: -x })` es invocado por colisiones, daños ambientales o scripts narrativos (los sistemas que dañan la nave replican el impacto sobre el perfil via servicio).
+- Se recupera aplicando deltas positivos (eventos de descanso, aterrizajes asistidos, cheats de depuración) o al reiniciar la partida (`GameStateStore.reset`).
+
+### Memoria (`memory`)
+- También 0‑100. Sube cuando se desbloquean fragmentos narrativos o descubrimientos clave que llamen `adjustVitals({ memory: +x })`.
+- No disminuye de forma automática; únicamente scripts explícitos pueden restarla (actualmente ninguno la baja).
+- La barra azul sirve como recordatorio del progreso de historia sin depender del HUD principal.
+
+### Experiencia y nivel (`experience`, `level`)
+- `GameStateStore.adjustExperience` gestiona los incrementos y aplica caps tipo Fibonacci (100 → 200 → 300 → 500 …). Al llegar al tope, se sube de nivel y la barra se reinicia con el nuevo `experienceMax`.
+- La experiencia nunca baja del nivel desbloqueado, pero algunos eventos aplican deltas negativos al contador actual.
+- Fuentes principales (`CharacterProfileService.registerExperienceEvent`):
+
+| Evento | Delta |
+| --- | --- |
+| `ENEMY_SHIP_DESTROYED` | +25 |
+| `PRIMIGENIO_DEFEATED_PLANET` | +50 |
+| `PLANET_LANDING` | +3 |
+| `NEW_SPECIES_DISCOVERED` | +100 |
+| `SPELL_CAST` | +1 |
+| `PORTAL_SPELL` | +5 |
+| `PLAYER_DEATH` | −50 |
+
+### Cordura (`sanity`)
+- Base 100. El tope efectivo es `SANITY_BASE_MAX - Σ spell.max`, por lo que aprender glifos reduce permanentemente los casilleros disponibles en la cuadrícula.
+- Cada lanzamiento aplica el coste temporal (`spell.temp`) mediante `GameEngine.applySpellSanityCost`, consumiendo casilleros activos desde la izquierda. Descender por debajo de 0 desencadena clamps, nunca queda negativo.
+- Se recupera con `adjustVitals({ sanity: +x })` (descanso, eventos de historia, cheats) y al olvidar hechizos (`GameStateStore.forgetSpell`) se liberan los casilleros reservados.
+- La cuadrícula muestra tres estados: casillas activas (azul), reservadas (trama dorada) y vacías/bloqueadas (gris oscuro), de modo que el jugador entiende qué tanto margen tiene antes de sufrir penalizaciones por castear.
 
 ## Interaction Model
 - **Cursor Tracking**: `setCursorFromViewport()` converts viewport coordinates into canvas space, stores `cursorPx/Py`, and forces a repaint so the custom glow cursor draws in-place.
