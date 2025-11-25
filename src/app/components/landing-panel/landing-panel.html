@@ -35,6 +35,27 @@
     <p class="landing-panel__hint">
       Mantén a la tripulación en espera o inicia los protocolos de despegue cuando estés listo.
     </p>
+
+    <section class="landing-panel__intel" *ngIf="showIntelSection">
+      <div class="landing-panel__intel-header">Intel planetario</div>
+      <div class="landing-panel__intel-grid">
+        <div class="intel-card" *ngIf="inhabitantsIntel">
+          <div class="intel-card__label">Habitantes</div>
+          <div class="intel-card__value">{{ inhabitantsIntel }}</div>
+          <div class="intel-card__hint" *ngIf="inhabitantsHint">{{ inhabitantsHint }}</div>
+        </div>
+        <div class="intel-card" *ngIf="lifeProbabilityIntel">
+          <div class="intel-card__label">Prob. de vida</div>
+          <div class="intel-card__value">{{ lifeProbabilityIntel }}</div>
+          <div class="intel-card__hint" *ngIf="lifeProbabilityHint">{{ lifeProbabilityHint }}</div>
+        </div>
+        <div class="intel-card" *ngIf="lesserBeingIntel">
+          <div class="intel-card__label">Ser menor</div>
+          <div class="intel-card__value">{{ lesserBeingIntel }}</div>
+          <div class="intel-card__hint" *ngIf="lesserBeingHint">{{ lesserBeingHint }}</div>
+        </div>
+      </div>
+    </section>
   </div>
 
   <div slot="footer" class="landing-panel__actions">

@@ -58,7 +58,7 @@ import {
   InventoryPanelRegion,
   InventoryActionType
 } from './types/inventory.types';
-import { LandingApproachContext, LandingStatus, LandingThreatState } from './types/landing.types';
+import { LandingApproachContext, LandingPlanetIntel, LandingStatus, LandingThreatState } from './types/landing.types';
 import {
   LESSER_BEING_LABELS,
   PLANET_INHABITANT_LABELS,
@@ -677,7 +677,8 @@ export class GameEngine {
   }
 
   private handleLandingTouchdown(context: LandingApproachContext): void {
-    this.landingTouchdownContext = context;
+    const enrichedContext = this.enrichLandingContext(context);
+    this.landingTouchdownContext = enrichedContext;
     this.registerPlanetLandingVisit(context.planetId);
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing touchdown registered', {
       planetId: context.planetId,
@@ -686,7 +687,7 @@ export class GameEngine {
     try {
       const gameComponent = (globalThis as any).GameComponentInstance;
       if (gameComponent && typeof gameComponent.openLandingPanel === 'function') {
-        gameComponent.openLandingPanel(context);
+        gameComponent.openLandingPanel(enrichedContext);
         return;
       }
     } catch (error) {
@@ -719,6 +720,24 @@ export class GameEngine {
         this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Landing XP registration failed', { planetId, error });
       }
     }
+  }
+
+  private enrichLandingContext(context: LandingApproachContext): LandingApproachContext {
+    const planet = this.gameState.planets.find(p => p.id === context.planetId) as Planet | undefined;
+    if (!planet) {
+      return context;
+    }
+    const planetIntel = this.buildPlanetIntelDetails(planet);
+    const base = this._targetDetailsCache?.[planet.id] || this.getFallbackDetails(planet);
+    const probabilityRaw = Number((base as any)?.probabilityOfLifePct);
+    const probability = Number.isFinite(probabilityRaw)
+      ? Math.max(0, Math.min(100, Math.round(probabilityRaw)))
+      : undefined;
+    return {
+      ...context,
+      planetIntel,
+      probabilityOfLifePct: probability,
+    };
   }
 
   public startTakeoffSequence(): boolean {
@@ -2692,8 +2711,8 @@ export class GameEngine {
     return Math.max(0, distanceToCenter - radius);
   }
 
-  private buildPlanetIntelDetails(target: Planet | null): Record<string, any> {
-    const defaults = {
+  private buildPlanetIntelDetails(target: Planet | null): LandingPlanetIntel {
+    const defaults: LandingPlanetIntel = {
       planetInhabitantsDisplay: 'Desconocido',
       planetLesserBeingDisplay: 'Desconocido',
       planetLifeIntelKnown: false,
