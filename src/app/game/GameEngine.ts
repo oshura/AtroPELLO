@@ -46,6 +46,7 @@ import { SpellIOCoordinator } from './services/spells/spell-io-coordinator.servi
 import { GameStateStore } from '../services/game/game-state.store';
 import { CargoHoldService } from '../services/game/cargo-hold.service';
 import { CharacterProfileService, ExperienceEventType } from '../services/game/character-profile.service';
+import { KeyBindingsService, GameAction } from '../services/key-bindings.service';
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
@@ -64,10 +65,17 @@ import {
   LesserBeing,
   PlanetInhabitants,
 } from './types/cosmic-life.types';
-import {
-  GAME_OBJECT_ANIMOSITY_LABELS,
-  GameObjectAnimosity,
-} from './types/animosity.types';
+import { GameObjectAnimosity } from './types/animosity.types';
+
+interface AuxiliaryAbilityRuntime {
+  id: string;
+  label: string;
+  description: string;
+  activationKey: string;
+  cooldownMs: number;
+  lastUsedAtMs: number;
+  handler: () => boolean;
+}
 
 /**
  * Motor principal del juego que coordina todos los sistemas
@@ -110,6 +118,13 @@ export class GameEngine {
   // Defers a map selection when the user clicks immediately after opening the map
   // before the id->target mapping has been rebuilt in the first render pass.
   private pendingMapSelectId: string | null = null;
+  private auxiliaryAbilities: AuxiliaryAbilityRuntime[] = [];
+  private readonly auxiliaryBindingActions: GameAction[] = [
+    'aux_ability_1',
+    'aux_ability_2',
+    'aux_ability_3',
+    'aux_ability_4',
+  ];
   private landingStatus: LandingStatus = { ready: false, context: null };
   private landingThreat: LandingThreatState = { active: false, reasons: [] };
   private landingSequenceActive: boolean = false;
@@ -294,6 +309,7 @@ export class GameEngine {
     public gameState: GameStateStore,
     private cargoHoldService: CargoHoldService,
     private characterProfileService: CharacterProfileService,
+    private keyBindings: KeyBindingsService,
   public solarSystemService?: SolarSystemService,
   public humanSolarSystemService?: HumanSolarSystemService,
   public portalPersistenceService?: PortalPersistenceService,
@@ -312,6 +328,7 @@ export class GameEngine {
     this.music = musicDirector || null;
     // Logger
     this.logger = loggingService;
+    this.registerDefaultAuxiliaryAbilities();
   }
 
   /**
@@ -2549,11 +2566,136 @@ export class GameEngine {
   // Landing windows cleanup call removed
   }
 
+  private registerDefaultAuxiliaryAbilities(): void {
+    const definitions: Array<Omit<AuxiliaryAbilityRuntime, 'activationKey' | 'lastUsedAtMs'>> = [
+      {
+        id: 'aux-life-scanner',
+        label: 'Escáner Auxiliar de Habitantes',
+        description: 'Revela habitantes y seres menores de planetas a < 500u.',
+        cooldownMs: 8000,
+        handler: () => this.executeAuxiliaryLifeScanner(),
+      },
+    ];
+    this.auxiliaryAbilities = definitions.map((def, idx) => {
+      const bindingAction = this.auxiliaryBindingActions[idx];
+      const activationKey = this.resolveAuxiliaryActivationKey(bindingAction);
+      return {
+        ...def,
+        activationKey,
+        lastUsedAtMs: -Infinity,
+      };
+    });
+  }
+
+  private resolveAuxiliaryActivationKey(action: GameAction | undefined): string {
+    if (!action) {
+      return '?';
+    }
+    try {
+      const current = this.keyBindings?.get(action);
+      if (current && current.trim().length > 0) {
+        return current;
+      }
+      return this.keyBindings?.getDefaultKey(action) || '?';
+    } catch {
+      return '?';
+    }
+  }
+
+  private tryActivateAuxiliaryAbilityForKey(key: string): boolean {
+    if (!/^[1-4]$/.test(key)) {
+      return false;
+    }
+    const ability = this.auxiliaryAbilities[parseInt(key, 10) - 1];
+    if (!ability) {
+      return false;
+    }
+    const now = performance.now();
+    const remainingMs = ability.cooldownMs - (now - ability.lastUsedAtMs);
+    if (remainingMs > 0) {
+      const seconds = Math.ceil(remainingMs / 1000);
+      try { this.showPlaceholderText(`Bahía auxiliar en enfriamiento (${seconds}s)`, 1400); } catch {}
+      return true;
+    }
+    const success = ability.handler();
+    ability.lastUsedAtMs = success ? now : ability.lastUsedAtMs;
+    return true;
+  }
+
+  private executeAuxiliaryLifeScanner(): boolean {
+    if (!this.spaceship) {
+      try { this.showPlaceholderText('Escáner auxiliar inactivo (sin nave)', 1600); } catch {}
+      return false;
+    }
+    const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.reticleManager?.getCurrentTarget?.();
+    if (!target) {
+      try { this.showPlaceholderText('Selecciona un planeta para escanear', 1600); } catch {}
+      return false;
+    }
+    const asAny = target as any;
+    const targetType = typeof asAny?.getTargetType === 'function' ? asAny.getTargetType() : null;
+    const isPlanet = targetType === TargetType.PLANET || asAny?.getType?.() === GameObjectType.PLANET;
+    if (!isPlanet || typeof asAny?.markLifeScanned !== 'function') {
+      try { this.showPlaceholderText('El objetivo actual no es un planeta escaneable', 1700); } catch {}
+      return false;
+    }
+    const planet = asAny as Planet;
+    const surfaceDistance = this.getSurfaceDistanceToPlanet(planet);
+    const range = 500;
+    if (surfaceDistance == null || surfaceDistance > range) {
+      const readable = surfaceDistance != null ? Math.round(surfaceDistance) : '∞';
+      try { this.showPlaceholderText(`Planeta fuera de alcance (${readable}u)`, 1700); } catch {}
+      return false;
+    }
+    const previouslyLifeScanned = !!planet.lifeScanned;
+    const previouslyCreatureScanned = !!planet.creatureScanned;
+    try { planet.markLifeScanned(); } catch { (planet as any).lifeScanned = true; }
+    try { planet.markCreatureScanned(); } catch { (planet as any).creatureScanned = true; }
+
+    if (!previouslyLifeScanned && planet.inhabitants && planet.inhabitants !== PlanetInhabitants.NONE) {
+      try { this.characterProfileService.registerExperienceEvent(ExperienceEventType.NEW_SPECIES_DISCOVERED); } catch {}
+    }
+
+    const inhabitantLabel = planet.inhabitants && planet.inhabitants !== PlanetInhabitants.NONE
+      ? (PLANET_INHABITANT_LABELS[planet.inhabitants] ?? 'Habitantes detectados')
+      : PLANET_INHABITANT_LABELS[PlanetInhabitants.NONE];
+    const creatureLabel = planet.lesserBeing
+      ? (LESSER_BEING_LABELS[planet.lesserBeing] ?? 'Presencia anómala detectada')
+      : LESSER_BEING_LABELS[LesserBeing.NONE];
+
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Auxiliary scanner executed', {
+      planetId: planet.id,
+      inhabitants: inhabitantLabel,
+      lesserBeing: creatureLabel,
+      range,
+      surfaceDistance,
+    });
+    try {
+      this.showPlaceholderText(`ESCÁNER AUX: ${planet.getDisplayName()}\n${inhabitantLabel} / ${creatureLabel}`, 2600);
+    } catch {}
+    return true;
+  }
+
+  private getSurfaceDistanceToPlanet(planet: Planet): number | null {
+    if (!planet || !this.spaceship) {
+      return null;
+    }
+    const shipPos = this.spaceship.position;
+    const dx = planet.position.x - shipPos.x;
+    const dy = planet.position.y - shipPos.y;
+    const dz = planet.position.z - shipPos.z;
+    const distanceToCenter = Math.hypot(dx, dy, dz);
+    if (!isFinite(distanceToCenter)) {
+      return null;
+    }
+    const radius = Math.max(0, planet.scale?.x ?? 0);
+    return Math.max(0, distanceToCenter - radius);
+  }
+
   private buildPlanetIntelDetails(target: Planet | null): Record<string, any> {
     const defaults = {
       planetInhabitantsDisplay: 'Especie no identificada',
       planetLesserBeingDisplay: 'Sin datos',
-      planetAnimosityDisplay: 'Estado desconocido',
       planetLifeIntelKnown: false,
       planetCreatureIntelKnown: false,
       planetVisited: false,
@@ -2583,14 +2725,9 @@ export class GameEngine {
         ?? this.humanizeEnumValue(String(target.lesserBeing));
     })();
 
-    const animosityKey = (target.animosity as GameObjectAnimosity) || GameObjectAnimosity.NEUTRAL;
-    const animosityDisplay = GAME_OBJECT_ANIMOSITY_LABELS[animosityKey]
-      ?? this.humanizeEnumValue(String(animosityKey || 'neutral'));
-
     return {
       planetInhabitantsDisplay: inhabitantsDisplay,
       planetLesserBeingDisplay: lesserBeingDisplay,
-      planetAnimosityDisplay: animosityDisplay,
       planetLifeIntelKnown: !!target.lifeScanned,
       planetCreatureIntelKnown: !!target.creatureScanned,
       planetVisited: !!target.visited,
@@ -5704,6 +5841,10 @@ export class GameEngine {
       if (this.tryStartLandingSequence()) {
         return;
       }
+    }
+
+    if (this.tryActivateAuxiliaryAbilityForKey(key)) {
+      return;
     }
 
     // Manejo de controles de nave

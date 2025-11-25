@@ -10,6 +10,7 @@ export type GameAction =
   | 'camera_7' | 'camera_8' | 'camera_9' | 'camera_0'
   | 'stats_overlay'
   | 'start_resume' | 'clear_target' | 'resume'
+  | 'aux_ability_1' | 'aux_ability_2' | 'aux_ability_3' | 'aux_ability_4'
   ;
 
 interface BindingEntry { action: GameAction; key: string; }
@@ -36,6 +37,10 @@ const DEFAULT_BINDINGS: Record<GameAction, string> = {
   camera_8: '8',
   camera_9: '9',
   camera_0: '0',
+  aux_ability_1: '1',
+  aux_ability_2: '2',
+  aux_ability_3: '3',
+  aux_ability_4: '4',
   stats_overlay: 'ñ',
   start_resume: 'space',
   clear_target: 'escape',

@@ -744,7 +744,16 @@ export class GameStateStore {
       },
       [EquipmentSlot.SHIELD]: null,
       [EquipmentSlot.DRONE_BAY]: null,
-      [EquipmentSlot.AUXILIARY]: null
+      [EquipmentSlot.AUXILIARY]: {
+        slot: EquipmentSlot.AUXILIARY,
+        label: 'Bahía Auxiliar Mk. I',
+        rarity: RarityTier.RARE,
+        description: 'Módulo de soporte para equipamiento científico.',
+        capabilities: [
+          'Aloja el Escáner Auxiliar de Habitantes (tecla 1).',
+          'Permite detectar civilizaciones y criaturas a <500u.'
+        ]
+      }
     };
   }
   

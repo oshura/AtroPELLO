@@ -577,7 +577,6 @@ export class SolarSystemPanel {
         };
         pushIntelLine('planetInhabitantsDisplay', 'Habitantes');
         pushIntelLine('planetLesserBeingDisplay', 'Ser menor');
-        pushIntelLine('planetAnimosityDisplay', 'Estado social');
         // Albedo eliminado: no mostrar
         const hpPct = ((): number | null => {
           if (typeof d['healthPct'] === 'number') return Math.max(0, Math.min(100, Math.round(d['healthPct'])));
@@ -599,7 +598,7 @@ export class SolarSystemPanel {
         // Generic remaining keys (skip internal ones and already shown)
         for (const [k, v] of Object.entries(d)) {
           const lk = k.toLowerCase();
-          if (lk === 'healthpct' || lk === 'healthcurrent' || lk === 'healthmax' || lk === 'volumemu' || lk === 'volumegu' || lk === 'voidmassunits' || lk === 'probabilityoflifepct' || lk === 'previewstatus' || lk === 'type' || lk === 'name' || lk === 'planetinhabitantsdisplay' || lk === 'planetlesserbeingdisplay' || lk === 'planetanimositydisplay' || lk === 'planetlifeintelknown' || lk === 'planetcreatureintelknown' || lk === 'planetvisited') continue; // albedo removido
+          if (lk === 'healthpct' || lk === 'healthcurrent' || lk === 'healthmax' || lk === 'volumemu' || lk === 'volumegu' || lk === 'voidmassunits' || lk === 'probabilityoflifepct' || lk === 'previewstatus' || lk === 'type' || lk === 'name' || lk === 'planetinhabitantsdisplay' || lk === 'planetlesserbeingdisplay' || lk === 'planetlifeintelknown' || lk === 'planetcreatureintelknown' || lk === 'planetvisited') continue; // albedo removido
           pushDetail(`${prettyKey(k)}: ${prettyVal(v)}`);
         }
 

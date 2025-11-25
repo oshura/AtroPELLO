@@ -196,13 +196,12 @@ export class TargetPanel {
     };
     pushIntelLine('Habitantes', 'planetInhabitantsDisplay');
     pushIntelLine('Ser menor', 'planetLesserBeingDisplay');
-    pushIntelLine('Estado social', 'planetAnimosityDisplay');
     let voidMassLine: string | null = null;
     for (const [key, value] of Object.entries(details)) {
       // Filtrar claves internas y datos de salud (se muestran en la barra)
       if (key === 'previewStatus' || key === 'type' || key === 'name') continue;
       if (key === 'healthPct' || key === 'healthCurrent' || key === 'healthMax') continue; // Salud solo en barra
-      if (key === 'planetInhabitantsDisplay' || key === 'planetLesserBeingDisplay' || key === 'planetAnimosityDisplay' || key === 'planetLifeIntelKnown' || key === 'planetCreatureIntelKnown' || key === 'planetVisited') continue;
+      if (key === 'planetInhabitantsDisplay' || key === 'planetLesserBeingDisplay' || key === 'planetLifeIntelKnown' || key === 'planetCreatureIntelKnown' || key === 'planetVisited') continue;
       // Albedo eliminado: no procesar
         // Volume en Mu con etiqueta fija
         if (key === 'volumeMu') {

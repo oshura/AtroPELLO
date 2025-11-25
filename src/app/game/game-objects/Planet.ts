@@ -109,9 +109,7 @@ export class Planet extends GameObject implements ITargetable {
   }
 
   public markCreatureScanned(): void {
-    if (this.lesserBeing) {
-      this.creatureScanned = true;
-    }
+    this.creatureScanned = true;
   }
 
   public getDisplayName(): string { return this.customName ?? `Planet ${this.baseColorName}`; }
