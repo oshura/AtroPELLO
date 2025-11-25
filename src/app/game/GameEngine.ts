@@ -4147,6 +4147,9 @@ export class GameEngine {
                 typeLabel = getDisplayLabelFromTargetType(tt);
             }
             
+            const planetIntel = (tt === TargetType.PLANET)
+              ? this.buildPlanetIntelDetails(tgt as Planet)
+              : null;
             const planetHints = (tt === TargetType.PLANET) ? {
               planetType: (tgt as any).planetType || (base as any)?.planetType || (tgt as any).baseColorName,
               probabilityOfLifePct: (tgt as any).probabilityOfLifePct ?? (base as any)?.probabilityOfLifePct ?? 0,
@@ -4156,6 +4159,7 @@ export class GameEngine {
                 ?? (typeof (base as any)?.volumeGu === 'number'
                       ? Number(((base as any).volumeGu * 1000).toFixed(2))
                       : undefined),
+              ...(planetIntel || {}),
             } : {};
             const voidMass = (tgt as any).voidMassUnits ?? 0;
             details = { ...(base || {}), ...planetHints, type: typeLabel, voidMassUnits: voidMass } as any;
