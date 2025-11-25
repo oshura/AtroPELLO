@@ -319,11 +319,13 @@ export class InventoryPanel {
     c.fillText(levelLabel, w - 24, nameY);
     c.restore();
 
-    const healthY = nameY + this.scaleY(32);
+    const statBlockStart = nameY + this.scaleY(26);
+    const statSpacing = this.scaleY(34);
+    const healthY = statBlockStart;
     this.drawStatBar(c, 'Salud', snapshot.character.health, '#4ade80', 24, healthY, w - 48);
-    const memoryY = healthY + this.scaleY(68);
+    const memoryY = healthY + statSpacing;
     this.drawStatBar(c, 'Memoria', snapshot.character.memory, '#38bdf8', 24, memoryY, w - 48);
-    const experienceY = memoryY + this.scaleY(68);
+    const experienceY = memoryY + statSpacing;
     this.drawStatBar(
       c,
       'Experiencia',
@@ -334,7 +336,7 @@ export class InventoryPanel {
       w - 48,
       { max: Math.max(1, snapshot.character.experienceMax), format: 'ratio' }
     );
-    const sanityY = experienceY + this.scaleY(68);
+    const sanityY = experienceY + this.scaleY(48);
     const sanityBottom = this.drawSanityGrid(
       c,
       snapshot.character.sanity,
@@ -517,24 +519,47 @@ export class InventoryPanel {
     options?: { max?: number; format?: 'percent' | 'ratio' }
   ): void {
     c.save();
-    c.font = '500 14px "Segoe UI", sans-serif';
-    c.fillStyle = '#a7b5d8';
-    this.drawTallText(c, label, x, y);
-    const topGap = this.scaleY(12);
-    const barHeight = this.scaleY(14);
-    c.fillStyle = 'rgba(255,255,255,0.1)';
-    c.fillRect(x, y + topGap, width, barHeight);
-    c.fillStyle = color;
     const maxValue = options?.max ?? 100;
     const normalized = maxValue <= 0 ? 0 : Math.max(0, Math.min(1, value / maxValue));
-    c.fillRect(x, y + topGap, width * normalized, barHeight);
-    c.fillStyle = '#dde5ff';
     const format = options?.format ?? 'percent';
     const displayText = format === 'ratio'
       ? `${Math.max(0, Math.round(value))}/${Math.max(1, Math.round(maxValue))}`
       : `${Math.round(normalized * 100)}%`;
-    const valueX = x + width - this.scaleY(80);
-    this.drawTallText(c, displayText, valueX, y);
+    const valueColor = format === 'ratio' ? '#fef9c3' : '#e4edff';
+    const barHeight = this.scaleY(22);
+    const radius = this.scaleY(10);
+    const trackY = y;
+    c.fillStyle = 'rgba(7,11,20,0.92)';
+    this.roundedRectPath(c, x, trackY, width, barHeight, radius);
+    c.fill();
+    c.strokeStyle = 'rgba(255,255,255,0.07)';
+    c.stroke();
+
+    const fillWidthRaw = width * normalized;
+    if (fillWidthRaw > 0) {
+      const fillWidth = Math.min(width, Math.max(this.scaleY(6), fillWidthRaw));
+      c.save();
+      c.globalAlpha = 0.9;
+      c.fillStyle = color;
+      this.roundedRectPath(c, x, trackY, fillWidth, barHeight, radius);
+      c.fill();
+      c.restore();
+      c.fillStyle = 'rgba(255,255,255,0.15)';
+      c.fillRect(x + this.scaleY(3), trackY + this.scaleY(3), Math.max(0, fillWidth - this.scaleY(6)), this.scaleY(2));
+    }
+
+    const textY = trackY + barHeight / 2 + this.scaleY(3);
+    const labelX = x + this.scaleY(14);
+    const valueX = x + width - this.scaleY(14);
+    c.font = '600 14px "Segoe UI", sans-serif';
+    c.fillStyle = '#f4f7ff';
+    c.textAlign = 'left';
+    this.drawTallText(c, label, labelX, textY);
+    c.save();
+    c.textAlign = 'right';
+    c.fillStyle = valueColor;
+    this.drawTallText(c, displayText, valueX, textY);
+    c.restore();
     c.restore();
   }
 
@@ -1049,6 +1074,28 @@ export class InventoryPanel {
       default:
         return 'Unknown cargo';
     }
+  }
+
+  private roundedRectPath(
+    c: CanvasRenderingContext2D,
+    x: number,
+    y: number,
+    width: number,
+    height: number,
+    radius: number
+  ): void {
+    const r = Math.max(0, Math.min(radius, Math.min(width, height) / 2));
+    c.beginPath();
+    c.moveTo(x + r, y);
+    c.lineTo(x + width - r, y);
+    c.arcTo(x + width, y, x + width, y + r, r);
+    c.lineTo(x + width, y + height - r);
+    c.arcTo(x + width, y + height, x + width - r, y + height, r);
+    c.lineTo(x + r, y + height);
+    c.arcTo(x, y + height, x, y + height - r, r);
+    c.lineTo(x, y + r);
+    c.arcTo(x, y, x + r, y, r);
+    c.closePath();
   }
 
   private drawTallText(c: CanvasRenderingContext2D, text: string, x: number, y: number): void {
