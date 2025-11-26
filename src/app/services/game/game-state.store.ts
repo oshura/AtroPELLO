@@ -163,6 +163,8 @@ export class GameStateStore {
   private experienceCapsCache: number[] = [100, 200];
   private readonly SANITY_BASE_MAX = 99;
   public readonly knownSpells: Set<SpellType> = new Set(Object.values(SpellType));
+  /** Layout personalizado de glifos del grimorio (coordenadas normalizadas 0..1) */
+  public grimoireGlyphLayout: Partial<Record<SpellType, { nx: number; ny: number }>> = {};
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  GAME STATE FLAGS
@@ -240,6 +242,48 @@ export class GameStateStore {
   constructor(private logger: LoggingService) {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 
       '✅ GameStateStore initialized');
+  }
+
+  public setGrimoireGlyphPosition(spell: SpellType, normalized: { nx: number; ny: number }): void {
+    const clamped = {
+      nx: Math.min(1, Math.max(0, normalized.nx)),
+      ny: Math.min(1, Math.max(0, normalized.ny)),
+    };
+    this.grimoireGlyphLayout = {
+      ...this.grimoireGlyphLayout,
+      [spell]: clamped,
+    };
+  }
+
+  public getGrimoireGlyphPosition(spell: SpellType): { nx: number; ny: number } | null {
+    const entry = this.grimoireGlyphLayout[spell];
+    return entry ? { ...entry } : null;
+  }
+
+  public applyGrimoireGlyphLayout(layout: Partial<Record<SpellType, { nx: number; ny: number }>> | null): void {
+    if (!layout) {
+      this.grimoireGlyphLayout = {};
+      return;
+    }
+    const snapshot: Partial<Record<SpellType, { nx: number; ny: number }>> = {};
+    for (const spell of Object.values(SpellType)) {
+      const pos = layout[spell];
+      if (pos) {
+        snapshot[spell] = { nx: Math.min(1, Math.max(0, pos.nx)), ny: Math.min(1, Math.max(0, pos.ny)) };
+      }
+    }
+    this.grimoireGlyphLayout = snapshot;
+  }
+
+  public getGrimoireGlyphLayoutSnapshot(): Partial<Record<SpellType, { nx: number; ny: number }>> {
+    const snapshot: Partial<Record<SpellType, { nx: number; ny: number }>> = {};
+    for (const spell of Object.values(SpellType)) {
+      const entry = this.grimoireGlyphLayout[spell];
+      if (entry) {
+        snapshot[spell] = { ...entry };
+      }
+    }
+    return snapshot;
   }
   
   // ═══════════════════════════════════════════════════════════════════════════

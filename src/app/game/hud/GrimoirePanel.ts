@@ -3,6 +3,22 @@ import { SpellType, SpellState, isSpellType, getSpellSanityCost } from '../types
 import { AudioEngineService } from '../../services/audio/audio-engine.service';
 import { computePanelLetterbox, mapViewportPointToCanvas, PANEL_HORIZONTAL_STRETCH } from './utils/panel-letterbox';
 
+type NormalizedGlyphLayout = Partial<Record<SpellType, { nx: number; ny: number }>>;
+type GlyphPlacement = { type: SpellType | string; x: number; y: number; s: number; r: number };
+
+interface GlyphDragState {
+  active: boolean;
+  iconIndex: number;
+  spell: SpellType | null;
+  offsetX: number;
+  offsetY: number;
+  pointerX: number;
+  pointerY: number;
+  currentX: number;
+  currentY: number;
+  snapshotDirty: boolean;
+}
+
 /**
  * GrimoirePanel: full-screen, opaque panel rendering an ancient open book
  * with yellowed pages, occult icons, and a crimson pentacle cursor.
@@ -33,14 +49,30 @@ export class GrimoirePanel {
   // Static layout data (seeded RNG)
   private rng!: () => number;
   private speckles: Array<{ x: number; y: number; r: number; color: string }> = [];
-  private iconPlacements: Array<{ type: SpellType | string; x: number; y: number; s: number; r: number }> = [];
+  private iconPlacements: GlyphPlacement[] = [];
   private handwritingLines: Array<Array<{ x: number; y: number }>> = [];
   // Handwriting as segmented "words": each line is an array of word-polylines
   private handwritingSegments: Array<Array<Array<{ x: number; y: number }>>> = [];
   private pageWrinkles: Array<Array<{ x:number; y:number }>> = [];
   private hoveredIconIndex: number = -1;
   private previousHoveredIconIndex: number = -1; // Track hover changes for audio
+  private baseCanvas: HTMLCanvasElement;
+  private baseCtx: CanvasRenderingContext2D | null = null;
+  private dragState: GlyphDragState = {
+    active: false,
+    iconIndex: -1,
+    spell: null,
+    offsetX: 0,
+    offsetY: 0,
+    pointerX: 0,
+    pointerY: 0,
+    currentX: 0,
+    currentY: 0,
+    snapshotDirty: false,
+  };
+  private pendingNormalizedLayout: NormalizedGlyphLayout | null = null;
   private readonly BOOK_HEIGHT_SCALE = 0.9;
+  private readonly GLYPH_FRAME_EXTRA_WIDTH = 26;
   // Spell states and selection
   private spellStates: Map<SpellType, SpellState> = new Map([
     [SpellType.SPEED, SpellState.AVAILABLE],
@@ -73,6 +105,10 @@ export class GrimoirePanel {
     const ctx = this.canvas.getContext('2d');
     if (!ctx) throw new Error('GrimoirePanel: 2D context not available');
     this.ctx = ctx;
+    this.baseCanvas = document.createElement('canvas');
+    this.baseCanvas.width = width; this.baseCanvas.height = height;
+    this.baseCtx = this.baseCanvas.getContext('2d');
+    if (!this.baseCtx) throw new Error('GrimoirePanel: base 2D context not available');
     this.initGLResources();
     this.initializeStaticLayout();
   }
@@ -85,6 +121,7 @@ export class GrimoirePanel {
       this.animStartMs = performance.now();
       this.animClosingPendingDisable = false;
     } else {
+      this.abortGlyphDrag();
       // Start closing animation; keep enabled until it finishes
       if (this.enabled) {
         this.animOpening = false;
@@ -118,18 +155,24 @@ export class GrimoirePanel {
       this.canvas.height,
       { horizontalScale: PANEL_HORIZONTAL_STRETCH }
     );
-    if (!mapped.inside) {
+    if (!mapped.inside && !this.dragState.active) {
       this.cursorPx = null;
       this.cursorPy = null;
       return;
     }
-    this.cursorPx = mapped.mapX;
-    this.cursorPy = mapped.mapY;
+    const targetX = mapped.inside ? mapped.mapX : mapped.mapX;
+    const targetY = mapped.inside ? mapped.mapY : mapped.mapY;
+    const clamped = this.clampToCanvas(targetX, targetY);
+    this.cursorPx = clamped.x;
+    this.cursorPy = clamped.y;
+    if (this.dragState.active) {
+      this.updateDragPointer(clamped.x, clamped.y);
+    }
   }
 
   // Expose hovered spell type for casting
   public getHoveredSpellType(): SpellType | null {
-    if (this.hoveredIconIndex < 0) return null;
+    if (this.dragState.active || this.hoveredIconIndex < 0) return null;
     const icon = this.iconPlacements[this.hoveredIconIndex];
     // Only return SpellType enums, ignore decorative string glyphs
     return (icon && isSpellType(icon.type)) ? icon.type : null;
@@ -198,10 +241,209 @@ export class GrimoirePanel {
     });
   }
 
+  public applyNormalizedGlyphLayout(layout: NormalizedGlyphLayout | null): void {
+    this.pendingNormalizedLayout = layout ? { ...layout } : null;
+    this.applyPendingGlyphLayout();
+  }
+
+  public beginGlyphDrag(): boolean {
+    if (this.dragState.active || this.hoveredIconIndex < 0) {
+      return false;
+    }
+    const icon = this.iconPlacements[this.hoveredIconIndex];
+    if (!icon || !isSpellType(icon.type)) {
+      return false;
+    }
+    const pointerX = this.cursorPx ?? icon.x;
+    const pointerY = this.cursorPy ?? icon.y;
+    const clampedPointer = this.clampToCanvas(pointerX, pointerY);
+    this.dragState = {
+      active: true,
+      iconIndex: this.hoveredIconIndex,
+      spell: icon.type,
+      offsetX: clampedPointer.x - icon.x,
+      offsetY: clampedPointer.y - icon.y,
+      pointerX: clampedPointer.x,
+      pointerY: clampedPointer.y,
+      currentX: icon.x,
+      currentY: icon.y,
+      snapshotDirty: true,
+    };
+    this.hoveredIconIndex = -1;
+    return true;
+  }
+
+  public endGlyphDrag(): { spell: SpellType; normalized: { nx: number; ny: number } } | null {
+    if (!this.dragState.active || this.dragState.iconIndex < 0 || !this.dragState.spell) {
+      return null;
+    }
+    const icon = this.iconPlacements[this.dragState.iconIndex];
+    if (!icon || !isSpellType(icon.type)) {
+      this.abortGlyphDrag();
+      return null;
+    }
+    const finalX = this.dragState.currentX;
+    const finalY = this.dragState.currentY;
+    icon.x = finalX;
+    icon.y = finalY;
+    const normalized = {
+      nx: Math.min(1, Math.max(0, finalX / this.canvas.width)),
+      ny: Math.min(1, Math.max(0, finalY / this.canvas.height)),
+    };
+    const spell = this.dragState.spell;
+    this.abortGlyphDrag(false);
+    return { spell, normalized };
+  }
+
+  public isGlyphDragging(): boolean {
+    return this.dragState.active;
+  }
+
   public setSpellState(spellType: SpellType, state: SpellState): void {
     this.spellStates.set(spellType, state);
     if (state !== SpellState.EQUIPPED && this.selectedSpell === spellType) {
       this.selectedSpell = null;
+    }
+  }
+
+  private getGlyphRadius(placement: GlyphPlacement): number {
+    const scale = Number.isFinite(placement.s) ? placement.s : 1;
+    return placement.r * (scale ?? 1);
+  }
+
+  private applyPendingGlyphLayout(): void {
+    if (!this.pendingNormalizedLayout || !this.iconPlacements.length) {
+      return;
+    }
+    const layout = this.pendingNormalizedLayout;
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    for (const placement of this.iconPlacements) {
+      if (!isSpellType(placement.type)) {
+        continue;
+      }
+      const target = layout[placement.type];
+      if (!target) {
+        continue;
+      }
+      const px = target.nx * width;
+      const py = target.ny * height;
+      const clamped = this.clampToCanvas(px, py);
+      placement.x = clamped.x;
+      placement.y = clamped.y;
+    }
+    this.pendingNormalizedLayout = null;
+  }
+
+  private clampToCanvas(x: number, y: number): { x: number; y: number } {
+    const width = this.canvas.width;
+    const height = this.canvas.height;
+    return {
+      x: Math.min(width, Math.max(0, x)),
+      y: Math.min(height, Math.max(0, y)),
+    };
+  }
+
+  private updateDragPointer(x: number, y: number): void {
+    if (!this.dragState.active || this.dragState.iconIndex < 0) {
+      return;
+    }
+    const glyph = this.iconPlacements[this.dragState.iconIndex];
+    if (!glyph) {
+      return;
+    }
+    const radius = this.getGlyphRadius(glyph);
+    const newCx = x - this.dragState.offsetX;
+    const newCy = y - this.dragState.offsetY;
+    const minX = radius;
+    const maxX = this.canvas.width - radius;
+    const minY = radius;
+    const maxY = this.canvas.height - radius;
+    const clampedX = Math.min(maxX, Math.max(minX, newCx));
+    const clampedY = Math.min(maxY, Math.max(minY, newCy));
+    this.dragState.pointerX = x;
+    this.dragState.pointerY = y;
+    this.dragState.currentX = clampedX;
+    this.dragState.currentY = clampedY;
+  }
+
+  private abortGlyphDrag(resetHover: boolean = true): void {
+    if (resetHover) {
+      this.hoveredIconIndex = -1;
+    }
+    this.dragState.active = false;
+    this.dragState.iconIndex = -1;
+    this.dragState.spell = null;
+    this.dragState.offsetX = 0;
+    this.dragState.offsetY = 0;
+    this.dragState.pointerX = 0;
+    this.dragState.pointerY = 0;
+    this.dragState.currentX = 0;
+    this.dragState.currentY = 0;
+    this.dragState.snapshotDirty = false;
+  }
+
+  private drawDraggedGlyph(c: CanvasRenderingContext2D): void {
+    if (!this.dragState.active || this.dragState.iconIndex < 0) {
+      return;
+    }
+    const placement = this.iconPlacements[this.dragState.iconIndex];
+    if (!placement) {
+      return;
+    }
+    const ghost: GlyphPlacement = { ...placement, x: this.dragState.currentX, y: this.dragState.currentY };
+    const radius = this.getGlyphRadius(ghost);
+    let spellType: SpellType | null = null;
+    let state: SpellState = SpellState.LOCKED;
+    if (isSpellType(ghost.type)) {
+      spellType = ghost.type;
+      state = this.spellStates.get(ghost.type) ?? SpellState.AVAILABLE;
+    }
+    const equipped = spellType !== null && this.selectedSpell === spellType;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    c.save();
+    c.translate(W/2, H/2);
+    c.scale(this.tScale, this.tScale);
+    c.translate(-W/2, -H/2);
+    c.save();
+    c.translate(W/2, H/2);
+    c.scale(1, this.BOOK_HEIGHT_SCALE);
+    c.translate(-W/2, -H/2);
+    this.withGlyphAspectCompensation(c, ghost.x, ghost.y, true, () => {
+      this.drawGlyphFrame(c, ghost.x, ghost.y, radius, state, equipped);
+      this.drawSingleIcon(c, ghost, state, false, radius);
+      if (spellType) {
+        this.drawGlyphSanityCost(c, ghost.x, ghost.y, radius, spellType, state);
+      }
+    });
+    c.restore();
+    c.restore();
+  }
+
+  private updateHoverState(): void {
+    const prevIndex = this.hoveredIconIndex;
+    if (!this.isInteractive() || this.dragState.active || this.cursorPx === null || this.cursorPy === null) {
+      this.hoveredIconIndex = -1;
+      this.previousHoveredIconIndex = prevIndex;
+      return;
+    }
+    const px = this.cursorPx;
+    const py = this.cursorPy;
+    let found = -1;
+    for (let i = 0; i < this.iconPlacements.length; i++) {
+      const glyph = this.iconPlacements[i];
+      const radius = this.getGlyphRadius(glyph);
+      const dx = px - glyph.x;
+      const dy = py - glyph.y;
+      if (dx * dx + dy * dy <= radius * radius) {
+        found = i;
+        break;
+      }
+    }
+    if (found !== prevIndex) {
+      this.previousHoveredIconIndex = prevIndex;
+      this.hoveredIconIndex = found;
     }
   }
 
@@ -256,10 +498,8 @@ export class GrimoirePanel {
 
   /** Re-render the book to the internal canvas and upload to texture */
   public update(deltaTime: number = 0): void {
-    // Drive time from a monotonic clock so animation runs even if delta is 0
     const now = performance.now();
     this.t = (now - this.startTime) / 1000;
-    // Animate reading-mode transform
     const tSince = now - this.animStartMs;
     const raw = Math.max(0, Math.min(1, tSince / Math.max(1, this.animDurMs)));
     const easeInOutQuad = (x:number) => x < 0.5 ? 2*x*x : 1 - Math.pow(-2*x + 2, 2)/2;
@@ -270,75 +510,88 @@ export class GrimoirePanel {
       this.animClosingPendingDisable = false;
     }
     const prog = Math.max(0, Math.min(1, this.animProgress));
-  // Up to +6% zoom
     this.tScale = 1.0 + 0.06 * prog;
-  this.tRot = 0.0;
-    const c = this.ctx; const W = this.canvas.width; const H = this.canvas.height;
+    this.tRot = 0.0;
+    this.updateHoverState();
+
+    if (!this.dragState.active) {
+      this.renderScene(this.ctx, now, { includeTooltip: true, includeCursor: true });
+    } else {
+      if (this.dragState.snapshotDirty && this.baseCtx) {
+        this.renderScene(this.baseCtx, now, {
+          skipIconIndex: this.dragState.iconIndex,
+          includeTooltip: false,
+          includeCursor: false,
+        });
+        this.dragState.snapshotDirty = false;
+      }
+      this.drawDragComposite(now);
+    }
+
+    this.uploadCanvasTexture();
+  }
+
+  private renderScene(targetCtx: CanvasRenderingContext2D, _timestamp: number, options?: { skipIconIndex?: number; includeTooltip?: boolean; includeCursor?: boolean }): void {
+    const includeTooltip = options?.includeTooltip ?? false;
+    const includeCursor = options?.includeCursor ?? false;
+    const c = targetCtx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
     c.save();
-    // Background parchment
     this.drawParchment(c, W, H);
-    // Book frame and pages (static wrinkles)
-    // Apply reading transform to book/page content
     c.save();
-  c.translate(W/2, H/2);
-  c.scale(this.tScale, this.tScale);
-  c.translate(-W/2, -H/2);
+    c.translate(W/2, H/2);
+    c.scale(this.tScale, this.tScale);
+    c.translate(-W/2, -H/2);
     c.save();
     c.translate(W/2, H/2);
     c.scale(1, this.BOOK_HEIGHT_SCALE);
     c.translate(-W/2, -H/2);
     this.drawBook(c, W, H);
-    // Determine hover over icons
-    this.hoveredIconIndex = -1;
-    if (this.cursorPx !== null && this.cursorPy !== null) {
-      // Inverse-transform cursor for accurate hit testing
-      const inv = this.inverseTransform(this.cursorPx, this.cursorPy, W, H);
-      for (let i=0;i<this.iconPlacements.length;i++) {
-        const ic = this.iconPlacements[i];
-        const dx = inv.x - ic.x; const dy = inv.y - ic.y;
-        if (dx*dx + dy*dy <= (ic.r*ic.r)) { this.hoveredIconIndex = i; break; }
-      }
-      // If click coordinate is over page but not over any glyph and selection exists, allow external code to clear selection by calling setSelectedSpellType(null)
-    }
-    
-    // Play hover sound when entering a new glyph
-    if (this.hoveredIconIndex >= 0 && this.hoveredIconIndex !== this.previousHoveredIconIndex) {
-      if (this.audioService) {
-        this.audioService.play('ui_outline_hover', { volume: 0.5, bus: 'ui' });
-      }
-    }
-    this.previousHoveredIconIndex = this.hoveredIconIndex;
-    
-    // Page content: handwriting + icons (static), plus hover effects
-    this.drawPageContent(c, W, H);
+    this.drawPageContent(c, W, H, { skipIconIndex: options?.skipIconIndex ?? -1 });
     c.restore();
-    c.restore(); // end reading transform scope
-    // Tooltip for hovered spell (flip to the left side when hovering glyphs on the right page)
-    if (this.hoveredIconIndex >= 0) {
+    c.restore();
+    this.drawTooltipAndCursor(c, includeTooltip, includeCursor);
+    c.restore();
+  }
+
+  private drawDragComposite(timestamp: number): void {
+    const c = this.ctx;
+    const W = this.canvas.width;
+    const H = this.canvas.height;
+    c.save();
+    c.clearRect(0, 0, W, H);
+    if (this.baseCanvas) {
+      c.drawImage(this.baseCanvas, 0, 0);
+    }
+    this.drawDraggedGlyph(c);
+    this.drawTooltipAndCursor(c, false, true);
+    c.restore();
+  }
+
+  private drawTooltipAndCursor(c: CanvasRenderingContext2D, includeTooltip: boolean, includeCursor: boolean): void {
+    if (includeTooltip && this.hoveredIconIndex >= 0) {
       const ic = this.iconPlacements[this.hoveredIconIndex];
       const t = ic.type;
       if (this.cursorPx !== null && this.cursorPy !== null) {
         const state = isSpellType(t) ? (this.spellStates.get(t) || SpellState.AVAILABLE) : SpellState.LOCKED;
         const Wb = this.measureTooltipWidth(t, state);
-        // Determine if hovered glyph belongs to the right page
-        const isRightPage = (
-          ic.x >= this.rightPage.x && ic.x <= (this.rightPage.x + this.rightPage.w)
-        );
+        const isRightPage = ic.x >= this.rightPage.x && ic.x <= (this.rightPage.x + this.rightPage.w);
         const pad = 18;
         let tipX = isRightPage ? (this.cursorPx - pad - Wb) : (this.cursorPx + pad);
-        // Clamp within canvas
         tipX = Math.max(6, Math.min(this.canvas.width - Wb - 6, tipX));
         const tipY = this.cursorPy + pad;
         this.drawSpellTooltip(c, tipX, tipY, t, state);
       }
     }
-    // Cursor
-    if (this.cursorPx !== null && this.cursorPy !== null) {
+    if (includeCursor && this.cursorPx !== null && this.cursorPy !== null) {
+      const W = this.canvas.width;
+      const H = this.canvas.height;
       this.drawPentacle(c, this.cursorPx, this.cursorPy, Math.max(12, Math.min(22, Math.min(W, H) * 0.018)));
     }
-    c.restore();
+  }
 
-    // Upload canvas to texture
+  private uploadCanvasTexture(): void {
     const gl = this.gl;
     gl.bindTexture(gl.TEXTURE_2D, this.texture);
     const prevFlip = gl.getParameter(gl.UNPACK_FLIP_Y_WEBGL) as boolean;
@@ -470,8 +723,8 @@ export class GrimoirePanel {
     c.globalAlpha = 1;
   }
 
-  private drawPageContent(c: CanvasRenderingContext2D, W: number, H: number): void {
-    // Handwriting word segments (precomputed), draw beneath frames/icons
+  private drawPageContent(c: CanvasRenderingContext2D, W: number, H: number, options?: { skipIconIndex?: number }): void {
+    const skipIndex = options?.skipIconIndex ?? -1;
     c.strokeStyle = 'rgba(60,45,35,0.85)';
     c.lineWidth = 1.2; c.lineCap = 'round';
     for (const lineSegs of this.handwritingSegments) {
@@ -483,151 +736,46 @@ export class GrimoirePanel {
         c.stroke();
       }
     }
-    // Frames behind all glyphs to mask handwriting beneath
     for (let i = 0; i < this.iconPlacements.length; i++) {
+      if (i === skipIndex) {
+        continue;
+      }
       const p = this.iconPlacements[i];
-      // Get state: decorative glyphs (strings NOT in SpellType enum) are LOCKED, real spells use Map
-      const isRealSpell = isSpellType(p.type);
+      const radius = this.getGlyphRadius(p);
       let state: SpellState;
-      if (!isRealSpell) {
-        state = SpellState.LOCKED;
-      } else {
-        const mapValue = this.spellStates.get(p.type as SpellType);
-        state = mapValue || SpellState.AVAILABLE;
-      }
-      
-      const equipped = (this.selectedSpell === p.type);
-      this.drawGlyphFrame(c, p.x, p.y, p.r, state, equipped);
-    }
-    // Icons (precomputed) and hover effects (on top)
-    for (let i=0;i<this.iconPlacements.length;i++) {
-      const p = this.iconPlacements[i];
-      const state = isSpellType(p.type) ? (this.spellStates.get(p.type) || SpellState.AVAILABLE) : SpellState.LOCKED;
-  // Remove separate equipped glow pass; neon effect is applied directly to the rune when equipped
-      const alphaBefore = c.globalAlpha;
-      if (state === SpellState.LOCKED) c.globalAlpha = 0.45;
-      if (p.type === SpellType.SPEED) {
-        if (state === SpellState.EQUIPPED) {
-          c.save();
-          const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
-          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
-          c.shadowBlur = 22;
-          this.drawSpeedRune(c, p.x, p.y, p.r*0.76, '#00d5ff');
-          c.restore();
-        } else {
-          this.drawSpeedRune(c, p.x, p.y, p.r*0.76);
-        }
-      }
-      else if (p.type === SpellType.LONGJUMP) {
-        if (state === SpellState.EQUIPPED) {
-          c.save();
-          const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
-          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
-          c.shadowBlur = 22;
-          this.drawLongJumpRune(c, p.x, p.y, p.r*0.76, '#00d5ff');
-          c.restore();
-        } else {
-          this.drawLongJumpRune(c, p.x, p.y, p.r*0.76);
-        }
-      }
-      else if (p.type === SpellType.GATE_RITE) {
-        if (state === SpellState.EQUIPPED) {
-          c.save();
-          const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 3.4));
-          c.shadowColor = `rgba(255,140,0,${pulse.toFixed(3)})`;
-          c.shadowBlur = 26;
-          this.drawGateRiteRune(c, p.x, p.y, p.r*0.76, '#ff8c00');
-          c.restore();
-        } else {
-          this.drawGateRiteRune(c, p.x, p.y, p.r*0.76);
-        }
-      }
-      else if (p.type === SpellType.ETERNAL_RITE) {
-        if (state === SpellState.EQUIPPED) {
-          c.save();
-          const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 2.8));
-          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
-          c.shadowBlur = 22;
-          this.drawEternalRite(c, p.x, p.y, p.r*0.76, '#00d5ff');
-          c.restore();
-        } else {
-          this.drawEternalRite(c, p.x, p.y, p.r*0.76);
-        }
-      }
-      else if (p.type === SpellType.DISRUPT) {
-        if (state === SpellState.EQUIPPED) {
-          c.save();
-          const pulse = 0.85 + 0.15 * (0.5 + 0.5 * Math.sin(this.t * 3.2));
-          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
-          c.shadowBlur = 22;
-          this.drawDisruptRune(c, p.x, p.y, p.r*0.76, '#00d5ff');
-          c.restore();
-        } else {
-          this.drawDisruptRune(c, p.x, p.y, p.r*0.76);
-        }
-      }
-      else if (p.type === SpellType.ANCHORING_PULSE) {
-        if (state === SpellState.EQUIPPED) {
-          c.save();
-          const pulse = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(this.t * 3.0));
-          c.shadowColor = `rgba(0,160,255,${pulse.toFixed(3)})`;
-          c.shadowBlur = 26;
-          this.drawAnchoringPulseRune(c, p.x, p.y, p.r*0.76, '#00b8ff');
-          c.restore();
-        } else {
-          this.drawAnchoringPulseRune(c, p.x, p.y, p.r*0.76);
-        }
-      }
-      else if (p.type === SpellType.VOID_KINESIS) {
-        if (state === SpellState.EQUIPPED) {
-          c.save();
-          const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 3.6));
-          c.shadowColor = `rgba(255,40,40,${pulse.toFixed(3)})`;
-          c.shadowBlur = 28;
-          this.drawVoidKinesisRune(c, p.x, p.y, p.r*0.76, '#ff3737');
-          c.restore();
-        } else {
-          this.drawVoidKinesisRune(c, p.x, p.y, p.r*0.76);
-        }
-      }
-      else if (p.type === SpellType.SPECIES_SCAN) {
-        if (state === SpellState.EQUIPPED) {
-          c.save();
-          const pulse = 0.82 + 0.18 * (0.5 + 0.5 * Math.sin(this.t * 3.2));
-          c.shadowColor = `rgba(0,213,255,${pulse.toFixed(3)})`;
-          c.shadowBlur = 24;
-          this.drawSpeciesScanRune(c, p.x, p.y, p.r*0.76, '#00d5ff');
-          c.restore();
-        } else {
-          this.drawSpeciesScanRune(c, p.x, p.y, p.r*0.76);
-        }
-      }
-      else if (p.type === SpellType.CREATURE_SCAN) {
-        if (state === SpellState.EQUIPPED) {
-          c.save();
-          const pulse = 0.80 + 0.20 * (0.5 + 0.5 * Math.sin(this.t * 2.9));
-          c.shadowColor = `rgba(255,120,0,${pulse.toFixed(3)})`;
-          c.shadowBlur = 24;
-          this.drawCreatureScanRune(c, p.x, p.y, p.r*0.76, '#ff9a1a');
-          c.restore();
-        } else {
-          this.drawCreatureScanRune(c, p.x, p.y, p.r*0.76);
-        }
-      }
-      else if (p.type === 'eye') this.drawEye(c, p.x, p.y, p.r*0.86);
-      else if (p.type === 'star') this.drawStarSymbol(c, p.x, p.y, p.r*0.6);
-      else if (p.type === 'ignis') this.drawIgnis(c, p.x, p.y, p.r*0.72);
-      else if (p.type === 'lux') this.drawLux(c, p.x, p.y, p.r*0.72);
-      else if (p.type === 'vinculum') this.drawVinculum(c, p.x, p.y, p.r*0.72);
-      else if (p.type === 'tempus') this.drawTempus(c, p.x, p.y, p.r*0.72);
-      c.globalAlpha = alphaBefore;
+      let spellType: SpellType | null = null;
       if (isSpellType(p.type)) {
-        this.drawGlyphSanityCost(c, p.x, p.y, p.r, p.type, state);
+        spellType = p.type;
+        state = this.spellStates.get(spellType) ?? SpellState.AVAILABLE;
+      } else {
+        state = SpellState.LOCKED;
       }
-      // tentacle intentionally avoided (had per-frame randomness)
-      if (i === this.hoveredIconIndex) {
-        this.drawIconHover(c, p.x, p.y, p.r);
+      const equipped = spellType !== null && this.selectedSpell === spellType;
+      this.withGlyphAspectCompensation(c, p.x, p.y, true, () => {
+        this.drawGlyphFrame(c, p.x, p.y, radius, state, equipped);
+      });
+    }
+    for (let i = 0; i < this.iconPlacements.length; i++) {
+      if (i === skipIndex) {
+        continue;
       }
+      const p = this.iconPlacements[i];
+      const radius = this.getGlyphRadius(p);
+      let state: SpellState;
+      let spellType: SpellType | null = null;
+      if (isSpellType(p.type)) {
+        spellType = p.type;
+        state = this.spellStates.get(spellType) ?? SpellState.AVAILABLE;
+      } else {
+        state = SpellState.LOCKED;
+      }
+      const isHovered = i === this.hoveredIconIndex && !this.dragState.active;
+      this.withGlyphAspectCompensation(c, p.x, p.y, true, () => {
+        this.drawSingleIcon(c, p, state, isHovered, radius);
+        if (spellType) {
+          this.drawGlyphSanityCost(c, p.x, p.y, radius, spellType, state);
+        }
+      });
     }
   }
 
@@ -757,6 +905,7 @@ export class GrimoirePanel {
     this.iconPlacements.push({ type: SpellType.VOID_KINESIS, x: rp.x + rp.w*0.72, y: rp.y + rp.h*0.50, s: 1.0, r: rR*1.05 });
 
     // Decorative glyphs (ignis, lux, vinculum, tempus) are handled as strings and always render as locked
+    this.applyPendingGlyphLayout();
   }
 
   // Mulberry32 PRNG
@@ -1208,18 +1357,89 @@ export class GrimoirePanel {
     c.restore();
   }
 
-  private drawEquippedGlow(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
-    c.save(); c.translate(x,y);
-    const g = c.createRadialGradient(0,0, r*0.5, 0,0, r*1.25);
-    g.addColorStop(0, 'rgba(0,213,255,0.25)');
-    g.addColorStop(1, 'rgba(0,213,255,0)');
-    c.fillStyle = g; c.beginPath(); c.arc(0,0, r*1.25, 0, Math.PI*2); c.fill();
-    c.lineWidth = 2; c.strokeStyle = 'rgba(0,213,255,0.95)';
-    c.beginPath(); c.arc(0,0, r*1.02, 0, Math.PI*2); c.stroke();
-    c.restore();
+  // Parchment frame behind glyphs to mask handwriting and provide a clean space
+  private drawSingleIcon(
+    c: CanvasRenderingContext2D,
+    placement: GlyphPlacement,
+    state: SpellState,
+    isHovered: boolean,
+    radius: number,
+  ): void {
+    const { type, x, y } = placement;
+    const runeColor = state === SpellState.LOCKED ? 'rgba(80,80,80,0.65)' : undefined;
+    if (isSpellType(type)) {
+      switch (type) {
+        case SpellType.SPEED:
+          this.drawSpeedRune(c, x, y, radius, runeColor);
+          break;
+        case SpellType.LONGJUMP:
+          this.drawLongJumpRune(c, x, y, radius, runeColor);
+          break;
+        case SpellType.GATE_RITE:
+          this.drawGateRiteRune(c, x, y, radius, runeColor);
+          break;
+        case SpellType.ETERNAL_RITE:
+          this.drawEternalRite(c, x, y, radius, runeColor);
+          break;
+        case SpellType.DISRUPT:
+          this.drawDisruptRune(c, x, y, radius, runeColor);
+          break;
+        case SpellType.ANCHORING_PULSE:
+          this.drawAnchoringPulseRune(c, x, y, radius, runeColor);
+          break;
+        case SpellType.VOID_KINESIS:
+          this.drawVoidKinesisRune(c, x, y, radius, runeColor);
+          break;
+        case SpellType.SPECIES_SCAN:
+          this.drawSpeciesScanRune(c, x, y, radius, runeColor);
+          break;
+        case SpellType.CREATURE_SCAN:
+          this.drawCreatureScanRune(c, x, y, radius, runeColor);
+          break;
+        default:
+          this.drawVinculum(c, x, y, radius);
+          break;
+      }
+    } else {
+      switch (type) {
+        case 'ignis':
+          this.drawIgnis(c, x, y, radius);
+          break;
+        case 'tempus':
+          this.drawTempus(c, x, y, radius);
+          break;
+        default:
+          this.drawLux(c, x, y, radius);
+          break;
+      }
+    }
+    if (isHovered) {
+      this.drawIconHover(c, x, y, radius);
+    }
   }
 
-  // Parchment frame behind glyphs to mask handwriting and provide a clean space
+  private withGlyphAspectCompensation(
+    c: CanvasRenderingContext2D,
+    cx: number,
+    cy: number,
+    enable: boolean,
+    drawFn: () => void,
+  ): void {
+    if (!enable) {
+      drawFn();
+      return;
+    }
+    c.save();
+    c.translate(cx, cy);
+    c.scale(0.9, 1.1);
+    c.translate(-cx, -cy);
+    try {
+      drawFn();
+    } finally {
+      c.restore();
+    }
+  }
+
   private drawGlyphFrame(c: CanvasRenderingContext2D, cx:number, cy:number, r:number, state: SpellState = SpellState.AVAILABLE, equipped: boolean = false): void {
     const { x, y, w, h } = this.getGlyphFrameRect(cx, cy, r);
     c.save();
@@ -1237,7 +1457,7 @@ export class GrimoirePanel {
     if (state === SpellState.LOCKED) {
       c.strokeStyle = 'rgba(80,80,80,0.35)';
     } else if (equipped) {
-      c.strokeStyle = '#d4af37'; // golden
+      c.strokeStyle = '#00c5ff';
     } else {
       c.strokeStyle = 'rgba(60,45,35,0.55)';
     }
@@ -1246,9 +1466,9 @@ export class GrimoirePanel {
     // Additional inner cyan accent for equipped to reinforce selection
     if (equipped) {
       c.save();
-      c.globalAlpha = 0.9;
-      c.strokeStyle = '#00d5ff';
-      c.lineWidth = 1.8;
+      c.globalAlpha = 0.95;
+      c.strokeStyle = '#00e0ff';
+      c.lineWidth = 2;
       this.roundRect(c, x+5, y+5, w-10, h-10, 5);
       c.stroke();
       c.restore();
@@ -1261,7 +1481,7 @@ export class GrimoirePanel {
     c: CanvasRenderingContext2D,
     cx: number,
     cy: number,
-    r: number,
+    radius: number,
     spell: SpellType,
     state: SpellState,
   ): void {
@@ -1269,7 +1489,7 @@ export class GrimoirePanel {
     const tempCost = Math.max(0, cost?.temp ?? 0);
     const maxCost = Math.max(0, cost?.max ?? 0);
     const ratioLabel = `${tempCost}/${maxCost}`;
-    const { x, y, w, h } = this.getGlyphFrameRect(cx, cy, r);
+    const { x, y, w, h } = this.getGlyphFrameRect(cx, cy, radius);
     const anchorX = x + w - 10;
     const baseY = y + h - 10;
     c.save();
@@ -1283,9 +1503,9 @@ export class GrimoirePanel {
     c.restore();
   }
 
-  private getGlyphFrameRect(cx:number, cy:number, r:number): { x:number; y:number; w:number; h:number } {
-    const w = r * 2.2;
-    const h = r * 1.6 * 2.25;
+  private getGlyphFrameRect(cx:number, cy:number, radius:number): { x:number; y:number; w:number; h:number } {
+    const w = radius * 2.4 + this.GLYPH_FRAME_EXTRA_WIDTH;
+    const h = w * 1.2;
     const x = Math.round(cx - w/2);
     const y = Math.round(cy - h/2);
     return { x, y, w, h };
@@ -1315,6 +1535,12 @@ export class GrimoirePanel {
     } else if (type === SpellType.VOID_KINESIS) {
       title = 'Void Kinesis';
       desc = 'Concentrate a void-red beam to dissolve asteroids into void energy.';
+    } else if (type === SpellType.SPECIES_SCAN) {
+      title = 'Augurio';
+      desc = 'Reveal the dominant sentient species of any planet <500u.';
+    } else if (type === SpellType.CREATURE_SCAN) {
+      title = 'Revelación';
+      desc = 'Expose the terror being currently active on a planet <500u.';
     } else {
       const typeStr = typeof type === 'string' ? type : String(type);
       const cap = typeStr.charAt(0).toUpperCase() + typeStr.slice(1);
@@ -1375,6 +1601,12 @@ export class GrimoirePanel {
     } else if (type === SpellType.VOID_KINESIS) {
       title = 'Void Kinesis';
       desc = 'Transmute asteroid mass into volatile void energy.';
+    } else if (type === SpellType.SPECIES_SCAN) {
+      title = 'Augurio · Species Scan';
+      desc = 'Reveal the dominant species of a scanned planet (<500u). Cost: 1/3 sanity.';
+    } else if (type === SpellType.CREATURE_SCAN) {
+      title = 'Revelación · Creature Scan';
+      desc = 'Expose the active minor entity on a scanned planet (<500u). Cost: 1/3 sanity.';
     } else {
       const typeStr = typeof type === 'string' ? type : String(type);
       const cap = typeStr.charAt(0).toUpperCase() + typeStr.slice(1);

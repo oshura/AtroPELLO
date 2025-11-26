@@ -26,6 +26,8 @@ export interface PanelEventCallbacks {
   // Grimoire panel callbacks (mouse only - keyboard handled by GameEngine)
   onGrimoireClick?: (clientX: number, clientY: number) => void;
   onGrimoireMove?: (clientX: number, clientY: number) => void;
+  onGrimoirePointerDown?: (clientX: number, clientY: number, button: number) => void;
+  onGrimoirePointerUp?: (clientX: number, clientY: number, button: number) => void;
 
   // Inventory panel callbacks (mouse/wheel)
   onInventoryClick?: (clientX: number, clientY: number) => void;
@@ -45,6 +47,9 @@ export class PanelEventCoordinator {
   private clickHandler?: (e: MouseEvent) => void;
   private moveHandler?: (e: MouseEvent) => void;
   private wheelHandler?: (e: WheelEvent) => void;
+  private pointerDownHandler?: (e: MouseEvent) => void;
+  private pointerUpHandler?: (e: MouseEvent) => void;
+  private contextMenuHandler?: (e: MouseEvent) => void;
   
   // State flags (minimal - just for routing decisions)
   private mapEnabled = false;
@@ -94,16 +99,25 @@ export class PanelEventCoordinator {
     this.clickHandler = (e: MouseEvent) => this.handleClick(e);
     this.moveHandler = (e: MouseEvent) => this.handleMouseMove(e);
     this.wheelHandler = (e: WheelEvent) => this.handleWheel(e);
+    this.pointerDownHandler = (e: MouseEvent) => this.handlePointerDown(e);
+    this.pointerUpHandler = (e: MouseEvent) => this.handlePointerUp(e);
+    this.contextMenuHandler = (e: MouseEvent) => this.handleContextMenu(e);
 
     this.canvas.addEventListener('click', this.clickHandler);
     this.canvas.addEventListener('mousemove', this.moveHandler);
     this.canvas.addEventListener('wheel', this.wheelHandler, { passive: false });
+    this.canvas.addEventListener('mousedown', this.pointerDownHandler);
+    this.canvas.addEventListener('mouseup', this.pointerUpHandler);
+    this.canvas.addEventListener('contextmenu', this.contextMenuHandler);
   }
 
   /**
    * Route mouse clicks based on active panel
    */
   private handleClick(event: MouseEvent): void {
+    if (event.button !== 0) {
+      return;
+    }
     if (this.inputsBlocked) {
       event.preventDefault();
       event.stopPropagation();
@@ -131,6 +145,45 @@ export class PanelEventCoordinator {
 
     // No panel active - allow 3D targeting
     this.callbacks.on3DClick?.(event);
+  }
+
+  private handlePointerDown(event: MouseEvent): void {
+    if (this.inputsBlocked) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (this.grimoireEnabled) {
+      this.callbacks.onGrimoirePointerDown?.(event.clientX, event.clientY, event.button);
+      if (event.button === 2) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+  }
+
+  private handlePointerUp(event: MouseEvent): void {
+    if (this.inputsBlocked) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    if (this.grimoireEnabled) {
+      this.callbacks.onGrimoirePointerUp?.(event.clientX, event.clientY, event.button);
+      if (event.button === 2) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
+  }
+
+  private handleContextMenu(event: MouseEvent): void {
+    if (this.mapEnabled || this.grimoireEnabled || this.inventoryEnabled) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   }
 
   /**
@@ -193,6 +246,15 @@ export class PanelEventCoordinator {
       }
       if (this.wheelHandler) {
         this.canvas.removeEventListener('wheel', this.wheelHandler);
+      }
+      if (this.pointerDownHandler) {
+        this.canvas.removeEventListener('mousedown', this.pointerDownHandler);
+      }
+      if (this.pointerUpHandler) {
+        this.canvas.removeEventListener('mouseup', this.pointerUpHandler);
+      }
+      if (this.contextMenuHandler) {
+        this.canvas.removeEventListener('contextmenu', this.contextMenuHandler);
       }
     }
 

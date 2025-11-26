@@ -951,6 +951,12 @@ export class GameEngine {
   try {
     this.grimoirePanel = new GrimoirePanel(this.gl, this.audio, 1024, 1024);
     this.grimoirePanel.setEnabled(false);
+    try {
+      const savedLayout = this.gameState.getGrimoireGlyphLayoutSnapshot();
+      this.grimoirePanel.applyNormalizedGlyphLayout(savedLayout);
+    } catch (e) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'No se pudo aplicar layout guardado del grimorio', e);
+    }
   } catch (e) {
     this.logger.log(LogLevel.WARN, LogCategory.HUD, 'GrimoirePanel initialization failed', e);
     this.grimoirePanel = null;
@@ -7778,6 +7784,8 @@ export class GameEngine {
       // Grimoire panel events (mouse)
       onGrimoireClick: (clientX, clientY) => this.handleGrimoireClick(clientX, clientY),
       onGrimoireMove: (clientX, clientY) => this.handleGrimoireMove(clientX, clientY),
+      onGrimoirePointerDown: (clientX, clientY, button) => this.handleGrimoirePointerDown(clientX, clientY, button),
+      onGrimoirePointerUp: (clientX, clientY, button) => this.handleGrimoirePointerUp(clientX, clientY, button),
 
       // Inventory panel events (mouse/wheel)
       onInventoryClick: (clientX, clientY) => this.handleInventoryClick(clientX, clientY),
@@ -7935,6 +7943,9 @@ export class GameEngine {
 
   private handleGrimoireClick(clientX: number, clientY: number): void {
     if (!this.grimoirePanel || !this.grimoirePanel.isEnabled()) return;
+    if ((this.grimoirePanel as any).isGlyphDragging?.()) {
+      return;
+    }
     
     // Set selected spell from hover
     const hoveredSpell = (this.grimoirePanel as any).getHoveredSpellType?.();
@@ -7954,8 +7965,33 @@ export class GameEngine {
   }
 
   private handleGrimoireMove(clientX: number, clientY: number): void {
+    this.updateGrimoireCursor(clientX, clientY);
+  }
+
+  private handleGrimoirePointerDown(clientX: number, clientY: number, button: number): void {
+    if (!this.grimoirePanel || !this.grimoirePanel.isEnabled()) return;
+    this.updateGrimoireCursor(clientX, clientY);
+    if (button === 2) {
+      const started = (this.grimoirePanel as any).beginGlyphDrag?.();
+      if (started && this.audio) {
+        try { this.audio.play('ui_outline_select', { bus: 'ui', volume: 0.35 }); } catch {}
+      }
+    }
+  }
+
+  private handleGrimoirePointerUp(clientX: number, clientY: number, button: number): void {
+    if (!this.grimoirePanel || !this.grimoirePanel.isEnabled()) return;
+    this.updateGrimoireCursor(clientX, clientY);
+    if (button === 2) {
+      const result = (this.grimoirePanel as any).endGlyphDrag?.();
+      if (result && result.spell && result.normalized) {
+        this.gameState.setGrimoireGlyphPosition(result.spell, result.normalized);
+      }
+    }
+  }
+
+  private updateGrimoireCursor(clientX: number, clientY: number): void {
     if (!this.grimoirePanel || !this.grimoirePanel.isEnabled() || !this.gl || !this.domCanvas) return;
-    
     const rect = this.domCanvas.getBoundingClientRect();
     try {
       this.grimoirePanel.setCursorFromViewport(
