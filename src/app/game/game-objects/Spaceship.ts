@@ -4,6 +4,7 @@ import { mat4, vec3, quat } from 'gl-matrix';
 import { GameLogger } from '../utils/GameLogger';
 import { LogCategory } from '../../services/logging.service';
 import { GameObjectType } from '../types/game-object.types';
+import { OrientationBasis } from '../targeting/compass-direction.util';
 
 /**
  * Estados del thruster para diferentes efectos visuales
@@ -619,6 +620,25 @@ export class Spaceship extends GameObject {
    */
   public getOrientationQuaternion(): quat {
     return quat.clone(this.orientationQuaternion);
+  }
+
+  public getOrientationBasis(): OrientationBasis {
+    const forward = {
+      x: this.orientationMatrix[8],
+      y: this.orientationMatrix[9],
+      z: this.orientationMatrix[10]
+    };
+    const right = {
+      x: this.orientationMatrix[0],
+      y: this.orientationMatrix[1],
+      z: this.orientationMatrix[2]
+    };
+    const up = {
+      x: this.orientationMatrix[4],
+      y: this.orientationMatrix[5],
+      z: this.orientationMatrix[6]
+    };
+    return { forward, right, up };
   }
 
   /** Activa/desactiva el suavizado de velocidad para mitigar jitter a alta velocidad */

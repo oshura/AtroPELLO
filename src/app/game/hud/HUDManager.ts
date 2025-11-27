@@ -10,6 +10,7 @@ import { HealthGauge } from './elements/HealthGauge';
 import { CargoGauge } from './elements/CargoGauge';
 import { MarqueePanel } from './elements/MarqueePanel';
 import { TargetingSystem, TargetInfo } from '../types/targeting.types';
+import { OrientationBasis } from '../targeting/compass-direction.util';
 import { TargetPanel, TargetPanelState, Relation } from './elements/TargetPanel';
 import { LandingIndicatorsSnapshot } from '../types/landing.types';
 import { CompassCountdownPayload } from '../types/hud.types';
@@ -113,6 +114,7 @@ export class HUDManager {
     weapons?: any[];
     shipHealth?: { current: number; max: number; pct: number };
     shipCargo?: { current: number; max: number; pct: number };
+    orientation?: OrientationBasis | null;
     // Optional: remaining seconds for active speed rite (Double Phased Time Rite)
     speedRiteRemainingSec?: number | null;
     // Optional: timed spell payload for compass overlay
@@ -135,7 +137,7 @@ export class HUDManager {
     // Actualizar compass con información de targeting
     let targetInfo: TargetInfo | null = null;
     if (gameData.position) {
-      targetInfo = this.targetingSystem.getTargetInfo(gameData.position);
+      targetInfo = this.targetingSystem.getTargetInfo(gameData.position, gameData.orientation);
     }
   this.compass.update(gameData.heading, targetInfo);
   // Timed spell countdown overlay routed to compass

@@ -67,6 +67,7 @@ import {
 } from './types/cosmic-life.types';
 import { GameObjectAnimosity } from './types/animosity.types';
 import { CompassCountdownPayload } from './types/hud.types';
+import { OrientationBasis, computeHeadingFromForward } from './targeting/compass-direction.util';
 
 interface AuxiliaryAbilityRuntime {
   id: string;
@@ -7856,6 +7857,7 @@ export class GameEngine {
       this.spaceship.velocity.z ** 2
     );
 
+    const orientationBasis: OrientationBasis = this.spaceship.getOrientationBasis();
     const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
     const speedPctExtended = (this.spaceship.currentSpeed / Math.max(1e-6, baseMax)) * 100; // 0..200 when jumping/rite
     const riteActive = !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && now < this.speedRiteUntilMs);
@@ -7863,7 +7865,7 @@ export class GameEngine {
     const speedForHud = voidJumpActive ? Math.max(0, Math.min(100, speedPctExtended)) : Math.max(0, Math.min(200, speedPctExtended));
     const gameData = {
       velocity: velocityMagnitude,
-      heading: this.spaceship.rotation.y * (180 / Math.PI), // Convertir a grados
+      heading: computeHeadingFromForward(orientationBasis.forward),
       pitch: this.spaceship.rotation.x * (180 / Math.PI),
       roll: this.spaceship.rotation.z * (180 / Math.PI),
       altitude: this.spaceship.position.y,
@@ -7886,6 +7888,7 @@ export class GameEngine {
         pct: (this.spaceship.cargoCapacityCurrent / Math.max(1, this.spaceship.cargoCapacityMax)) * 100
       },
       weapons: this.spaceship.weapons,
+      orientation: orientationBasis,
       // Pasar posición de la nave para cálculo de bearing/elevación en brújula
       position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z },
       speedRiteRemainingSec: riteActive ? Math.max(0, Math.floor((this.speedRiteUntilMs! - now) / 1000)) : null,

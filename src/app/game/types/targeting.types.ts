@@ -1,11 +1,5 @@
-/**
- * Definición local de Vector3 para evitar problemas de importación
- */
-interface Vector3 {
-  x: number;
-  y: number;
-  z: number;
-}
+import { Vector3 } from '../../types/game.types';
+import { OrientationBasis, calculateRelativeBearing } from '../targeting/compass-direction.util';
 
 /**
  * Interfaz para objetos que pueden ser targets del sistema de navegación
@@ -43,7 +37,7 @@ export enum TargetType {
 export interface TargetInfo {
   target: ITargetable;
   distance: number;
-  bearing: number; // Ángulo en grados (0-360)
+  bearing: number; // Ángulo relativo al morro (0=frente, 90=derecha, 270=izquierda)
   elevation: number; // Ángulo vertical
 }
 
@@ -81,23 +75,17 @@ export class TargetingSystem {
     return [...this.availableTargets];
   }
 
-  public getTargetInfo(playerPosition: Vector3): TargetInfo | null {
+  public getTargetInfo(playerPosition: Vector3, playerOrientation?: OrientationBasis | null): TargetInfo | null {
     if (!this.currentTarget) return null;
 
     const targetPos = this.currentTarget.position;
-    const dx = targetPos.x - playerPosition.x;
-    const dy = targetPos.y - playerPosition.y; 
-    const dz = targetPos.z - playerPosition.z;
-
-    const distance = Math.sqrt(dx * dx + dy * dy + dz * dz);
-    const bearing = (Math.atan2(dx, dz) * 180 / Math.PI + 360) % 360;
-    const elevation = Math.atan2(dy, Math.sqrt(dx * dx + dz * dz)) * 180 / Math.PI;
+    const projection = calculateRelativeBearing(playerPosition, targetPos, playerOrientation);
 
     return {
       target: this.currentTarget,
-      distance,
-      bearing,
-      elevation
+      distance: projection.distance,
+      bearing: projection.bearing,
+      elevation: projection.elevation
     };
   }
 }

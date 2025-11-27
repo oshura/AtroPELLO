@@ -132,9 +132,8 @@ export class Compass {
 
     ctx.save();
     
-    // Rotar hacia el bearing del target (relativo al heading actual)
-    const rawAngle = this.targetInfo.bearing - this.heading;
-    const targetAngle = ((rawAngle + 540) % 360) - 180; // Normalizar a [-180, 180]
+    // Rotar usando el bearing relativo al morro (0=frente). Negamos para corregir simetría izquierda/derecha.
+    const targetAngle = this.normalizeSignedAngle(-this.targetInfo.bearing);
     ctx.rotate((targetAngle * Math.PI) / 180);
     
     // Color según "sentido": delante (|ang| <= 90) verde; detrás rojo
@@ -195,6 +194,10 @@ export class Compass {
         elevation: Math.round(this.targetInfo.elevation)
       } : null
     };
+  }
+
+  private normalizeSignedAngle(value: number): number {
+    return ((value % 360) + 540) % 360 - 180;
   }
 
   // Helpers
