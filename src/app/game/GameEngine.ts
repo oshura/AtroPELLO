@@ -7276,17 +7276,9 @@ export class GameEngine {
     }
 
     try {
-      this.showPlaceholderText(`TEMPUS SIGILLUM\n${planetName}`, 2600);
-    } catch {}
-    try {
       this.hudManager?.addMarqueeMessage?.(`Tempus Sigillum · ${planetName} rejuvenecido`);
     } catch {}
-    try {
-      if (this.audio) {
-        const clip = this.audio.has('sfx_precast_ritual') ? 'sfx_precast_ritual' : 'sfx_whoosh';
-        this.audio.play(clip, { bus: 'sfx', volume: 0.65 });
-      }
-    } catch {}
+    
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Tempus Sigillum seal applied', {
       planetId: planet.id,
       probability: planet.probabilityOfLifePct,
@@ -8362,21 +8354,31 @@ export class GameEngine {
     if ((this.grimoirePanel as any).isGlyphDragging?.()) {
       return;
     }
-    
+
+    const panelAny = this.grimoirePanel as any;
     // Set selected spell from hover
-    const hoveredSpell = (this.grimoirePanel as any).getHoveredSpellType?.();
+    const hoveredSpell = panelAny.getHoveredSpellType?.();
     if (hoveredSpell) {
       try {
-        (this.grimoirePanel as any).setSelectedSpellType?.(hoveredSpell);
+        panelAny.setSelectedSpellType?.(hoveredSpell);
       } catch {}
       return;
     }
 
     // Clicked on empty parchment: clear current selection if any
+    const previouslyEquipped = panelAny.getSelectedSpellType?.() ?? null;
+    let selectionCleared = false;
     try {
-      (this.grimoirePanel as any).setSelectedSpellType?.(null);
+      panelAny.setSelectedSpellType?.(null);
+      selectionCleared = true;
     } catch {
-      try { (this.grimoirePanel as any).clearSelection?.(); } catch {}
+      try {
+        panelAny.clearSelection?.();
+        selectionCleared = true;
+      } catch {}
+    }
+    if (previouslyEquipped && selectionCleared) {
+      try { this.audio?.play('ui_outline_clear', { bus: 'ui', volume: 0.4 }); } catch {}
     }
   }
 
@@ -8390,7 +8392,7 @@ export class GameEngine {
     if (button === 2) {
       const started = (this.grimoirePanel as any).beginGlyphDrag?.();
       if (started && this.audio) {
-        try { this.audio.play('ui_outline_select', { bus: 'ui', volume: 0.35 }); } catch {}
+        try { this.audio.play('ui_outline_clear', { bus: 'ui', volume: 0.35 }); } catch {}
       }
     }
   }

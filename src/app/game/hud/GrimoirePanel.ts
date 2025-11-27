@@ -453,6 +453,12 @@ export class GrimoirePanel {
     if (found !== prevIndex) {
       this.previousHoveredIconIndex = prevIndex;
       this.hoveredIconIndex = found;
+      if (found >= 0) {
+        const hovered = this.iconPlacements[found];
+        if (hovered && isSpellType(hovered.type)) {
+          this.playGlyphHoverSound();
+        }
+      }
     }
   }
 
@@ -1873,5 +1879,14 @@ export class GrimoirePanel {
     c.lineTo(x, y+r);
     c.quadraticCurveTo(x, y, x+r, y);
     c.closePath();
+  }
+
+  private playGlyphHoverSound(): void {
+    if (!this.audioService) {
+      return;
+    }
+    try {
+      this.audioService.play('ui_outline_hover', { bus: 'ui', volume: 0.32 });
+    } catch {}
   }
 }

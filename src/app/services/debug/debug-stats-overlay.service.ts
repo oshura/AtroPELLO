@@ -1,6 +1,7 @@
 import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { LoggingService, LogCategory, LogLevel, LogEntry } from '../logging.service';
+import { CharacterProfileService } from '../game/character-profile.service';
 
 @Injectable({ providedIn: 'root' })
 export class DebugStatsOverlayService {
@@ -10,10 +11,12 @@ export class DebugStatsOverlayService {
   private lastTime = 0;
   private emaFps = 0; // Exponential moving average for FPS
   private gameEngine: any | null = null; // runtime-reflection access
+  private toolStatusTimer: number | null = null;
 
   constructor(
     @Inject(PLATFORM_ID) private platformId: Object,
-    private logging: LoggingService
+    private logging: LoggingService,
+    private characterProfile: CharacterProfileService
   ) {}
 
   initialize(engine?: any): void {
@@ -51,6 +54,10 @@ export class DebugStatsOverlayService {
     this.stopLoop();
     if (this.overlayElement) { this.overlayElement.remove(); this.overlayElement = null; }
     this.gameEngine = null;
+    if (this.toolStatusTimer) {
+      clearTimeout(this.toolStatusTimer);
+      this.toolStatusTimer = null;
+    }
   }
 
   // ===== internal =====
@@ -73,6 +80,14 @@ export class DebugStatsOverlayService {
           <div>Camera: <span id="stat-cam-name">N/A</span> (<span id="stat-cam-mode">-</span>)</div>
           <div>Clusters: <span id="stat-clusters">-</span></div>
           <div>Objects: <span id="stat-objects">-</span></div>
+        </div>
+        <div class="dbg-tools" id="dbg-tools-section">
+          <div class="dbg-subheader">Dev Controls</div>
+          <div class="dbg-controls-row">
+            <button id="dbg-btn-survivability-minus">Survivencia -9%</button>
+            <button id="dbg-btn-age-plus">+365 días edad</button>
+          </div>
+          <div id="dbg-tools-status" class="dbg-tools-status"></div>
         </div>
         <div class="dbg-logs" id="dbg-logs-section">
           <div class="dbg-subheader">Logs</div>
@@ -104,11 +119,17 @@ export class DebugStatsOverlayService {
       #debug-stats-overlay #log-entries .lvl-INFO { color:#0af; }
       #debug-stats-overlay #log-entries .lvl-DEBUG { color:#888; }
       #debug-stats-overlay #log-entries .lvl-TRACE { color:#555; }
+      #debug-stats-overlay .dbg-tools { border-top: 1px solid #055; padding-top: 6px; }
+      #debug-stats-overlay .dbg-controls-row { display:flex; flex-wrap:wrap; gap:6px; margin-bottom:4px; }
+      #debug-stats-overlay .dbg-controls-row button { background:#022; color:#0ff; border:1px solid #066; border-radius:4px; font-size:11px; padding:4px 8px; cursor:pointer; }
+      #debug-stats-overlay .dbg-controls-row button:hover { background:#044; }
+      #debug-stats-overlay .dbg-tools-status { min-height: 16px; font-style: italic; color: #aff; }
     `;
     document.head.appendChild(style);
     document.body.appendChild(el);
     this.overlayElement = el;
     this.buildLogControls();
+    this.wireDevControls();
   }
 
   private startLoop(): void {
@@ -260,5 +281,56 @@ export class DebugStatsOverlayService {
     const cat = entry.category;
     const msg = ('' + entry.message).replace(/</g,'&lt;');
     return `<div class="log-entry lvl-${lvlName}">${t}s [${lvlName}] [${cat}] ${msg}</div>`;
+  }
+
+  private wireDevControls(): void {
+    if (!this.overlayElement) return;
+    const survBtn = this.overlayElement.querySelector('#dbg-btn-survivability-minus') as HTMLButtonElement | null;
+    const ageBtn = this.overlayElement.querySelector('#dbg-btn-age-plus') as HTMLButtonElement | null;
+    if (survBtn) {
+      survBtn.onclick = () => this.handleSurvivabilityAdjustment(-9);
+    }
+    if (ageBtn) {
+      ageBtn.onclick = () => this.handleAgeAdvance(365);
+    }
+  }
+
+  private handleSurvivabilityAdjustment(delta: number): void {
+    try {
+      const result = this.characterProfile.adjustSurvivability(delta);
+      this.showToolStatus(`Supervivencia → ${result.toFixed(1)}%`);
+      this.logging.log(LogLevel.INFO, LogCategory.HUD, 'Dev survivability tweak', { delta, result });
+    } catch (error) {
+      this.showToolStatus('Error al ajustar supervivencia');
+      this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev survivability tweak failed', error);
+    }
+  }
+
+  private handleAgeAdvance(days: number): void {
+    try {
+      const info = this.characterProfile.addDaysToAge(days);
+      this.showToolStatus(`Edad → ${info.newAge.years} años · ${info.newAge.days} días (+${info.daysApplied}d)`);
+      this.logging.log(LogLevel.INFO, LogCategory.HUD, 'Dev age advance', { days });
+    } catch (error) {
+      this.showToolStatus('Error al ajustar edad');
+      this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev age advance failed', error);
+    }
+  }
+
+  private showToolStatus(message: string): void {
+    if (!this.overlayElement) return;
+    const status = this.overlayElement.querySelector('#dbg-tools-status');
+    if (status) {
+      status.textContent = message;
+    }
+    if (this.toolStatusTimer) {
+      clearTimeout(this.toolStatusTimer);
+    }
+    this.toolStatusTimer = window.setTimeout(() => {
+      if (status) {
+        status.textContent = '';
+      }
+      this.toolStatusTimer = null;
+    }, 2500);
   }
 }
