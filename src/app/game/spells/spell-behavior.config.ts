@@ -49,6 +49,18 @@ export const SPELL_BEHAVIOR_MAP: Record<SpellType, SpellBehavior> = {
     hideOutliners: false,
     muteHoverAudio: false,
   }),
+  [SpellType.VOID_COCOON]: createBehavior(SpellType.VOID_COCOON, {
+    lockShipControls: false,
+    lockPanels: false,
+    hideOutliners: false,
+    muteHoverAudio: false,
+  }),
+  [SpellType.TEMPUS_SIGILLUM]: createBehavior(SpellType.TEMPUS_SIGILLUM, {
+    lockShipControls: false,
+    lockPanels: false,
+    hideOutliners: false,
+    muteHoverAudio: false,
+  }),
   [SpellType.SPEED]: createBehavior(SpellType.SPEED, {
     lockShipControls: false,
     lockPanels: false,

@@ -66,6 +66,7 @@ import {
   PlanetInhabitants,
 } from './types/cosmic-life.types';
 import { GameObjectAnimosity } from './types/animosity.types';
+import { CompassCountdownPayload } from './types/hud.types';
 
 interface AuxiliaryAbilityRuntime {
   id: string;
@@ -254,6 +255,9 @@ export class GameEngine {
   private speedRiteOriginalMax: number | null = null;
   private speedRiteOriginalAccel: number | null = null;
   private speedRiteOriginalDecel: number | null = null;
+  private voidCocoonActiveUntilMs: number | null = null;
+  private voidCocoonLastImpactMs: number = 0;
+  private cachedSpeedRiteRemainingSec: number | null = null;
 
   // Material Disruption Rite beam animation
   private disruptionBeam: {
@@ -2170,6 +2174,18 @@ export class GameEngine {
         // Use floor to avoid showing a lingering "00:01" when < 1s remains
         speedRiteRemainingSec = Math.max(0, Math.floor((this.speedRiteUntilMs - now) / 1000));
       }
+      this.cachedSpeedRiteRemainingSec = speedRiteRemainingSec;
+      if (this.voidCocoonActiveUntilMs && now >= this.voidCocoonActiveUntilMs) {
+        this.voidCocoonActiveUntilMs = null;
+        this.voidCocoonLastImpactMs = 0;
+      }
+    } else {
+      this.cachedSpeedRiteRemainingSec = null;
+      const now = performance.now();
+      if (this.voidCocoonActiveUntilMs && now >= this.voidCocoonActiveUntilMs) {
+        this.voidCocoonActiveUntilMs = null;
+        this.voidCocoonLastImpactMs = 0;
+      }
     }
     
   // Actualizar efectos de partículas
@@ -3017,7 +3033,12 @@ export class GameEngine {
             } catch (e) {
               this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'handleCollisionResponse failed', e);
             }
-            applyDamage(obj, dmg);
+            const cocoonActive = !!(this.voidCocoonActiveUntilMs && now < this.voidCocoonActiveUntilMs);
+            if (cocoonActive) {
+              this.handleVoidCocoonImpact(obj, dmg, { reason: name });
+            } else {
+              applyDamage(obj, dmg);
+            }
             
             // Apply mutual damage: ship deals 50 damage to the object
             this.applyDamageToObject(obj, 50);
@@ -6163,12 +6184,16 @@ export class GameEngine {
         return this.castAnchoringPulse(target ?? null);
       case SpellType.VOID_KINESIS:
         return this.castVoidKinesis(target ?? null);
+      case SpellType.VOID_COCOON:
+        return this.castVoidCocoon();
       case SpellType.DISRUPT:
         return this.performDisruptionRite(target);
       case SpellType.SPECIES_SCAN:
         return this.castSpeciesScanGlyph(target ?? null);
       case SpellType.CREATURE_SCAN:
         return this.castCreatureScanGlyph(target ?? null);
+      case SpellType.TEMPUS_SIGILLUM:
+        return this.castTempusSigillum(target ?? null);
       case SpellType.SPEED:
         this.triggerSpeedRiteInstantly();
         return true;
@@ -6987,6 +7012,102 @@ export class GameEngine {
     }
   }
 
+  private castVoidCocoon(): boolean {
+    if (!this.spaceship) {
+      return false;
+    }
+    const durationMs = 30000;
+    const now = performance.now();
+    this.voidCocoonActiveUntilMs = now + durationMs;
+    this.voidCocoonLastImpactMs = now;
+    try {
+      this.showPlaceholderText('VOID COCOON ACTIVADO · 30s', 2200);
+    } catch {}
+    try {
+      this.hudManager?.addMarqueeMessage?.('Void Cocoon: capullo protector desplegado');
+    } catch {}
+    try {
+      if (this.audio && this.audio.has('sfx_precast_ritual')) {
+       // this.audio.play('sfx_precast_ritual', { bus: 'sfx', volume: 0.7 });
+      }
+    } catch {}
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Void Cocoon activated', {
+      durationMs
+    });
+    return true;
+  }
+
+  private castTempusSigillum(target: ITargetable | null): boolean {
+    const validated = this.validateGlyphScanTarget(target);
+    if (!validated) {
+      return false;
+    }
+    const { planet } = validated;
+    const planetName = typeof planet.getDisplayName === 'function'
+      ? planet.getDisplayName()
+      : (planet.customName ?? planet.id ?? 'Planeta');
+
+    const previousInhabitants = planet.inhabitants;
+    planet.lifeScanned = false;
+    planet.visited = false;
+    planet.inhabitants = PlanetInhabitants.NONE;
+    const rerolledInhabitants = planet.assignInhabitantsFromProbability(() => Math.random());
+
+    try {
+      planet.setLesserBeing(null);
+    } catch {
+      (planet as any).lesserBeing = null;
+    }
+    planet.creatureScanned = true; // Mostrar inmediatamente que no hay ser menor tras el sellado
+    if (typeof (planet as any).setAnimosity === 'function') {
+      try { (planet as any).setAnimosity(GameObjectAnimosity.NEUTRAL); } catch {}
+    }
+
+    try {
+      this.showPlaceholderText(`TEMPUS SIGILLUM\n${planetName}`, 2600);
+    } catch {}
+    try {
+      this.hudManager?.addMarqueeMessage?.(`Tempus Sigillum · ${planetName} rejuvenecido`);
+    } catch {}
+    try {
+      if (this.audio) {
+        const clip = this.audio.has('sfx_precast_ritual') ? 'sfx_precast_ritual' : 'sfx_whoosh';
+        this.audio.play(clip, { bus: 'sfx', volume: 0.65 });
+      }
+    } catch {}
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Tempus Sigillum seal applied', {
+      planetId: planet.id,
+      probability: planet.probabilityOfLifePct,
+      previousInhabitants,
+      rerolledInhabitants,
+    });
+    return true;
+  }
+
+  private handleVoidCocoonImpact(source: any, attemptedDamage: number, context?: { reason?: string }): void {
+    if (!this.voidCocoonActiveUntilMs) {
+      return;
+    }
+    const now = performance.now();
+    this.voidCocoonLastImpactMs = now;
+    try {
+      const label = source?.id ?? context?.reason ?? 'impact';
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Void Cocoon absorbed damage', {
+        source: label,
+        attemptedDamage,
+      });
+    } catch {}
+    try {
+      this.hudManager?.addMarqueeMessage?.('Void Cocoon absorbió un impacto');
+    } catch {}
+    try {
+      if (this.audio) {
+        const clip = this.audio.has('sfx_collision_light') ? 'sfx_collision_light' : 'sfx_whoosh';
+        this.audio.play(clip, { bus: 'sfx', volume: 0.55 });
+      }
+    } catch {}
+  }
+
   /** Apply the Double Phased Time Rite: doubles maxSpeed for a duration (default 2 minutes) */
   public applySpeedRite(durationMs: number = 120000): void {
     if (!this.spaceship) return;
@@ -7410,6 +7531,8 @@ export class GameEngine {
       return;
     }
 
+    const now = performance.now();
+
     // DEBUG: Verificar modo de cámara actual
     const currentCameraMode = this.camera.getCurrentMode();
   this.logger.log(LogLevel.TRACE, LogCategory.HUD, 'HUD render attempt - Camera mode', {
@@ -7427,7 +7550,7 @@ export class GameEngine {
 
     const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
     const speedPctExtended = (this.spaceship.currentSpeed / Math.max(1e-6, baseMax)) * 100; // 0..200 when jumping/rite
-    const riteActive = !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && performance.now() < this.speedRiteUntilMs);
+    const riteActive = !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && now < this.speedRiteUntilMs);
     const voidJumpActive = !!this.voidJumpActive;
     const speedForHud = voidJumpActive ? Math.max(0, Math.min(100, speedPctExtended)) : Math.max(0, Math.min(200, speedPctExtended));
     const gameData = {
@@ -7457,7 +7580,8 @@ export class GameEngine {
       weapons: this.spaceship.weapons,
       // Pasar posición de la nave para cálculo de bearing/elevación en brújula
       position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z },
-      speedRiteRemainingSec: riteActive ? Math.max(0, Math.floor((this.speedRiteUntilMs! - performance.now()) / 1000)) : null,
+      speedRiteRemainingSec: riteActive ? Math.max(0, Math.floor((this.speedRiteUntilMs! - now) / 1000)) : null,
+      compassCountdown: this.getCompassCountdownPayload(now),
       // Portal cooldown HUD removido (no se expone)
     };
 
@@ -7488,6 +7612,37 @@ export class GameEngine {
       heading: gameData.heading.toFixed(1),
       speed: gameData.speed.toFixed(1)
     });
+  }
+
+  private getCompassCountdownPayload(now: number = performance.now()): CompassCountdownPayload | null {
+    type PrioritizedCountdown = { priority: number; payload: CompassCountdownPayload };
+    const candidates: PrioritizedCountdown[] = [];
+
+    if (this.voidCocoonActiveUntilMs && now < this.voidCocoonActiveUntilMs) {
+      const seconds = (this.voidCocoonActiveUntilMs - now) / 1000;
+      if (seconds > 0) {
+        candidates.push({
+          priority: 1,
+          payload: { seconds, label: 'COCOON', accentColor: '#6ef6ff' }
+        });
+      }
+    }
+
+    if (this.speedRiteUntilMs && now < this.speedRiteUntilMs) {
+      const seconds = (this.speedRiteUntilMs - now) / 1000;
+      if (seconds > 0) {
+        candidates.push({
+          priority: 3,
+          payload: { seconds, label: 'SPEED RITE', accentColor: '#ff3055' }
+        });
+      }
+    }
+
+    if (!candidates.length) {
+      return null;
+    }
+    candidates.sort((a, b) => a.priority - b.priority);
+    return candidates[0].payload;
   }
 
   /**

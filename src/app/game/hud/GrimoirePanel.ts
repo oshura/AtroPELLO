@@ -82,6 +82,8 @@ export class GrimoirePanel {
     [SpellType.DISRUPT, SpellState.AVAILABLE],
     [SpellType.ANCHORING_PULSE, SpellState.AVAILABLE],
     [SpellType.VOID_KINESIS, SpellState.AVAILABLE],
+    [SpellType.VOID_COCOON, SpellState.AVAILABLE],
+    [SpellType.TEMPUS_SIGILLUM, SpellState.AVAILABLE],
     [SpellType.SPECIES_SCAN, SpellState.AVAILABLE],
     [SpellType.CREATURE_SCAN, SpellState.AVAILABLE]
   ]);
@@ -206,6 +208,8 @@ export class GrimoirePanel {
       SpellType.DISRUPT,
       SpellType.ANCHORING_PULSE,
       SpellType.VOID_KINESIS,
+      SpellType.VOID_COCOON,
+      SpellType.TEMPUS_SIGILLUM,
       SpellType.SPECIES_SCAN,
       SpellType.CREATURE_SCAN
     ];
@@ -232,6 +236,8 @@ export class GrimoirePanel {
       SpellType.DISRUPT,
       SpellType.ANCHORING_PULSE,
       SpellType.VOID_KINESIS,
+      SpellType.VOID_COCOON,
+      SpellType.TEMPUS_SIGILLUM,
       SpellType.SPECIES_SCAN,
       SpellType.CREATURE_SCAN
     ];
@@ -889,22 +895,22 @@ export class GrimoirePanel {
   this.iconPlacements.push({ type: SpellType.LONGJUMP, x: ljX, y: ljY, s: 1.0, r: ljR });
   this.iconPlacements.push({ type: SpellType.GATE_RITE, x: grX, y: grY, s: 1.0, r: grR });
 
-    // Add five invented glyphs: eternalrite (available), four locked/decorative
+    // Add five custom glyphs; previously decorative slots now host Void Cocoon & Tempus Sigillum
     const lp = this.leftPage, rp = this.rightPage;
     const rL = Math.min(lp.w, lp.h) * 0.095;
     const rR = Math.min(rp.w, rp.h) * 0.085;
-    // Left page: ignis (top), eternalrite (middle), disrupt (AVAILABLE - lower middle), lux (bottom)
-    this.iconPlacements.push({ type: 'ignis', x: lp.x + lp.w*0.72, y: lp.y + lp.h*0.26, s: 1.0, r: rL });
+    // Left page: Void Cocoon replaces the decorative ignis slot
+    this.iconPlacements.push({ type: SpellType.VOID_COCOON, x: lp.x + lp.w*0.72, y: lp.y + lp.h*0.26, s: 1.0, r: rL });
     this.iconPlacements.push({ type: SpellType.ETERNAL_RITE, x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.45, s: 1.0, r: rL*0.95 });
     this.iconPlacements.push({ type: SpellType.DISRUPT, x: lp.x + lp.w*0.68, y: lp.y + lp.h*0.62, s: 1.0, r: rL*0.92 });
     this.iconPlacements.push({ type: SpellType.ANCHORING_PULSE, x: lp.x + lp.w*0.46, y: lp.y + lp.h*0.70, s: 1.0, r: rL*0.92 });
     this.iconPlacements.push({ type: SpellType.SPECIES_SCAN, x: lp.x + lp.w*0.38, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
-    // Right page (spare spaces): nueva runa de criatura (upper-left), tempus (lower-left)
+    // Right page spare spaces: Creature Scan stays upper-left, Tempus Sigillum replaces decorative tempus slot
     this.iconPlacements.push({ type: SpellType.CREATURE_SCAN, x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
-    this.iconPlacements.push({ type: 'tempus',   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
+    this.iconPlacements.push({ type: SpellType.TEMPUS_SIGILLUM,   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
     this.iconPlacements.push({ type: SpellType.VOID_KINESIS, x: rp.x + rp.w*0.72, y: rp.y + rp.h*0.50, s: 1.0, r: rR*1.05 });
 
-    // Decorative glyphs (ignis, lux, vinculum, tempus) are handled as strings and always render as locked
+    // Remaining decorative glyphs (lux, vinculum, legacy tempus art) are handled as strings and always render as locked
     this.applyPendingGlyphLayout();
   }
 
@@ -1130,6 +1136,110 @@ export class GrimoirePanel {
     }
     // Central void core dot
     c.beginPath(); c.arc(0, 0, r*0.08, 0, Math.PI*2); c.fillStyle = col; c.fill();
+    c.restore();
+  }
+
+  private drawVoidCocoonRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    // Simpler chrysalis: single shell, seam, and pulse rings
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const shellColor = color ?? '#301d29';
+    const pulseColor = color ?? '#54163a';
+    c.strokeStyle = shellColor; c.lineWidth = 2.6;
+    // Outer cocoon shell
+    c.beginPath(); c.ellipse(0, 0, r*0.95, r*1.1, 0, 0, Math.PI*2); c.stroke();
+    // Inner padding
+    c.globalAlpha = 0.6;
+    c.beginPath(); c.ellipse(0, 0, r*0.65, r*0.9, 0, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 1;
+    // Vertical seam
+    c.setLineDash([10,6]);
+    c.beginPath(); c.moveTo(0, -r*1.0); c.lineTo(0, r*1.0); c.stroke();
+    c.setLineDash([]);
+    // Protective bands (two arcs)
+    c.lineWidth = 2;
+    for (const angle of [-0.4, 0.4]) {
+      c.save();
+      c.rotate(angle);
+      c.beginPath();
+      c.moveTo(-r*0.55, 0);
+      c.quadraticCurveTo(0, angle < 0 ? -r*0.25 : r*0.25, r*0.55, 0);
+      c.stroke();
+      c.restore();
+    }
+    // Pulsing rings
+    c.strokeStyle = pulseColor;
+    c.lineWidth = 1.6;
+    for (let i=0;i<2;i++) {
+      const factor = 0.3 + i*0.25;
+      c.globalAlpha = 0.5 + i*0.2;
+      c.beginPath(); c.arc(0, 0, r*factor, 0, Math.PI*2); c.stroke();
+    }
+    c.globalAlpha = 1;
+    // Core ember
+    c.fillStyle = pulseColor;
+    c.beginPath(); c.arc(0, 0, r*0.11, 0, Math.PI*2); c.fill();
+    c.restore();
+  }
+
+  private drawTempusSigillumRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    // Hourglass sigil with rewind orbit
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const baseColor = color ?? '#2f2411';
+    c.strokeStyle = baseColor; c.lineWidth = 2.2;
+    // Outer temporal ring + tick marks
+    c.beginPath(); c.arc(0, 0, r*0.95, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 0.7;
+    c.beginPath(); c.arc(0, 0, r*0.75, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 1;
+    for (let i=0;i<12;i++) {
+      const ang = i * Math.PI/6 + this.t * 0.15;
+      const x1 = Math.cos(ang) * r*0.78;
+      const y1 = Math.sin(ang) * r*0.78;
+      const x2 = Math.cos(ang) * r*0.95;
+      const y2 = Math.sin(ang) * r*0.95;
+      c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+    }
+    // Hourglass body
+    const hw = r*0.55;
+    const hh = r*0.9;
+    c.lineWidth = 2;
+    c.beginPath();
+    c.moveTo(-hw, -hh); c.lineTo(hw, -hh);
+    c.moveTo(-hw, hh); c.lineTo(hw, hh);
+    c.moveTo(-hw, -hh); c.lineTo(hw, hh);
+    c.moveTo(hw, -hh); c.lineTo(-hw, hh);
+    c.stroke();
+    // Flow of sand (inverse triangles)
+    c.fillStyle = baseColor;
+    c.globalAlpha = 0.4;
+    c.beginPath();
+    c.moveTo(0, -hh + r*0.15);
+    c.lineTo(-r*0.15, -r*0.05);
+    c.lineTo(r*0.15, -r*0.05);
+    c.closePath();
+    c.fill();
+    c.beginPath();
+    c.moveTo(-r*0.18, r*0.1);
+    c.lineTo(r*0.18, r*0.1);
+    c.lineTo(0, hh - r*0.15);
+    c.closePath();
+    c.fill();
+    c.globalAlpha = 1;
+    // Rewind orbit arrow
+    c.lineWidth = 2.4;
+    const orbitR = r*0.55;
+    c.beginPath();
+    c.arc(0, 0, orbitR, Math.PI*0.15, Math.PI*1.65, true);
+    c.stroke();
+    const tipAng = Math.PI*0.15;
+    const tipX = Math.cos(tipAng) * orbitR;
+    const tipY = Math.sin(tipAng) * orbitR;
+    c.beginPath();
+    c.moveTo(tipX, tipY);
+    c.lineTo(tipX - r*0.18, tipY - r*0.08);
+    c.lineTo(tipX - r*0.1, tipY + r*0.12);
+    c.closePath();
+    c.fill();
     c.restore();
   }
 
@@ -1390,6 +1500,12 @@ export class GrimoirePanel {
         case SpellType.VOID_KINESIS:
           this.drawVoidKinesisRune(c, x, y, radius, runeColor);
           break;
+        case SpellType.VOID_COCOON:
+          this.drawVoidCocoonRune(c, x, y, radius, runeColor);
+          break;
+        case SpellType.TEMPUS_SIGILLUM:
+          this.drawTempusSigillumRune(c, x, y, radius, runeColor);
+          break;
         case SpellType.SPECIES_SCAN:
           this.drawSpeciesScanRune(c, x, y, radius, runeColor);
           break;
@@ -1535,6 +1651,12 @@ export class GrimoirePanel {
     } else if (type === SpellType.VOID_KINESIS) {
       title = 'Void Kinesis';
       desc = 'Concentrate a void-red beam to dissolve asteroids into void energy.';
+    } else if (type === SpellType.VOID_COCOON) {
+      title = 'Void Cocoon';
+      desc = 'Encase the hull in a void chrysalis, nullifying impacts for 30 seconds.';
+    } else if (type === SpellType.TEMPUS_SIGILLUM) {
+      title = 'Tempus Sigillum';
+      desc = 'Brand nearby planets with a rewind sigil, purging augury echoes and calming fauna.';
     } else if (type === SpellType.SPECIES_SCAN) {
       title = 'Augurio';
       desc = 'Reveal the dominant sentient species of any planet <500u.';
@@ -1601,6 +1723,12 @@ export class GrimoirePanel {
     } else if (type === SpellType.VOID_KINESIS) {
       title = 'Void Kinesis';
       desc = 'Transmute asteroid mass into volatile void energy.';
+    } else if (type === SpellType.VOID_COCOON) {
+      title = 'Void Cocoon';
+      desc = 'Cocoon the ship for 30s, negating collisions while the chrysalis holds.';
+    } else if (type === SpellType.TEMPUS_SIGILLUM) {
+      title = 'Tempus Sigillum';
+      desc = 'Rewrite a planet’s clock, clearing augury data and pacifying minor beings.';
     } else if (type === SpellType.SPECIES_SCAN) {
       title = 'Augurio · Species Scan';
       desc = 'Reveal the dominant species of a scanned planet (<500u). Cost: 1/3 sanity.';

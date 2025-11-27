@@ -1,4 +1,5 @@
 import { TargetInfo } from '../../types/targeting.types';
+import { CompassCountdownPayload } from '../../types/hud.types';
 
 /**
  * Elemento HUD: Brújula con sistema de targeting
@@ -9,8 +10,8 @@ export class Compass {
   private heading: number = 0;
   private radius: number = 80; // Triplicado de tamaño
   private targetInfo: TargetInfo | null = null;
-  // Optional countdown overlay in seconds (e.g., timed spell)
-  private countdownSec: number | null = null;
+  // Optional countdown overlay (timed spell or effect)
+  private countdown: CompassCountdownPayload | null = null;
   
   constructor() {}
 
@@ -20,12 +21,16 @@ export class Compass {
   }
 
   // Timed spell/UI overlay setter
-  public setCountdown(secondsRemaining: number | null | undefined): void {
-    if (secondsRemaining === null || secondsRemaining === undefined || !isFinite(secondsRemaining) || secondsRemaining <= 0) {
-      this.countdownSec = null;
-    } else {
-      this.countdownSec = secondsRemaining;
+  public setCountdown(payload?: CompassCountdownPayload | null): void {
+    if (!payload || !Number.isFinite(payload.seconds) || payload.seconds <= 0) {
+      this.countdown = null;
+      return;
     }
+    this.countdown = {
+      seconds: payload.seconds,
+      label: payload.label ?? 'RITE',
+      accentColor: payload.accentColor ?? '#ff3055'
+    };
   }
 
   public render(ctx: CanvasRenderingContext2D, position: { x: number; y: number }): void {
@@ -39,8 +44,8 @@ export class Compass {
       this.drawTargetNeedle(ctx);
     }
     // Draw optional countdown overlay inside the ring, top-center with margin
-    if (this.countdownSec && this.countdownSec > 0) {
-      this.drawCountdown(ctx, this.countdownSec);
+    if (this.countdown && this.countdown.seconds > 0) {
+      this.drawCountdown(ctx, this.countdown);
     }
     
     ctx.restore();
@@ -182,7 +187,7 @@ export class Compass {
       headingNormalized: Math.round(this.heading),
       radius: this.radius,
       hasTarget: !!this.targetInfo,
-      countdown: this.countdownSec,
+      countdown: this.countdown,
       targetInfo: this.targetInfo ? {
         targetId: this.targetInfo.target.id,
         distance: Math.round(this.targetInfo.distance * 100) / 100,
@@ -193,49 +198,47 @@ export class Compass {
   }
 
   // Helpers
-  private drawCountdown(ctx: CanvasRenderingContext2D, secondsRemaining: number): void {
-    // Clamp and format as MM:SS
-    const sec = Math.max(0, Math.floor(secondsRemaining));
+  private drawCountdown(ctx: CanvasRenderingContext2D, payload: CompassCountdownPayload): void {
+    const sec = Math.max(0, Math.ceil(payload.seconds));
     const mm = Math.floor(sec / 60);
     const ss = sec % 60;
-    const text = `${mm.toString().padStart(2,'0')}:${ss.toString().padStart(2,'0')}`;
+    const timeText = `${mm.toString().padStart(2, '0')}:${ss.toString().padStart(2, '0')}`;
+    const labelText = (payload.label || 'RITE').toUpperCase();
+    const baseColor = payload.accentColor ?? '#ff3055';
+    const haloColor = 'rgba(255,255,255,0.7)';
 
-  // Position centered vertically inside the ring
-  const y = 0;
     ctx.save();
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-  // Intensified plasma color palette with layered glow
-  const baseColor = '#ff3055'; // bright core
-  const outerGlow = '#ff99b3';
-  // Gradient fill (vertical) to add depth
-  const grad = ctx.createLinearGradient(-60, -30, -60, 30);
-  grad.addColorStop(0, outerGlow);
-  grad.addColorStop(0.35, '#ff5e7b');
-  grad.addColorStop(0.7, baseColor);
-  grad.addColorStop(1, '#ff1838');
-  ctx.fillStyle = grad;
-  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
-    // Slight vertical stretch for a digital feel without widening
-    ctx.translate(0, y);
-    ctx.scale(1, 1.2);
-  ctx.font = '30px monospace';
-    // Outer shadow/glow
-    // Multi-pass glow: bright core then softer halo
+
+    ctx.font = '11px "Space Mono", monospace';
+    ctx.fillStyle = 'rgba(255,255,255,0.9)';
+    ctx.shadowColor = baseColor;
+    ctx.shadowBlur = 6;
+    ctx.fillText(labelText, 0, -28);
+    ctx.shadowBlur = 0;
+
+    ctx.save();
+    ctx.scale(1, 1.15);
+    const grad = ctx.createLinearGradient(-60, -20, -60, 30);
+    grad.addColorStop(0, `${baseColor}55`);
+    grad.addColorStop(0.5, baseColor);
+    grad.addColorStop(1, `${baseColor}cc`);
+    ctx.fillStyle = grad;
+    ctx.strokeStyle = 'rgba(255,255,255,0.25)';
+    ctx.font = '30px "Space Mono", monospace';
     ctx.shadowColor = baseColor;
     ctx.shadowBlur = 14;
-    ctx.fillText(text, 0, 0);
-    // Inner stroke highlight
+    ctx.fillText(timeText, 0, 0);
     ctx.shadowBlur = 0;
-    ctx.lineWidth = 1.5;
-    ctx.strokeText(text, 0, 0);
-    // Soft outer halo pass
-    ctx.shadowColor = outerGlow;
-    ctx.shadowBlur = 22;
+    ctx.lineWidth = 1.4;
+    ctx.strokeText(timeText, 0, 0);
+    ctx.shadowColor = haloColor;
+    ctx.shadowBlur = 18;
     ctx.globalAlpha = 0.55;
-    ctx.fillText(text, 0, 0);
-    ctx.globalAlpha = 1.0;
-    ctx.shadowBlur = 0;
+    ctx.fillText(timeText, 0, 0);
+    ctx.restore();
+
     ctx.restore();
   }
 }

@@ -16,6 +16,8 @@ Este documento describe el libro del grimorio (UI), el flujo de lanzamiento de h
   - Disrupt
   - Anchoring Pulse
   - Void Kinesis
+  - Void Cocoon
+  - Tempus Sigillum
   - Alma Mater Contact Rite (SPECIES_SCAN)
   - Arcane Contact Rite (CREATURE_SCAN)
 - Integración con HUD / Brújula
@@ -79,6 +81,8 @@ Notas:
 | Disrupt | 1 | 1 | 0u | Target válido (portal/material) dentro de 50u. |
 | Anchoring Pulse | 2 | 3 | 0u | Asteroide en ≤ 50u y bodega con espacio suficiente para el `yield`. |
 | Void Kinesis | 2 | 3 | Genera energía (no consume) | Asteroide en ≤ 50u y reservas del vacío con espacio para el `gain`. |
+| Void Cocoon | 2 | 3 | 0u | Despliega un capullo protector durante 30 s, absorbiendo impactos de colisión y mostrando un countdown en la brújula. |
+| Tempus Sigillum | 2 | 5 | 0u | Requiere planeta válido (≤ 500u). Revierte el mundo, vuelve a tirar la probabilidad de vida y limpia seres menores conocidos. |
 | Alma Mater Contact Rite (SPECIES_SCAN) | 1 | 3 | 50u | Planeta escaneable a ≤ 500u de la superficie. |
 | Arcane Contact Rite (CREATURE_SCAN) | 1 | 3 | 50u | Igual que el anterior, pero consulta seres menores. |
 
@@ -134,6 +138,20 @@ Notas:
 - Requisitos: asteroide válido y que la reserva del vacío no esté llena; si el `projectedVoid` excede el máximo se muestra “RESERVA DEL VACÍO LLENA”.
 - Tras una conversión exitosa, el HUD muestra un mensaje de marquee con el incremento aplicado.
 
+### Void Cocoon
+
+- Efecto principal: activa un capullo del vacío durante 30 s (`voidCocoonActiveUntilMs`). Mientras dura, todos los impactos que llegarían al casco se anulan mediante `handleVoidCocoonImpact`, generando texto en el HUD y logs de depuración.
+- Costes: 2/3 de cordura y ningún gasto de Energía del Vacío.
+- Feedback: muestra el placeholder “VOID COCOON ACTIVADO · 30s”, envía un mensaje al marquee y dispara un sonido (“whoosh” o `sfx_precast_ritual`). La brújula dibuja un countdown azul (`COCOON`) que tiene prioridad sobre otros temporizadores.
+- Notas: no impide lanzar otros hechizos y puede volver a activarse tan pronto como expire. Los daños absorbidos no reducen la reserva de integridad del barco.
+
+### Tempus Sigillum
+
+- Efecto principal: rebobina el estado civilizatorio del planeta objetivo (≤ 500u) y vuelve a tirar la probabilidad de vida (`assignInhabitantsFromProbability`).
+- Resultado: limpia el `lesserBeing`, lo marca como conocido “sin criatura” (`creatureScanned = true`), restablece la afinidad a `NEUTRAL` y borra el flag `lifeScanned` para obligar a un nuevo reconocimiento.
+- Costes: 2/5 de cordura, sin energía del vacío. Ideal para buscar una raza distinta o preparar líneas de misión donde la vida debía extinguirse.
+- HUD / feedback: placeholder “TEMPUS SIGILLUM” con el nombre del planeta y mensaje en el marquee. No genera countdown porque su efecto es instantáneo.
+
 ### Augurio (SPECIES_SCAN)
 
 - **Nombre oficial** para el glifo asociado a `SpellType.SPECIES_SCAN`. Mantiene el mismo identificador interno.
@@ -151,9 +169,9 @@ Notas:
 
 ## Integración con HUD / Brújula
 
-- El `HUDManager` recibe desde el motor el tiempo restante del Rito Doble de Tiempo y lo encamina a la Brújula.
-- La Brújula dibuja el contador MM:SS en carmesí, centrado verticalmente. No se muestra cuando el valor es `null` o `<= 0`.
-- Opcional (futuro): desvanecido del contador durante el último segundo.
+- El `HUDManager` recibe desde el motor un `CompassCountdownPayload` que prioriza Void Cocoon (overlay cian) y, si no está activo, el Rito Doble de Tiempo (overlay carmesí).
+- La Brújula dibuja el countdown en la parte superior interna del anillo, con etiqueta (`COCOON` o `SPEED RITE`). Cuando `seconds <= 0` se oculta automáticamente.
+- Opcional (futuro): aplicar un fade-out adicional durante el último segundo para ambos efectos.
 
 ## Aspectos técnicos (archivos y servicios)
 
@@ -180,6 +198,8 @@ Notas:
   - Target cercano (≤ 500u) vs. fuera de rango para confirmar los placeholders.
   - Consumo de 50u por lanzamiento exitoso y actualización de intel (habitantes/ser menor) en HUD y documentación del planeta.
   - Confirmar que el escaneo ritual respeta el bloqueo de inputs/pre‑cast de 2s.
+- Activar Void Cocoon y comprobar el countdown en la brújula (debería empezar en 30 s) y que colisiones menores solo disparan mensajes “Void Cocoon absorbió un impacto” sin dañar la nave.
+- Ejecutar Tempus Sigillum sobre un planeta con habitantes conocidos: verificar que `lifeScanned` vuelve a “Desconocido”, que no hay ser menor activo y que un nuevo escaneo puede revelar resultados distintos.
 - Verificar la lógica de selección: tras pulsar `h` la selección desaparece; nuevas pulsaciones de `h` no hacen nada hasta volver a seleccionar un glifo.
 
 ---

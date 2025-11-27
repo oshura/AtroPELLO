@@ -16,6 +16,8 @@ export enum SpellType {
   DISRUPT = 'DISRUPT',
   ANCHORING_PULSE = 'ANCHORING_PULSE',
   VOID_KINESIS = 'VOID_KINESIS',
+  VOID_COCOON = 'VOID_COCOON',
+  TEMPUS_SIGILLUM = 'TEMPUS_SIGILLUM',
   SPECIES_SCAN = 'SPECIES_SCAN',
   CREATURE_SCAN = 'CREATURE_SCAN'
 }
@@ -59,6 +61,8 @@ export function getSpellLabel(spell: SpellType): string {
     case SpellType.DISRUPT: return 'Disrupt';
     case SpellType.ANCHORING_PULSE: return 'Anchoring Pulse';
     case SpellType.VOID_KINESIS: return 'Void Kinesis';
+    case SpellType.VOID_COCOON: return 'Void Cocoon';
+    case SpellType.TEMPUS_SIGILLUM: return 'Tempus Sigillum';
     case SpellType.SPECIES_SCAN: return 'Augurio';
     case SpellType.CREATURE_SCAN: return 'Revelación';
     default: return 'Unknown Spell';
@@ -84,6 +88,10 @@ export function getSpellDescription(spell: SpellType): string {
       return 'Ancla asteroides cercanos y los arrastra a la bodega';
     case SpellType.VOID_KINESIS:
       return 'Condensa asteroides en energía del vacío utilizable';
+    case SpellType.VOID_COCOON:
+      return 'Encapsula la nave en un capullo del vacío que disipa impactos durante 30 segundos.';
+    case SpellType.TEMPUS_SIGILLUM:
+      return 'Sella el tiempo de un planeta cercano, purgando augurios previos y amansando seres menores.';
     case SpellType.SPECIES_SCAN:
       return 'Consume cordura temporal para revelar la raza de un planeta escaneado (<500u)';
     case SpellType.CREATURE_SCAN:
@@ -108,6 +116,8 @@ export const SPELL_SANITY_COSTS: Record<SpellType, SpellSanityCost> = {
   [SpellType.DISRUPT]: { temp: 1, max: 1 },
   [SpellType.ANCHORING_PULSE]: { temp: 2, max: 3 },
   [SpellType.VOID_KINESIS]: { temp: 2, max: 3 },
+  [SpellType.VOID_COCOON]: { temp: 2, max: 3 },
+  [SpellType.TEMPUS_SIGILLUM]: { temp: 2, max: 5 },
   [SpellType.SPECIES_SCAN]: { temp: 1, max: 3 },
   [SpellType.CREATURE_SCAN]: { temp: 1, max: 3 },
 };

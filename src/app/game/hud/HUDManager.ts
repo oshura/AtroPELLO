@@ -12,6 +12,7 @@ import { MarqueePanel } from './elements/MarqueePanel';
 import { TargetingSystem, TargetInfo } from '../types/targeting.types';
 import { TargetPanel, TargetPanelState, Relation } from './elements/TargetPanel';
 import { LandingIndicatorsSnapshot } from '../types/landing.types';
+import { CompassCountdownPayload } from '../types/hud.types';
 
 /**
  * Administrador principal del sistema HUD
@@ -114,6 +115,8 @@ export class HUDManager {
     shipCargo?: { current: number; max: number; pct: number };
     // Optional: remaining seconds for active speed rite (Double Phased Time Rite)
     speedRiteRemainingSec?: number | null;
+    // Optional: timed spell payload for compass overlay
+    compassCountdown?: CompassCountdownPayload | null;
     // Optional: portal traversal cooldown seconds remaining
     portalCooldownSec?: number | null; // ignored (wireframe removed)
   }): void {
@@ -136,7 +139,7 @@ export class HUDManager {
     }
   this.compass.update(gameData.heading, targetInfo);
   // Timed spell countdown overlay routed to compass
-  this.compass.setCountdown(gameData.speedRiteRemainingSec ?? null);
+  this.compass.setCountdown(gameData.compassCountdown ?? null);
     
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
   // Determinar si el rito de velocidad está activo (hasta 200%)
