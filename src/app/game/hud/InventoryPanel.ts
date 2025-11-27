@@ -190,8 +190,13 @@ export class InventoryPanel {
     this.snapshot = snapshot;
     const currentSelection = this.selection;
     if (currentSelection) {
-      if (currentSelection.kind === 'personal' && currentSelection.index >= snapshot.personalGear.length) {
-        this.selection = null;
+      if (currentSelection.kind === 'personal') {
+        if (currentSelection.index >= 0) {
+          const gear = snapshot.personalGear[currentSelection.index];
+          if (!gear || gear.slot !== currentSelection.slot) {
+            this.selection = null;
+          }
+        }
       } else if (currentSelection.kind === 'cargo') {
         const stillExists = snapshot.cargo.some(entry => entry.id === currentSelection.entryId);
         if (!stillExists) {
@@ -393,16 +398,16 @@ export class InventoryPanel {
 
     let offsetY = listStartY - this.personalScrollOffset;
     personalRows.forEach(row => {
-      const isSelected = row.index != null && this.selection?.kind === 'personal' && this.selection.index === row.index;
+      const isSelected = this.selection?.kind === 'personal'
+        && this.selection.slot === row.slot
+        && this.selection.index === row.index;
       this.drawGearCard(c, row.slot, row.label, row.description, 24, offsetY, w - 48, cardHeight, isSelected, row.empty);
-      if (row.index != null) {
-        this.registerRegion({
-          kind: 'personal',
-          index: row.index,
-          slot: row.slot,
-          bounds: { x: x + 24, y: y + offsetY, w: w - 48, h: cardHeight }
-        });
-      }
+      this.registerRegion({
+        kind: 'personal',
+        index: row.index,
+        slot: row.slot,
+        bounds: { x: x + 24, y: y + offsetY, w: w - 48, h: cardHeight }
+      });
       offsetY += cardSpacing;
     });
 
@@ -590,60 +595,67 @@ export class InventoryPanel {
     slot: PersonalGearSlot;
     label?: string;
     description?: string;
-    index: number | null;
+    index: number;
     empty: boolean;
   }> {
+    type GearEntry = { gear: PersonalGearItem; index: number };
     type PersonalRow = {
       slot: PersonalGearSlot;
       label?: string;
       description?: string;
-      index: number | null;
+      index: number;
       empty: boolean;
     };
+
+    const entries: GearEntry[] = personalGear.map((gear, index) => ({ gear, index }));
+    const findFirst = (slot: PersonalGearSlot): GearEntry | null => entries.find(entry => entry.gear.slot === slot) ?? null;
+    const suitEntry = findFirst(PersonalGearSlot.SUIT);
+    const bootsEntry = findFirst(PersonalGearSlot.BOOTS);
+    const accessoryEntries = entries.filter(entry => entry.gear.slot === PersonalGearSlot.ACCESSORY);
+
+    let nextVirtualIndex = -1;
+    const allocateVirtualIndex = () => nextVirtualIndex--;
     const rows: PersonalRow[] = [];
-    const accessoryEntries: Array<{ gear: PersonalGearItem; index: number }> = [];
-    personalGear.forEach((gear, index) => {
-      if (gear.slot === PersonalGearSlot.ACCESSORY) {
-        accessoryEntries.push({ gear, index });
-        return;
+    const pushRow = (slot: PersonalGearSlot, entry: GearEntry | null) => {
+      if (entry) {
+        rows.push({
+          slot,
+          label: entry.gear.label,
+          description: entry.gear.description,
+          index: entry.index,
+          empty: false
+        });
+      } else {
+        rows.push({
+          slot,
+          label: undefined,
+          description: undefined,
+          index: allocateVirtualIndex(),
+          empty: true
+        });
       }
-      rows.push({
-        slot: gear.slot,
-        label: gear.label,
-        description: gear.description,
-        index,
-        empty: false
-      });
-    });
+    };
+
+    pushRow(PersonalGearSlot.SUIT, suitEntry);
+    pushRow(PersonalGearSlot.BOOTS, bootsEntry);
 
     const clampSlots = (value?: number) => {
       if (typeof value !== 'number' || !Number.isFinite(value)) {
-        return 1;
+        return 0;
       }
       return Math.max(0, Math.min(3, Math.floor(value)));
     };
-    const suit = personalGear.find(item => item.slot === PersonalGearSlot.SUIT);
-    const accessoryCapacity = clampSlots(suit?.accessorySlots);
-    const visibleAccessories = accessoryEntries.slice(0, accessoryCapacity);
+    const accessoryCapacity = clampSlots(suitEntry?.gear.accessorySlots);
+    const visibleAccessoryCount = Math.max(accessoryCapacity, accessoryEntries.length);
+    const visibleAccessories = accessoryEntries.slice(0, visibleAccessoryCount);
 
-    visibleAccessories.forEach(({ gear, index }) => {
-      rows.push({
-        slot: PersonalGearSlot.ACCESSORY,
-        label: gear.label,
-        description: gear.description,
-        index,
-        empty: false
-      });
+    visibleAccessories.forEach(entry => {
+      pushRow(PersonalGearSlot.ACCESSORY, entry);
     });
 
-    for (let i = visibleAccessories.length; i < accessoryCapacity; i++) {
-      rows.push({
-        slot: PersonalGearSlot.ACCESSORY,
-        label: undefined,
-        description: undefined,
-        index: null,
-        empty: true
-      });
+    const placeholderCount = Math.max(0, accessoryCapacity - accessoryEntries.length);
+    for (let i = 0; i < placeholderCount; i++) {
+      pushRow(PersonalGearSlot.ACCESSORY, null);
     }
 
     return rows;
@@ -951,7 +963,8 @@ export class InventoryPanel {
     const buttonHeight = 52;
     const buttonX = w - buttonWidth - 32;
     const buttonY = (h - buttonHeight) / 2;
-    const canJettison = this.selection?.kind === 'cargo' || this.selection?.kind === 'personal';
+    const canJettison = this.selection?.kind === 'cargo'
+      || (this.selection?.kind === 'personal' && this.selection.index >= 0);
 
     c.fillStyle = canJettison ? '#f87171' : 'rgba(148,163,184,0.25)';
     c.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
@@ -989,9 +1002,14 @@ export class InventoryPanel {
       const unavailable = this.unavailableSlots.has(selection.slot);
       return `${this.prettySlot(selection.slot)} · ${unavailable ? 'N/A' : 'Vacío'}`;
     }
-    const gear = snapshot.personalGear[selection.index];
-    if (gear) {
-      return `${this.prettyPersonalSlot(gear.slot)} · ${gear.label}`;
+    if (selection.kind === 'personal') {
+      if (selection.index >= 0) {
+        const gear = snapshot.personalGear[selection.index];
+        if (gear && gear.slot === selection.slot) {
+          return `${this.prettyPersonalSlot(gear.slot)} · ${gear.label ?? 'Vacío'}`;
+        }
+      }
+      return `${this.prettyPersonalSlot(selection.slot)} · Vacío`;
     }
     return 'Selección no válida';
   }

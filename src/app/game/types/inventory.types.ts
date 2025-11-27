@@ -129,4 +129,4 @@ export type InventoryPanelRegion =
 export type InventorySelection =
   | { kind: 'cargo'; entryId: string }
   | { kind: 'equipment'; slot: EquipmentSlot }
-  | { kind: 'personal'; index: number };
+  | { kind: 'personal'; slot: PersonalGearSlot; index: number };

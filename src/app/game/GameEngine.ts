@@ -8644,7 +8644,7 @@ export class GameEngine {
         selection = { kind: 'equipment', slot: region.slot };
         break;
       case 'personal':
-        selection = { kind: 'personal', index: region.index };
+        selection = { kind: 'personal', slot: region.slot, index: region.index };
         break;
       default:
         selection = null;
@@ -8688,7 +8688,7 @@ export class GameEngine {
       case 'equipment':
         return `equipment:${region.slot}`;
       case 'personal':
-        return `personal:${region.index}`;
+        return `personal:${region.slot}:${region.index}`;
       default:
         return null;
     }
@@ -8704,7 +8704,9 @@ export class GameEngine {
       case 'equipment':
         return this.inventorySelection.kind === 'equipment' && this.inventorySelection.slot === region.slot;
       case 'personal':
-        return this.inventorySelection.kind === 'personal' && this.inventorySelection.index === region.index;
+        return this.inventorySelection.kind === 'personal'
+          && this.inventorySelection.slot === region.slot
+          && this.inventorySelection.index === region.index;
       default:
         return false;
     }
@@ -8745,14 +8747,23 @@ export class GameEngine {
       this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Equipment slots cannot be jettisoned', { slot: selection.slot });
       return;
     } else if (selection.kind === 'personal') {
-      const removed = this.gameState.removePersonalGearAtIndex(selection.index);
-      if (!removed) {
-        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Personal gear index invalid', { index: selection.index });
-      } else {
-        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Personal gear jettisoned', {
-          slot: removed.slot,
-          label: removed.label
+      if (selection.index < 0) {
+        this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Cannot jettison empty personal slot', {
+          slot: selection.slot
         });
+      } else {
+        const removed = this.gameState.removePersonalGearAtIndex(selection.index);
+        if (!removed || removed.slot !== selection.slot) {
+          this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Personal gear index invalid', {
+            index: selection.index,
+            slot: selection.slot
+          });
+        } else {
+          this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Personal gear jettisoned', {
+            slot: removed.slot,
+            label: removed.label
+          });
+        }
       }
     }
 
