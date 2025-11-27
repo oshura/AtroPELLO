@@ -257,6 +257,8 @@ export class GameEngine {
   private speedRiteOriginalDecel: number | null = null;
   private voidCocoonActiveUntilMs: number | null = null;
   private voidCocoonLastImpactMs: number = 0;
+  private voidCocoonShieldStartMs: number = 0;
+  private voidCocoonShieldGeometry: { vbo: WebGLBuffer | null; ibo: WebGLBuffer | null; indexCount: number } | null = null;
   private cachedSpeedRiteRemainingSec: number | null = null;
 
   // Material Disruption Rite beam animation
@@ -3898,6 +3900,11 @@ export class GameEngine {
 
     // Renderizar nave con shader texturizado (por encima del beam)
   this.renderSpaceship();
+
+    if (this.voidCocoonActiveUntilMs && performance.now() < this.voidCocoonActiveUntilMs) {
+      this.renderVoidCocoonShield();
+      restoreLitProgram();
+    }
     
     // Renderizar efectos de partículas en programa básico (usa additive blending)
     // Asegurar que el estado de la nave/asteroides no se contamine
@@ -6719,6 +6726,118 @@ export class GameEngine {
     gl.deleteBuffer(cbo);
   }
 
+  private ensureVoidCocoonShieldGeometry(): boolean {
+    if (this.voidCocoonShieldGeometry?.vbo && this.voidCocoonShieldGeometry?.ibo) {
+      return true;
+    }
+    if (!this.gl) {
+      return false;
+    }
+    const gl = this.gl;
+    const latSegments = 24;
+    const lonSegments = 36;
+    const positions: number[] = [];
+    for (let lat = 0; lat <= latSegments; lat++) {
+      const theta = (lat / latSegments) * Math.PI;
+      const sinTheta = Math.sin(theta);
+      const cosTheta = Math.cos(theta);
+      for (let lon = 0; lon <= lonSegments; lon++) {
+        const phi = (lon / lonSegments) * Math.PI * 2;
+        const sinPhi = Math.sin(phi);
+        const cosPhi = Math.cos(phi);
+        const x = cosPhi * sinTheta;
+        const y = cosTheta;
+        const z = sinPhi * sinTheta;
+        positions.push(x, y, z);
+      }
+    }
+    const stride = lonSegments + 1;
+    const indexList: number[] = [];
+    for (let lat = 0; lat < latSegments; lat++) {
+      for (let lon = 0; lon < lonSegments; lon++) {
+        const first = lat * stride + lon;
+        const second = first + stride;
+        indexList.push(first, second, first + 1);
+        indexList.push(second, second + 1, first + 1);
+      }
+    }
+    const positionArray = new Float32Array(positions);
+    const indexArray = new Uint16Array(indexList);
+    const vbo = gl.createBuffer();
+    const ibo = gl.createBuffer();
+    if (!vbo || !ibo) {
+      return false;
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+    gl.bufferData(gl.ARRAY_BUFFER, positionArray, gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
+    this.voidCocoonShieldGeometry = { vbo, ibo, indexCount: indexArray.length };
+    return true;
+  }
+
+  private renderVoidCocoonShield(): void {
+    if (!this.gl || !this.shaderManager || !this.shaderManager.stormShellProgram) return;
+    if (!this.spaceship || !this.camera) return;
+    if (!this.voidCocoonActiveUntilMs) return;
+    const now = performance.now();
+    if (now >= this.voidCocoonActiveUntilMs) return;
+    if (!this.ensureVoidCocoonShieldGeometry() || !this.voidCocoonShieldGeometry) return;
+
+    const gl = this.gl;
+    const mesh = this.voidCocoonShieldGeometry;
+    const prevProgram = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
+    const wasBlend = gl.isEnabled(gl.BLEND);
+    const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
+    const prevDepthMask = !!gl.getParameter(gl.DEPTH_WRITEMASK);
+    const wasCull = gl.isEnabled(gl.CULL_FACE);
+
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(false);
+    gl.disable(gl.CULL_FACE);
+
+    const shieldRadius = Math.max(2.4, (this.spaceship.boundingSphere?.radius ?? 1.2) * 1.75);
+    const modelMatrix = this.createThrusterMatrix(shieldRadius);
+    if (!modelMatrix) return;
+    const elapsedSec = (now - this.voidCocoonShieldStartMs) / 1000;
+    const remainingSec = (this.voidCocoonActiveUntilMs - now) / 1000;
+    const normalized = Math.max(0, Math.min(1, remainingSec / 30));
+    const baseIntensity = 0.55 + 0.35 * normalized + 0.15 * Math.sin(elapsedSec * 2.4);
+    const impactFlash = Math.min(1, Math.max(0, 1 - (now - this.voidCocoonLastImpactMs) / 350));
+
+    this.shaderManager.useStormShellProgram();
+    this.shaderManager.setStormShellMatrices(modelMatrix, this.camera.viewMatrix, this.camera.projectionMatrix);
+    const baseColor = new Float32Array([0.08, 0.28, 0.42]);
+    const veinColor = new Float32Array([0.45, 0.9, 1.0]);
+    this.shaderManager.setStormShellParams(
+      elapsedSec,
+      Math.min(1.3, baseIntensity),
+      Math.min(1, impactFlash),
+      1.08,
+      baseColor,
+      veinColor,
+    );
+
+    const posLoc = this.shaderManager.stormShellAttributes['position'];
+    if (posLoc !== undefined && posLoc >= 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
+      gl.enableVertexAttribArray(posLoc);
+      gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
+      gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
+      gl.disableVertexAttribArray(posLoc);
+    }
+
+    gl.depthMask(prevDepthMask);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    if (wasBlend) gl.enable(gl.BLEND); else gl.disable(gl.BLEND);
+    if (wasDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
+    if (wasCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
+    gl.useProgram(prevProgram);
+  }
+
   private resolveVoidKinesisConversion(target: Asteroid): void {
     if (!target || !this.isAsteroidTarget(target)) {
       this.voidKinesisBeam = null;
@@ -7020,9 +7139,8 @@ export class GameEngine {
     const now = performance.now();
     this.voidCocoonActiveUntilMs = now + durationMs;
     this.voidCocoonLastImpactMs = now;
-    try {
-      this.showPlaceholderText('VOID COCOON ACTIVADO · 30s', 2200);
-    } catch {}
+    this.voidCocoonShieldStartMs = now;
+    this.ensureVoidCocoonShieldGeometry();
     try {
       this.hudManager?.addMarqueeMessage?.('Void Cocoon: capullo protector desplegado');
     } catch {}
@@ -7352,6 +7470,11 @@ export class GameEngine {
       };
       delBuf(this.shipBuffers.nose); delBuf(this.shipBuffers.body); delBuf(this.shipBuffers.cockpit);
       delBuf(this.shipBuffers.nozzle); delBuf(this.shipBuffers.wings); delBuf(this.shipBuffers.thruster);
+      if (this.voidCocoonShieldGeometry) {
+        if (this.voidCocoonShieldGeometry.vbo) this.gl.deleteBuffer(this.voidCocoonShieldGeometry.vbo);
+        if (this.voidCocoonShieldGeometry.ibo) this.gl.deleteBuffer(this.voidCocoonShieldGeometry.ibo);
+        this.voidCocoonShieldGeometry = null;
+      }
     }
     
   this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'GameEngine cleaned up');
@@ -7365,23 +7488,17 @@ export class GameEngine {
   /**
    * Crea matriz de transformación para el thruster con orden correcto: Escala → Rotación → Traslación
    */
-  private createThrusterMatrix(scaleFactor: number): Float32Array {
-    const matrix = new Float32Array(16);
-    
-    // 1. Inicializar matriz identidad
-    this.identityMatrix(matrix);
-    
-    // 2. PRIMERO: Aplicar escalado (en espacio local del objeto)
-    this.scaleMatrixUniform(matrix, scaleFactor);
-    
-    // 3. SEGUNDO: Aplicar rotaciones (en el mismo orden que la spaceship)
-    this.rotateXMatrix(matrix, this.spaceship.rotation.x);
-    this.rotateYMatrix(matrix, this.spaceship.rotation.y); 
-    this.rotateZMatrix(matrix, this.spaceship.rotation.z);
-    
-    // 4. ÚLTIMO: Aplicar traslación (mover al mundo)
-    this.translateMatrix(matrix, this.spaceship.position.x, this.spaceship.position.y, this.spaceship.position.z);
-    
+  private createThrusterMatrix(scaleFactor: number): Float32Array | null {
+    if (!this.spaceship) {
+      return null;
+    }
+    try {
+      this.spaceship.updateModelMatrix();
+    } catch {}
+    const matrix = new Float32Array(this.spaceship.modelMatrix);
+    const baseRadius = Math.max(0.25, this.spaceship.boundingSphere?.radius ?? 1);
+    const uniformScale = scaleFactor / baseRadius;
+    this.scaleMatrixUniform(matrix, uniformScale);
     return matrix;
   }
 

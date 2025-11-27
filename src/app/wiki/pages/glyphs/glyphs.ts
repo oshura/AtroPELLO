@@ -522,6 +522,33 @@ export class GlyphsWikiComponent implements OnInit {
       notes: 'Añade mensajes al marquee con la energía ganada.'
     },
     {
+      name: 'Void Cocoon',
+      type: 'VOID_COCOON',
+      icon: '🕸️',
+      activation: 'Selecciona el glifo y pulsa la tecla rápida en cualquier momento.',
+      effect: 'Genera un escudo esférico durante 30 s que absorbe impactos de colisión sin dañar el casco.',
+      duration: '30 s',
+      sanityTemp: 3,
+      sanityReserve: 3,
+      voidEnergy: '0u',
+      requirements: ['Sin animaciones bloqueantes en curso.', 'La nave debe estar operativa (no destruida).'],
+      description: 'El capullo es semitransparente y muestra un countdown “COCOON” en la brújula. Cada impacto absorbido emite un mensaje y deja intactos tus puntos de vida.',
+      notes: 'Solo reproduce IaIa.wav al activarse; no hay placeholder textual.'
+    },
+    {
+      name: 'Tempus Sigillum',
+      type: 'TEMPUS_SIGILLUM',
+      icon: '⏳',
+      activation: 'Alinea un planeta ≤ 500u, selecciona el glifo y pulsa la tecla rápida.',
+      effect: 'Reinicia el estado civilizatorio del planeta, borra augurios previos y amansa seres menores.',
+      sanityTemp: 2,
+      sanityReserve: 5,
+      voidEnergy: '0u',
+      requirements: ['Planeta válido dentro de ≤ 500u.', 'Target seleccionado en la retícula.'],
+      description: 'Ideal para rerollear habitantes o pacificar sistemas problemáticos. Limpia el lesser being y obliga a un nuevo escaneo.',
+      notes: 'Muestra un placeholder “TEMPUS SIGILLUM” con el nombre del planeta.'
+    },
+    {
       name: 'Augurio',
       type: 'SPECIES_SCAN',
       icon: '🧬',

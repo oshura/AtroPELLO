@@ -37,6 +37,12 @@ export enum CargoItemType {
 }
 
 /** Perfil del piloto mostrado en el panel. */
+export interface CharacterAge {
+  years: number;
+  days: number;
+  totalDays: number;
+}
+
 export interface CharacterProfile {
   name: string;
   sanity: number; // 0-100
@@ -45,6 +51,7 @@ export interface CharacterProfile {
   level: number;
   experience: number;
   experienceMax: number;
+  age: CharacterAge;
 }
 
 /** Estado de un slot de equipo de la nave. */

@@ -134,7 +134,12 @@ export class GameStateStore {
     memory: 0,
     level: 0,
     experience: 0,
-    experienceMax: 100
+    experienceMax: 100,
+    age: {
+      years: 32,
+      days: 76,
+      totalDays: 32 * 365 + 76
+    }
   };
 
   /** Equipo personal (incluye slots dedicados de traje/botas) */
@@ -162,6 +167,7 @@ export class GameStateStore {
   /** Cache de umbrales de experiencia por nivel (estilo Fibonacci) */
   private experienceCapsCache: number[] = [100, 200];
   private readonly SANITY_BASE_MAX = 99;
+  private readonly DAYS_PER_YEAR = 365;
   public readonly knownSpells: Set<SpellType> = new Set(Object.values(SpellType));
   /** Layout personalizado de glifos del grimorio (coordenadas normalizadas 0..1) */
   public grimoireGlyphLayout: Partial<Record<SpellType, { nx: number; ny: number }>> = {};
@@ -519,6 +525,7 @@ export class GameStateStore {
     const level = this.normalizeLevel(profile.level ?? this.characterProfile.level ?? 0);
     const experienceMax = this.resolveExperienceCap(profile.experienceMax, level);
     const experience = this.clampExperience(profile.experience ?? this.characterProfile.experience ?? 0, experienceMax);
+    const normalizedAge = this.normalizeAge(profile.age, this.characterProfile.age);
     this.characterProfile = {
       name: profile.name || this.characterProfile.name,
       sanity: this.clampSanity(profile.sanity ?? this.characterProfile.sanity),
@@ -526,7 +533,8 @@ export class GameStateStore {
       memory: this.clampPercent(profile.memory ?? this.characterProfile.memory),
       level,
       experience,
-      experienceMax
+      experienceMax,
+      age: normalizedAge
     };
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character' } });
     this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Character profile updated', {
@@ -536,7 +544,8 @@ export class GameStateStore {
       memory: this.characterProfile.memory,
       level: this.characterProfile.level,
       experience: this.characterProfile.experience,
-      experienceMax: this.characterProfile.experienceMax
+      experienceMax: this.characterProfile.experienceMax,
+      age: this.characterProfile.age
     });
   }
 
@@ -771,6 +780,30 @@ export class GameStateStore {
       return 0;
     }
     return Math.max(0, Math.min(max, value));
+  }
+
+  private normalizeAge(ageInput?: Partial<CharacterProfile['age']> | null, fallback?: CharacterProfile['age']): CharacterProfile['age'] {
+    const base = fallback ?? this.characterProfile?.age ?? { years: 0, days: 0, totalDays: 0 };
+    if (!ageInput) {
+      return { ...base };
+    }
+
+    if (typeof ageInput.totalDays === 'number' && Number.isFinite(ageInput.totalDays)) {
+      const safeTotal = Math.max(0, Math.floor(ageInput.totalDays));
+      const years = Math.floor(safeTotal / this.DAYS_PER_YEAR);
+      const days = safeTotal % this.DAYS_PER_YEAR;
+      return { years, days, totalDays: safeTotal };
+    }
+
+    const hasYears = typeof ageInput.years === 'number' && Number.isFinite(ageInput.years);
+    const hasDays = typeof ageInput.days === 'number' && Number.isFinite(ageInput.days);
+    const rawYears = hasYears ? Math.max(0, Math.floor(ageInput.years!)) : base.years;
+    const rawDays = hasDays ? Math.max(0, Math.floor(ageInput.days!)) : base.days;
+    const carryYears = Math.floor(rawDays / this.DAYS_PER_YEAR);
+    const normalizedYears = rawYears + carryYears;
+    const normalizedDays = rawDays % this.DAYS_PER_YEAR;
+    const totalDays = normalizedYears * this.DAYS_PER_YEAR + normalizedDays;
+    return { years: normalizedYears, days: normalizedDays, totalDays };
   }
 
   private normalizeLevel(value: number): number {

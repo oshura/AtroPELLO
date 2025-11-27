@@ -81,7 +81,7 @@ Notas:
 | Disrupt | 1 | 1 | 0u | Target válido (portal/material) dentro de 50u. |
 | Anchoring Pulse | 2 | 3 | 0u | Asteroide en ≤ 50u y bodega con espacio suficiente para el `yield`. |
 | Void Kinesis | 2 | 3 | Genera energía (no consume) | Asteroide en ≤ 50u y reservas del vacío con espacio para el `gain`. |
-| Void Cocoon | 2 | 3 | 0u | Despliega un capullo protector durante 30 s, absorbiendo impactos de colisión y mostrando un countdown en la brújula. |
+| Void Cocoon | 3 | 3 | 0u | Despliega un capullo protector durante 30 s, absorbiendo impactos de colisión y mostrando un countdown en la brújula. |
 | Tempus Sigillum | 2 | 5 | 0u | Requiere planeta válido (≤ 500u). Revierte el mundo, vuelve a tirar la probabilidad de vida y limpia seres menores conocidos. |
 | Alma Mater Contact Rite (SPECIES_SCAN) | 1 | 3 | 50u | Planeta escaneable a ≤ 500u de la superficie. |
 | Arcane Contact Rite (CREATURE_SCAN) | 1 | 3 | 50u | Igual que el anterior, pero consulta seres menores. |
@@ -141,8 +141,8 @@ Notas:
 ### Void Cocoon
 
 - Efecto principal: activa un capullo del vacío durante 30 s (`voidCocoonActiveUntilMs`). Mientras dura, todos los impactos que llegarían al casco se anulan mediante `handleVoidCocoonImpact`, generando texto en el HUD y logs de depuración.
-- Costes: 2/3 de cordura y ningún gasto de Energía del Vacío.
-- Feedback: muestra el placeholder “VOID COCOON ACTIVADO · 30s”, envía un mensaje al marquee y dispara un sonido (“whoosh” o `sfx_precast_ritual`). La brújula dibuja un countdown azul (`COCOON`) que tiene prioridad sobre otros temporizadores.
+- Costes: 3/3 de cordura y ningún gasto de Energía del Vacío.
+- Feedback: en lugar del placeholder, la nave queda inscrita dentro de una esfera semitransparente animada y el HUD muestra solo el mensaje de marquee + sonido `IaIa.wav`. La brújula dibuja un countdown azul (`COCOON`) que tiene prioridad sobre otros temporizadores.
 - Notas: no impide lanzar otros hechizos y puede volver a activarse tan pronto como expire. Los daños absorbidos no reducen la reserva de integridad del barco.
 
 ### Tempus Sigillum

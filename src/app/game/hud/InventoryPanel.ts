@@ -312,14 +312,17 @@ export class InventoryPanel {
     const nameY = this.scaleY(48);
     this.drawTallText(c, snapshot.character.name, 24, nameY);
     const levelLabel = `Nivel ${snapshot.character.level}`;
-    c.save();
-    c.textAlign = 'right';
+    const ageLabel = this.formatCharacterAge(snapshot.character.age);
+    const metaLineY = nameY + this.scaleY(26);
     c.font = '600 20px "Segoe UI", sans-serif';
     c.fillStyle = '#cdd5ff';
-    c.fillText(levelLabel, w - 24, nameY);
+    this.drawTallText(c, levelLabel, 24, metaLineY);
+    c.save();
+    c.textAlign = 'right';
+    this.drawTallText(c, ageLabel, w - 24, metaLineY);
     c.restore();
 
-    const statBlockStart = nameY + this.scaleY(26);
+    const statBlockStart = metaLineY + this.scaleY(18);
     const statSpacing = this.scaleY(34);
     const healthY = statBlockStart;
     this.drawStatBar(c, 'Salud', snapshot.character.health, '#4ade80', 24, healthY, w - 48);
@@ -1108,6 +1111,15 @@ export class InventoryPanel {
     c.scale(1, this.textHeightScale);
     c.fillText(text, x, y / this.textHeightScale);
     c.restore();
+  }
+
+  private formatCharacterAge(age?: InventorySnapshot['character']['age']): string {
+    if (!age) {
+      return 'Edad --';
+    }
+    const years = Math.max(0, Math.floor(age.years ?? 0));
+    const days = Math.max(0, Math.floor(age.days ?? 0));
+    return `Edad ${years} años · ${days} días`;
   }
 
   private scaleY(value: number): number {

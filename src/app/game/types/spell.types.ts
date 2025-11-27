@@ -116,7 +116,7 @@ export const SPELL_SANITY_COSTS: Record<SpellType, SpellSanityCost> = {
   [SpellType.DISRUPT]: { temp: 1, max: 1 },
   [SpellType.ANCHORING_PULSE]: { temp: 2, max: 3 },
   [SpellType.VOID_KINESIS]: { temp: 2, max: 3 },
-  [SpellType.VOID_COCOON]: { temp: 2, max: 3 },
+  [SpellType.VOID_COCOON]: { temp: 3, max: 3 },
   [SpellType.TEMPUS_SIGILLUM]: { temp: 2, max: 5 },
   [SpellType.SPECIES_SCAN]: { temp: 1, max: 3 },
   [SpellType.CREATURE_SCAN]: { temp: 1, max: 3 },
