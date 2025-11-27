@@ -2070,11 +2070,43 @@ export class GameEngine {
 
       // Near fly-by Doppler cues for asteroids/ships (throttled every other frame)
       try {
-        if (this.audioUnlocked && this.audio && this.dopplerEnabled && this.camera) {
+        if (this.audioUnlocked && this.audio && this.dopplerEnabled && this.camera && this.spaceship) {
           this.dopplerSkip = !this.dopplerSkip;
           const processThisFrame = !this.dopplerSkip; // skip every other frame to save CPU
           if (processThisFrame) {
-            const listenerPos = { ...this.camera.position };
+            const shipPos = { ...this.spaceship.position };
+            const listenerPos = { ...shipPos };
+            const shipVelocity = this.spaceship.velocity
+              ? { x: this.spaceship.velocity.x, y: this.spaceship.velocity.y, z: this.spaceship.velocity.z }
+              : { x: this.camVel.x, y: this.camVel.y, z: this.camVel.z };
+            const shipRadius = Math.max(2, this.spaceship.boundingSphere?.radius ?? this.spaceship.scale?.x ?? 0);
+            const getObjectRadius = (obj: any): number => {
+              const bound = obj?.boundingSphere?.radius;
+              if (typeof bound === 'number' && isFinite(bound)) {
+                return Math.max(0, bound);
+              }
+              if (typeof obj?.radius === 'number' && isFinite(obj.radius)) {
+                return Math.max(0, obj.radius);
+              }
+              if (typeof obj?.size === 'number' && isFinite(obj.size)) {
+                return Math.max(0, obj.size);
+              }
+              if (obj?.scale) {
+                const sx = typeof obj.scale.x === 'number' ? obj.scale.x : 0;
+                const sy = typeof obj.scale.y === 'number' ? obj.scale.y : sx;
+                const sz = typeof obj.scale.z === 'number' ? obj.scale.z : sx;
+                return Math.max(0, sx, sy, sz);
+              }
+              return 0;
+            };
+            const computeHullDistance = (obj: any): number => {
+              const objRadius = getObjectRadius(obj);
+              const dx = obj.position.x - shipPos.x;
+              const dy = obj.position.y - shipPos.y;
+              const dz = obj.position.z - shipPos.z;
+              const centerDist = Math.hypot(dx, dy, dz);
+              return Math.max(0, centerDist - shipRadius - objRadius);
+            };
             const dt = Math.max(1e-6, deltaTime);
             const NEAR_IN = 10;  // enter radius with hysteresis (tighter proximity threshold)
             const FAR_OUT = 14;  // exit radius slightly larger to prevent flicker
@@ -2091,18 +2123,15 @@ export class GameEngine {
             // First pass: find absolute closest within NEAR_IN and above speed threshold
             for (const c of this.asteroidClusterService.getClusters()) {
               for (const o of c.objects) {
-                const dx = o.position.x - listenerPos.x;
-                const dy = o.position.y - listenerPos.y;
-                const dz = o.position.z - listenerPos.z;
-                const dist = Math.hypot(dx, dy, dz);
-                if (dist > NEAR_IN) continue;
+                const hullDistance = computeHullDistance(o);
+                if (hullDistance > NEAR_IN) continue;
                 const prev = this.lastObjPos.get(o.id) || { x: o.position.x, y: o.position.y, z: o.position.z };
                 const ev = { x: (o.position.x - prev.x) / dt, y: (o.position.y - prev.y) / dt, z: (o.position.z - prev.z) / dt };
-                const relV = { x: ev.x - this.camVel.x, y: ev.y - this.camVel.y, z: ev.z - this.camVel.z };
+                const relV = { x: ev.x - shipVelocity.x, y: ev.y - shipVelocity.y, z: ev.z - shipVelocity.z };
                 const relSpeed = Math.hypot(relV.x, relV.y, relV.z);
                 if (relSpeed < MIN_SPEED) { this.lastObjPos.set(o.id, { x: o.position.x, y: o.position.y, z: o.position.z }); continue; }
-                if (dist < closestDist) {
-                  closestDist = dist; closestId = o.id; closestPos = { x:o.position.x, y:o.position.y, z:o.position.z }; closestVel = ev;
+                if (hullDistance < closestDist) {
+                  closestDist = hullDistance; closestId = o.id; closestPos = { x:o.position.x, y:o.position.y, z:o.position.z }; closestVel = ev;
                 }
               }
             }
@@ -2113,19 +2142,27 @@ export class GameEngine {
               const [activeId, entry] = activeEntry;
               // Locate active object to measure distance
               let objPos: { x:number;y:number;z:number } | null = null;
+              let activeObj: any = null;
               for (const c of this.asteroidClusterService.getClusters()) {
                 const cand = c.objects.find((o: any) => o.id === activeId);
-                if (cand) { objPos = { x: cand.position.x, y: cand.position.y, z: cand.position.z }; break; }
+                if (cand) {
+                  objPos = { x: cand.position.x, y: cand.position.y, z: cand.position.z };
+                  activeObj = cand;
+                  break;
+                }
               }
               if (objPos) {
-                const dx = objPos.x - listenerPos.x, dy = objPos.y - listenerPos.y, dz = objPos.z - listenerPos.z;
-                const dist = Math.hypot(dx, dy, dz);
+                const objRadius = getObjectRadius(activeObj);
+                const dx = objPos.x - shipPos.x, dy = objPos.y - shipPos.y, dz = objPos.z - shipPos.z;
+                const distCenter = Math.hypot(dx, dy, dz);
+                const hullDist = Math.max(0, distCenter - shipRadius - objRadius);
                 // If still within FAR_OUT, prefer to keep active unless a new target is significantly closer (15%).
                 // Also: if no new candidate found, keep the active one while inside FAR_OUT (hysteresis hold).
-                if (dist <= FAR_OUT && (!closestId || closestDist > dist * 0.85)) {
+                if (hullDist <= FAR_OUT && (!closestId || closestDist > hullDist * 0.85)) {
                   closestId = activeId; closestPos = objPos;
                   const prev = this.lastObjPos.get(activeId) || objPos;
                   closestVel = { x: (objPos.x - prev.x) / dt, y: (objPos.y - prev.y) / dt, z: (objPos.z - prev.z) / dt };
+                  closestDist = hullDist;
                 }
               }
             }
@@ -2140,7 +2177,7 @@ export class GameEngine {
               if (!closestPos) { try { entry.cue.stop(80); } catch {}; this.gameState.dopplerCues.delete(id); continue; }
               const prev = this.lastObjPos.get(id) || closestPos;
               const ev = closestVel || { x: (closestPos.x - prev.x) / dt, y: (closestPos.y - prev.y) / dt, z: (closestPos.z - prev.z) / dt };
-              entry.cue.update(closestPos, listenerPos, ev, this.camVel);
+              entry.cue.update(closestPos, listenerPos, ev, shipVelocity);
               this.lastObjPos.set(id, closestPos);
             }
 
