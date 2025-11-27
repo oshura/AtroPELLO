@@ -739,9 +739,12 @@ export class GameEngine {
     }
     const planetIntel = this.buildPlanetIntelDetails(planet);
     const base = this._targetDetailsCache?.[planet.id] || this.getFallbackDetails(planet);
-    const probabilityRaw = Number((base as any)?.probabilityOfLifePct);
-    const probability = Number.isFinite(probabilityRaw)
-      ? Math.max(0, Math.min(100, Math.round(probabilityRaw)))
+    const planetProbabilityRaw = Number((planet as any)?.probabilityOfLifePct);
+    const probabilitySource = Number.isFinite(planetProbabilityRaw)
+      ? planetProbabilityRaw
+      : Number((base as any)?.probabilityOfLifePct);
+    const probability = Number.isFinite(probabilitySource)
+      ? Math.max(0, Math.min(100, Math.round(probabilitySource)))
       : undefined;
     return {
       ...context,
@@ -2073,8 +2076,8 @@ export class GameEngine {
           if (processThisFrame) {
             const listenerPos = { ...this.camera.position };
             const dt = Math.max(1e-6, deltaTime);
-            const NEAR_IN = 30;  // enter radius with hysteresis (reduced for tight fly-by)
-            const FAR_OUT = 36;  // exit radius slightly larger to prevent flicker
+            const NEAR_IN = 10;  // enter radius with hysteresis (tighter proximity threshold)
+            const FAR_OUT = 14;  // exit radius slightly larger to prevent flicker
             const MIN_SPEED = 2; // min relative speed to trigger
             const PREFERRED = 'sfx_passby';
             const ALT1 = 'sfx_flyby';
@@ -6888,7 +6891,7 @@ export class GameEngine {
 
     gl.enable(gl.BLEND);
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    gl.enable(gl.DEPTH_TEST);
+    gl.disable(gl.DEPTH_TEST);
     gl.depthMask(false);
     gl.disable(gl.CULL_FACE);
 
