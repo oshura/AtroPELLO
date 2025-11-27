@@ -887,40 +887,44 @@ export class GrimoirePanel {
   buildPageLinesWords(this.leftPage);
   buildPageLinesWords(this.rightPage);
 
-  // Icons: 'speed', 'longjump' y 'gaterite' (nuevo) en la página derecha
-  this.iconPlacements = [];
-  const baseR = Math.min(this.rightPage.w, this.rightPage.h);
-  const speedR = baseR * 0.10;
-  const ljR = baseR * 0.095;
-  const grR = baseR * 0.105; // Gate Rite ligeramente mayor
-  // Reubicación para insertar Gate Rite sin solapes
-  const speedX = this.rightPage.x + this.rightPage.w * 0.72;
-  const speedY = this.rightPage.y + this.rightPage.h * 0.30;
-  const ljX = this.rightPage.x + this.rightPage.w * 0.58;
-  const ljY = this.rightPage.y + this.rightPage.h * 0.60;
-  const grX = this.rightPage.x + this.rightPage.w * 0.78;
-  const grY = this.rightPage.y + this.rightPage.h * 0.78;
-  this.iconPlacements.push({ type: SpellType.SPEED, x: speedX, y: speedY, s: 1.0, r: speedR });
-  this.iconPlacements.push({ type: SpellType.LONGJUMP, x: ljX, y: ljY, s: 1.0, r: ljR });
-  this.iconPlacements.push({ type: SpellType.GATE_RITE, x: grX, y: grY, s: 1.0, r: grR });
+    // Glyph layout: seed two uniform grids (4 filas x 2 columnas por página)
+    const leftGrid = this.buildGlyphGridSlots(this.leftPage);
+    const rightGrid = this.buildGlyphGridSlots(this.rightPage);
+    this.iconPlacements = [];
 
-    // Add custom glyphs; previously decorative slots now host Void Cocoon, Tempus Sigillum y Quimio Sigillum
-    const lp = this.leftPage, rp = this.rightPage;
-    const rL = Math.min(lp.w, lp.h) * 0.095;
-    const rR = Math.min(rp.w, rp.h) * 0.085;
-    // Left page: Void Cocoon replaces the decorative ignis slot
-    this.iconPlacements.push({ type: SpellType.VOID_COCOON, x: lp.x + lp.w*0.72, y: lp.y + lp.h*0.26, s: 1.0, r: rL });
-    this.iconPlacements.push({ type: SpellType.ETERNAL_RITE, x: lp.x + lp.w*0.30, y: lp.y + lp.h*0.45, s: 1.0, r: rL*0.95 });
-    this.iconPlacements.push({ type: SpellType.DISRUPT, x: lp.x + lp.w*0.68, y: lp.y + lp.h*0.62, s: 1.0, r: rL*0.92 });
-    this.iconPlacements.push({ type: SpellType.ANCHORING_PULSE, x: lp.x + lp.w*0.46, y: lp.y + lp.h*0.70, s: 1.0, r: rL*0.92 });
-    this.iconPlacements.push({ type: SpellType.SPECIES_SCAN, x: lp.x + lp.w*0.38, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
-    this.iconPlacements.push({ type: SpellType.QUIMIO_SIGILLUM, x: lp.x + lp.w*0.60, y: lp.y + lp.h*0.86, s: 1.0, r: rL*0.92 });
-    // Right page spare spaces: Creature Scan stays upper-left, Tempus Sigillum replaces decorative tempus slot
-    this.iconPlacements.push({ type: SpellType.CREATURE_SCAN, x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
-    this.iconPlacements.push({ type: SpellType.TEMPUS_SIGILLUM,   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
-    this.iconPlacements.push({ type: SpellType.VOID_KINESIS, x: rp.x + rp.w*0.72, y: rp.y + rp.h*0.50, s: 1.0, r: rR*1.05 });
+    const leftSpells: SpellType[] = [
+      SpellType.SPEED,
+      SpellType.LONGJUMP,
+      SpellType.GATE_RITE,
+      SpellType.ETERNAL_RITE,
+      SpellType.DISRUPT,
+      SpellType.ANCHORING_PULSE,
+      SpellType.VOID_KINESIS,
+      SpellType.VOID_COCOON,
+    ];
+    leftSpells.forEach((spell, idx) => {
+      const slot = leftGrid.positions[idx];
+      if (!slot) {
+        return;
+      }
+      this.iconPlacements.push({ type: spell, x: slot.x, y: slot.y, s: 1.0, r: leftGrid.radius });
+    });
 
-    // Remaining decorative glyphs (lux, vinculum, legacy tempus art) are handled as strings and always render as locked
+    const rightSpells: SpellType[] = [
+      SpellType.TEMPUS_SIGILLUM,
+      SpellType.QUIMIO_SIGILLUM,
+      SpellType.SPECIES_SCAN,
+      SpellType.CREATURE_SCAN,
+    ];
+    rightSpells.forEach((spell, idx) => {
+      const slot = rightGrid.positions[idx];
+      if (!slot) {
+        return;
+      }
+      this.iconPlacements.push({ type: spell, x: slot.x, y: slot.y, s: 1.0, r: rightGrid.radius });
+    });
+
+    // Remaining decorative glyphs (lux, vinculum, etc.) stay locked placeholders if ever added later
     this.applyPendingGlyphLayout();
   }
 
@@ -1888,5 +1892,30 @@ export class GrimoirePanel {
     try {
       this.audioService.play('ui_outline_hover', { bus: 'ui', volume: 0.32 });
     } catch {}
+  }
+
+  private buildGlyphGridSlots(page: { x: number; y: number; w: number; h: number }): { positions: Array<{ x: number; y: number }>; radius: number } {
+    const rows = 4;
+    const cols = 2;
+    const marginX = page.w * 0.27;
+    const marginY = page.h * 0.12;
+    const usableW = Math.max(1, page.w - marginX * 2);
+    const usableH = Math.max(1, page.h - marginY * 2);
+    const stepX = cols > 1 ? usableW / (cols - 1) : 0;
+    const stepY = rows > 1 ? usableH / (rows - 1) : 0;
+    const positions: Array<{ x: number; y: number }> = [];
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        positions.push({
+          x: page.x + marginX + col * stepX,
+          y: page.y + marginY + row * stepY,
+        });
+      }
+    }
+    const cellW = usableW / cols;
+    const cellH = usableH / rows;
+    const baseRadius = Math.min(page.w, page.h) * 0.11;
+    const radius = Math.min(baseRadius, Math.min(cellW, cellH) * 0.45);
+    return { positions, radius };
   }
 }
