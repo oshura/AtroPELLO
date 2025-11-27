@@ -42,6 +42,7 @@ export class GrimoirePanel {
   // Page geometry (for layout/hit-test)
   private leftPage!: { x:number; y:number; w:number; h:number };
   private rightPage!: { x:number; y:number; w:number; h:number };
+  private bookBounds: { x: number; y: number; w: number; h: number } | null = null;
 
   // Simple internal animation time
   private t: number = 0;
@@ -362,12 +363,13 @@ export class GrimoirePanel {
       return;
     }
     const radius = this.getGlyphRadius(glyph);
-    const newCx = x - this.dragState.offsetX;
-    const newCy = y - this.dragState.offsetY;
-    const minX = radius;
-    const maxX = this.canvas.width - radius;
-    const minY = radius;
-    const maxY = this.canvas.height - radius;
+      const newCx = x - this.dragState.offsetX;
+      const newCy = y - this.dragState.offsetY;
+      const bounds = this.bookBounds ?? { x: 0, y: 0, w: this.canvas.width, h: this.canvas.height };
+      const minX = bounds.x + radius;
+      const maxX = bounds.x + bounds.w - radius;
+      const minY = bounds.y + radius;
+      const maxY = bounds.y + bounds.h - radius;
     const clampedX = Math.min(maxX, Math.max(minX, newCx));
     const clampedY = Math.min(maxY, Math.max(minY, newCy));
     this.dragState.pointerX = x;
@@ -823,6 +825,12 @@ export class GrimoirePanel {
     const seamX = Math.floor(W/2);
     this.leftPage = { x: innerPadX, y: innerPadY, w: seamX - innerPadX, h: pageH };
     this.rightPage = { x: seamX, y: innerPadY, w: (W - innerPadX) - seamX, h: pageH };
+    this.bookBounds = {
+      x: this.leftPage.x,
+      y: innerPadY,
+      w: (this.rightPage.x + this.rightPage.w) - this.leftPage.x,
+      h: pageH,
+    };
 
     // Page wrinkles precomputed (8 subtle lines across spread)
     this.pageWrinkles = [];
