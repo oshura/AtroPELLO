@@ -11,6 +11,7 @@ import {
   CargoItemType
 } from '../types/inventory.types';
 import { computePanelLetterbox, mapViewportPointToCanvas, PANEL_HORIZONTAL_STRETCH } from './utils/panel-letterbox';
+import { PanelCursorOverlayState } from './utils/panel-cursor.types';
 
 export class InventoryPanel {
   private readonly gl: WebGL2RenderingContext;
@@ -32,6 +33,8 @@ export class InventoryPanel {
   private enabled = false;
   private cursorPx: number | null = null;
   private cursorPy: number | null = null;
+  private cursorViewportX: number | null = null;
+  private cursorViewportY: number | null = null;
   private snapshot: InventorySnapshot | null = null;
   private cargoScrollOffset = 0;
   private cargoScrollTarget = 0;
@@ -62,6 +65,8 @@ export class InventoryPanel {
       this.resetScroll();
       this.cursorPx = null;
       this.cursorPy = null;
+      this.cursorViewportX = null;
+      this.cursorViewportY = null;
       this.regions = [];
     }
   }
@@ -78,6 +83,20 @@ export class InventoryPanel {
     return this.enabled;
   }
 
+  public getCursorOverlayState(): PanelCursorOverlayState | null {
+    if (!this.enabled || this.cursorViewportX == null || this.cursorViewportY == null) {
+      return null;
+    }
+    const base = Math.min(this.canvas.width, this.canvas.height) || 1;
+    const radius = Math.max(12, base * 0.02);
+    return {
+      mode: 'inventory',
+      viewportX: this.cursorViewportX,
+      viewportY: this.cursorViewportY,
+      radius,
+    };
+  }
+
   public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
     const mapped = mapViewportPointToCanvas(
       clientX,
@@ -89,6 +108,8 @@ export class InventoryPanel {
       this.canvas.height,
       { horizontalScale: PANEL_HORIZONTAL_STRETCH }
     );
+    this.cursorViewportX = mapped.viewportX;
+    this.cursorViewportY = mapped.viewportY;
     if (!mapped.inside) {
       this.cursorPx = null;
       this.cursorPy = null;
@@ -297,7 +318,6 @@ export class InventoryPanel {
     this.drawEquipmentColumn(c, leftW, 0, centerW, contentHeight, snapshot);
     this.drawCargoColumn(c, leftW + centerW, 0, rightW, contentHeight, snapshot);
     this.drawFooter(c, 0, contentHeight, W, footerHeight, snapshot);
-    this.drawCursor(c);
     c.restore();
   }
 
@@ -1030,35 +1050,6 @@ export class InventoryPanel {
           body: '#cbd5f5'
         };
     }
-  }
-
-  private drawCursor(c: CanvasRenderingContext2D): void {
-    if (!this.enabled || this.cursorPx == null || this.cursorPy == null) {
-      return;
-    }
-    const x = this.cursorPx;
-    const y = this.cursorPy;
-    c.save();
-    const glow = c.createRadialGradient(x, y, 0, x, y, 22);
-    glow.addColorStop(0, 'rgba(152,218,255,0.9)');
-    glow.addColorStop(1, 'rgba(16,164,255,0)');
-    c.fillStyle = glow;
-
-    c.beginPath();
-    c.ellipse(x, y, 11, 16, 0, 0, Math.PI * 2);
-    c.fill();
-
-    c.strokeStyle = 'rgba(56,189,248,0.95)';
-    c.lineWidth = 1.8;
-    c.beginPath();
-    c.ellipse(x, y, 8, 12, 0, 0, Math.PI * 2);
-    c.stroke();
-
-    c.fillStyle = '#e0f7ff';
-    c.beginPath();
-    c.ellipse(x, y, 2.4, 4, 0, 0, Math.PI * 2);
-    c.fill();
-    c.restore();
   }
 
   private describeCargoType(type: CargoItemType): string {

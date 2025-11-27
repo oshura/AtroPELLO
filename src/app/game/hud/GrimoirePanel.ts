@@ -2,6 +2,7 @@ import { Vector3 } from '../../types/game.types';
 import { SpellType, SpellState, isSpellType, getSpellSanityCost } from '../types/spell.types';
 import { AudioEngineService } from '../../services/audio/audio-engine.service';
 import { computePanelLetterbox, mapViewportPointToCanvas, PANEL_HORIZONTAL_STRETCH } from './utils/panel-letterbox';
+import { PanelCursorOverlayState } from './utils/panel-cursor.types';
 
 type NormalizedGlyphLayout = Partial<Record<SpellType, { nx: number; ny: number }>>;
 type GlyphPlacement = { type: SpellType | string; x: number; y: number; s: number; r: number };
@@ -39,6 +40,8 @@ export class GrimoirePanel {
   private enabled: boolean = false;
   private cursorPx: number | null = null;
   private cursorPy: number | null = null;
+  private cursorViewportX: number | null = null;
+  private cursorViewportY: number | null = null;
   // Page geometry (for layout/hit-test)
   private leftPage!: { x:number; y:number; w:number; h:number };
   private rightPage!: { x:number; y:number; w:number; h:number };
@@ -126,6 +129,10 @@ export class GrimoirePanel {
       this.animClosingPendingDisable = false;
     } else {
       this.abortGlyphDrag();
+      this.cursorPx = null;
+      this.cursorPy = null;
+      this.cursorViewportX = null;
+      this.cursorViewportY = null;
       // Start closing animation; keep enabled until it finishes
       if (this.enabled) {
         this.animOpening = false;
@@ -148,6 +155,20 @@ export class GrimoirePanel {
    * Uses isInteractive() to avoid occluding during closing animation.
    */
   public containsPoint(_x: number, _y: number): boolean { return this.isInteractive(); }
+
+  public getCursorOverlayState(): PanelCursorOverlayState | null {
+    if (!this.enabled || this.cursorViewportX === null || this.cursorViewportY === null) {
+      return null;
+    }
+    const base = Math.min(this.canvas.width, this.canvas.height) || 1;
+    const radius = Math.max(12, Math.min(22, base * 0.018));
+    return {
+      mode: 'grimoire',
+      viewportX: this.cursorViewportX,
+      viewportY: this.cursorViewportY,
+      radius,
+    };
+  }
   public setCursorFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
     const mapped = mapViewportPointToCanvas(
       clientX,
@@ -159,6 +180,8 @@ export class GrimoirePanel {
       this.canvas.height,
       { horizontalScale: PANEL_HORIZONTAL_STRETCH }
     );
+    this.cursorViewportX = mapped.viewportX;
+    this.cursorViewportY = mapped.viewportY;
     if (!mapped.inside && !this.dragState.active) {
       this.cursorPx = null;
       this.cursorPy = null;
@@ -608,11 +631,6 @@ export class GrimoirePanel {
         const tipY = this.cursorPy + pad;
         this.drawSpellTooltip(c, tipX, tipY, t, state);
       }
-    }
-    if (includeCursor && this.cursorPx !== null && this.cursorPy !== null) {
-      const W = this.canvas.width;
-      const H = this.canvas.height;
-      this.drawPentacle(c, this.cursorPx, this.cursorPy, Math.max(12, Math.min(22, Math.min(W, H) * 0.018)));
     }
   }
 
@@ -1847,44 +1865,6 @@ export class GrimoirePanel {
       c.lineTo(nx, ny);
     }
     c.stroke();
-  }
-
-  private drawPentacle(c: CanvasRenderingContext2D, x:number,y:number, r:number): void {
-    c.save();
-    c.translate(x,y);
-    // Make the pentacle taller without changing panel dimensions
-    const tall = 1.75; // ~25% taller
-    c.scale(1, tall);
-    // Pulse factors
-    const s = 1 + 0.06 * Math.sin(this.t * 2.2); // scale pulse
-    const glow = 0.25 + 0.25 * (0.5 + 0.5 * Math.sin(this.t * 3.1)); // alpha pulse
-    const rr = r * s;
-    // Soft outer glow
-    const g = c.createRadialGradient(0, 0, rr * 0.6, 0, 0, rr * 1.4);
-    g.addColorStop(0, `rgba(200,0,40,${(glow*0.7).toFixed(3)})`);
-    g.addColorStop(1, 'rgba(200,0,40,0)');
-    c.fillStyle = g;
-    c.beginPath(); c.arc(0,0, rr * 1.35, 0, Math.PI*2); c.fill();
-    // Main circle and star
-    c.strokeStyle = '#b00020'; // brighter crimson
-    c.lineWidth = 2.2;
-    c.beginPath(); c.arc(0,0, rr, 0, Math.PI*2); c.stroke();
-    // star
-    const pts: Array<[number,number]> = [];
-    for (let i=0;i<5;i++) {
-      const ang = (-Math.PI/2) + i*2*Math.PI/5;
-      pts.push([Math.cos(ang)*(rr*0.85), Math.sin(ang)*(rr*0.85)]);
-    }
-    c.beginPath();
-    const order = [0,2,4,1,3,0];
-    c.moveTo(pts[order[0]][0], pts[order[0]][1]);
-    for (let i=1;i<order.length;i++) c.lineTo(pts[order[i]][0], pts[order[i]][1]);
-    c.closePath();
-    c.stroke();
-    // Inner faint fill pulsing
-    c.fillStyle = `rgba(139,0,0,${(0.10 + glow*0.2).toFixed(3)})`;
-    c.beginPath(); c.arc(0,0, rr*0.82, 0, Math.PI*2); c.fill();
-    c.restore();
   }
 
   private roundRect(c: CanvasRenderingContext2D, x:number,y:number,w:number,h:number,r:number) {

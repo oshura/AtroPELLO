@@ -28,6 +28,8 @@ export interface PanelCoordMap {
   mapY: number;
   inside: boolean;
   letterbox: PanelLetterbox;
+  viewportX: number;
+  viewportY: number;
 }
 
 const EPSILON = 1e-3;
@@ -101,5 +103,5 @@ export function mapViewportPointToCanvas(
   const mapX = clamp(normX) * textureW;
   const mapY = clamp(normY) * textureH;
 
-  return { mapX, mapY, inside, letterbox };
+  return { mapX, mapY, inside, letterbox, viewportX: px, viewportY: py };
 }

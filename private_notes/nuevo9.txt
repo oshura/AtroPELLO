@@ -10,9 +10,7 @@
  CREATURE_SCAN 1/3
  
  
- - Colisiones con la teirra partida.
-
- - Glifo todo el glifo. 
+ - Mouse en paneles.
  
  - Realistic move efect.
  

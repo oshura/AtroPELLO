@@ -33,6 +33,7 @@ import { TargetPreviewRenderer } from './hud/TargetPreviewRenderer';
 import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { GrimoirePanel } from './hud/GrimoirePanel';
 import { InventoryPanel } from './hud/InventoryPanel';
+import { PanelCursorOverlay } from './hud/utils/panel-cursor-overlay';
 import { SpellType, getSpellSanityCost } from './types/spell.types';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
@@ -117,6 +118,7 @@ export class GameEngine {
   private outlinerEnabled: boolean = true;
   // Landing overlay removed
   private domCanvas: HTMLCanvasElement | null = null;
+  private panelCursorOverlay: PanelCursorOverlay | null = null;
   // Defers a map selection when the user clicks immediately after opening the map
   // before the id->target mapping has been rebuilt in the first render pass.
   private pendingMapSelectId: string | null = null;
@@ -8224,6 +8226,21 @@ export class GameEngine {
     } catch {}
   }
 
+  private syncPanelCursorOverlay(): void {
+    if (!this.panelCursorOverlay) {
+      return;
+    }
+    let state = null;
+    if (this.systemPanel?.isEnabled()) {
+      state = this.systemPanel.getCursorOverlayState?.() ?? null;
+    } else if (this.grimoirePanel?.isEnabled()) {
+      state = this.grimoirePanel.getCursorOverlayState?.() ?? null;
+    } else if (this.inventoryPanel?.isEnabled()) {
+      state = this.inventoryPanel.getCursorOverlayState?.() ?? null;
+    }
+    this.panelCursorOverlay.setState(state);
+  }
+
   /**
    * Configura eventos del mouse para el sistema de targeting adaptativo
    */
@@ -8239,6 +8256,9 @@ export class GameEngine {
     }
 
     this.domCanvas = canvas;
+    if (!this.panelCursorOverlay) {
+      this.panelCursorOverlay = new PanelCursorOverlay(canvas);
+    }
 
     // Initialize coordinator with comprehensive callbacks
     this.panelEventCoordinator.initialize(canvas, {
@@ -8296,6 +8316,7 @@ export class GameEngine {
       try { this.audio?.play('ui_map_close'); } catch {}
       this.gameState.mapReopenAllowedAtMs = now + 1000;
     }
+    this.syncPanelCursorOverlay();
   }
 
   private handleMapClick(clientX: number, clientY: number): void {
@@ -8342,6 +8363,7 @@ export class GameEngine {
         (this.gl.canvas as HTMLCanvasElement).width,
         (this.gl.canvas as HTMLCanvasElement).height
       );
+      this.syncPanelCursorOverlay();
     } catch {}
     
     const id = this.systemPanel.hitTestViewport(
@@ -8405,6 +8427,7 @@ export class GameEngine {
       try { this.audio?.play('ui_grimoire_close'); } catch {}
       this.gameState.grimoireReopenAllowedAtMs = now + 1000;
     }
+    this.syncPanelCursorOverlay();
   }
 
   private handleGrimoireClick(clientX: number, clientY: number): void {
@@ -8477,6 +8500,7 @@ export class GameEngine {
         (this.gl.canvas as HTMLCanvasElement).width,
         (this.gl.canvas as HTMLCanvasElement).height
       );
+      this.syncPanelCursorOverlay();
     } catch {}
   }
 
@@ -8532,6 +8556,7 @@ export class GameEngine {
 
     this.updateInventoryPointerBinding();
     this.updateCanvasCursor();
+    this.syncPanelCursorOverlay();
   }
 
   private handleInventoryClick(clientX: number, clientY: number): void {
@@ -8548,6 +8573,7 @@ export class GameEngine {
         (this.gl.canvas as HTMLCanvasElement).width,
         (this.gl.canvas as HTMLCanvasElement).height
       );
+      this.syncPanelCursorOverlay();
     } catch {}
 
     const region = this.inventoryPanel.pickRegionAtCursor();
@@ -8583,6 +8609,7 @@ export class GameEngine {
         (this.gl.canvas as HTMLCanvasElement).width,
         (this.gl.canvas as HTMLCanvasElement).height
       );
+      this.syncPanelCursorOverlay();
       const hoveredRegion = this.inventoryPanel.pickRegionAtCursor();
       this.updateInventoryHoverState(hoveredRegion);
     } catch {}
@@ -8602,6 +8629,7 @@ export class GameEngine {
         (this.gl.canvas as HTMLCanvasElement).width,
         (this.gl.canvas as HTMLCanvasElement).height
       );
+      this.syncPanelCursorOverlay();
       this.inventoryPanel.handleWheelFromViewport(deltaY);
     } catch {}
   }

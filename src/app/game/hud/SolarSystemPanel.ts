@@ -3,6 +3,7 @@ import { GameLogger } from '../utils/GameLogger';
 import { LogCategory } from '../../services/logging.service';
 import { GameObjectCategory, getCategoryIcon } from '../types/game-object.types';
 import { computePanelLetterbox, mapViewportPointToCanvas, PANEL_HORIZONTAL_STRETCH } from './utils/panel-letterbox';
+import { PanelCursorOverlayState } from './utils/panel-cursor.types';
 
 /**
  * SolarSystemPanel: renders a full-screen, opaque top-down map of the solar system
@@ -41,6 +42,8 @@ export class SolarSystemPanel {
   private hoveredId: string | null = null;
   private cursorPx: number | null = null;
   private cursorPy: number | null = null;
+  private cursorViewportX: number | null = null;
+  private cursorViewportY: number | null = null;
   // Filtering state (categories + 'center' special)
   private visibleCategories: Set<GameObjectCategory | 'center'> = new Set([
     'center',
@@ -70,13 +73,34 @@ export class SolarSystemPanel {
     this.initGLResources();
   }
 
-  public setEnabled(v: boolean) { this.enabled = v; }
+  public setEnabled(v: boolean) {
+    this.enabled = v;
+    if (!v) {
+      this.cursorPx = null;
+      this.cursorPy = null;
+      this.cursorViewportX = null;
+      this.cursorViewportY = null;
+    }
+  }
   public isEnabled(): boolean { return this.enabled; }
   /**
    * Check if this panel occludes the 3D scene at the given viewport coordinates.
    * Since the panel is fullscreen when enabled, it occludes the entire viewport.
    */
   public containsPoint(_x: number, _y: number): boolean { return this.enabled; }
+  public getCursorOverlayState(): PanelCursorOverlayState | null {
+    if (!this.enabled || this.cursorViewportX == null || this.cursorViewportY == null) {
+      return null;
+    }
+    const base = Math.min(this.canvas.width, this.canvas.height) || 1;
+    const radius = Math.max(10, base * 0.015);
+    return {
+      mode: 'map',
+      viewportX: this.cursorViewportX,
+      viewportY: this.cursorViewportY,
+      radius,
+    };
+  }
   public setSelectedId(id: string | null) { this.selectedId = id; }
   public setHoveredId(id: string | null) { this.hoveredId = id; }
   public getSelectedId(): string | null { return this.selectedId; }
@@ -92,6 +116,8 @@ export class SolarSystemPanel {
       this.canvas.height,
       { horizontalScale: PANEL_HORIZONTAL_STRETCH }
     );
+    this.cursorViewportX = mapped.viewportX;
+    this.cursorViewportY = mapped.viewportY;
     if (!mapped.inside) {
       this.cursorPx = null;
       this.cursorPy = null;
@@ -668,18 +694,6 @@ export class SolarSystemPanel {
       }
     }
 
-    // 7) Draw cursor crosshair if available
-    if (this.cursorPx !== null && this.cursorPy !== null) {
-      c.save();
-      c.strokeStyle = 'rgba(255,255,255,0.5)';
-      c.lineWidth = 1;
-      const len = 10;
-      c.beginPath();
-      c.moveTo(this.cursorPx - len, this.cursorPy); c.lineTo(this.cursorPx + len, this.cursorPy);
-      c.moveTo(this.cursorPx, this.cursorPy - len); c.lineTo(this.cursorPx, this.cursorPy + len);
-      c.stroke();
-      c.restore();
-    }
 
     // Upload to texture
     const gl = this.gl;
