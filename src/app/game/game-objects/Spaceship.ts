@@ -167,6 +167,10 @@ export class Spaceship extends GameObject {
     
     // Inicializar matriz de orientación como identidad
     this.initializeOrientationMatrix();
+
+    if (this.boundingSphere) {
+      this.boundingSphere.radius *= 0.8; // give player a slight buffer on collisions
+    }
     
     GameLogger.info(LogCategory.GAME_INITIALIZATION, 'Spaceship created with geometry', {
       vertices: this.vertices.length,
