@@ -3,6 +3,20 @@ import { TargetType } from './types/targeting.types';
 import { GameObjectType, GameObjectCategory, GameObjectSize, getCategory, getPhysicsSize } from './types/game-object.types';
 import { GameObjectAnimosity } from './types/animosity.types';
 
+interface CollisionShapeDefinition {
+  kind: 'sphere' | 'hemisphere';
+  center: Vector3; // object-space offset prior to scale
+  radius: number; // radius in object-space units
+  normal?: Vector3; // object-space normal for hemispheres
+}
+
+interface CollisionShapeWorld {
+  kind: 'sphere' | 'hemisphere';
+  center: Vector3; // world-space center
+  radius: number;  // world-space radius
+  normal?: Vector3; // world-space hemisphere normal
+}
+
 /**
  * Clase base para todos los objetos 3D del juego.
  * Usa GameObjectType como fuente única de verdad para identificación de tipo.
@@ -18,6 +32,7 @@ export abstract class GameObject {
   public active: boolean;
   public visible: boolean;
   public boundingSphere: { center: Vector3; radius: number } | null = null;
+  private collisionShapeDefs: CollisionShapeDefinition[] | null = null;
   // Opacidad de renderizado (0..1). Útil para transiciones/fades.
   public renderOpacity: number = 1.0;
 
@@ -375,6 +390,58 @@ export abstract class GameObject {
     }
   }
 
+  protected setCollisionShapes(shapes: CollisionShapeDefinition[] | null): void {
+    if (!shapes || !shapes.length) {
+      this.collisionShapeDefs = null;
+      return;
+    }
+    this.collisionShapeDefs = shapes.map(shape => ({
+      kind: shape.kind,
+      center: { ...shape.center },
+      radius: shape.radius,
+      normal: shape.normal ? { ...shape.normal } : undefined
+    }));
+  }
+
+  public getCollisionShapesWorld(): CollisionShapeWorld[] {
+    if (!this.collisionShapeDefs || !this.collisionShapeDefs.length) {
+      return [];
+    }
+    const scale = this.getUniformScaleFactor();
+    return this.collisionShapeDefs.map(def => ({
+      kind: def.kind,
+      center: this.transformPointToWorld(def.center),
+      radius: def.radius * scale,
+      normal: def.normal ? this.transformDirectionToWorld(def.normal) : undefined
+    }));
+  }
+
+  private transformPointToWorld(local: Vector3): Vector3 {
+    const m = this.modelMatrix;
+    return {
+      x: m[0] * local.x + m[4] * local.y + m[8] * local.z + m[12],
+      y: m[1] * local.x + m[5] * local.y + m[9] * local.z + m[13],
+      z: m[2] * local.x + m[6] * local.y + m[10] * local.z + m[14]
+    };
+  }
+
+  private transformDirectionToWorld(local: Vector3): Vector3 {
+    const m = this.modelMatrix;
+    const x = m[0] * local.x + m[4] * local.y + m[8] * local.z;
+    const y = m[1] * local.x + m[5] * local.y + m[9] * local.z;
+    const z = m[2] * local.x + m[6] * local.y + m[10] * local.z;
+    const len = Math.hypot(x, y, z) || 1;
+    return { x: x / len, y: y / len, z: z / len };
+  }
+
+  private getUniformScaleFactor(): number {
+    const sx = Math.abs(this.scale.x) || 0;
+    const sy = Math.abs(this.scale.y) || 0;
+    const sz = Math.abs(this.scale.z) || 0;
+    const avg = (sx + sy + sz) / 3;
+    return avg > 0 ? avg : 1;
+  }
+
   /**
    * Normaliza las rotaciones entre 0 y 2π
    */
@@ -388,16 +455,74 @@ export abstract class GameObject {
    * Verifica colisión con otro objeto
    */
   public checkCollision(other: GameObject): boolean {
-    if (!this.boundingSphere || !other.boundingSphere) return false;
+    const thisVolumes = this.getCollisionShapesWorld();
+    const otherVolumes = other.getCollisionShapesWorld();
 
-    const dx = this.boundingSphere.center.x - other.boundingSphere.center.x;
-    const dy = this.boundingSphere.center.y - other.boundingSphere.center.y;
-    const dz = this.boundingSphere.center.z - other.boundingSphere.center.z;
-    
+    const as = thisVolumes.length ? thisVolumes : this.toBoundingSphereVolume(this.boundingSphere);
+    const bs = otherVolumes.length ? otherVolumes : this.toBoundingSphereVolume(other.boundingSphere);
+
+    if (!as.length || !bs.length) {
+      return false;
+    }
+
+    for (const a of as) {
+      for (const b of bs) {
+        if (this.volumesIntersect(a, b)) {
+          return true;
+        }
+      }
+    }
+    return false;
+  }
+
+  private toBoundingSphereVolume(sphere: { center: Vector3; radius: number } | null): CollisionShapeWorld[] {
+    if (!sphere) {
+      return [];
+    }
+    return [{ kind: 'sphere', center: { ...sphere.center }, radius: sphere.radius }];
+  }
+
+  private volumesIntersect(a: CollisionShapeWorld, b: CollisionShapeWorld): boolean {
+    if (a.kind === 'sphere' && b.kind === 'sphere') {
+      return this.sphereSphereIntersect(a, b);
+    }
+    if (a.kind === 'sphere' && b.kind === 'hemisphere') {
+      return this.sphereHemisphereIntersect(a, b);
+    }
+    if (a.kind === 'hemisphere' && b.kind === 'sphere') {
+      return this.sphereHemisphereIntersect(b, a);
+    }
+    // Hemisphere vs hemisphere
+    return this.sphereSphereIntersect(a, b) &&
+      this.pointAgainstHemispherePlane(a, b.center, b.radius) &&
+      this.pointAgainstHemispherePlane(b, a.center, a.radius);
+  }
+
+  private sphereSphereIntersect(a: CollisionShapeWorld, b: CollisionShapeWorld): boolean {
+    const dx = a.center.x - b.center.x;
+    const dy = a.center.y - b.center.y;
+    const dz = a.center.z - b.center.z;
     const distanceSq = dx * dx + dy * dy + dz * dz;
-    const radiusSum = this.boundingSphere.radius + other.boundingSphere.radius;
-    
+    const radiusSum = a.radius + b.radius;
     return distanceSq <= radiusSum * radiusSum;
+  }
+
+  private sphereHemisphereIntersect(sphere: CollisionShapeWorld, hemisphere: CollisionShapeWorld): boolean {
+    if (!this.sphereSphereIntersect(sphere, hemisphere)) {
+      return false;
+    }
+    return this.pointAgainstHemispherePlane(hemisphere, sphere.center, sphere.radius);
+  }
+
+  private pointAgainstHemispherePlane(hemisphere: CollisionShapeWorld, point: Vector3, radius: number): boolean {
+    if (!hemisphere.normal) {
+      return true;
+    }
+    const dx = point.x - hemisphere.center.x;
+    const dy = point.y - hemisphere.center.y;
+    const dz = point.z - hemisphere.center.z;
+    const planeDistance = dx * hemisphere.normal.x + dy * hemisphere.normal.y + dz * hemisphere.normal.z;
+    return planeDistance + radius >= 0;
   }
 
   /**

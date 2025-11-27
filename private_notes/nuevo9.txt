@@ -11,11 +11,13 @@
  
  
  - Colisiones con la teirra partida.
- - Hechizo de restore planet.
- - Hechizo de mind flight.
- - Iniciar sesion:
-	- Y grabar partida y cargar partida.
+
+ - Glifo todo el glifo. 
+ 
+ - Realistic move efect.
+ 
  - Landing menus:
+	- Rest: Recupera 5 puntos de cordura y 25 de salud del character.
 	- Explorar: 
 		- Buscar artefacto: 50% encontrarlo si está o desvelar que no está (+1XP), y 50% salir mal parado y tener que volver a intentarlo (-5 pv).
 		- Encontrar void mass(energy). Como buscar artefacto, 50% llenado a tope del void energy de la nave, 50% de salir mal parado y tener que volver a intentarlo (-5 pv).
@@ -39,7 +41,14 @@
 					
 		- Enemy(xq hay lesserBeing en el planeta):
 			- Luchar con lesserBeing para destruirlo. +50PX. COR a tope, SALUD a la mitad de lo que tenia el PJ.
- - Dar nombre y desc a los nuevos hechizos.
- - Donar €€.
+  
  - Efectos de subir de nivel.
- - Brujula al revés.
+ 
+ - Iniciar sesion:
+	- Para grabar partida y cargar partida.
+ 
+ - Donar €€.
+ 
+ - Hechizo de mind flight.
+ 
+ - Colision? then apply improved algorithm.

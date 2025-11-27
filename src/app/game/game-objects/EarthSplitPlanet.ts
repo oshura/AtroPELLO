@@ -63,6 +63,7 @@ export class EarthSplitPlanet extends Planet {
     }
     // Recalcular bounding sphere acorde a la nueva geometría
     (this as any).computeBoundingSphere?.();
+    this.configureSplitCollisionVolumes();
   }
 
   /** Build two hemispheres (+caps) with layered colors on the cut plane (horizontal split along Y) */
@@ -788,5 +789,33 @@ export class EarthSplitPlanet extends Planet {
   // Far scattered ejecta (más amplio)
   addBelt(nFar, 2.2, 3.2, 0.30, 'far', 0.20, 0.45);
     return { planet, debris };
+  }
+
+  private configureSplitCollisionVolumes(): void {
+    const radiusWorld = Math.abs(this.scale?.x ?? 0) || 1;
+    const sepWorld = Number.isFinite(this.separation) ? this.separation : 0;
+    const halfGap = sepWorld / 2;
+    const offsetObj = halfGap / radiusWorld;
+    const coreRadiusWorld = 50;
+    const coreRadiusObj = coreRadiusWorld / radiusWorld;
+    this.setCollisionShapes([
+      {
+        kind: 'hemisphere',
+        center: { x: 0, y: offsetObj, z: 0 },
+        radius: 1,
+        normal: { x: 0, y: 1, z: 0 }
+      },
+      {
+        kind: 'hemisphere',
+        center: { x: 0, y: -offsetObj, z: 0 },
+        radius: 1,
+        normal: { x: 0, y: -1, z: 0 }
+      },
+      {
+        kind: 'sphere',
+        center: { x: 0, y: 0, z: 0 },
+        radius: coreRadiusObj
+      }
+    ]);
   }
 }
