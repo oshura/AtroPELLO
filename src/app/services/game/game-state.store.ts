@@ -139,7 +139,8 @@ export class GameStateStore {
       years: 32,
       days: 76,
       totalDays: 32 * 365 + 76
-    }
+    },
+    survivability: 100
   };
 
   /** Equipo personal (incluye slots dedicados de traje/botas) */
@@ -526,6 +527,7 @@ export class GameStateStore {
     const experienceMax = this.resolveExperienceCap(profile.experienceMax, level);
     const experience = this.clampExperience(profile.experience ?? this.characterProfile.experience ?? 0, experienceMax);
     const normalizedAge = this.normalizeAge(profile.age, this.characterProfile.age);
+    const survivability = this.clampSurvivability(profile.survivability ?? this.characterProfile.survivability ?? 100);
     this.characterProfile = {
       name: profile.name || this.characterProfile.name,
       sanity: this.clampSanity(profile.sanity ?? this.characterProfile.sanity),
@@ -534,7 +536,8 @@ export class GameStateStore {
       level,
       experience,
       experienceMax,
-      age: normalizedAge
+      age: normalizedAge,
+      survivability
     };
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character' } });
     this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Character profile updated', {
@@ -545,8 +548,71 @@ export class GameStateStore {
       level: this.characterProfile.level,
       experience: this.characterProfile.experience,
       experienceMax: this.characterProfile.experienceMax,
-      age: this.characterProfile.age
+      age: this.characterProfile.age,
+      survivability: this.characterProfile.survivability
     });
+  }
+
+  /** Ajusta la edad sumando días y devuelve información del rollover. */
+  addDaysToAge(days: number): {
+    daysApplied: number;
+    yearsBefore: number;
+    yearsAfter: number;
+    yearsGained: number;
+    newAge: CharacterProfile['age'];
+  } {
+    if (!Number.isFinite(days) || days === 0) {
+      return {
+        daysApplied: 0,
+        yearsBefore: this.characterProfile.age.years,
+        yearsAfter: this.characterProfile.age.years,
+        yearsGained: 0,
+        newAge: { ...this.characterProfile.age }
+      };
+    }
+
+    const daysApplied = Math.trunc(days);
+    if (daysApplied === 0) {
+      return {
+        daysApplied: 0,
+        yearsBefore: this.characterProfile.age.years,
+        yearsAfter: this.characterProfile.age.years,
+        yearsGained: 0,
+        newAge: { ...this.characterProfile.age }
+      };
+    }
+
+    const previousAge = { ...this.characterProfile.age };
+    const nextTotal = Math.max(0, previousAge.totalDays + daysApplied);
+    const years = Math.floor(nextTotal / this.DAYS_PER_YEAR);
+    const daysRemainder = nextTotal % this.DAYS_PER_YEAR;
+    this.characterProfile.age = { years, days: daysRemainder, totalDays: nextTotal };
+    const yearsGained = years - previousAge.years;
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character', reason: 'age' } });
+    return {
+      daysApplied,
+      yearsBefore: previousAge.years,
+      yearsAfter: years,
+      yearsGained,
+      newAge: { ...this.characterProfile.age }
+    };
+  }
+
+  /** Ajusta la supervivencia en porcentaje y devuelve el nuevo valor. */
+  adjustSurvivability(delta: number): number {
+    const next = this.characterProfile.survivability + (Number.isFinite(delta) ? delta : 0);
+    return this.setSurvivability(next);
+  }
+
+  /** Define la supervivencia directamente (clamp 0-100). */
+  setSurvivability(value: number): number {
+    const clamped = this.clampSurvivability(value);
+    if (clamped === this.characterProfile.survivability) {
+      return clamped;
+    }
+    this.characterProfile.survivability = clamped;
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character', reason: 'survivability' } });
+    return clamped;
   }
 
   /** Ajusta parcialmente valores de cordura/salud sin reemplazar el perfil completo. */
@@ -780,6 +846,13 @@ export class GameStateStore {
       return 0;
     }
     return Math.max(0, Math.min(max, value));
+  }
+
+  private clampSurvivability(value: number): number {
+    if (!Number.isFinite(value)) {
+      return Math.max(0, Math.min(100, this.characterProfile.survivability ?? 0));
+    }
+    return Math.max(0, Math.min(100, Math.round(value)));
   }
 
   private normalizeAge(ageInput?: Partial<CharacterProfile['age']> | null, fallback?: CharacterProfile['age']): CharacterProfile['age'] {

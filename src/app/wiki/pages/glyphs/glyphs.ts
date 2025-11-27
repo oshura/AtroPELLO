@@ -549,6 +549,19 @@ export class GlyphsWikiComponent implements OnInit {
       notes: 'Muestra un placeholder “TEMPUS SIGILLUM” con el nombre del planeta.'
     },
     {
+      name: 'Quimio Sigillum',
+      type: 'QUIMIO_SIGILLUM',
+      icon: '⚕️',
+      activation: 'Selecciona el glifo y pulsa la tecla rápida; el rito se anula si la supervivencia ya es 100%.',
+      effect: 'Restaura +5% de supervivencia instantáneamente (cap en 100%).',
+      sanityTemp: 5,
+      sanityReserve: 8,
+      voidEnergy: '0u',
+      requirements: ['No requiere objetivo.', 'Supervivencia < 100% para obtener efecto.'],
+      description: 'Sello alquímico para recuperarte de tiradas de envejecimiento o encuentros letales. Si no puede aplicar el 5%, muestra placeholder y no cobra cordura.',
+      notes: 'Sin countdown; muestra texto “QUIMIO SIGILLUM” con el porcentaje restaurado.'
+    },
+    {
       name: 'Augurio',
       type: 'SPECIES_SCAN',
       icon: '🧬',

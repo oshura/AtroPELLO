@@ -18,6 +18,7 @@ export enum SpellType {
   VOID_KINESIS = 'VOID_KINESIS',
   VOID_COCOON = 'VOID_COCOON',
   TEMPUS_SIGILLUM = 'TEMPUS_SIGILLUM',
+  QUIMIO_SIGILLUM = 'QUIMIO_SIGILLUM',
   SPECIES_SCAN = 'SPECIES_SCAN',
   CREATURE_SCAN = 'CREATURE_SCAN'
 }
@@ -63,6 +64,7 @@ export function getSpellLabel(spell: SpellType): string {
     case SpellType.VOID_KINESIS: return 'Void Kinesis';
     case SpellType.VOID_COCOON: return 'Void Cocoon';
     case SpellType.TEMPUS_SIGILLUM: return 'Tempus Sigillum';
+    case SpellType.QUIMIO_SIGILLUM: return 'Quimio Sigillum';
     case SpellType.SPECIES_SCAN: return 'Augurio';
     case SpellType.CREATURE_SCAN: return 'Revelación';
     default: return 'Unknown Spell';
@@ -92,6 +94,8 @@ export function getSpellDescription(spell: SpellType): string {
       return 'Encapsula la nave en un capullo del vacío que disipa impactos durante 30 segundos.';
     case SpellType.TEMPUS_SIGILLUM:
       return 'Sella el tiempo de un planeta cercano, purgando augurios previos y amansando seres menores.';
+    case SpellType.QUIMIO_SIGILLUM:
+      return 'Canaliza agentes rejuvenecedores que restauran un 5% de supervivencia (cap 100%).';
     case SpellType.SPECIES_SCAN:
       return 'Consume cordura temporal para revelar la raza de un planeta escaneado (<500u)';
     case SpellType.CREATURE_SCAN:
@@ -118,6 +122,7 @@ export const SPELL_SANITY_COSTS: Record<SpellType, SpellSanityCost> = {
   [SpellType.VOID_KINESIS]: { temp: 2, max: 3 },
   [SpellType.VOID_COCOON]: { temp: 3, max: 3 },
   [SpellType.TEMPUS_SIGILLUM]: { temp: 2, max: 5 },
+  [SpellType.QUIMIO_SIGILLUM]: { temp: 5, max: 8 },
   [SpellType.SPECIES_SCAN]: { temp: 1, max: 3 },
   [SpellType.CREATURE_SCAN]: { temp: 1, max: 3 },
 };

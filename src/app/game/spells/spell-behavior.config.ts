@@ -61,6 +61,12 @@ export const SPELL_BEHAVIOR_MAP: Record<SpellType, SpellBehavior> = {
     hideOutliners: false,
     muteHoverAudio: false,
   }),
+  [SpellType.QUIMIO_SIGILLUM]: createBehavior(SpellType.QUIMIO_SIGILLUM, {
+    lockShipControls: false,
+    lockPanels: false,
+    hideOutliners: false,
+    muteHoverAudio: false,
+  }),
   [SpellType.SPEED]: createBehavior(SpellType.SPEED, {
     lockShipControls: false,
     lockPanels: false,

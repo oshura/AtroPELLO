@@ -64,4 +64,19 @@ export class CharacterProfileService {
   setPersonalGear(items: PersonalGearItem[]): void {
     this.gameState.replacePersonalGear(items);
   }
+
+  /** Suma días a la edad del piloto y devuelve información del cambio. */
+  addDaysToAge(days: number) {
+    return this.gameState.addDaysToAge(days);
+  }
+
+  /** Ajusta la supervivencia (0-100) aplicando delta y devolviendo el resultado. */
+  adjustSurvivability(delta: number): number {
+    return this.gameState.adjustSurvivability(delta);
+  }
+
+  /** Define directamente la supervivencia (clamp 0-100). */
+  setSurvivability(value: number): number {
+    return this.gameState.setSurvivability(value);
+  }
 }

@@ -170,6 +170,9 @@ export class GameEngine {
   private readonly SUN_DAMAGE_INTERVAL_MS: number = 5000;
   private readonly SUN_DAMAGE_THRESHOLD: number = 3000;
   private readonly SUN_DAMAGE_STEP_DISTANCE: number = 100;
+  private readonly AGE_SECONDS_PER_DAY: number = 60; // 1 minuto de juego = 1 día
+  private readonly SURVIVABILITY_DECAY_START_YEAR: number = 50;
+  private ageTimerAccumulatorSec: number = 0;
   
   // Objetos del juego - MIGRATED TO GameStateStore
   // Acceso via this.gameState.spaceship, this.gameState.independentAsteroids, etc.
@@ -1888,6 +1891,8 @@ export class GameEngine {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Spaceship is undefined in update method');
       return;
     }
+
+    this.updateAgeAndSurvivability(deltaTime);
     // Activar suavizado de alta velocidad durante void jump / gate rite transit
     try {
       const voidJumpActive = this.voidJumpActive;
@@ -3662,6 +3667,93 @@ export class GameEngine {
       this.lastFrameTime = performance.now();
       requestAnimationFrame(() => this.gameLoop());
       this.setAudioPausedForGame(false);
+    }
+  }
+
+  private updateAgeAndSurvivability(deltaTime: number): void {
+    if (deltaTime <= 0) {
+      return;
+    }
+
+    this.ageTimerAccumulatorSec += deltaTime;
+    if (this.ageTimerAccumulatorSec < this.AGE_SECONDS_PER_DAY) {
+      return;
+    }
+
+    const daysToApply = Math.floor(this.ageTimerAccumulatorSec / this.AGE_SECONDS_PER_DAY);
+    this.ageTimerAccumulatorSec -= daysToApply * this.AGE_SECONDS_PER_DAY;
+    if (daysToApply <= 0) {
+      return;
+    }
+
+    const ageResult = this.characterProfileService.addDaysToAge(daysToApply);
+    if (!ageResult.daysApplied) {
+      return;
+    }
+
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Age advanced via timer', {
+      daysApplied: ageResult.daysApplied,
+      yearsBefore: ageResult.yearsBefore,
+      yearsAfter: ageResult.yearsAfter,
+      yearsGained: ageResult.yearsGained
+    });
+
+    if (ageResult.yearsGained <= 0) {
+      return;
+    }
+
+    for (let year = ageResult.yearsBefore + 1; year <= ageResult.yearsAfter; year++) {
+      if (year > this.SURVIVABILITY_DECAY_START_YEAR) {
+        const before = this.gameState.characterProfile.survivability;
+        const after = this.characterProfileService.adjustSurvivability(-1);
+        this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Survivability decayed due to aging', {
+          year,
+          survivabilityBefore: before,
+          survivabilityAfter: after
+        });
+        const rollOutcome = this.performSurvivabilityDeathRoll('aging', after, year);
+        if (rollOutcome.didDie) {
+          return;
+        }
+      }
+    }
+  }
+
+  private performSurvivabilityDeathRoll(
+    source: 'aging',
+    survivability: number,
+    ageYears: number
+  ): { didDie: boolean; roll: number } {
+    const roll = Math.random() * 100;
+    const survived = roll <= survivability;
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Hardcore survivability roll executed', {
+      source,
+      roll: Number(roll.toFixed(2)),
+      survivability,
+      ageYears,
+      survived
+    });
+    if (survived) {
+      return { didDie: false, roll };
+    }
+    this.handleHardcoreDeath({ source, roll, survivability, ageYears });
+    return { didDie: true, roll };
+  }
+
+  private handleHardcoreDeath(context: { source: 'aging'; roll: number; survivability: number; ageYears: number }): void {
+    if (this.deathInProgress || !this.spaceship) {
+      return;
+    }
+
+    this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Hardcore death triggered', context);
+    try {
+      this.hudManager?.addMarqueeMessage?.('El piloto sucumbe a la edad: supervivencia agotada.');
+    } catch {}
+
+    try {
+      this.spaceship.healthCurrent = 0;
+    } catch (error) {
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Failed to enforce hardcore death', error);
     }
   }
 
@@ -6201,6 +6293,8 @@ export class GameEngine {
         return this.castCreatureScanGlyph(target ?? null);
       case SpellType.TEMPUS_SIGILLUM:
         return this.castTempusSigillum(target ?? null);
+      case SpellType.QUIMIO_SIGILLUM:
+        return this.castQuimioSigillum();
       case SpellType.SPEED:
         this.triggerSpeedRiteInstantly();
         return true;
@@ -7198,6 +7292,56 @@ export class GameEngine {
       probability: planet.probabilityOfLifePct,
       previousInhabitants,
       rerolledInhabitants,
+    });
+    return true;
+  }
+
+  private castQuimioSigillum(): boolean {
+    const before = this.gameState.characterProfile.survivability ?? 0;
+    if (before >= 100) {
+      try {
+        this.showPlaceholderText('QUIMIO SIGILLUM\nSupervivencia al máximo', 2200);
+      } catch {}
+      return false;
+    }
+
+    const after = this.characterProfileService.adjustSurvivability(5);
+    const applied = Math.max(0, after - before);
+    if (applied <= 0) {
+      try {
+        this.showPlaceholderText('QUIMIO SIGILLUM\nSin efecto', 2000);
+      } catch {}
+      return false;
+    }
+
+    const deltaLabel = `+${applied.toFixed(0)}%`;
+    try {
+      this.showPlaceholderText(`QUIMIO SIGILLUM\n${deltaLabel} supervivencia`, 2400);
+    } catch {}
+    try {
+      this.hudManager?.addMarqueeMessage?.(`Quimio Sigillum restauró ${deltaLabel}`);
+    } catch {}
+    try {
+      this.animationManager?.startQuimioSigillum(this);
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.ANIMATION, 'Failed to start Quimio Sigillum animation', error);
+    }
+    try {
+      if (this.audio) {
+        const clip = this.audio.has('sfx_precast_ritual')
+          ? 'sfx_precast_ritual'
+          : (this.audio.has('sfx_heal') ? 'sfx_heal' : null);
+        if (clip) {
+          this.audio.play(clip, { bus: 'sfx', volume: 0.65 });
+        }
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Quimio Sigillum audio failed', error);
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Quimio Sigillum applied', {
+      beforeSurvivability: before,
+      afterSurvivability: after,
+      appliedDelta: applied,
     });
     return true;
   }

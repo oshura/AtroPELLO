@@ -84,6 +84,7 @@ export class GrimoirePanel {
     [SpellType.VOID_KINESIS, SpellState.AVAILABLE],
     [SpellType.VOID_COCOON, SpellState.AVAILABLE],
     [SpellType.TEMPUS_SIGILLUM, SpellState.AVAILABLE],
+    [SpellType.QUIMIO_SIGILLUM, SpellState.AVAILABLE],
     [SpellType.SPECIES_SCAN, SpellState.AVAILABLE],
     [SpellType.CREATURE_SCAN, SpellState.AVAILABLE]
   ]);
@@ -210,6 +211,7 @@ export class GrimoirePanel {
       SpellType.VOID_KINESIS,
       SpellType.VOID_COCOON,
       SpellType.TEMPUS_SIGILLUM,
+      SpellType.QUIMIO_SIGILLUM,
       SpellType.SPECIES_SCAN,
       SpellType.CREATURE_SCAN
     ];
@@ -238,6 +240,7 @@ export class GrimoirePanel {
       SpellType.VOID_KINESIS,
       SpellType.VOID_COCOON,
       SpellType.TEMPUS_SIGILLUM,
+      SpellType.QUIMIO_SIGILLUM,
       SpellType.SPECIES_SCAN,
       SpellType.CREATURE_SCAN
     ];
@@ -895,7 +898,7 @@ export class GrimoirePanel {
   this.iconPlacements.push({ type: SpellType.LONGJUMP, x: ljX, y: ljY, s: 1.0, r: ljR });
   this.iconPlacements.push({ type: SpellType.GATE_RITE, x: grX, y: grY, s: 1.0, r: grR });
 
-    // Add five custom glyphs; previously decorative slots now host Void Cocoon & Tempus Sigillum
+    // Add custom glyphs; previously decorative slots now host Void Cocoon, Tempus Sigillum y Quimio Sigillum
     const lp = this.leftPage, rp = this.rightPage;
     const rL = Math.min(lp.w, lp.h) * 0.095;
     const rR = Math.min(rp.w, rp.h) * 0.085;
@@ -905,6 +908,7 @@ export class GrimoirePanel {
     this.iconPlacements.push({ type: SpellType.DISRUPT, x: lp.x + lp.w*0.68, y: lp.y + lp.h*0.62, s: 1.0, r: rL*0.92 });
     this.iconPlacements.push({ type: SpellType.ANCHORING_PULSE, x: lp.x + lp.w*0.46, y: lp.y + lp.h*0.70, s: 1.0, r: rL*0.92 });
     this.iconPlacements.push({ type: SpellType.SPECIES_SCAN, x: lp.x + lp.w*0.38, y: lp.y + lp.h*0.80, s: 1.0, r: rL*0.90 });
+    this.iconPlacements.push({ type: SpellType.QUIMIO_SIGILLUM, x: lp.x + lp.w*0.60, y: lp.y + lp.h*0.86, s: 1.0, r: rL*0.92 });
     // Right page spare spaces: Creature Scan stays upper-left, Tempus Sigillum replaces decorative tempus slot
     this.iconPlacements.push({ type: SpellType.CREATURE_SCAN, x: rp.x + rp.w*0.30, y: rp.y + rp.h*0.28, s: 1.0, r: rR });
     this.iconPlacements.push({ type: SpellType.TEMPUS_SIGILLUM,   x: rp.x + rp.w*0.36, y: rp.y + rp.h*0.78, s: 1.0, r: rR*0.95 });
@@ -1243,6 +1247,50 @@ export class GrimoirePanel {
     c.restore();
   }
 
+  private drawQuimioSigillumRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    // Rejuvenation seal: medic cross, alchemical droplet, twin leaves
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const baseColor = color ?? '#1f3b24';
+    c.strokeStyle = baseColor; c.lineWidth = 2.4;
+    c.beginPath(); c.arc(0, 0, r*0.95, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 0.7;
+    c.beginPath(); c.arc(0, 0, r*0.72, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 1;
+    // Medic cross
+    c.lineWidth = 2;
+    c.beginPath(); c.moveTo(0, -r*0.8); c.lineTo(0, r*0.8); c.stroke();
+    c.beginPath(); c.moveTo(-r*0.6, 0); c.lineTo(r*0.6, 0); c.stroke();
+    // Catalyst droplet
+    c.fillStyle = baseColor;
+    c.globalAlpha = 0.85;
+    c.beginPath();
+    c.moveTo(0, -r*0.38);
+    c.quadraticCurveTo(r*0.25, -r*0.05, 0, r*0.55);
+    c.quadraticCurveTo(-r*0.25, -r*0.05, 0, -r*0.38);
+    c.fill();
+    c.globalAlpha = 1;
+    // Twin leaves hugging the droplet
+    c.lineWidth = 1.8;
+    for (const dir of [-1, 1]) {
+      c.beginPath();
+      c.moveTo(0, r*0.12);
+      c.quadraticCurveTo(dir * r*0.55, -r*0.18, dir * r*0.68, r*0.22);
+      c.quadraticCurveTo(dir * r*0.48, r*0.48, 0, r*0.4);
+      c.stroke();
+    }
+    // Pulsing sigil sparks
+    c.lineWidth = 1.4;
+    for (let i=0;i<4;i++) {
+      const ang = i * (Math.PI/2) + this.t * 0.35;
+      const x1 = Math.cos(ang) * r*0.32;
+      const y1 = Math.sin(ang) * r*0.32;
+      const x2 = Math.cos(ang) * r*0.5;
+      const y2 = Math.sin(ang) * r*0.5;
+      c.beginPath(); c.moveTo(x1,y1); c.lineTo(x2,y2); c.stroke();
+    }
+    c.restore();
+  }
+
   private drawSpeciesScanRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
     c.save(); c.translate(x,y); c.scale(1, 1.5);
     const baseColor = color ?? '#3b2b1f';
@@ -1506,6 +1554,9 @@ export class GrimoirePanel {
         case SpellType.TEMPUS_SIGILLUM:
           this.drawTempusSigillumRune(c, x, y, radius, runeColor);
           break;
+        case SpellType.QUIMIO_SIGILLUM:
+          this.drawQuimioSigillumRune(c, x, y, radius, runeColor);
+          break;
         case SpellType.SPECIES_SCAN:
           this.drawSpeciesScanRune(c, x, y, radius, runeColor);
           break;
@@ -1657,6 +1708,9 @@ export class GrimoirePanel {
     } else if (type === SpellType.TEMPUS_SIGILLUM) {
       title = 'Tempus Sigillum';
       desc = 'Brand nearby planets with a rewind sigil, purging augury echoes and calming fauna.';
+    } else if (type === SpellType.QUIMIO_SIGILLUM) {
+      title = 'Quimio Sigillum';
+      desc = 'Catalyze rejuvenation reagents to restore 5% survivability (cap 100%).';
     } else if (type === SpellType.SPECIES_SCAN) {
       title = 'Augurio';
       desc = 'Reveal the dominant sentient species of any planet <500u.';
@@ -1729,6 +1783,9 @@ export class GrimoirePanel {
     } else if (type === SpellType.TEMPUS_SIGILLUM) {
       title = 'Tempus Sigillum';
       desc = 'Rewrite a planet’s clock, clearing augury data and pacifying minor beings.';
+    } else if (type === SpellType.QUIMIO_SIGILLUM) {
+      title = 'Quimio Sigillum';
+      desc = 'Rejuvenating sigil that restores 5% survivability (cap 100%).';
     } else if (type === SpellType.SPECIES_SCAN) {
       title = 'Augurio · Species Scan';
       desc = 'Reveal the dominant species of a scanned planet (<500u). Cost: 1/3 sanity.';

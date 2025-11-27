@@ -52,6 +52,7 @@ export interface CharacterProfile {
   experience: number;
   experienceMax: number;
   age: CharacterAge;
+  survivability: number; // 0-100
 }
 
 /** Estado de un slot de equipo de la nave. */

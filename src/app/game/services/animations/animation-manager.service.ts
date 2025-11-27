@@ -18,6 +18,7 @@ export class AnimationManagerService {
   private cachedVoidKinesisCtor: ({ new(): GameAnimation }) | null = null;
   private cachedLandingSequenceCtor: ({ new(): GameAnimation }) | null = null;
   private cachedTakeoffSequenceCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedQuimioSigillumCtor: ({ new(): GameAnimation }) | null = null;
   private flashImages: string[] = [
     '/assets/Athathoth.jpg',
     '/assets/GreatCthulhu.jpg',
@@ -37,6 +38,7 @@ export class AnimationManagerService {
     this.preloadVoidKinesis();
     this.preloadLandingSequence();
     this.preloadTakeoffSequence();
+    this.preloadQuimioSigillum();
   }
 
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
@@ -326,6 +328,44 @@ export class AnimationManagerService {
         const mod = await import('./void-kinesis.animation');
         const Anim = (mod as any).VoidKinesisAnimation as { new(): GameAnimation };
         this.cachedVoidKinesisCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  public startQuimioSigillum(engine: GameEngine): boolean {
+    if (this.current && this.current.name !== 'blocking-delay') {
+      return false;
+    }
+    const launch = (Ctor: { new(): GameAnimation }) => {
+      const anim = new Ctor();
+      anim.start(engine);
+      this.current = anim;
+    };
+    if (this.cachedQuimioSigillumCtor) {
+      launch(this.cachedQuimioSigillumCtor);
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./quimio-sigillum.animation');
+        const Anim = (mod as any).QuimioSigillumAnimation as { new(): GameAnimation };
+        this.cachedQuimioSigillumCtor = Anim;
+        launch(Anim);
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load QuimioSigillumAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadQuimioSigillum(): void {
+    (async () => {
+      try {
+        const mod = await import('./quimio-sigillum.animation');
+        const Anim = (mod as any).QuimioSigillumAnimation as { new(): GameAnimation };
+        this.cachedQuimioSigillumCtor = Anim;
       } catch { /* ignore */ }
     })();
   }

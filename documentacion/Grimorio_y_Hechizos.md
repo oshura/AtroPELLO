@@ -18,6 +18,7 @@ Este documento describe el libro del grimorio (UI), el flujo de lanzamiento de h
   - Void Kinesis
   - Void Cocoon
   - Tempus Sigillum
+  - Quimio Sigillum
   - Alma Mater Contact Rite (SPECIES_SCAN)
   - Arcane Contact Rite (CREATURE_SCAN)
 - Integración con HUD / Brújula
@@ -83,6 +84,7 @@ Notas:
 | Void Kinesis | 2 | 3 | Genera energía (no consume) | Asteroide en ≤ 50u y reservas del vacío con espacio para el `gain`. |
 | Void Cocoon | 3 | 3 | 0u | Despliega un capullo protector durante 30 s, absorbiendo impactos de colisión y mostrando un countdown en la brújula. |
 | Tempus Sigillum | 2 | 5 | 0u | Requiere planeta válido (≤ 500u). Revierte el mundo, vuelve a tirar la probabilidad de vida y limpia seres menores conocidos. |
+| Quimio Sigillum | 5 | 8 | 0u | Sello alquímico que devuelve 5% de supervivencia (cap 100%). Sin countdown: efecto instantáneo. |
 | Alma Mater Contact Rite (SPECIES_SCAN) | 1 | 3 | 50u | Planeta escaneable a ≤ 500u de la superficie. |
 | Arcane Contact Rite (CREATURE_SCAN) | 1 | 3 | 50u | Igual que el anterior, pero consulta seres menores. |
 
@@ -151,6 +153,13 @@ Notas:
 - Resultado: limpia el `lesserBeing`, lo marca como conocido “sin criatura” (`creatureScanned = true`), restablece la afinidad a `NEUTRAL` y borra el flag `lifeScanned` para obligar a un nuevo reconocimiento.
 - Costes: 2/5 de cordura, sin energía del vacío. Ideal para buscar una raza distinta o preparar líneas de misión donde la vida debía extinguirse.
 - HUD / feedback: placeholder “TEMPUS SIGILLUM” con el nombre del planeta y mensaje en el marquee. No genera countdown porque su efecto es instantáneo.
+
+### Quimio Sigillum
+
+- Efecto principal: canaliza reactivos rejuvenecedores que restauran **+5% de supervivencia**, respetando el límite de 100%. Si el piloto ya está al máximo, el rito se aborta antes de cobrar cordura.
+- Costes: 5 de cordura temporal y 8 reservados. No consume Energía del Vacío ni bloquea inputs adicionales.
+- Feedback: placeholder “QUIMIO SIGILLUM” con el porcentaje recuperado, mensaje en la marquesina y audio suave (`sfx_heal` o fallback a `sfx_precast_ritual`).
+- No activa countdown en la brújula: el efecto es inmediato y se refleja en la UI de inventario/supervivencia.
 
 ### Augurio (SPECIES_SCAN)
 

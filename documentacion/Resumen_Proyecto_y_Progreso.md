@@ -96,6 +96,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
     - **Salto al Vacío**: requiere objetivo válido y consume 50u de energía del vacío; aborta con placeholder si no hay recursos o condiciones.
     - **Gate Rite**: Requiere planeta seleccionado y distancia ≤50u a superficie; crea portal arcano bidireccional para viajar entre sistemas solares.
     - **Eternal Rite**: Ritual de suicidio. Reduce salud de nave a 0, disparando sistema de muerte reactivo. Útil para testing y narrativa.
+    - **Quimio Sigillum**: Rito de rejuvenecimiento que devuelve +5% de supervivencia (cap 100%) con feedback instantáneo en HUD; no gasta recursos si ya estás al máximo.
   - Glifos bloqueados: `ignis`, `lux`, `vinculum`, `tempus` (futuros hechizos).
   - Recursos: Energía del Vacío `max=100`, `actual=100` al inicio.
 
