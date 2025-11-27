@@ -6109,6 +6109,7 @@ export class GameEngine {
             this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Map close sound failed', e);
           }
           this.gameState.mapReopenAllowedAtMs = now + 1000;
+          this.clearPanelCursorOverlay();
         }
         // Ensure mutual exclusivity with Grimoire
         if (this.systemPanel.isEnabled() && this.grimoirePanel) {
@@ -6144,6 +6145,7 @@ export class GameEngine {
       try { this.updateMapClickBinding(); } catch {}
       try { this.updateGrimoirePointerBinding(); } catch {}
       try { this.updateCanvasCursor(); } catch {}
+      this.syncPanelCursorOverlay();
       return;
     }
     // Toggle Grimoire (ancient book) with 'L'
@@ -6182,6 +6184,7 @@ export class GameEngine {
           } catch (e) {
             this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Grimoire close sound failed', e);
           }
+          this.clearPanelCursorOverlay();
         }
         // Ensure map is closed when grimoire opens
         if (this.grimoirePanel.isEnabled() && this.systemPanel) {
@@ -6208,6 +6211,7 @@ export class GameEngine {
       try { this.updateMapClickBinding(); } catch {}
       try { this.updateGrimoirePointerBinding(); } catch {}
       try { this.updateCanvasCursor(); } catch {}
+      this.syncPanelCursorOverlay();
       return;
     }
     // Toggle Inventory panel with 'I'
@@ -6243,6 +6247,8 @@ export class GameEngine {
         }
         try { this.updateGrimoirePointerBinding(); } catch {}
         try { this.updateCanvasCursor(); } catch {}
+        this.clearPanelCursorOverlay();
+        this.syncPanelCursorOverlay();
         this.initiateSpellCast(spell, target);
         return;
       }
@@ -6256,6 +6262,8 @@ export class GameEngine {
           this.gameState.mapReopenAllowedAtMs = performance.now() + 1000;
           try { this.updateMapClickBinding(); } catch {}
           try { this.updateCanvasCursor(); } catch {}
+          this.clearPanelCursorOverlay();
+          this.syncPanelCursorOverlay();
         }
         this.initiateSpellCast(spell, target);
         return;
@@ -8241,6 +8249,13 @@ export class GameEngine {
     this.panelCursorOverlay.setState(state);
   }
 
+  private clearPanelCursorOverlay(): void {
+    if (!this.panelCursorOverlay) {
+      return;
+    }
+    this.panelCursorOverlay.setState(null);
+  }
+
   /**
    * Configura eventos del mouse para el sistema de targeting adaptativo
    */
@@ -8315,6 +8330,7 @@ export class GameEngine {
       // Map closed
       try { this.audio?.play('ui_map_close'); } catch {}
       this.gameState.mapReopenAllowedAtMs = now + 1000;
+      this.clearPanelCursorOverlay();
     }
     this.syncPanelCursorOverlay();
   }
@@ -8426,6 +8442,7 @@ export class GameEngine {
       // Grimoire closed
       try { this.audio?.play('ui_grimoire_close'); } catch {}
       this.gameState.grimoireReopenAllowedAtMs = now + 1000;
+      this.clearPanelCursorOverlay();
     }
     this.syncPanelCursorOverlay();
   }
@@ -8783,6 +8800,8 @@ export class GameEngine {
       this.systemPanel.setEnabled(false);
       this.panelEventCoordinator.setMapEnabled(false);
       try { this.audio?.play('ui_map_close'); } catch {}
+      this.clearPanelCursorOverlay();
+      this.syncPanelCursorOverlay();
       return;
     }
     
@@ -8790,6 +8809,9 @@ export class GameEngine {
       this.grimoirePanel.setEnabled(false);
       this.panelEventCoordinator.setGrimoireEnabled(false);
       try { this.audio?.play('ui_grimoire_close'); } catch {}
+      this.updateCanvasCursor();
+      this.clearPanelCursorOverlay();
+      this.syncPanelCursorOverlay();
       return;
     }
 
@@ -8801,6 +8823,9 @@ export class GameEngine {
       this.updateInventoryPointerBinding();
       this.inventoryHoverKey = null;
       try { this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.6 }); } catch {}
+      this.updateCanvasCursor();
+      this.clearPanelCursorOverlay();
+      this.syncPanelCursorOverlay();
       return;
     }
     

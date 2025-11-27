@@ -24,6 +24,7 @@ export class PanelCursorOverlay {
     this.canvas.style.width = '100%';
     this.canvas.style.height = '100%';
     this.canvas.style.zIndex = '5';
+    this.canvas.style.opacity = '0';
     this.ctx = this.canvas.getContext('2d');
     const parent = this.host.parentElement;
     if (parent) {
@@ -54,6 +55,11 @@ export class PanelCursorOverlay {
 
   public setState(state: PanelCursorOverlayState | null): void {
     this.state = state;
+    if (!state) {
+      this.canvas.style.opacity = '0';
+    } else {
+      this.canvas.style.opacity = '1';
+    }
     if (!state) {
       this.clear();
       return;
