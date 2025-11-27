@@ -3285,6 +3285,20 @@ export class GameEngine {
     return { r: 0.6, g: 0.6, b: 0.6 };
   }
 
+  private stopDopplerCueForObject(objectId: string | null | undefined): void {
+    if (!objectId) {
+      return;
+    }
+    const entry = this.gameState.dopplerCues.get(objectId);
+    if (entry) {
+      try {
+        entry.cue.stop(80);
+      } catch {}
+      this.gameState.dopplerCues.delete(objectId);
+    }
+    this.lastObjPos.delete(objectId);
+  }
+
   /**
    * Remove an object from the game world permanently
    */
@@ -3305,6 +3319,7 @@ export class GameEngine {
     obj.visible = false;
     
     const objId = obj.id;
+    this.stopDopplerCueForObject(objId);
     const typeName = obj.constructor?.name || 'Unknown';
     let removed = false;
 
