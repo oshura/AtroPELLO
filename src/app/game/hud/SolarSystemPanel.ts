@@ -5,6 +5,10 @@ import { GameObjectCategory, getCategoryIcon } from '../types/game-object.types'
 import { computePanelLetterbox, mapViewportPointToCanvas, PANEL_HORIZONTAL_STRETCH } from './utils/panel-letterbox';
 import { PanelCursorOverlayState } from './utils/panel-cursor.types';
 
+// Matches the tinted grey that ends up in the HUD letterbox bars so edge pixels
+// blend seamlessly with the "dead zone" backdrop.
+const PANEL_DEAD_ZONE_GRAY = '#05060a';
+
 /**
  * SolarSystemPanel: renders a full-screen, opaque top-down map of the solar system
  * onto a canvas, then draws it as a textured quad in front of the camera.
@@ -302,7 +306,7 @@ export class SolarSystemPanel {
 
   // 2) Clear opaque background
     c.save();
-    c.fillStyle = '#05060a'; // deep dark
+    c.fillStyle = PANEL_DEAD_ZONE_GRAY; // deep dark, matches letterbox grey
     c.fillRect(0, 0, W, H);
 
     // Build filter buttons (top-left) based on present categories
@@ -512,8 +516,9 @@ export class SolarSystemPanel {
     }
 
     // 5) Border
-    c.strokeStyle = 'rgba(255,255,255,0.15)';
-    c.lineWidth = 2; c.strokeRect(1, 1, W - 2, H - 2);
+    c.strokeStyle = PANEL_DEAD_ZONE_GRAY;
+    c.lineWidth = 1;
+    c.strokeRect(0.5, 0.5, W - 1, H - 1);
     c.restore();
 
     // 5.b) Scale bar (bottom-right). Prefers 1000u at initial zoom if it fits; adapts with zoom.

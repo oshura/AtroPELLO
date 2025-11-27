@@ -127,9 +127,7 @@ export class PanelCursorOverlay {
     const pulseScale = 1 + 0.06 * Math.sin(timeSeconds * 2.2);
     const glow = 0.25 + 0.25 * (0.5 + 0.5 * Math.sin(timeSeconds * 3.1));
     const outer = radius * pulseScale;
-    const tallScale = 1.75;
     c.save();
-    c.scale(1, tallScale);
     const gradient = c.createRadialGradient(0, 0, outer * 0.6, 0, 0, outer * 1.4);
     gradient.addColorStop(0, `rgba(200,0,40,${(glow * 0.7).toFixed(3)})`);
     gradient.addColorStop(1, 'rgba(200,0,40,0)');
@@ -167,26 +165,25 @@ export class PanelCursorOverlay {
   }
 
   private drawInventoryCursor(c: CanvasRenderingContext2D, radius: number): void {
-    const rx = Math.max(6, radius * 0.5);
-    const ry = Math.max(9, radius * 0.8);
-    const glowR = Math.max(14, radius * 1.8);
+    const ringRadius = Math.max(10, radius * 0.7);
+    const glowR = Math.max(16, ringRadius * 2);
     const glow = c.createRadialGradient(0, 0, 0, 0, 0, glowR);
     glow.addColorStop(0, 'rgba(152,218,255,0.9)');
     glow.addColorStop(1, 'rgba(16,164,255,0)');
     c.fillStyle = glow;
     c.beginPath();
-    c.ellipse(0, 0, glowR * 0.5, glowR * 0.7, 0, 0, Math.PI * 2);
+    c.arc(0, 0, glowR * 0.65, 0, Math.PI * 2);
     c.fill();
 
     c.strokeStyle = 'rgba(56,189,248,0.95)';
     c.lineWidth = 1.8;
     c.beginPath();
-    c.ellipse(0, 0, rx, ry, 0, 0, Math.PI * 2);
+    c.arc(0, 0, ringRadius, 0, Math.PI * 2);
     c.stroke();
 
     c.fillStyle = '#e0f7ff';
     c.beginPath();
-    c.ellipse(0, 0, Math.max(2, rx * 0.25), Math.max(3, ry * 0.25), 0, 0, Math.PI * 2);
+    c.arc(0, 0, Math.max(3, ringRadius * 0.25), 0, Math.PI * 2);
     c.fill();
   }
 
