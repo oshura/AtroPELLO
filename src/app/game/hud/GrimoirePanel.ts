@@ -444,10 +444,7 @@ export class GrimoirePanel {
     let found = -1;
     for (let i = 0; i < this.iconPlacements.length; i++) {
       const glyph = this.iconPlacements[i];
-      const radius = this.getGlyphRadius(glyph);
-      const dx = px - glyph.x;
-      const dy = py - glyph.y;
-      if (dx * dx + dy * dy <= radius * radius) {
+      if (this.pointHitsGlyph(px, py, glyph)) {
         found = i;
         break;
       }
@@ -462,6 +459,17 @@ export class GrimoirePanel {
         }
       }
     }
+  }
+
+  private pointHitsGlyph(px: number, py: number, glyph: GlyphPlacement): boolean {
+    const radius = this.getGlyphRadius(glyph);
+    const dx = px - glyph.x;
+    const dy = py - glyph.y;
+    if (dx * dx + dy * dy <= radius * radius) {
+      return true;
+    }
+    const frame = this.getGlyphFrameRect(glyph.x, glyph.y, radius);
+    return px >= frame.x && px <= frame.x + frame.w && py >= frame.y && py <= frame.y + frame.h;
   }
 
   private initGLResources(): void {
