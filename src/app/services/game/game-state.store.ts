@@ -26,6 +26,7 @@ import { SpellType, getSpellSanityCost } from '../../game/types/spell.types';
 import { SolarSystemSnapshot } from '../../game/types/solar-system.types';
 import {
   PlanetIntelSnapshot,
+  PlanetMissionState,
   PlanetResourceStock,
   createEmptyPlanetIntelSnapshot
 } from '../../game/types/planet-intel.types';
@@ -151,6 +152,8 @@ export class GameStateStore {
     },
     survivability: 100
   };
+  /** Porcentaje de memoria narrativa recuperada (0..100). */
+  public memoryPercent: number = 0;
 
   /** Equipo personal (incluye slots dedicados de traje/botas) */
   public personalGear: PersonalGearItem[] = [
@@ -234,6 +237,8 @@ export class GameStateStore {
 
   /** Intel planetario persistente (artefactos, void mass, misiones). */
   public readonly planetIntelById = new Map<string, PlanetIntelSnapshot>();
+  /** Registro de misiones planetarias activas. */
+  public readonly activeMissions = new Map<string, PlanetMissionState>();
   /** Archivo de snapshots procedurales visitados previamente para Gate Rite. */
   private readonly proceduralSystemArchive: SolarSystemSnapshot[] = [];
   private readonly PROCEDURAL_ARCHIVE_LIMIT = 8;
@@ -361,6 +366,61 @@ export class GameStateStore {
       animosity: planet.animosity
     });
     return snapshot;
+  }
+
+  /** Guarda o actualiza una misión activa y devuelve una copia inmutable. */
+  public upsertPlanetMission(mission: PlanetMissionState): PlanetMissionState {
+    const normalized = this.cloneMissionState(mission);
+    this.activeMissions.set(normalized.id, normalized);
+    return normalized;
+  }
+
+  /** Elimina una misión activa por ID. */
+  public removePlanetMission(missionId: string): boolean {
+    return this.activeMissions.delete(missionId);
+  }
+
+  /** Obtiene una instantánea de una misión activa (copia profunda ligera). */
+  public getPlanetMissionSnapshot(missionId: string): PlanetMissionState | null {
+    const stored = this.activeMissions.get(missionId);
+    return stored ? this.cloneMissionState(stored) : null;
+  }
+
+  /** Devuelve la lista completa de misiones activas (copias inmutables). */
+  public getActiveMissionsSnapshot(): PlanetMissionState[] {
+    return Array.from(this.activeMissions.values()).map(mission => this.cloneMissionState(mission));
+  }
+
+  private cloneMissionState(mission: PlanetMissionState): PlanetMissionState {
+    return {
+      ...mission,
+      reward: mission.reward
+        ? {
+            ...mission.reward,
+            resources: mission.reward.resources ? { ...mission.reward.resources } : undefined
+          }
+        : undefined,
+      log: Array.isArray(mission.log)
+        ? mission.log.map(entry => ({
+            ...entry,
+            payload: entry.payload ? { ...entry.payload } : undefined
+          }))
+        : []
+      ,
+      clueTokens: Array.isArray(mission.clueTokens)
+        ? mission.clueTokens.map(token => ({
+            ...token,
+            cost: token.cost ? { ...token.cost } : undefined
+          }))
+        : [],
+      requiredClueTiers: mission.requiredClueTiers ? [...mission.requiredClueTiers] : undefined,
+      subTasks: mission.subTasks
+        ? mission.subTasks.map(task => ({
+            ...task,
+            cost: task.cost ? { ...task.cost } : undefined
+          }))
+        : undefined
+    };
   }
   
   // ═══════════════════════════════════════════════════════════════════════════

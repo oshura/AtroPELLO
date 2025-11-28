@@ -605,8 +605,6 @@ export class GateRiteAnimation implements GameAnimation {
         }
         // Reiniciar velocidades para rampa +10u/s
         ship.targetSpeed = ship.currentSpeed = Math.max(0, ship.currentSpeed || 0);
-        // Ship now sits safely in front of the portal, collisions can come back
-        try { engine.collisionsDisabled = false; } catch {}
       }
     } catch {}
   }
@@ -891,6 +889,8 @@ export class GateRiteAnimation implements GameAnimation {
               try { (destPortalObj as any).eyeDir = { x: fwd.x, y: fwd.y, z: fwd.z }; } catch {}
             }
           } catch {}
+          // Reactivar colisiones solo al aparecer en el nuevo sistema
+          try { engine.collisionsDisabled = false; } catch {}
           // Logs y persistencia del generado
           try { GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite switched system after fade', { id: snapshot.id, reusedArchivedSystem }); } catch {}
           try {

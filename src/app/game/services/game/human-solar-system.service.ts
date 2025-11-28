@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, ClusterSnapshot } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
 import { PLANET_INTEL_STATUS, createEmptyResourceStock } from '../../types/planet-intel.types';
+import { PlanetInhabitants, PLANET_INHABITANT_POOL } from '../../types/cosmic-life.types';
 
 /**
  * HumanSolarSystemService
@@ -139,6 +140,8 @@ export class HumanSolarSystemService {
       if (hasVoidMass) {
         stock.void_matter = Math.max(stock.void_matter ?? 0, Math.max(1, Math.round(voidMassCapacity / 2500)));
       }
+      const forcedCivilization = i === marsIdx ? this.pickRandomCivilization() : PlanetInhabitants.NONE;
+
       planets.push({
         id: `planet-${i === earthIdx ? 'earth' : i === mercuryIdx ? 'mercury' : i === venusIdx ? 'venus' : i === marsIdx ? 'mars' : i === jupiterIdx ? 'jupiter' : i === saturnIdx ? 'saturn' : i === uranusIdx ? 'uranus' : i === neptuneIdx ? 'neptune' : 'pluto'}`,
         name,
@@ -147,6 +150,7 @@ export class HumanSolarSystemService {
         radius,
         baseColorName,
         probabilityOfLifePct: (i === earthIdx ? 100 : (kind === 'Terrestrial' ? 20 : (kind === 'Gaseous' ? 0 : 5))),
+        inhabitants: forcedCivilization !== PlanetInhabitants.NONE ? forcedCivilization : undefined,
         hasArtifact: false,
         hasVoidMass,
         voidMassCapacity,
@@ -175,5 +179,13 @@ export class HumanSolarSystemService {
       }
     };
     return snapshot;
+  }
+
+  private pickRandomCivilization(): PlanetInhabitants {
+    if (!PLANET_INHABITANT_POOL.length) {
+      return PlanetInhabitants.NONE;
+    }
+    const idx = Math.floor(Math.random() * PLANET_INHABITANT_POOL.length);
+    return PLANET_INHABITANT_POOL[idx];
   }
 }

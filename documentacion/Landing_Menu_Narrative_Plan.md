@@ -200,3 +200,104 @@ Usa esta checklist para marcar los hitos conforme avancemos. Actualízala al fin
 - [ ] Motor de misiones planetarias y transición Neutral → Ally.
 - [ ] Integración de narrativa/diálogos por raza y fragmentos de memoria.
 - [ ] QA y pruebas automatizadas (transiciones de animosidad, distribución 50/50, regresiones HUD/mapa).
+
+## 14. Motor de misiones planetarias (detallado)
+1. **Estados y contratos**
+   - Crear `PlanetMissionState` en `landing.types.ts` (o módulo propio) con:
+     ```ts
+     type PlanetMissionStatus = 'offered' | 'accepted' | 'in-progress' | 'ready-to-turn-in' | 'completed' | 'failed';
+     interface PlanetMissionState {
+       id: string;
+       race: CosmicRaceId;
+       type: 'artifact' | 'material';
+       goal: { systemId: string; planetId?: string; clusterId?: string };
+       targetItemId: string;
+       reward: { memorySharePct: number; resources?: Partial<ResourceStock>; uniqueGlyphId?: string };
+       status: PlanetMissionStatus;
+       log: Array<{ ts: number; event: string }>;
+     }
+     ```
+   - Guardar referencia en `Planet.pendingMission` para poder renderizarla en la UI y persistirla en snapshots.
+
+2. **MissionService**
+   - API propuesta:
+     - `offerMission(planet: Planet): PlanetMissionState` ⇒ genera misión según raza, rellena objetivos.
+     - `acceptMission(missionId)` ⇒ marca estado y reserva el ítem en el inventario de objetivos.
+     - `recordProgress(missionId, progressEvent)` ⇒ usado por acciones de exploración (e.g., encontrar artefacto objetivo actualiza status).
+     - `completeMission(missionId)` ⇒ aplica recompensas, incrementa `memoryPercent`, cambia animosidad → Ally, limpia bandera de misión.
+   - Persistir en `GameStateStore` con un diccionario `activeMissions` indexado por ID, más helper `getMissionsByRace(raceId)`.
+   - Integrar con `PortalPersistenceService` para que misiones de materiales puedan colocar clusters dedicados (usa nuevos IDs `mission-cloud-xxxx`).
+
+3. **Generación del objetivo**
+   - Artefacto: seleccionar planeta con `hasArtifact` true (no visitado recientemente). Resetear `artifactIntelStatus = unknown` para forzar exploración.
+   - Material: ubicar cloud existente o crear uno nuevo con `resourceTag` especial; `LandingActionService` valida si la nave posee dicho ítem.
+   - Guardar pistas textuales (`missionClues`) para mostrarlas en la UI (ej.: "Busca las ruinas cubiertas de hielo gemelo").
+
+4. **UI de misiones**
+   - En sección Diplomacia (Neutral): panel lateral con tarjeta de misión: título, recompensa, progreso.
+   - Botones: `Aceptar misión`, `Recordar pistas`, `Entregar`. Si no se cumple, botón `Abortar` (pone `failed`, anima `animosity -= 1 step`).
+   - Log narrativo reutiliza panel principal para contar origen/destino/recompensa.
+
+5. **Transición Neutral → Ally**
+   - Condición: `mission.status === 'completed'` OR `planet.animosity <= AllyThreshold` tras acciones de diplomacia.
+   - Al pasar a Ally, desbloquear botones adicionales (reparación completa, compartir tiempo de vida) y actualizar checklist.
+
+## 15. Integración narrativa y fragmentos de memoria
+1. **Repositorio de diálogos**
+   - Crear `assets/narrative/landing/*.json` con estructura:
+     ```json
+     {
+       "rest": { "intro": "...", "success": "...", "interrupted": "..." },
+       "explore": {
+         "artifact": { "intro": "...", "success_has": "...", "success_absent": "...", "failure": "..." },
+         "void": { ... }
+       },
+       "diplomacy": {
+         "ally": { "share_time": { "intro": "...", "resolution": "..." } },
+         "neutral": { ... }
+       },
+       "missions": {
+         "mi_go": {
+           "offer": [...],
+           "turnIn": [...],
+           "memory": "Texto místico que sube memoria"
+         }
+       }
+     }
+     ```
+   - Soportar localización futura usando claves; `LandingActionService` recibe `raceId` y `actionId` para renderizar texto.
+
+2. **Memoria y hooks globales**
+   - `MemoryService` o extensión de `MissionService` que:
+     - Lleva `memoryPercent` agregado y dispara eventos `memoryCheckpointReached` (ej. 25/50/75/100%).
+     - Al subir memoria, desencadena narrativas globales (p.ej. cutscene breve, unlock de hechizo).
+   - Al completar una misión, aplicar `player.memoryPercent += mission.reward.memorySharePct` y escribir entrada en bitácora.
+
+3. **Sincronización con HUD/Log**
+   - Añadir a `HUDManager` un `landingLog` circular (últimos 6 eventos) que muestre: `timestamp + resumen + cambios (health/sanity/memory)`.
+   - `LandingPanel` se suscribe a `LandingActionService.events$` para mostrar el diálogo completo y reflejar los cambios de estado.
+
+4. **Estados especiales**
+   - Si `sanity < 20%` durante una misión, inyectar líneas alternativas ("las voces te piden abandonar la negociación").
+   - Si `memoryPercent >= 80%`, permitir epílogo en menu de Diplomacia (botón "Recordar Juramento").
+
+## 16. QA y verificación
+1. **Pruebas unitarias**
+   - `LandingActionService` ⇒ mockear RNG para cubrir éxito/fracaso de cada acción, validar cambios de salud/sanity/age.
+   - `MissionService` ⇒ verificar transiciones de estado y persistencia tras serializar/deserializar snapshot.
+   - `GameStateStore` ⇒ asegurar que nuevas propiedades (`memoryPercent`, `activeMissions`) sobreviven cambios de sistema.
+
+2. **Pruebas de integración**
+   - Flujo completo Neutral → Ally: simular `Contactar civilización`, oferta de misión, aceptación, cumplimiento y recompensas.
+   - Diplomacia Enemy ⇒ victoria contra lesserBeing restaura botones Neutral.
+   - Generación procedural: 20 sistemas para validar que misiones pueden apuntar a clouds/planetas existentes.
+
+3. **Pruebas manuales**
+   - UX: revisar que el panel responda a resoluciones 16:9 y 21:9, y que el log no tape botones.
+   - Narrativa: proofreading de textos, verificación de placeholders (`{planetName}`) y acentos.
+   - Telemetría opcional: registrar cuántas veces se selecciona cada acción para balancear probabilidades.
+
+4. **Automatización**
+   - Incorporar tests end-to-end (Playwright) que simulen clicks en el landing panel y confirmen estados del HUD.
+   - Añadir job CI `npm run test:landing` centrado en módulos nuevos para aislar regresiones.
+

@@ -278,3 +278,90 @@
   font-size: 0.9rem;
   opacity: 0.75;
 }
+
+.mission-panel {
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 0.75rem;
+  padding: 0.85rem;
+  background: rgba(15, 18, 40, 0.7);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.mission-panel__meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.mission-panel__label {
+  display: block;
+  font-size: 0.65rem;
+  letter-spacing: 0.25em;
+  text-transform: uppercase;
+  opacity: 0.65;
+  margin-bottom: 0.25rem;
+}
+
+.mission-panel__title {
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.mission-panel__description {
+  margin: 0.25rem 0 0;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.mission-panel__status span {
+  font-weight: 600;
+}
+
+.mission-panel__clues {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.clue-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.mission-panel__resources ul,
+.mission-panel__subtasks ul {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+}
+
+.mission-panel__subtasks li {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.mission-panel__actions {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.5rem;
+}
+
+.mission-panel__actions .menu-btn {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.2rem;
+}
+
+.mission-panel__actions .menu-btn small {
+  font-size: 0.7rem;
+  opacity: 0.75;
+}

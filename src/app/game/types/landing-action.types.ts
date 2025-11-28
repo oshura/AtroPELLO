@@ -1,9 +1,27 @@
-import { PlanetIntelStatus } from './planet-intel.types';
+import {
+  MissionClueToken,
+  MissionSubTaskStatus,
+  PlanetIntelStatus,
+  PlanetMissionStatus,
+  PlanetResourceStock
+} from './planet-intel.types';
 
 export enum LandingActionKind {
   REST = 'rest',
   EXPLORE = 'explore',
   DIPLOMACY = 'diplomacy'
+}
+
+export enum LandingDiplomacyAction {
+  OFFER_BRIBE = 'offer_bribe',
+  RUN_SUBTASK = 'run_subtask',
+  REQUEST_VISION = 'request_vision',
+  COMPLETE_MISSION = 'complete_mission'
+}
+
+export interface LandingDiplomacyRequest {
+  action: LandingDiplomacyAction;
+  subTaskId?: string;
 }
 
 export enum LandingExploreObjective {
@@ -48,12 +66,20 @@ export interface LandingActionEffects {
   interrupted?: boolean;
   needsRetry?: boolean;
   blockedReason?: string;
+  clueTokensAwarded?: MissionClueToken[];
+  missionStatus?: PlanetMissionStatus;
+  subTaskUpdate?: {
+    id: string;
+    status: MissionSubTaskStatus;
+  };
+  resourcesSpent?: Partial<PlanetResourceStock>;
 }
 
 export interface LandingActionRequest {
   planetId: string;
   action: LandingActionKind;
   objective?: LandingExploreObjective;
+  diplomacy?: LandingDiplomacyRequest;
 }
 
 export interface LandingEventResult {

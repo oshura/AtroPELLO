@@ -571,30 +571,19 @@ export class GameEngine {
   }
 
   private computeLandingThreat(availableTargets: ITargetable[]): LandingThreatState {
-    const reasons: string[] = [];
     if (!this.spaceship) {
-      return { active: false, reasons };
+      return { active: false, reasons: [] };
     }
 
-    const hullPct = this.spaceship.healthMax > 0
-      ? this.spaceship.healthCurrent / this.spaceship.healthMax
-      : 1;
-    if (hullPct < 0.25) {
-      reasons.push('Hull integrity critical');
-    }
-
-    if (this.spaceship.voidEnergyCurrent < 10) {
-      reasons.push('Void reserves low');
-    }
-
+    let enemyNearby = false;
     try {
       const shipPos = this.spaceship.position;
-      const enemyNearby = availableTargets.some(target => {
+      enemyNearby = availableTargets.some(target => {
         if (!target || !target.position) {
           return false;
         }
-        const relation = this.relationService.getRelation(target);
-        if (relation !== 'enemy') {
+        const animosity = (target as any)?.animosity as GameObjectAnimosity | undefined;
+        if (animosity !== GameObjectAnimosity.ENEMY) {
           return false;
         }
         const dx = target.position.x - shipPos.x;
@@ -603,14 +592,13 @@ export class GameEngine {
         const dist = Math.hypot(dx, dy, dz);
         return dist <= this.LANDING_THREAT_RADIUS;
       });
-      if (enemyNearby) {
-        reasons.push('Enemy nearby');
-      }
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'Landing threat proximity check failed', e);
     }
 
-    return { active: reasons.length > 0, reasons };
+    return enemyNearby
+      ? { active: true, reasons: ['Enemy nearby'] }
+      : { active: false, reasons: [] };
   }
 
   private tryStartLandingSequence(): boolean {

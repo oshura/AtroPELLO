@@ -3,12 +3,27 @@ import { Planet } from '../../game/game-objects/Planet';
 import { GameStateStore } from './game-state.store';
 import { CharacterProfileService } from './character-profile.service';
 import { LoggingService, LogCategory, LogLevel } from '../logging.service';
-import { LandingActionRequest, LandingActionKind, LandingExploreObjective, LandingEventResult, LandingActionEffects, LandingActionLogEntry } from '../../game/types/landing-action.types';
-import { PLANET_INTEL_STATUS } from '../../game/types/planet-intel.types';
+import {
+  LandingActionRequest,
+  LandingActionKind,
+  LandingExploreObjective,
+  LandingEventResult,
+  LandingActionEffects,
+  LandingActionLogEntry,
+  LandingDiplomacyAction
+} from '../../game/types/landing-action.types';
+import {
+  PLANET_INTEL_STATUS,
+  PlanetMissionState,
+  PlanetResourceStock,
+  MissionClueToken
+} from '../../game/types/planet-intel.types';
 import { PlanetInhabitants } from '../../game/types/cosmic-life.types';
 import { GameObjectCategory, GameObjectType, getCategory } from '../../game/types/game-object.types';
 import { Vector3 } from '../../types/game.types';
 import { GameInitializer } from './game-initializer.service';
+import { MissionService } from '../../game/services/game/mission.service';
+import { getLandingDiplomacyScript, LandingDiplomacyScript, DiplomacySubTaskConfig } from '../../game/config/landing-diplomacy.config';
 
 interface RollOutcome {
   success: boolean;
@@ -32,7 +47,8 @@ export class LandingActionService {
     private readonly gameState: GameStateStore,
     private readonly characterProfile: CharacterProfileService,
     private readonly logger: LoggingService,
-    private readonly gameInitializer: GameInitializer
+    private readonly gameInitializer: GameInitializer,
+    private readonly missionService: MissionService
   ) {}
 
   performAction(request: LandingActionRequest): LandingEventResult {
@@ -46,6 +62,8 @@ export class LandingActionService {
         return this.executeRest(planet, request);
       case LandingActionKind.EXPLORE:
         return this.executeExplore(planet, request);
+      case LandingActionKind.DIPLOMACY:
+        return this.executeDiplomacy(planet, request);
       default:
         return this.buildBlockedResult(request, 'Acción no implementada aún', 'not-implemented');
     }
@@ -111,6 +129,240 @@ export class LandingActionService {
       default:
         return this.buildBlockedResult(request, 'Exploración sin objetivo', 'missing-objective');
     }
+  }
+
+  private executeDiplomacy(planet: Planet, request: LandingActionRequest): LandingEventResult {
+    if (planet.inhabitants === PlanetInhabitants.NONE) {
+      return this.buildBlockedResult(request, 'No hay civilización para negociar.', 'no-inhabitants');
+    }
+    const diplomacy = request.diplomacy;
+    if (!diplomacy) {
+      return this.buildBlockedResult(request, 'Falta seleccionar una opción diplomática.', 'missing-diplomacy-action');
+    }
+    const script = getLandingDiplomacyScript(planet.inhabitants);
+    const mission = this.ensureMissionForDiplomacy(planet, script);
+
+    switch (diplomacy.action) {
+      case LandingDiplomacyAction.OFFER_BRIBE:
+        return this.handleDiplomacyBribe(planet, mission, script, request);
+      case LandingDiplomacyAction.REQUEST_VISION:
+        return this.handleDiplomacyVision(planet, mission, script, request);
+      case LandingDiplomacyAction.RUN_SUBTASK:
+        return this.handleDiplomacySubTask(planet, mission, script, request, diplomacy.subTaskId);
+      case LandingDiplomacyAction.COMPLETE_MISSION:
+        return this.handleDiplomacyCompletion(planet, mission, request);
+      default:
+        return this.buildBlockedResult(request, 'Acción diplomática desconocida.', 'unknown-diplomacy-action');
+    }
+  }
+
+  private ensureMissionForDiplomacy(planet: Planet, script: LandingDiplomacyScript): PlanetMissionState {
+    if (planet.pendingMission) {
+      return planet.pendingMission;
+    }
+    return this.missionService.offerMission(planet, {
+      race: planet.inhabitants ?? PlanetInhabitants.NONE,
+      description: script.missionTemplate.description,
+      missionName: script.missionTemplate.name,
+      requiredClueTiers: script.missionTemplate.requiredClueTiers
+    });
+  }
+
+  private handleDiplomacyBribe(
+    planet: Planet,
+    mission: PlanetMissionState,
+    script: LandingDiplomacyScript,
+    request: LandingActionRequest
+  ): LandingEventResult {
+    const option = script.bribeOption;
+    if (option.cost && !this.hasResourceStock(planet.resourceStock, option.cost)) {
+      return this.buildBlockedResult(request, option.narrativeFailure ?? 'Requiere más recursos.', 'insufficient-resources');
+    }
+
+    const before = this.missionService.getMissionSnapshot(mission.id);
+    if (option.cost) {
+      this.consumePlanetResources(planet, option.cost);
+    }
+    const updated = this.missionService.addClueToken(
+      mission.id,
+      option.clueTier,
+      option.clueSummary,
+      option.method,
+      option.cost
+    );
+    const clues = this.extractNewClues(before, updated);
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'info', text: 'Extiendes el tributo sobre la losa ritual.' },
+      { tone: 'success', text: option.narrativeSuccess }
+    ];
+    const effects: LandingActionEffects = {
+      resourcesSpent: option.cost ? { ...option.cost } : undefined,
+      clueTokensAwarded: clues.length ? clues : undefined,
+      missionStatus: updated?.status
+    };
+    return this.composeResult(request, planet, {
+      title: option.label,
+      narrative,
+      effects,
+      success: true,
+      metadata: { missionId: mission.id, diplomacyAction: option.id }
+    });
+  }
+
+  private handleDiplomacyVision(
+    planet: Planet,
+    mission: PlanetMissionState,
+    script: LandingDiplomacyScript,
+    request: LandingActionRequest
+  ): LandingEventResult {
+    const option = script.visionOption;
+    const sanityCost = option.sanityCost ?? 0;
+    const currentSanity = this.characterProfile.profile.sanity;
+    if (sanityCost > 0 && currentSanity <= sanityCost) {
+      return this.buildBlockedResult(request, option.narrativeFailure ?? 'Te falta cordura.', 'insufficient-sanity');
+    }
+    if (sanityCost) {
+      this.characterProfile.adjustVitals({ sanity: -sanityCost });
+    }
+    const before = this.missionService.getMissionSnapshot(mission.id);
+    const updated = this.missionService.addClueToken(
+      mission.id,
+      option.clueTier,
+      option.clueSummary,
+      option.method
+    );
+    const clues = this.extractNewClues(before, updated);
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'warning', text: 'Permites que sus mentes inunden la tuya.' },
+      { tone: 'success', text: option.narrativeSuccess }
+    ];
+    const effects: LandingActionEffects = {
+      sanityDelta: sanityCost ? -sanityCost : undefined,
+      clueTokensAwarded: clues.length ? clues : undefined,
+      missionStatus: updated?.status
+    };
+    return this.composeResult(request, planet, {
+      title: option.label,
+      narrative,
+      effects,
+      success: true,
+      metadata: { missionId: mission.id, diplomacyAction: option.id }
+    });
+  }
+
+  private handleDiplomacySubTask(
+    planet: Planet,
+    mission: PlanetMissionState,
+    script: LandingDiplomacyScript,
+    request: LandingActionRequest,
+    subTaskId?: string
+  ): LandingEventResult {
+    const config = this.pickSubTask(script, subTaskId);
+    if (!config) {
+      return this.buildBlockedResult(request, 'La facción no tiene recados activos.', 'no-subtasks');
+    }
+    if (config.cost && !this.hasResourceStock(planet.resourceStock, config.cost)) {
+      return this.buildBlockedResult(request, 'Recado requiere más recursos.', 'subtask-resource-shortage');
+    }
+
+    this.missionService.registerSubTask(mission.id, {
+      id: config.id,
+      label: config.label,
+      description: config.description,
+      rewardTier: config.rewardTier,
+      cooldownMs: config.cooldownMs,
+      cost: config.cost
+    });
+    if (config.cost) {
+      this.consumePlanetResources(planet, config.cost);
+    }
+    const before = this.missionService.getMissionSnapshot(mission.id);
+    const roll = this.roll(config.successProbability);
+    let updated: PlanetMissionState | null = null;
+    let sanityDelta = 0;
+    let healthDelta = 0;
+    if (roll.success) {
+      updated = this.missionService.setSubTaskStatus(mission.id, config.id, 'completed', {
+        clueSummary: config.clueSummary
+      });
+    } else {
+      updated = this.missionService.setSubTaskStatus(mission.id, config.id, 'failed');
+      if (config.healthCostOnFail) {
+        healthDelta -= config.healthCostOnFail;
+      }
+      if (config.sanityCostOnFail) {
+        sanityDelta -= config.sanityCostOnFail;
+      }
+      if (healthDelta || sanityDelta) {
+        this.characterProfile.adjustVitals({
+          health: healthDelta || undefined,
+          sanity: sanityDelta || undefined
+        });
+      }
+    }
+    const clues = roll.success ? this.extractNewClues(before, updated) : [];
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'info', text: config.description },
+      {
+        tone: roll.success ? 'success' : 'danger',
+        text: roll.success ? config.logSuccess : config.logFailure
+      }
+    ];
+    const effects: LandingActionEffects = {
+      sanityDelta: sanityDelta || undefined,
+      healthDelta: healthDelta || undefined,
+      clueTokensAwarded: clues.length ? clues : undefined,
+      missionStatus: updated?.status,
+      subTaskUpdate: { id: config.id, status: roll.success ? 'completed' : 'failed' },
+      resourcesSpent: config.cost ? { ...config.cost } : undefined
+    };
+    return this.composeResult(request, planet, {
+      title: config.label,
+      narrative,
+      effects,
+      success: roll.success,
+      roll: roll.roll,
+      probability: config.successProbability,
+      metadata: { missionId: mission.id, diplomacyAction: config.id }
+    });
+  }
+
+  private handleDiplomacyCompletion(
+    planet: Planet,
+    mission: PlanetMissionState,
+    request: LandingActionRequest
+  ): LandingEventResult {
+    const updated = this.missionService.completeMission(mission.id);
+    if (updated?.status === 'completed') {
+      const narrative: LandingActionLogEntry[] = [
+        { tone: 'success', text: 'La facción reconoce tu lealtad y honra el pacto.' }
+      ];
+      return this.composeResult(request, planet, {
+        title: 'Entregar misión',
+        narrative,
+        effects: { missionStatus: updated.status },
+        success: true,
+        metadata: { missionId: mission.id, diplomacyAction: 'complete' }
+      });
+    }
+    const missing = this.missionService.getMissingClueTiers(mission.id);
+    const reason = missing.length
+      ? `Faltan pistas: ${missing.join(', ')}`
+      : 'La misión aún no cumple los requisitos.';
+    return this.buildBlockedResult(request, reason, 'mission-not-ready');
+  }
+
+  private pickSubTask(script: LandingDiplomacyScript, subTaskId?: string): DiplomacySubTaskConfig | null {
+    if (!script.subTasks.length) {
+      return null;
+    }
+    if (subTaskId) {
+      const match = script.subTasks.find(task => task.id === subTaskId);
+      if (match) {
+        return match;
+      }
+    }
+    return script.subTasks[0];
   }
 
   private exploreArtifact(planet: Planet, request: LandingActionRequest): LandingEventResult {
@@ -377,6 +629,43 @@ export class LandingActionService {
     });
     this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Lesser being search failed', { planetId: planet.id, roll: roll.roll });
     return result;
+  }
+
+  private hasResourceStock(stock: PlanetResourceStock | null | undefined, cost?: Partial<PlanetResourceStock>): boolean {
+    if (!cost) {
+      return true;
+    }
+    const source = stock ?? {};
+    for (const key of Object.keys(cost) as Array<keyof PlanetResourceStock>) {
+      const required = cost[key];
+      if (!required) {
+        continue;
+      }
+      const available = source[key] ?? 0;
+      if (available < required) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  private consumePlanetResources(planet: Planet, cost: Partial<PlanetResourceStock>): void {
+    for (const key of Object.keys(cost) as Array<keyof PlanetResourceStock>) {
+      const amount = cost[key];
+      if (!amount) {
+        continue;
+      }
+      const current = planet.resourceStock[key] ?? 0;
+      planet.resourceStock[key] = Math.max(0, current - amount);
+    }
+  }
+
+  private extractNewClues(before: PlanetMissionState | null, after: PlanetMissionState | null): MissionClueToken[] {
+    if (!after) {
+      return [];
+    }
+    const beforeIds = new Set((before?.clueTokens ?? []).map(token => token.id));
+    return (after.clueTokens ?? []).filter(token => !beforeIds.has(token.id));
   }
 
   private composeResult(

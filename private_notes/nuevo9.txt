@@ -9,18 +9,16 @@
  SPECIES_SCAN 1/3
  CREATURE_SCAN 1/3
  
- - Hechizo de controlar portal.
- - Realistic move efect.
- - Ir a 60 en lugar de 20 para el surf de aterrizaje.
- - Sonidos lapiz y pagina rapido para drag y drop.
+  
+ - Scroll en landing menus.
+ - Criaturas entrada por portal o desdeel vacío.
+ - Debries no se oye el fiuuuushhh.
+ - Marquee messages.
+
  
  - Landing menus:
-	- Rest: Recupera 5 puntos de cordura y 25 de salud del character.
 	- Explorar: 
-		- Buscar artefacto: 50% encontrarlo si está o desvelar que no está (+1XP), y 50% salir mal parado y tener que volver a intentarlo (-5 pv).
-		- Encontrar void mass(energy). Como buscar artefacto, 50% llenado a tope del void energy de la nave, 50% de salir mal parado y tener que volver a intentarlo (-5 pv).
-		- Contactar con civilizacion para saber si hay o no: Otra vez igual que buscar artefacto, 50% encontrarla si está o desvelar que no está (+1XP), y 50% salir mal parado y tener que volver a intentarlo (-5 pv).
-		- Encontrar lesserBeing para saber si hay o no: Mas de lo mismo pero peor todavía para el character, 50% de encontrarlo o desvelar que no está, 50% mal parado (-5pv). Pero si está y lo encuentra (-5 cordura temporal)
+		Mejorar explicaciones para coherencia con resultado final.
 	- Animosidad:
 		- Ally: 
 			- Reparar nave a cambio de x(<X) unidades de raw material.
@@ -42,22 +40,17 @@
   
  - Efectos de subir de nivel.
  
+ - La historia del principio para que gane algun hechizo, esconder hechizos, visitando la nave nodriza, y descubra ese 20% de memoria.
+ 
  - Iniciar sesion:
 	- Para grabar partida y cargar partida.
  
  - Donar €€.
  
+ - Realistic move efect.
  - Hechizo de mind flight.
  
- - Colision? then apply improved algorithm.
- 
- - La historia del principio para que gane algun hechizo, esconder hechizos, visitando la nave nodriza, y descubra ese 20% de memoria.
-
- - Scroll en landing menus.
- 
  - Weapons
- 
- - Criaturas entrada por portal o desdeel vacío.
  
 Efectos de slots auxiliares: 
 - Cargar void energy de la radiación solar.
@@ -67,8 +60,7 @@ Efectos de slots auxiliares:
 - Sistema de salto interplanetario.
 - Tanques de void energy extra.
 - Escaner de vida en el planeta (civ y lesser being).
-
-- Marquee messages.
+- Mind control (mouse).
 
 - Drift por el vacío intergalactico:
 	- Sistema de control de drift.
@@ -78,4 +70,4 @@ Efectos de slots auxiliares:
 		- Llegar a un espacio vacío con un dios primigenio (-10 cordura y 1 punto mas por minuto) para luchar con él o perecer y tener que respawnear.
 		- Perdido en el vacío exterior: +1 año entero de edad y -10 de cordura, con posibilidad claro de morir y tener que respawnear.
 
-- Debries no se oye el fiuuuushhh.
+- Colision? then apply improved algorithm.

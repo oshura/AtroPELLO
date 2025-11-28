@@ -23,7 +23,40 @@ export interface PlanetIntelState {
 }
 
 export type PlanetMissionType = 'artifact' | 'material';
-export type PlanetMissionProgress = 'offered' | 'in-progress' | 'ready-to-turn-in' | 'completed';
+export type PlanetMissionStatus =
+  | 'offered'
+  | 'accepted'
+  | 'in-progress'
+  | 'ready-to-turn-in'
+  | 'completed'
+  | 'failed';
+
+export type MissionClueTier = 'minor' | 'major' | 'final';
+
+export interface MissionClueToken {
+  id: string;
+  tier: MissionClueTier;
+  summary: string;
+  method: 'bribe' | 'subtask' | 'vision' | 'reward' | 'other';
+  obtainedAt: number;
+  cost?: Partial<PlanetResourceStock>;
+}
+
+export type MissionSubTaskStatus = 'available' | 'in-progress' | 'completed' | 'failed';
+
+export interface MissionSubTask {
+  id: string;
+  label: string;
+  description?: string;
+  status: MissionSubTaskStatus;
+  rewardTier: MissionClueTier;
+  cooldownMs?: number;
+  lastUpdatedAt: number;
+  cost?: Partial<PlanetResourceStock>;
+  healthCost?: number;
+  sanityCost?: number;
+  failDamage?: number;
+}
 
 export interface PlanetMissionTarget {
   systemId: string;
@@ -31,16 +64,35 @@ export interface PlanetMissionTarget {
   clusterId?: string;
 }
 
+export interface PlanetMissionReward {
+  memorySharePct?: number;
+  resources?: Partial<PlanetResourceStock>;
+  experience?: number;
+  uniqueGlyphId?: string;
+}
+
+export interface PlanetMissionLogEntry {
+  timestamp: number;
+  event: string;
+  payload?: Record<string, any>;
+}
+
 export interface PlanetMissionState {
   id: string;
+  race: PlanetInhabitants;
   type: PlanetMissionType;
   targetLocation: PlanetMissionTarget;
   itemId: string;
   description?: string;
   dialogueScriptId?: string;
-  status: PlanetMissionProgress;
-  memoryRewardPercent?: number;
+  status: PlanetMissionStatus;
+  reward?: PlanetMissionReward;
+  log: PlanetMissionLogEntry[];
+  missionName?: string;
   requestedBy?: PlanetInhabitants;
+  clueTokens: MissionClueToken[];
+  requiredClueTiers?: MissionClueTier[];
+  subTasks?: MissionSubTask[];
 }
 
 export const PLANET_RESOURCE_KINDS = ['metal', 'non_metal', 'organic', 'void_matter'] as const;
