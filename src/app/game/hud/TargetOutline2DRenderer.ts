@@ -9,7 +9,7 @@ interface OutlineRenderData {
   y: number; // screen px (framebuffer pixels)
   name: string;
   typeLabel: string;
-  distanceEdge: number; // units to edge
+  distanceDisplay: number; // units to display (edge unless portal)
   color: string; // css hex or rgba
   healthPct?: number; // 0-100 if available
   // Optional visual tuning per overlay
@@ -270,7 +270,7 @@ export class TargetOutline2DRenderer {
     if (hp !== null) ctx.fillText(`${hp}%`, cx - 28, cy + 26);
   ctx.textAlign = 'left';
     // Quantize distance label to reduce redraw churn
-    ctx.fillText(`${formatDist(data.distanceEdge)}`, cx + 28, cy + 26);
+    ctx.fillText(`${formatDist(data.distanceDisplay)}`, cx + 28, cy + 26);
 
   // Type at bottom center (lowered slightly more)
   ctx.textAlign = 'center';
@@ -299,7 +299,7 @@ export class TargetOutline2DRenderer {
 
   // Create a coarse key to avoid unnecessary texture rebuilds
   private makeKey(data: OutlineRenderData): string {
-    const distBucket = Math.round((data.distanceEdge || 0) / 25); // 25u buckets
+    const distBucket = Math.round((data.distanceDisplay || 0) / 25); // 25u buckets
     const hpBucket = (data.healthPct == null) ? -1 : Math.round((data.healthPct as number) / 5); // 5% buckets
     const intBucket = Math.round(Math.max(0, Math.min(1, (data as any).intensity ?? 1)) * 10);
     const thickBucket = Math.round(Math.max(0.5, Math.min(2.0, (data as any).thickness ?? 1)) * 10);

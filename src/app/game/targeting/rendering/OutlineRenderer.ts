@@ -7,7 +7,7 @@ import { Injectable } from '@angular/core';
 import { LoggingService, LogCategory } from '../../../services/logging.service';
 import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
-import { ITargetable } from '../../types/targeting.types';
+import { ITargetable, TargetType } from '../../types/targeting.types';
 import { GameObject } from '../../GameObject';
 import { GameObjectType, getDisplayLabelFromTargetType } from '../../types/game-object.types';
 import { mat4, vec3 } from 'gl-matrix';
@@ -642,7 +642,9 @@ export class OutlineRenderer {
         radiusForDist = Number(anyT.scale.x);
       }
       const distOriginCenter = Math.hypot(dOx, dOy, dOz);
-      const distOrigin = Math.max(0, distOriginCenter - Math.max(0, radiusForDist));
+      const distOrigin = this.shouldUseCenterDistance(target)
+        ? distOriginCenter
+        : Math.max(0, distOriginCenter - Math.max(0, radiusForDist));
       const distLabel = `${Math.round(distOrigin)}u`;
       // Sin modulación de alpha por distancia: color constante
       const baseCol = outlineTarget.config.color;
@@ -1427,6 +1429,22 @@ export class OutlineRenderer {
     });
   }
 
+  private shouldUseCenterDistance(target: ITargetable): boolean {
+    try {
+      const tType = (target as any).getTargetType?.();
+      if (tType === TargetType.PORTAL) {
+        return true;
+      }
+    } catch {}
+    try {
+      const goType = (target as unknown as GameObject).getType?.();
+      if (goType === GameObjectType.PORTAL) {
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
   /**
    * Calcula la distancia a un target (placeholder)
    */
@@ -1437,6 +1455,9 @@ export class OutlineRenderer {
     const dy = target.position.y - origin.y;
     const dz = target.position.z - origin.z;
     const centerDist = Math.hypot(dx, dy, dz);
+    if (this.shouldUseCenterDistance(target)) {
+      return centerDist;
+    }
     const anyT: any = target as any;
     let radius = 0;
     if (anyT.boundingSphere && typeof anyT.boundingSphere.radius === 'number') radius = Number(anyT.boundingSphere.radius);

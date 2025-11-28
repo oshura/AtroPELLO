@@ -2727,11 +2727,9 @@ export class GameEngine {
   // Inform preview renderer of which target we’re showing to adapt rotation speed
   this.targetPreview.setPreviewTarget(selected || null);
     if (selected) {
-      // Distance
-      const dx = selected.position.x - this.camera.position.x;
-      const dy = selected.position.y - this.camera.position.y;
-      const dz = selected.position.z - this.camera.position.z;
-      const distance = Math.hypot(dx, dy, dz);
+      // Distance (edge by default, center for portal)
+      const distanceRaw = this.getDisplayDistanceToTarget(selected);
+      const distance = Number.isFinite(distanceRaw) ? distanceRaw : 0;
 
     // Relation via shared service to stay in sync with Outliner/Reticle
   const relation = this.relationService.getRelation(selected);
@@ -7538,17 +7536,7 @@ export class GameEngine {
     this.persistPortalSnapshotState(portal);
     const label = typeof portal.getDisplayName === 'function' ? portal.getDisplayName() : portal.id;
     try { this.hudManager?.addMarqueeMessage?.(`Concordia Gate · ${label}`); } catch {}
-    try { this.showPlaceholderText(`CONCORDIA GATE\n${label} pacificado`, 2400); } catch {}
-    try {
-      if (this.audio) {
-        const clip = this.audio.has('sfx_whoosh') ? 'sfx_whoosh' : (this.audio.has('ui_select') ? 'ui_select' : null);
-        if (clip) {
-          this.audio.play(clip, { bus: 'sfx', volume: 0.6 });
-        }
-      }
-    } catch (error) {
-      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Concordia Gate audio failed', error);
-    }
+    try { this.showPlaceholderText(`CONCORDIA GATE\n${label} pacificado`, 2400); } catch {}    
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Concordia Gate seal applied', {
       portalId: portal.id,
       distance,
@@ -7596,6 +7584,64 @@ export class GameEngine {
       }
     } catch {}
     return null;
+  }
+
+  private shouldUseCenterDistance(target: ITargetable | null): boolean {
+    if (!target) {
+      return false;
+    }
+    if (target instanceof Portal) {
+      return true;
+    }
+    try {
+      const tType = (target as any).getTargetType?.();
+      if (tType === TargetType.PORTAL) {
+        return true;
+      }
+    } catch {}
+    try {
+      const goType = (target as any).getType?.();
+      if (goType === GameObjectType.PORTAL) {
+        return true;
+      }
+    } catch {}
+    return false;
+  }
+
+  private getDisplayDistanceToTarget(target: ITargetable): number {
+    if (!target || !target.position) {
+      return Infinity;
+    }
+    const origin = this.spaceship?.position ?? this.camera?.position ?? null;
+    if (!origin) {
+      return Infinity;
+    }
+    const dx = target.position.x - origin.x;
+    const dy = target.position.y - origin.y;
+    const dz = target.position.z - origin.z;
+    const distanceToCenter = Math.hypot(dx, dy, dz);
+    if (!isFinite(distanceToCenter)) {
+      return Infinity;
+    }
+    if (this.shouldUseCenterDistance(target)) {
+      return distanceToCenter;
+    }
+    const radius = this.getApproximateTargetRadius(target);
+    return Math.max(0, distanceToCenter - radius);
+  }
+
+  private getApproximateTargetRadius(target: ITargetable): number {
+    const anyTarget = target as any;
+    if (anyTarget?.boundingSphere && typeof anyTarget.boundingSphere.radius === 'number') {
+      return Math.max(0, Number(anyTarget.boundingSphere.radius));
+    }
+    if (typeof anyTarget?.radius === 'number' && isFinite(anyTarget.radius)) {
+      return Math.max(0, Number(anyTarget.radius));
+    }
+    if (typeof anyTarget?.scale?.x === 'number' && isFinite(anyTarget.scale.x)) {
+      return Math.max(0, Number(anyTarget.scale.x));
+    }
+    return 0;
   }
 
   private castVoidKinesis(target: ITargetable | null): boolean {
@@ -8452,13 +8498,15 @@ export class GameEngine {
           } catch {}
           return undefined;
         })();
+        const distanceRaw = this.getDisplayDistanceToTarget(t);
+        const distanceDisplay = Number.isFinite(distanceRaw) ? distanceRaw : 0;
         return {
           x: info.screenPosition.x * dpr,
           y: info.screenPosition.y * dpr,
           // Prefer live target name to avoid 1-frame stale snapshots
           name: (t.getDisplayName?.() || info.name || t.id),
           typeLabel,
-          distanceEdge: info.distanceToEdge ?? 0,
+          distanceDisplay,
           color: info.accentColor || '#60a5fa',
           healthPct
         } as any;
