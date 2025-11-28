@@ -46,6 +46,31 @@ export class HumanSolarSystemService {
     const neptuneIdx = 7;
     const plutoIdx = 8;
 
+    const getVoidMassCapacityForIndex = (index: number): number => {
+      switch (index) {
+        case mercuryIdx:
+          return 0;
+        case venusIdx:
+          return 2200;
+        case earthIdx:
+          return 3600;
+        case marsIdx:
+          return 1500;
+        case jupiterIdx:
+          return 9000;
+        case saturnIdx:
+          return 7800;
+        case uranusIdx:
+          return 5200;
+        case neptuneIdx:
+          return 4200;
+        case plutoIdx:
+          return 600;
+        default:
+          return 0;
+      }
+    };
+
     // Deterministic set of orbit normals to distribute planes (mimics previous multi-plane layout)
     const orbitNormals: Vector3[] = [
       { x: 0,    y: 1,    z: 0 },      // Mercury (reference plane)
@@ -108,6 +133,12 @@ export class HumanSolarSystemService {
       stock.non_metal = kind === 'Gaseous' ? 35 : 15;
       stock.organic = i === earthIdx ? 50 : (kind === 'Terrestrial' ? 25 : 5);
       stock.void_matter = kind === 'Ringed' ? 3 : 1;
+      const voidMassCapacity = getVoidMassCapacityForIndex(i);
+      const hasVoidMass = voidMassCapacity > 0;
+      const voidMassRemaining = voidMassCapacity;
+      if (hasVoidMass) {
+        stock.void_matter = Math.max(stock.void_matter ?? 0, Math.max(1, Math.round(voidMassCapacity / 2500)));
+      }
       planets.push({
         id: `planet-${i === earthIdx ? 'earth' : i === mercuryIdx ? 'mercury' : i === venusIdx ? 'venus' : i === marsIdx ? 'mars' : i === jupiterIdx ? 'jupiter' : i === saturnIdx ? 'saturn' : i === uranusIdx ? 'uranus' : i === neptuneIdx ? 'neptune' : 'pluto'}`,
         name,
@@ -117,9 +148,9 @@ export class HumanSolarSystemService {
         baseColorName,
         probabilityOfLifePct: (i === earthIdx ? 100 : (kind === 'Terrestrial' ? 20 : (kind === 'Gaseous' ? 0 : 5))),
         hasArtifact: false,
-        hasVoidMass: false,
-        voidMassCapacity: 0,
-        voidMassRemaining: 0,
+        hasVoidMass,
+        voidMassCapacity,
+        voidMassRemaining,
         artifactIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
         voidMassIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
         civilizationIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
