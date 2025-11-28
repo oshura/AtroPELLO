@@ -3,6 +3,9 @@ import { CommonModule } from '@angular/common';
 import { Modal } from '../modal/modal';
 import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/landing.types';
 import { LandingMenuComponent } from '../landing-menu/landing-menu';
+import { GameStateStore } from '../../services/game/game-state.store';
+import { PlanetIntelSnapshot } from '../../game/types/planet-intel.types';
+import { PlanetInhabitants, PLANET_INHABITANT_LABELS, LesserBeing, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
 
 @Component({
   selector: 'app-landing-panel',
@@ -17,6 +20,8 @@ export class LandingPanelComponent implements OnChanges {
   @Output() takeoff = new EventEmitter<void>();
   @Output() stay = new EventEmitter<void>();
   protected menuMode = false;
+
+  constructor(private readonly gameState: GameStateStore) {}
 
   ngOnChanges(changes: SimpleChanges): void {
     if ((changes['visible'] && !this.visible) || changes['context']) {
@@ -104,7 +109,44 @@ export class LandingPanelComponent implements OnChanges {
   }
 
   private get planetIntelSnapshot(): LandingPlanetIntel | null {
-    return this.context?.planetIntel ?? null;
+    const planetId = this.context?.planetId;
+    if (!planetId) {
+      return this.context?.planetIntel ?? null;
+    }
+    const snapshot = this.gameState.getPlanetIntelSnapshot(planetId);
+    if (!snapshot) {
+      return this.context?.planetIntel ?? null;
+    }
+    return this.mapSnapshotToLandingIntel(snapshot);
+  }
+
+  private mapSnapshotToLandingIntel(snapshot: PlanetIntelSnapshot): LandingPlanetIntel {
+    const lifeKnown = !!snapshot.lifeScanned;
+    const creatureKnown = !!snapshot.creatureScanned;
+    const inhabitants = snapshot.inhabitants ?? PlanetInhabitants.NONE;
+    const lesserBeing = snapshot.lesserBeing ?? LesserBeing.NONE;
+    const inhabitantsDisplay = lifeKnown
+      ? PLANET_INHABITANT_LABELS[inhabitants] ?? this.humanizeEnum(inhabitants)
+      : 'Desconocido';
+    const lesserBeingDisplay = creatureKnown
+      ? LESSER_BEING_LABELS[lesserBeing] ?? this.humanizeEnum(lesserBeing)
+      : 'Desconocido';
+
+    return {
+      planetInhabitantsDisplay: inhabitantsDisplay,
+      planetLesserBeingDisplay: lesserBeingDisplay,
+      planetLifeIntelKnown: lifeKnown,
+      planetCreatureIntelKnown: creatureKnown,
+      planetHasKnownSpecies: lifeKnown && inhabitants !== PlanetInhabitants.NONE,
+      planetVisited: !!snapshot.visited,
+    };
+  }
+
+  private humanizeEnum(value: string | number): string {
+    return String(value)
+      .split('_')
+      .map(chunk => chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase())
+      .join(' ');
   }
 
   onTakeoff(): void {

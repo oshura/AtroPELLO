@@ -1395,6 +1395,7 @@ export class GameEngine {
     try {
       // Crear nave del jugador en el origen
       this.spaceship = new Spaceship({ x: 0, y: 0, z: 0 });
+      this.gameState.spaceship = this.spaceship;
       this.spaceship.cargoCapacityCurrent = 0;
       try {
         this.cargoHoldService.clearManifest();

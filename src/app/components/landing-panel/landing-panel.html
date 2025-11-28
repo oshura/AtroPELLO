@@ -53,7 +53,7 @@
 
   <div slot="footer" class="landing-panel__actions">
     <ng-container *ngIf="!inMenuView; else menuFooter">
-      <button type="button" class="btn ghost" (click)="enterMenu()">Permanecer</button>
+      <button type="button" class="btn primary" (click)="enterMenu()">Permanecer</button>
       <button type="button" class="btn primary" (click)="onTakeoff()">
         Despegar
         <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
@@ -62,7 +62,7 @@
       </button>
     </ng-container>
     <ng-template #menuFooter>
-      <button type="button" class="btn ghost" (click)="exitMenu()">Embarcar</button>
+      <button type="button" class="btn primary" (click)="exitMenu()">Embarcar</button>
     </ng-template>
   </div>
 </app-modal>

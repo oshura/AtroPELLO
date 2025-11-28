@@ -17,16 +17,16 @@
           <p>Acciones de riesgo 50/50. Aumentan edad +2 días.</p>
         </header>
         <div class="action-grid">
-          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.ARTIFACT)" [disabled]="disabled">
+          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.ARTIFACT)" [disabled]="isArtifactActionDisabled">
             Buscar artefacto
           </button>
           <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.VOID_MASS)" [disabled]="disabled">
             Capturar void mass
           </button>
-          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.CIVILIZATION)" [disabled]="disabled">
+          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.CIVILIZATION)" [disabled]="isCivilizationActionDisabled">
             Contactar civilización
           </button>
-          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.LESSER_BEING)" [disabled]="disabled">
+          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.LESSER_BEING)" [disabled]="isLesserBeingActionDisabled">
             Rastrear lesser being
           </button>
         </div>
@@ -70,10 +70,10 @@
             <span class="pill pill--warning" *ngIf="eff.needsRetry">Reintentar</span>
             <span class="pill pill--warning" *ngIf="eff.blockedReason">Bloqueo: {{ eff.blockedReason }}</span>
             <span class="pill pill--positive" *ngIf="eff.itemsAwarded?.length">Botín x{{ eff.itemsAwarded?.length ?? 0 }}</span>
-            <span class="pill pill--neutral" *ngIf="eff.intel?.artifact">Intel artefacto: {{ eff.intel?.artifact }}</span>
-            <span class="pill pill--neutral" *ngIf="eff.intel?.voidMass">Intel void: {{ eff.intel?.voidMass }}</span>
-            <span class="pill pill--neutral" *ngIf="eff.intel?.civilization">Intel civ.: {{ eff.intel?.civilization }}</span>
-            <span class="pill pill--neutral" *ngIf="eff.intel?.lesserBeing">Intel lesser: {{ eff.intel?.lesserBeing }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.intel?.artifact">Intel artefacto: {{ formatIntelStatus(eff.intel?.artifact) }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.intel?.voidMass">Intel void: {{ formatIntelStatus(eff.intel?.voidMass) }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.intel?.civilization">Intel civ.: {{ formatIntelStatus(eff.intel?.civilization) }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.intel?.lesserBeing">Intel lesser: {{ formatIntelStatus(eff.intel?.lesserBeing) }}</span>
           </div>
         </article>
       </ng-container>

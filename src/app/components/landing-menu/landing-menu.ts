@@ -9,6 +9,8 @@ import {
   LandingExploreObjective
 } from '../../game/types/landing-action.types';
 import { LandingActionService } from '../../services/game/landing-action.service';
+import { GameStateStore } from '../../services/game/game-state.store';
+import { PLANET_INTEL_STATUS, PlanetIntelSnapshot, PlanetIntelStatus } from '../../game/types/planet-intel.types';
 
 @Component({
   selector: 'app-landing-menu',
@@ -26,7 +28,10 @@ export class LandingMenuComponent {
   protected selectedEventId: string | null = null;
   protected readonly LandingExploreObjective = LandingExploreObjective;
 
-  constructor(private readonly landingActions: LandingActionService) {}
+  constructor(
+    private readonly landingActions: LandingActionService,
+    private readonly gameState: GameStateStore
+  ) {}
 
   protected get hasPlanet(): boolean {
     return Boolean(this.context?.planetId);
@@ -34,6 +39,29 @@ export class LandingMenuComponent {
 
   protected get disabled(): boolean {
     return this.pending || !this.hasPlanet;
+  }
+
+  protected get isArtifactActionDisabled(): boolean {
+    return this.disabled || this.isIntelResolved(this.planetIntel?.artifactIntelStatus);
+  }
+
+  protected get isCivilizationActionDisabled(): boolean {
+    return this.disabled || this.isIntelResolved(this.planetIntel?.civilizationIntelStatus);
+  }
+
+  protected get isLesserBeingActionDisabled(): boolean {
+    return this.disabled || this.isIntelResolved(this.planetIntel?.lesserBeingIntelStatus);
+  }
+
+  protected formatIntelStatus(status?: PlanetIntelStatus | null): string {
+    switch (status) {
+      case PLANET_INTEL_STATUS.CONFIRMED_PRESENT:
+        return 'detectada';
+      case PLANET_INTEL_STATUS.CONFIRMED_ABSENT:
+        return 'inexistente';
+      default:
+        return 'desconocido';
+    }
   }
 
   protected get selectedEvent(): LandingEventResult | null {
@@ -107,6 +135,17 @@ export class LandingMenuComponent {
       return 'pill--warning';
     }
     return event.success ? 'pill--success' : 'pill--danger';
+  }
+
+  private get planetIntel(): PlanetIntelSnapshot | null {
+    if (!this.hasPlanet) {
+      return null;
+    }
+    return this.gameState.getPlanetIntelSnapshot(this.context!.planetId) ?? null;
+  }
+
+  private isIntelResolved(status?: PlanetIntelStatus | null): boolean {
+    return !!status && status !== PLANET_INTEL_STATUS.UNKNOWN;
   }
 
   private executeAction(request: LandingActionRequest): void {
