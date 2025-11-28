@@ -2,6 +2,7 @@ import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router, RouterModule } from '@angular/router';
 import { WikiNavigationService } from '../../../services/wiki-navigation.service';
+import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.component';
 
 interface PanelSection {
   title: string;
@@ -25,11 +26,9 @@ interface ExperienceEventRow {
 
 @Component({
   selector: 'app-inventory-wiki',
-  imports: [CommonModule, RouterModule],
+  imports: [CommonModule, RouterModule, WikiCloseComponent],
   template: `
-    <a routerLink="/" class="arcade-back">
-      <span>BACK TO GAME &gt;&gt;</span>
-    </a>
+    <app-wiki-close></app-wiki-close>
     <div class="wiki-page">
       <header class="page-header">
         <a routerLink="/wiki" class="back-link">← Back to Wiki</a>
@@ -168,44 +167,6 @@ interface ExperienceEventRow {
       margin: 0 auto;
       padding: 2rem 3rem;
       color: #e5edff;
-    }
-
-    .arcade-back {
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      z-index: 9998;
-      background: linear-gradient(135deg, #000000 0%, #001b40 50%, #000000 100%);
-      border: 3px solid #3b82f6;
-      padding: 12px 24px;
-      font-family: 'Impact', 'Arial Black', sans-serif;
-      font-size: 16px;
-      font-weight: 900;
-      color: #7dd3fc;
-      text-shadow:
-        0 0 5px #7dd3fc,
-        0 0 15px #38bdf8;
-      box-shadow:
-        0 0 15px rgba(59, 130, 246, 0.8),
-        inset 0 0 15px rgba(15, 118, 255, 0.3);
-      cursor: pointer;
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      animation: pulse 2s ease-in-out infinite;
-      transform: perspective(500px) rotateX(-5deg);
-      transition: all 0.2s;
-      letter-spacing: 2px;
-    }
-
-    .arcade-back:hover {
-      transform: perspective(500px) rotateX(-5deg) scale(1.05) translateY(-2px);
-    }
-
-    @keyframes pulse {
-      0%, 100% { opacity: 0.9; }
-      50% { opacity: 1; }
     }
 
     .page-header {

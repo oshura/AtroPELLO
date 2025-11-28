@@ -3,6 +3,7 @@ import { CommonModule } from '@angular/common';
 import { RouterModule, Router } from '@angular/router';
 import { FormsModule } from '@angular/forms';
 import { WikiNavigationService } from '../../../services/wiki-navigation.service';
+import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.component';
 
 interface WikiEntry {
   id: string;
@@ -14,11 +15,9 @@ interface WikiEntry {
 
 @Component({
   selector: 'app-wiki-index',
-  imports: [CommonModule, RouterModule, FormsModule],
+  imports: [CommonModule, RouterModule, FormsModule, WikiCloseComponent],
   template: `
-    <a routerLink="/" class="arcade-back">
-      <span>BACK TO GAME &gt;&gt;</span>
-    </a>
+    <app-wiki-close></app-wiki-close>
     <div class="wiki-container">
       <header class="wiki-header">
         <h1>📚 AtroPELLO Wiki</h1>
@@ -77,75 +76,6 @@ interface WikiEntry {
       color: #e0e0e0;
     }
 
-    .arcade-back {
-      position: fixed;
-      top: 80px;
-      right: 20px;
-      z-index: 9998;
-      background: linear-gradient(135deg, #000000 0%, #1a0033 50%, #000000 100%);
-      border: 3px solid #ff00ff;
-      padding: 12px 24px;
-      font-family: 'Impact', 'Arial Black', sans-serif;
-      font-size: 16px;
-      font-weight: 900;
-      color: #00ffff;
-      text-shadow: 
-        0 0 5px #00ffff,
-        0 0 10px #00ffff,
-        0 0 20px #ff00ff,
-        0 0 30px #ff00ff;
-      box-shadow: 
-        0 0 15px #ff00ff,
-        inset 0 0 15px rgba(255, 0, 255, 0.2),
-        0 4px 0 #660066;
-      cursor: pointer;
-      text-decoration: none;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      animation: pulse 2s ease-in-out infinite;
-      transform: perspective(500px) rotateX(-5deg);
-      transition: all 0.2s;
-      letter-spacing: 2px;
-    }
-
-    .arcade-back:hover {
-      transform: perspective(500px) rotateX(-5deg) scale(1.05) translateY(-2px);
-      box-shadow: 
-        0 0 25px #ff00ff,
-        inset 0 0 25px rgba(255, 0, 255, 0.4),
-        0 6px 0 #660066;
-      text-shadow: 
-        0 0 8px #00ffff,
-        0 0 15px #00ffff,
-        0 0 25px #ff00ff,
-        0 0 40px #ff00ff;
-    }
-
-    .arcade-back:active {
-      transform: perspective(500px) rotateX(-5deg) scale(0.98) translateY(2px);
-      box-shadow: 
-        0 0 15px #ff00ff,
-        inset 0 0 15px rgba(255, 0, 255, 0.2),
-        0 2px 0 #660066;
-    }
-
-    @keyframes pulse {
-      0%, 100% { 
-        border-color: #ff00ff;
-        box-shadow: 
-          0 0 15px #ff00ff,
-          inset 0 0 15px rgba(255, 0, 255, 0.2),
-          0 4px 0 #660066;
-      }
-      50% { 
-        border-color: #ff66ff;
-        box-shadow: 
-          0 0 25px #ff00ff,
-          inset 0 0 25px rgba(255, 0, 255, 0.3),
-          0 4px 0 #660066;
-      }
-    }
 
     .wiki-header {
       text-align: center;
