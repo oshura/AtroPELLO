@@ -1,12 +1,4 @@
 <div class="landing-menu" [class.landing-menu--disabled]="!hasPlanet">
-  <div class="landing-menu__header">
-    <div>
-      <span class="landing-menu__label">Planeta</span>
-      <strong>{{ context?.planetName || 'Desconocido' }}</strong>
-    </div>
-    <span class="landing-menu__status" *ngIf="pending">Resolviendo...</span>
-  </div>
-
   <div class="landing-menu__columns">
     <section class="landing-menu__actions">
       <article class="action-group">

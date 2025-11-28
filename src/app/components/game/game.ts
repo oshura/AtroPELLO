@@ -55,6 +55,7 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
     this.logger.info(LogCategory.GAME_LOOP, 'Landing panel opening', { planetId: context.planetId });
     this.landingPanelContext = context;
     this.showLandingPanel = true;
+    this.setLandingMusicState(true);
     this.inputHandler.setInputEnabled(false);
     this.cdr.detectChanges();
   }
@@ -91,8 +92,35 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
     this.showLandingPanel = false;
     this.landingPanelContext = null;
     if (wasVisible) {
+      this.setLandingMusicState(false);
       this.updateInputEnabled();
       this.cdr.detectChanges();
+    }
+  }
+
+  private setLandingMusicState(active: boolean): void {
+    try {
+      const engine = this.gameInitializer.getGameEngine();
+      if (!engine) {
+        return;
+      }
+      const music = (engine as any)?.music;
+      if (!music) {
+        return;
+      }
+      if (!active && this.gameState !== GameState.RUNNING) {
+        return;
+      }
+      const scene = active ? 'landing' : 'exploration';
+      const fade = active ? 700 : 900;
+      const maybePromise = music.setScene(scene, fade);
+      if (maybePromise && typeof maybePromise.catch === 'function') {
+        maybePromise.catch((sceneError: unknown) => {
+          this.logger.warn(LogCategory.MUSIC, 'Landing music scene promise rejected', { active, sceneError });
+        });
+      }
+    } catch (error) {
+      this.logger.warn(LogCategory.MUSIC, 'Failed to toggle landing music', { active, error });
     }
   }
 

@@ -303,6 +303,7 @@ export class GrimoirePanel {
       snapshotDirty: true,
     };
     this.hoveredIconIndex = -1;
+    this.playGlyphDragSound();
     return true;
   }
 
@@ -324,6 +325,7 @@ export class GrimoirePanel {
       ny: Math.min(1, Math.max(0, finalY / this.canvas.height)),
     };
     const spell = this.dragState.spell;
+    this.playGlyphDropSound();
     this.abortGlyphDrag(false);
     return { spell, normalized };
   }
@@ -1887,6 +1889,24 @@ export class GrimoirePanel {
     }
     try {
       this.audioService.play('ui_outline_hover', { bus: 'ui', volume: 0.32 });
+    } catch {}
+  }
+
+  private playGlyphDragSound(): void {
+    if (!this.audioService) {
+      return;
+    }
+    try {
+      this.audioService.play('ui_drag_glyph', { bus: 'ui', volume: 0.55 });
+    } catch {}
+  }
+
+  private playGlyphDropSound(): void {
+    if (!this.audioService) {
+      return;
+    }
+    try {
+      this.audioService.play('ui_drop_glyph', { bus: 'ui', volume: 0.6 });
     } catch {}
   }
 

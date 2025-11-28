@@ -45,56 +45,33 @@
 }
 
 .wiki-link {
-  display: flex;
+  display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 8px;
-  background: rgba(0, 255, 65, 0.1);
-  border: 2px solid #00ff41;
+  padding: 0;
+  width: auto;
+  height: auto;
+  border: none;
+  background: transparent;
   text-decoration: none;
   transition: all 0.3s ease;
   position: relative;
-  
-  &::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    border-radius: 8px;
-    padding: 2px;
-    background: linear-gradient(45deg, #00ff41, #00cc33, #00ff41);
-    -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-    -webkit-mask-composite: xor;
-    mask-composite: exclude;
-    opacity: 0;
-    transition: opacity 0.3s ease;
-  }
-  
-  &:hover {
-    background: rgba(0, 255, 65, 0.2);
-    box-shadow: 0 0 20px rgba(0, 255, 65, 0.4);
-    transform: translateY(-2px);
-    
-    &::before {
-      opacity: 1;
-    }
-    
-    .terminal-icon {
-      text-shadow: 0 0 15px #00ff41;
-      transform: scale(1.1);
-    }
-  }
-}
 
-.terminal-icon {
-  color: #00ff41;
-  font-size: 20px;
-  font-weight: bold;
-  font-family: 'Courier New', monospace;
-  text-shadow: 0 0 10px #00ff41;
-  transition: all 0.3s ease;
-  letter-spacing: -2px;
+  .wiki-icon {
+    height: 45px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.6));
+    transition: transform 0.25s ease, filter 0.25s ease;
+  }
+
+  &:hover {
+    transform: translateY(-1px);
+    .wiki-icon {
+      transform: scale(1.05);
+      filter: drop-shadow(0 6px 10px rgba(0, 255, 190, 0.45));
+    }
+  }
 }
 
 .header-center {

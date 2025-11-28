@@ -9,10 +9,10 @@
  SPECIES_SCAN 1/3
  CREATURE_SCAN 1/3
  
- 
- - Mouse en paneles.
- 
+ - Hechizo de controlar portal.
  - Realistic move efect.
+ - Ir a 60 en lugar de 20 para el surf de aterrizaje.
+ - Sonidos lapiz y pagina rapido para drag y drop.
  
  - Landing menus:
 	- Rest: Recupera 5 puntos de cordura y 25 de salud del character.
@@ -50,3 +50,7 @@
  - Hechizo de mind flight.
  
  - Colision? then apply improved algorithm.
+ 
+ - La historia del principio para que gane algun hechizo, esconder hechizos, visitando la nave nodriza, y descubra ese 20% de memoria.
+
+ - Scroll en landing menus.

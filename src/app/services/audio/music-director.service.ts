@@ -18,7 +18,7 @@ export class MusicDirectorService {
     planet_approach: [{ name: 'music_planet', volume: 0.65, loop: true }],
     combat: [{ name: 'music_combat', volume: 0.7, loop: true }],
     spell_prep: [{ name: 'music_spell_prep', volume: 0.55, loop: true }],
-    landing: [{ name: 'music_landing', volume: 0.6, loop: true }],
+    landing: [{ name: 'music_landing', volume: 0.6, loop: false }],
     silence: []
   };
 
