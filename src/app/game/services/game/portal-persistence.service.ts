@@ -35,6 +35,20 @@ export class PortalPersistenceService {
     }));
   }
 
+  /** Apply a partial update to every stored snapshot that references the given portal. */
+  updatePortalSnapshot(portalId: string, patch: Partial<PortalSnapshot>): boolean {
+    let updated = false;
+    for (const snap of this.snapshots.values()) {
+      if (!snap.portals || !snap.portals.length) continue;
+      const portal = snap.portals.find(p => p.id === portalId);
+      if (portal) {
+        Object.assign(portal, patch);
+        updated = true;
+      }
+    }
+    return updated;
+  }
+
   /** Find the first stored snapshot containing a portal with the given id. */
   findByPortalId(portalId: string): SolarSystemSnapshot | undefined {
     for (const snap of this.snapshots.values()) {

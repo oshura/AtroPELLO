@@ -75,6 +75,12 @@ export const SPELL_BEHAVIOR_MAP: Record<SpellType, SpellBehavior> = {
   }),
   [SpellType.SPECIES_SCAN]: createBehavior(SpellType.SPECIES_SCAN),
   [SpellType.CREATURE_SCAN]: createBehavior(SpellType.CREATURE_SCAN),
+  [SpellType.PORTAL_CONCORD]: createBehavior(SpellType.PORTAL_CONCORD, {
+    lockShipControls: false,
+    lockPanels: false,
+    hideOutliners: false,
+    muteHoverAudio: false,
+  }),
 };
 
 export function getSpellBehavior(spell?: SpellType | null): SpellBehavior {

@@ -32,6 +32,11 @@ export class Portal extends GameObject implements ITargetable {
   public linkedPortalId?: string;
   // Snapshot-driven eye state (gaze, eyelid openness, intensity)
   public eyeState?: EyeState;
+  // Concordia Gate seal state
+  public concordSealActive: boolean = false;
+  public concordSealActivatedAt: number = 0;
+  private _concordSealStrength: number = 0;
+  public preventsLesserIncursions: boolean = false;
   // Sub-geom para ojo 3D (esfera simple) reutilizando procedencia similar a Planet pero de baja resolución
   private _eyeVertices: Float32Array | null = null;
   private _eyeNormals: Float32Array | null = null;
@@ -98,6 +103,7 @@ export class Portal extends GameObject implements ITargetable {
     this.manifestTime += deltaTime;
     // No efectos propios; solo mantener manifestTime para animación externa
     this.updateGazeAndBlink(deltaTime);
+    this.updateConcordSeal(deltaTime);
     super.update(deltaTime);
   }
 
@@ -160,6 +166,16 @@ export class Portal extends GameObject implements ITargetable {
     }
   }
 
+  private updateConcordSeal(dt: number): void {
+    const target = this.concordSealActive ? 1 : 0;
+    const follow = 1 - Math.exp(-4 * dt);
+    this._concordSealStrength += (target - this._concordSealStrength) * follow;
+    if (!isFinite(this._concordSealStrength)) {
+      this._concordSealStrength = target;
+    }
+    this._concordSealStrength = Math.min(1, Math.max(0, this._concordSealStrength));
+  }
+
   /** Apply snapshot eye state (placeholder: future shader params, eyelid geometry). */
   public applyEyeState(state?: EyeState): void {
     if (!state) return;
@@ -212,6 +228,31 @@ export class Portal extends GameObject implements ITargetable {
   // Eliminado en Portal (se renderiza desde PortalShaderService para grosor/anillo consistentes)
   // Referencia al color base del planeta original (capturada durante Gate Rite)
   public planetColorRef?: { r:number; g:number; b:number; a?:number };
+  public setConcordSealState(
+    active: boolean,
+    preventsIngress: boolean = true,
+    activatedAt?: number,
+    opts?: { immediateStrength?: boolean }
+  ): void {
+    this.concordSealActive = active;
+    const now = typeof performance !== 'undefined' ? performance.now() : Date.now();
+    if (active) {
+      this.concordSealActivatedAt = activatedAt ?? now;
+      this.preventsLesserIncursions = preventsIngress;
+    } else {
+      this.preventsLesserIncursions = false;
+      this.concordSealActivatedAt = activatedAt ?? this.concordSealActivatedAt;
+    }
+    if (opts?.immediateStrength) {
+      this._concordSealStrength = active ? 1 : 0;
+    }
+  }
+  public isConcordSealed(): boolean {
+    return this.concordSealActive;
+  }
+  public getConcordSealStrength(): number {
+    return this._concordSealStrength;
+  }
   /** El pentáculo no expone buffers desde Portal; usar PortalShaderService.renderPentacle */
   public getEyeBuffers(): { v: WebGLBuffer | null; n: WebGLBuffer | null; i: WebGLBuffer | null; count: number } {
     return { v: this._eyeVBO, n: this._eyeNBO, i: this._eyeIBO, count: this._eyeIndices ? this._eyeIndices.length : 0 };

@@ -362,8 +362,20 @@ void main(){
     const uV = this.pentacleUniforms['viewMatrix']; if (uV) gl.uniformMatrix4fv(uV, false, view);
     const uP = this.pentacleUniforms['projectionMatrix']; if (uP) gl.uniformMatrix4fv(uP, false, proj);
     const uT = this.pentacleUniforms['time']; if (uT) gl.uniform1f(uT, timeSec);
-  // Color carmesí brillante para el pentáculo
-  const uC = this.pentacleUniforms['color']; if (uC) gl.uniform3fv(uC, new Float32Array([0.75, 0.0, 0.18]));
+    // Mezclar color del pentáculo entre hostil (rojo) y concord (azul) según el sello
+    let sealStrength = portal.getConcordSealStrength();
+    if (!Number.isFinite(sealStrength)) {
+      sealStrength = portal.concordSealActive ? 1 : 0;
+    }
+    sealStrength = Math.max(0, Math.min(1, sealStrength));
+    const hostile = [0.75, 0.0, 0.18];
+    const allied = [0.12, 0.58, 1.0];
+    const mixColor: [number, number, number] = [
+      hostile[0] + (allied[0] - hostile[0]) * sealStrength,
+      hostile[1] + (allied[1] - hostile[1]) * sealStrength,
+      hostile[2] + (allied[2] - hostile[2]) * sealStrength,
+    ];
+    const uC = this.pentacleUniforms['color']; if (uC) gl.uniform3fv(uC, new Float32Array(mixColor));
     const aPos = this.pentacleAttribs['position'];
     if (aPos < 0) return;
     // 1) Círculo grueso (anillo)

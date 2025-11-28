@@ -214,6 +214,17 @@ export class SolarSystemService {
         const portal = new Portal(p.id, { ...p.position }, p.radius, logger);
         portal.linkedPortalId = p.linkedPortalId;
         portal.applyEyeState(p.eyeState);
+        if (p.animosity) {
+          try { portal.setAnimosity(p.animosity); } catch {}
+        }
+        if (typeof p.concordSealActive === 'boolean') {
+          portal.setConcordSealState(
+            p.concordSealActive,
+            p.preventsLesserIncursions ?? portal.preventsLesserIncursions,
+            p.concordSealActivatedAt,
+            { immediateStrength: true }
+          );
+        }
         if (gl && !portal.vertexBuffer) portal.initBuffers(gl);
         portalsArr.push(portal);
         targetCatalog?.add?.(TargetType.PORTAL, portal as any);

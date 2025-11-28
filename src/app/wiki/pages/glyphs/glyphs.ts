@@ -491,6 +491,19 @@ export class GlyphsWikiComponent implements OnInit {
       notes: 'Sin countdown; muestra texto “QUIMIO SIGILLUM” con el porcentaje restaurado.'
     },
     {
+      name: 'Concordia Gate',
+      type: 'PORTAL_CONCORD',
+      icon: '🔷',
+      activation: 'Alinea un portal hostil ≤ 500u, selecciona el glifo y pulsa la tecla rápida.',
+      effect: 'Purga la animosidad del portal, lo vuelve aliado y sella futuras incursiones de seres menores enlazados.',
+      sanityTemp: 2,
+      sanityReserve: 4,
+      voidEnergy: '0u',
+      requirements: ['Portal objetivo con estado hostil.', 'Distancia ≤ 500u desde la nave.', 'Sin otra animación de rito en curso.'],
+      description: 'El pentáculo pasa de carmesí a cian y el HUD confirma el pacto. Los portales aliados no permitirán que seres menores penetren hacia tus rutas.',
+      notes: 'Muestra placeholder “CONCORDIA GATE” con el nombre del portal (o sistema) al completarse.'
+    },
+    {
       name: 'Augurio',
       type: 'SPECIES_SCAN',
       icon: '🧬',

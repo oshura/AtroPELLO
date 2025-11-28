@@ -136,7 +136,11 @@ export class GateRiteAnimation implements GameAnimation {
           position: { ...portal.position },
           radius: portal.radius || 100,
           linkedPortalId: portal.linkedPortalId,
-          eyeState: portal.eyeState || { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
+          eyeState: portal.eyeState || { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 },
+          animosity: portal.animosity,
+          concordSealActive: portal.concordSealActive,
+          concordSealActivatedAt: portal.concordSealActivatedAt,
+          preventsLesserIncursions: portal.preventsLesserIncursions
         })) || [],
         planetDebris: (() => {
           const out: any[] = [];

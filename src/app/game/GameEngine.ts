@@ -151,6 +151,7 @@ export class GameEngine {
   private readonly LANDING_READY_HOLD_MS = 3000; // require 3s of stability before enabling landing
   private readonly LANDING_THREAT_RADIUS = 500;
   private readonly GLYPH_SCAN_RANGE = 500;
+  private readonly PORTAL_CONCORD_RANGE = 500;
   // Central logger
   public readonly logger: LoggingService;
   public _targetDetailsCache: Record<string, any> = {};
@@ -1532,6 +1533,17 @@ export class GameEngine {
         const portal = new Portal(p.id, { ...p.position }, p.radius, this.logger);
         portal.linkedPortalId = p.linkedPortalId;
         portal.applyEyeState(p.eyeState);
+        if (p.animosity) {
+          try { portal.setAnimosity(p.animosity); } catch {}
+        }
+        if (typeof p.concordSealActive === 'boolean') {
+          portal.setConcordSealState(
+            p.concordSealActive,
+            p.preventsLesserIncursions ?? portal.preventsLesserIncursions,
+            p.concordSealActivatedAt,
+            { immediateStrength: true }
+          );
+        }
         if (gl && !portal.vertexBuffer) portal.initBuffers(gl as WebGL2RenderingContext);
         this.gameState.portals.push(portal);
         // Register reactive destruction callback
@@ -4528,7 +4540,10 @@ export class GameEngine {
       // Portals
       const portals = this.gameState.portals.map(p => {
         this.gameState.mapIdToTarget.set(p.id, p as unknown as ITargetable);
-        return { id: p.id, pos: { x: p.position.x, y: p.position.y, z: p.position.z }, label: 'Portal' };
+        const label = p.concordSealActive
+          ? 'Portal Concord'
+          : (p.animosity === GameObjectAnimosity.ENEMY ? 'Portal Hostil' : 'Portal');
+        return { id: p.id, pos: { x: p.position.x, y: p.position.y, z: p.position.z }, label };
       });
         // If there is a deferred map selection (click happened before mapping), resolve it now
         if (this.pendingMapSelectId) {
@@ -6590,6 +6605,8 @@ export class GameEngine {
         return this.castSpeciesScanGlyph(target ?? null);
       case SpellType.CREATURE_SCAN:
         return this.castCreatureScanGlyph(target ?? null);
+      case SpellType.PORTAL_CONCORD:
+        return this.castPortalConcord(target ?? null);
       case SpellType.TEMPUS_SIGILLUM:
         return this.castTempusSigillum(target ?? null);
       case SpellType.QUIMIO_SIGILLUM:
@@ -7492,6 +7509,95 @@ export class GameEngine {
     }
   }
 
+  private castPortalConcord(target: ITargetable | null): boolean {
+    if (!this.spaceship) {
+      return false;
+    }
+    const portal = this.resolvePortalConcordTarget(target);
+    if (!portal) {
+      try { this.showPlaceholderText('CONCORDIA GATE\nPortal hostil fuera de alcance (<500u)', 2200); } catch {}
+      return false;
+    }
+    const distance = this.getDistanceFromShip(portal.position);
+    if (!Number.isFinite(distance) || distance > this.PORTAL_CONCORD_RANGE) {
+      const label = distance === Infinity ? '∞' : `${Math.round(distance)}u`;
+      try { this.showPlaceholderText(`CONCORDIA GATE\nPortal a ${label}`, 2200); } catch {}
+      return false;
+    }
+    if (portal.isConcordSealed && portal.isConcordSealed()) {
+      try { this.showPlaceholderText('CONCORDIA GATE\nPortal ya sellado', 2000); } catch {}
+      return false;
+    }
+    if (portal.animosity !== GameObjectAnimosity.ENEMY) {
+      try { this.showPlaceholderText('CONCORDIA GATE\nSolo portales hostiles', 2000); } catch {}
+      return false;
+    }
+    portal.setAnimosity(GameObjectAnimosity.FRIENDLY);
+    portal.setConcordSealState(true, true);
+    portal.preventsLesserIncursions = true;
+    this.persistPortalSnapshotState(portal);
+    const label = typeof portal.getDisplayName === 'function' ? portal.getDisplayName() : portal.id;
+    try { this.hudManager?.addMarqueeMessage?.(`Concordia Gate · ${label}`); } catch {}
+    try { this.showPlaceholderText(`CONCORDIA GATE\n${label} pacificado`, 2400); } catch {}
+    try {
+      if (this.audio) {
+        const clip = this.audio.has('sfx_whoosh') ? 'sfx_whoosh' : (this.audio.has('ui_select') ? 'ui_select' : null);
+        if (clip) {
+          this.audio.play(clip, { bus: 'sfx', volume: 0.6 });
+        }
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Concordia Gate audio failed', error);
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Concordia Gate seal applied', {
+      portalId: portal.id,
+      distance,
+      preventsLesserIncursions: portal.preventsLesserIncursions,
+    });
+    return true;
+  }
+
+  private resolvePortalConcordTarget(target: ITargetable | null): Portal | null {
+    const direct = this.asPortal(target);
+    if (direct) {
+      return direct;
+    }
+    if (!this.spaceship) {
+      return null;
+    }
+    let closest: { portal: Portal; distance: number } | null = null;
+    for (const portal of this.gameState.portals) {
+      if (!portal || portal.animosity !== GameObjectAnimosity.ENEMY) continue;
+      const distance = this.getDistanceFromShip(portal.position);
+      if (!Number.isFinite(distance) || distance > this.PORTAL_CONCORD_RANGE) continue;
+      if (!closest || distance < closest.distance) {
+        closest = { portal, distance };
+      }
+    }
+    return closest?.portal ?? null;
+  }
+
+  private asPortal(target: ITargetable | null): Portal | null {
+    if (!target) {
+      return null;
+    }
+    if (target instanceof Portal) {
+      return target;
+    }
+    const anyTarget = target as any;
+    try {
+      const type = typeof anyTarget?.getTargetType === 'function' ? anyTarget.getTargetType() : null;
+      if (type === TargetType.PORTAL) {
+        return anyTarget as Portal;
+      }
+      const goType = typeof anyTarget?.getType === 'function' ? anyTarget.getType() : null;
+      if (goType === GameObjectType.PORTAL) {
+        return anyTarget as Portal;
+      }
+    } catch {}
+    return null;
+  }
+
   private castVoidKinesis(target: ITargetable | null): boolean {
     if (!this.spaceship) {
       return false;
@@ -7546,6 +7652,31 @@ export class GameEngine {
       durationMs
     });
     return true;
+  }
+
+  private persistPortalSnapshotState(portal: Portal): void {
+    const patch = {
+      animosity: portal.animosity,
+      concordSealActive: portal.concordSealActive,
+      concordSealActivatedAt: portal.concordSealActivatedAt,
+      preventsLesserIncursions: portal.preventsLesserIncursions,
+    } as const;
+    try {
+      const portals = this.currentSnapshot?.portals;
+      if (portals && portals.length) {
+        const snapPortal = portals.find(p => p.id === portal.id);
+        if (snapPortal) {
+          Object.assign(snapPortal, patch);
+        }
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'Failed to sync portal snapshot state', { portalId: portal.id, error });
+    }
+    try {
+      this.portalPersistenceService?.updatePortalSnapshot?.(portal.id, patch);
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'Portal persistence update failed', { portalId: portal.id, error });
+    }
   }
 
   private castTempusSigillum(target: ITargetable | null): boolean {

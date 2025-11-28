@@ -1,5 +1,6 @@
 import { Vector3 } from '../../types/game.types';
 import { PlanetIntelStatus, PlanetMissionState, PlanetResourceStock } from './planet-intel.types';
+import { GameObjectAnimosity } from './animosity.types';
 
 export type RNGSeed = number | string;
 
@@ -92,6 +93,10 @@ export interface PortalSnapshot {
   radius: number;
   linkedPortalId?: string; // id of the paired portal for two-way travel
   eyeState?: EyeState;
+  animosity?: GameObjectAnimosity;
+  concordSealActive?: boolean;
+  concordSealActivatedAt?: number;
+  preventsLesserIncursions?: boolean;
 }
 
 // Serialized debris item (e.g., Earth/Saturn belts mega-asteroids)

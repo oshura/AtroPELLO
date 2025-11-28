@@ -90,7 +90,8 @@ export class GrimoirePanel {
     [SpellType.TEMPUS_SIGILLUM, SpellState.AVAILABLE],
     [SpellType.QUIMIO_SIGILLUM, SpellState.AVAILABLE],
     [SpellType.SPECIES_SCAN, SpellState.AVAILABLE],
-    [SpellType.CREATURE_SCAN, SpellState.AVAILABLE]
+    [SpellType.CREATURE_SCAN, SpellState.AVAILABLE],
+    [SpellType.PORTAL_CONCORD, SpellState.AVAILABLE]
   ]);
   private selectedSpell: SpellType | null = null;
   // Reading mode animation (zoom + slight tilt)
@@ -237,7 +238,8 @@ export class GrimoirePanel {
       SpellType.TEMPUS_SIGILLUM,
       SpellType.QUIMIO_SIGILLUM,
       SpellType.SPECIES_SCAN,
-      SpellType.CREATURE_SCAN
+      SpellType.CREATURE_SCAN,
+      SpellType.PORTAL_CONCORD
     ];
     allSpells.forEach(k => {
       const currentState = this.spellStates.get(k);
@@ -266,7 +268,8 @@ export class GrimoirePanel {
       SpellType.TEMPUS_SIGILLUM,
       SpellType.QUIMIO_SIGILLUM,
       SpellType.SPECIES_SCAN,
-      SpellType.CREATURE_SCAN
+      SpellType.CREATURE_SCAN,
+      SpellType.PORTAL_CONCORD
     ];
     allSpells.forEach(k => {
       const currentState = this.spellStates.get(k);
@@ -951,6 +954,7 @@ export class GrimoirePanel {
       SpellType.QUIMIO_SIGILLUM,
       SpellType.SPECIES_SCAN,
       SpellType.CREATURE_SCAN,
+      SpellType.PORTAL_CONCORD,
     ];
     rightSpells.forEach((spell, idx) => {
       const slot = rightGrid.positions[idx];
@@ -1145,9 +1149,60 @@ export class GrimoirePanel {
     c.restore();
   }
 
+  private drawPortalConcordRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    // Diplomatic seal: split ring shifting from crimson to cyan with anti-portal sigils
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const hostileCol = '#7a0a22';
+    const alliedCol = '#1fa3d8';
+    const baseCol = color || '#402020';
+    // Outer rim gradient
+    const grad = c.createConicGradient(0, 0, 0);
+    grad.addColorStop(0, hostileCol);
+    grad.addColorStop(0.45, hostileCol);
+    grad.addColorStop(0.55, alliedCol);
+    grad.addColorStop(1, alliedCol);
+    c.lineWidth = r * 0.18;
+    c.strokeStyle = grad;
+    c.beginPath();
+    c.arc(0, 0, r, 0, Math.PI * 2);
+    c.stroke();
+    // Inner seal circle
+    c.lineWidth = 2;
+    c.strokeStyle = baseCol;
+    c.beginPath();
+    c.arc(0, 0, r * 0.55, 0, Math.PI * 2);
+    c.stroke();
+    // Pentacle turning sigils
+    c.lineWidth = 2.4;
+    const spikes = 5;
+    for (let i=0;i<spikes;i++) {
+      const ang = -Math.PI/2 + i * (2*Math.PI/spikes);
+      const innerR = r*0.35;
+      const outerR = r*0.9;
+      const ax = Math.cos(ang) * innerR;
+      const ay = Math.sin(ang) * innerR;
+      const bx = Math.cos(ang) * outerR;
+      const by = Math.sin(ang) * outerR;
+      c.strokeStyle = i < spikes/2 ? hostileCol : alliedCol;
+      c.beginPath(); c.moveTo(ax, ay); c.lineTo(bx, by); c.stroke();
+    }
+    // Lock glyph (portal ward)
+    c.fillStyle = alliedCol;
+    c.beginPath();
+    this.roundRect(c, -r*0.25, -r*0.1, r*0.5, r*0.35, 4);
+    c.fill();
+    c.fillStyle = '#06121f';
+    c.beginPath();
+    c.arc(0, r*0.05, r*0.12, 0, Math.PI*2);
+    c.fill();
+    c.restore();
+  }
+  
   private drawVoidKinesisRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
     // Void beam: concentric circle with collapsing triangle and swirling tendrils
     c.save(); c.translate(x,y); c.scale(1, 1.5);
+
+  
     const col = color || '#4f1a1f';
     c.strokeStyle = col; c.lineWidth = 2.6;
     // Outer ring
@@ -1609,6 +1664,9 @@ export class GrimoirePanel {
         case SpellType.CREATURE_SCAN:
           this.drawCreatureScanRune(c, x, y, radius, runeColor);
           break;
+        case SpellType.PORTAL_CONCORD:
+          this.drawPortalConcordRune(c, x, y, radius, runeColor);
+          break;
         default:
           this.drawVinculum(c, x, y, radius);
           break;
@@ -1763,6 +1821,9 @@ export class GrimoirePanel {
     } else if (type === SpellType.CREATURE_SCAN) {
       title = 'Revelación';
       desc = 'Expose the terror being currently active on a planet <500u.';
+    } else if (type === SpellType.PORTAL_CONCORD) {
+      title = 'Concordia Gate';
+      desc = 'Cleanse a hostile portal ≤500u, binding it to your cause and sealing lesser incursions.';
     } else {
       const typeStr = typeof type === 'string' ? type : String(type);
       const cap = typeStr.charAt(0).toUpperCase() + typeStr.slice(1);

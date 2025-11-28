@@ -61,6 +61,10 @@ export class SolarSystemSerializer {
       radius: number;
       linkedPortalId?: string;
       eyeState?: any;
+      animosity?: string;
+      concordSealActive?: boolean;
+      concordSealActivatedAt?: number;
+      preventsLesserIncursions?: boolean;
     }>;
     planetDebris?: Array<{ id: string; planetId: string; localOffset: Vector3; size?: number; type?: string }>;
   }): SolarSystemSnapshot {
@@ -150,7 +154,11 @@ export class SolarSystemSerializer {
       position: { ...p.position },
       radius: p.radius,
       linkedPortalId: p.linkedPortalId,
-      eyeState: p.eyeState
+      eyeState: p.eyeState,
+      animosity: (p as any).animosity,
+      concordSealActive: p.concordSealActive,
+      concordSealActivatedAt: p.concordSealActivatedAt,
+      preventsLesserIncursions: p.preventsLesserIncursions
     }));
 
     return { id: `snapshot-${Date.now()}`, timestamp: Date.now(), sun, planets, clusters, portals, planetDebris };
