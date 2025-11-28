@@ -6,7 +6,7 @@ import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 import { LandingActionRequest, LandingActionKind, LandingExploreObjective, LandingEventResult, LandingActionEffects, LandingActionLogEntry } from '../../game/types/landing-action.types';
 import { PLANET_INTEL_STATUS } from '../../game/types/planet-intel.types';
 import { PlanetInhabitants } from '../../game/types/cosmic-life.types';
-import { GameObjectType } from '../../game/types/game-object.types';
+import { GameObjectCategory, GameObjectType, getCategory } from '../../game/types/game-object.types';
 
 interface RollOutcome {
   success: boolean;
@@ -360,10 +360,15 @@ export class LandingActionService {
 
   private resolvePlanet(planetId: string): Planet | null {
     const resolveCandidate = (candidate?: Planet | null) => {
-      if (!candidate) {
+      if (!candidate || typeof candidate.getType !== 'function') {
         return null;
       }
-      return candidate.getType && candidate.getType() === GameObjectType.PLANET ? candidate : null;
+      const type = candidate.getType();
+      if (!type) {
+        return null;
+      }
+      const belongsToPlanetCategory = type === GameObjectType.PLANET || getCategory(type) === GameObjectCategory.PLANET;
+      return belongsToPlanetCategory ? candidate : null;
     };
 
     const direct = resolveCandidate(this.gameState.findPlanetById(planetId));
