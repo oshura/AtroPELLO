@@ -1,5 +1,6 @@
 import { SolarSystemSnapshot, PlanetSnapshot, SunSnapshot, ClusterSnapshot, PlanetDebrisSnapshot } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
+import { PlanetIntelStatus, PlanetMissionState, PlanetResourceStock } from '../../types/planet-intel.types';
 
 function vec(x:number,y:number,z:number): Vector3 { return { x,y,z }; }
 
@@ -27,6 +28,20 @@ export class SolarSystemSerializer {
       orbitAngularSpeed?: number;
       orbitNormal?: Vector3;
       orbitU?: Vector3;
+      inhabitants?: string;
+      lesserBeing?: string | null;
+      visited?: boolean;
+      lifeScanned?: boolean;
+      creatureScanned?: boolean;
+      hasArtifact?: boolean;
+      artifactIntelStatus?: PlanetIntelStatus;
+      hasVoidMass?: boolean;
+      voidMassIntelStatus?: PlanetIntelStatus;
+      civilizationIntelStatus?: PlanetIntelStatus;
+      lesserBeingIntelStatus?: PlanetIntelStatus;
+      pendingMission?: PlanetMissionState | null;
+      resourceStock?: PlanetResourceStock;
+      animosity?: string;
     }>;
     clusters?: Array<{
       id: string;
@@ -81,6 +96,20 @@ export class SolarSystemSerializer {
       position: { ...p.position },
       radius: p.radius ?? p.scale?.x ?? 1000,
       probabilityOfLifePct: p.probabilityOfLifePct,
+      inhabitants: p.inhabitants,
+      lesserBeing: p.lesserBeing,
+      visited: p.visited,
+      lifeScanned: p.lifeScanned,
+      creatureScanned: p.creatureScanned,
+      hasArtifact: p.hasArtifact,
+      artifactIntelStatus: p.artifactIntelStatus,
+      hasVoidMass: p.hasVoidMass,
+      voidMassIntelStatus: p.voidMassIntelStatus,
+      civilizationIntelStatus: p.civilizationIntelStatus,
+      lesserBeingIntelStatus: p.lesserBeingIntelStatus,
+      pendingMission: p.pendingMission,
+      resourceStock: p.resourceStock ? { ...p.resourceStock } : undefined,
+      animosity: p.animosity,
       orbit: (p.semiMajor && p.semiMinor) ? {
         center: p.orbitCenter ?? vec(0,0,0),
         semiMajor: p.semiMajor,

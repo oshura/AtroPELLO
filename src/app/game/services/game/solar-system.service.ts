@@ -12,6 +12,7 @@ import {
   RingedPlanet, GaseousPlanet, GiantPlanet, Portal
 } from '../../game-objects';
 import { TargetType } from '../../types/targeting.types';
+import { PLANET_INTEL_STATUS, createEmptyResourceStock } from '../../types/planet-intel.types';
 
 /**
  * SolarSystemService: orchestrates snapshot capture, application, and procedural generation,
@@ -71,6 +72,7 @@ export class SolarSystemService {
       // Reset planets and sun
       this.gameState.planets.length = 0;
       this.gameState.sun = null;
+      this.gameState.clearPlanetIntelCache?.();
       // Reset target catalog buckets
       targetCatalog?.register?.(TargetType.ASTEROID, []);
       targetCatalog?.register?.(TargetType.SUPER_ASTEROID, []);
@@ -120,6 +122,22 @@ export class SolarSystemService {
         if (p.name) (obj as any).customName = p.name;
         if (typeof p.probabilityOfLifePct === 'number') (obj as any).probabilityOfLifePct = p.probabilityOfLifePct;
         obj.assignInhabitantsFromProbability();
+        if (typeof p.inhabitants === 'string') (obj as any).inhabitants = p.inhabitants as any;
+        if (typeof p.lesserBeing !== 'undefined') (obj as any).lesserBeing = p.lesserBeing as any;
+        if (typeof p.visited === 'boolean') obj.visited = p.visited;
+        if (typeof p.lifeScanned === 'boolean') obj.lifeScanned = p.lifeScanned;
+        if (typeof p.creatureScanned === 'boolean') obj.creatureScanned = p.creatureScanned;
+        if (typeof p.hasArtifact === 'boolean') obj.hasArtifact = p.hasArtifact;
+        obj.artifactIntelStatus = p.artifactIntelStatus ?? PLANET_INTEL_STATUS.UNKNOWN;
+        if (typeof p.hasVoidMass === 'boolean') obj.hasVoidMass = p.hasVoidMass;
+        obj.voidMassIntelStatus = p.voidMassIntelStatus ?? PLANET_INTEL_STATUS.UNKNOWN;
+        obj.civilizationIntelStatus = p.civilizationIntelStatus ?? PLANET_INTEL_STATUS.UNKNOWN;
+        obj.lesserBeingIntelStatus = p.lesserBeingIntelStatus ?? PLANET_INTEL_STATUS.UNKNOWN;
+        obj.pendingMission = p.pendingMission ?? null;
+        obj.resourceStock = p.resourceStock ? { ...createEmptyResourceStock(), ...p.resourceStock } : createEmptyResourceStock();
+        if (typeof p.animosity === 'string' && obj.setAnimosity) {
+          try { obj.setAnimosity(p.animosity as any); } catch {}
+        }
         // Orbit setup
         if (p.orbit) {
           obj.orbitCenter = { ...(p.orbit.center || { x: 0, y: 0, z: 0 }) } as any;
@@ -135,6 +153,7 @@ export class SolarSystemService {
         // Init GL buffers
         if (gl && !obj.vertexBuffer) obj.initBuffers(gl);
         planetsArr.push(obj);
+        try { this.gameState.syncPlanetIntelFromPlanet?.(obj); } catch {}
       } catch (e) {
         GameLogger.error(LogCategory.SOLAR_SYSTEM_GENERATION, 'Planet instantiation failed', { id: p.id, e });
       }

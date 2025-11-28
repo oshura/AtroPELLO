@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { RNGSeed, SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, ClusterSnapshot, GenerationOptions } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
+import { PLANET_INTEL_STATUS, createEmptyResourceStock } from '../../types/planet-intel.types';
 
 function hashSeed(seed: number | string): number {
   const s = String(seed);
@@ -243,6 +244,13 @@ export class SystemGeneratorService {
         const idx = Math.floor(rnd() * palette.length);
         baseColorName = palette[idx] || baseColorName;
       }
+      const hasArtifact = rnd() < 0.35;
+      const hasVoidMass = rnd() < 0.45;
+      const stock = createEmptyResourceStock();
+      stock.metal = Math.round(5 + rnd() * 25);
+      stock.non_metal = Math.round(3 + rnd() * 20);
+      stock.organic = Math.round(rnd() * 15);
+      stock.void_matter = hasVoidMass ? Math.round(1 + rnd() * 4) : 0;
       return {
         id: `planet-${i}`,
         name,
@@ -251,6 +259,13 @@ export class SystemGeneratorService {
         radius,
         baseColorName,
         probabilityOfLifePct: life,
+        hasArtifact,
+        hasVoidMass,
+        artifactIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
+        voidMassIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
+        civilizationIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
+        lesserBeingIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
+        resourceStock: stock,
         orbit: {
           center,
           semiMajor: a,

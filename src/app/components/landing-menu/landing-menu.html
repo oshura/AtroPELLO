@@ -1,0 +1,113 @@
+<div class="landing-menu" [class.landing-menu--disabled]="!hasPlanet">
+  <div class="landing-menu__header">
+    <div>
+      <span class="landing-menu__label">Planeta</span>
+      <strong>{{ context?.planetName || 'Desconocido' }}</strong>
+    </div>
+    <span class="landing-menu__status" *ngIf="pending">Resolviendo...</span>
+  </div>
+
+  <div class="landing-menu__columns">
+    <section class="landing-menu__actions">
+      <article class="action-group">
+        <header>
+          <h4>Descanso</h4>
+          <p>Recupera cordura y salud; riesgo de interrupción si hay ser menor activo.</p>
+        </header>
+        <button type="button" class="menu-btn" (click)="handleRest()" [disabled]="disabled">
+          Descansar una jornada
+        </button>
+      </article>
+
+      <article class="action-group">
+        <header>
+          <h4>Explorar</h4>
+          <p>Acciones de riesgo 50/50. Aumentan edad +2 días.</p>
+        </header>
+        <div class="action-grid">
+          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.ARTIFACT)" [disabled]="disabled">
+            Buscar artefacto
+          </button>
+          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.VOID_MASS)" [disabled]="disabled">
+            Capturar void mass
+          </button>
+          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.CIVILIZATION)" [disabled]="disabled">
+            Contactar civilización
+          </button>
+          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.LESSER_BEING)" [disabled]="disabled">
+            Rastrear lesser being
+          </button>
+        </div>
+      </article>
+
+      <article class="action-group">
+        <header>
+          <h4>Diplomacia</h4>
+          <p>Placeholder para comercio, misiones y alianzas.</p>
+        </header>
+        <button type="button" class="menu-btn ghost" disabled>Negociar (próximamente)</button>
+      </article>
+    </section>
+
+    <section class="landing-menu__log">
+      <ng-container *ngIf="selectedEvent as event; else emptyState">
+        <article class="log-card">
+          <header>
+            <div>
+              <span class="log-card__label">Resultado</span>
+              <h5>{{ event.title }}</h5>
+            </div>
+            <div class="log-card__badges">
+              <span class="pill" [ngClass]="statusClass(event)">{{ statusLabel(event) }}</span>
+              <span class="pill" *ngIf="event.probability !== undefined">Prob {{ event.probability | percent:'1.0-0' }}</span>
+              <span class="pill" *ngIf="event.roll !== undefined">Roll {{ event.roll | percent:'1.0-0' }}</span>
+            </div>
+          </header>
+
+          <div class="narrative">
+            <p *ngFor="let line of event.narrative" [ngClass]="getToneClass(line)">{{ line.text }}</p>
+          </div>
+
+          <div class="effects" *ngIf="event.effects as eff">
+            <span class="pill pill--positive" *ngIf="eff.sanityDelta">Cordura {{ formatDelta(eff.sanityDelta) }}</span>
+            <span class="pill pill--positive" *ngIf="eff.healthDelta">Salud {{ formatDelta(eff.healthDelta) }}</span>
+            <span class="pill pill--positive" *ngIf="eff.voidEnergyDelta">Void {{ formatDelta(eff.voidEnergyDelta) }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.ageDaysDelta">Edad {{ formatDelta(eff.ageDaysDelta) }}d</span>
+            <span class="pill pill--positive" *ngIf="eff.experienceDelta">XP {{ formatDelta(eff.experienceDelta) }}</span>
+            <span class="pill pill--warning" *ngIf="eff.interrupted">Descanso interrumpido</span>
+            <span class="pill pill--warning" *ngIf="eff.needsRetry">Reintentar</span>
+            <span class="pill pill--warning" *ngIf="eff.blockedReason">Bloqueo: {{ eff.blockedReason }}</span>
+            <span class="pill pill--positive" *ngIf="eff.itemsAwarded?.length">Botín x{{ eff.itemsAwarded?.length ?? 0 }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.intel?.artifact">Intel artefacto: {{ eff.intel?.artifact }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.intel?.voidMass">Intel void: {{ eff.intel?.voidMass }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.intel?.civilization">Intel civ.: {{ eff.intel?.civilization }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.intel?.lesserBeing">Intel lesser: {{ eff.intel?.lesserBeing }}</span>
+          </div>
+        </article>
+      </ng-container>
+
+      <ng-template #emptyState>
+        <div class="empty-state">Elige una acción para registrar el primer evento en la bitácora de aterrizaje.</div>
+      </ng-template>
+
+      <div class="history" *ngIf="history.length">
+        <div class="history__header">Bitácora</div>
+        <div class="history__list">
+          <button
+            type="button"
+            class="history__item"
+            *ngFor="let item of history; let idx = index; trackBy: trackHistoryById"
+            [class.is-active]="isHistoryItemActive(item, idx)"
+            (click)="selectEvent(item)"
+          >
+            <div>
+              <span class="history__title">{{ item.title }}</span>
+              <span class="history__ts">{{ item.timestamp | date:'HH:mm:ss' }}</span>
+            </div>
+            <span class="pill" [ngClass]="statusClass(item)">{{ statusLabel(item) }}</span>
+          </button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>

@@ -1,4 +1,5 @@
 import { Vector3 } from '../../types/game.types';
+import { PlanetIntelStatus, PlanetMissionState, PlanetResourceStock } from './planet-intel.types';
 
 export type RNGSeed = number | string;
 
@@ -29,6 +30,20 @@ export interface PlanetSnapshot {
   orbit?: OrbitParams; // optional if planet is static
   baseColorName?: string; // cosmetic hint
   probabilityOfLifePct?: number; // [0..100]
+  inhabitants?: string;
+  lesserBeing?: string | null;
+  visited?: boolean;
+  lifeScanned?: boolean;
+  creatureScanned?: boolean;
+  hasArtifact?: boolean;
+  artifactIntelStatus?: PlanetIntelStatus;
+  hasVoidMass?: boolean;
+  voidMassIntelStatus?: PlanetIntelStatus;
+  civilizationIntelStatus?: PlanetIntelStatus;
+  lesserBeingIntelStatus?: PlanetIntelStatus;
+  pendingMission?: PlanetMissionState | null;
+  resourceStock?: PlanetResourceStock;
+  animosity?: string;
 }
 
 export interface ClusterSnapshot {

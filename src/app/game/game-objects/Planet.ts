@@ -8,6 +8,13 @@ import {
   PLANET_INHABITANT_POOL
 } from '../types/cosmic-life.types';
 import { GameObjectAnimosity } from '../types/animosity.types';
+import {
+  PlanetIntelStatus,
+  PLANET_INTEL_STATUS,
+  PlanetMissionState,
+  PlanetResourceStock,
+  createEmptyResourceStock
+} from '../types/planet-intel.types';
 
 export type PlanetColorName = 'verde' | 'azul_hielo' | 'marron' | 'gris' | 'azul_marino' | 'rojo_carmesi' | 'violeta_oscuro';
 
@@ -34,6 +41,14 @@ export class Planet extends GameObject implements ITargetable {
   public visited: boolean = false;
   public lifeScanned: boolean = false;
   public creatureScanned: boolean = false;
+  public hasArtifact: boolean = false;
+  public artifactIntelStatus: PlanetIntelStatus = PLANET_INTEL_STATUS.UNKNOWN;
+  public hasVoidMass: boolean = false;
+  public voidMassIntelStatus: PlanetIntelStatus = PLANET_INTEL_STATUS.UNKNOWN;
+  public civilizationIntelStatus: PlanetIntelStatus = PLANET_INTEL_STATUS.UNKNOWN;
+  public lesserBeingIntelStatus: PlanetIntelStatus = PLANET_INTEL_STATUS.UNKNOWN;
+  public pendingMission: PlanetMissionState | null = null;
+  public resourceStock: PlanetResourceStock = createEmptyResourceStock();
   public orbitCenter: Vector3 = { x: 0, y: 0, z: 0 };
   public semiMajor: number = 60000; // a
   public semiMinor: number = 48000; // b
@@ -110,6 +125,14 @@ export class Planet extends GameObject implements ITargetable {
 
   public markCreatureScanned(): void {
     this.creatureScanned = true;
+  }
+
+  public assignResourceStock(stock: PlanetResourceStock): void {
+    this.resourceStock = { ...this.resourceStock, ...stock };
+  }
+
+  public setPendingMission(mission: PlanetMissionState | null): void {
+    this.pendingMission = mission;
   }
 
   public getDisplayName(): string { return this.customName ?? `Planet ${this.baseColorName}`; }

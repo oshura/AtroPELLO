@@ -5,11 +5,6 @@
   [closeOnEscape]="false"
   (onClose)="onStay()">
   <div class="landing-panel" *ngIf="context as ctx">
-    <div class="landing-panel__summary">
-      <div class="landing-panel__planet-name">{{ ctx.planetName || 'Planeta desconocido' }}</div>
-      <div class="landing-panel__subtitle">Trayectoria estabilizada, controles bloqueados</div>
-    </div>
-
     <div class="landing-panel__metrics">
       <div class="metric">
         <div class="metric__label">Tipo</div>
@@ -20,20 +15,10 @@
         <div class="metric__value" *ngIf="radiusKm !== null">~{{ radiusKm | number:'1.0-0' }} u</div>
         <div class="metric__value" *ngIf="radiusKm === null">-</div>
       </div>
-      <div class="metric">
-        <div class="metric__label">Altura actual</div>
-        <div class="metric__value" *ngIf="altitude !== null">{{ altitude | number:'1.0-0' }} u</div>
-        <div class="metric__value" *ngIf="altitude === null">-</div>
-      </div>
-      <div class="metric">
-        <div class="metric__label">Alineación</div>
-        <div class="metric__value" *ngIf="alignment !== null">{{ (1 - alignment) | percent:'1.0-1' }}</div>
-        <div class="metric__value" *ngIf="alignment === null">-</div>
-      </div>
     </div>
 
     <p class="landing-panel__hint">
-      Mantén a la tripulación en espera o inicia los protocolos de despegue cuando estés listo.
+      Permanece en el planeta para realizar lo que desees. Inicia los protocolos de despegue cuando estés listo.
     </p>
 
     <section class="landing-panel__intel" *ngIf="showIntelSection">
@@ -55,6 +40,10 @@
           <div class="intel-card__hint" *ngIf="lesserBeingHint">{{ lesserBeingHint }}</div>
         </div>
       </div>
+    </section>
+
+    <section class="landing-panel__menu">
+      <app-landing-menu [context]="ctx"></app-landing-menu>
     </section>
   </div>
 

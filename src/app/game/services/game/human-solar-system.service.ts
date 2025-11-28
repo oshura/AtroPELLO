@@ -1,6 +1,7 @@
 import { Injectable } from '@angular/core';
 import { SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, ClusterSnapshot } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
+import { PLANET_INTEL_STATUS, createEmptyResourceStock } from '../../types/planet-intel.types';
 
 /**
  * HumanSolarSystemService
@@ -102,6 +103,11 @@ export class HumanSolarSystemService {
       else if (i === neptuneIdx) { kind = 'Rocky'; radius = 1000; name = 'Neptuno'; baseColorName = 'azul_marino'; }
       else if (i === plutoIdx) { kind = 'Protoplanet'; radius = 80; name = 'Plutón'; baseColorName = 'gris'; }
 
+      const stock = createEmptyResourceStock();
+      stock.metal = kind === 'Giant' || kind === 'Ringed' ? 40 : 20;
+      stock.non_metal = kind === 'Gaseous' ? 35 : 15;
+      stock.organic = i === earthIdx ? 50 : (kind === 'Terrestrial' ? 25 : 5);
+      stock.void_matter = kind === 'Ringed' ? 3 : 1;
       planets.push({
         id: `planet-${i === earthIdx ? 'earth' : i === mercuryIdx ? 'mercury' : i === venusIdx ? 'venus' : i === marsIdx ? 'mars' : i === jupiterIdx ? 'jupiter' : i === saturnIdx ? 'saturn' : i === uranusIdx ? 'uranus' : i === neptuneIdx ? 'neptune' : 'pluto'}`,
         name,
@@ -110,6 +116,13 @@ export class HumanSolarSystemService {
         radius,
         baseColorName,
         probabilityOfLifePct: (i === earthIdx ? 100 : (kind === 'Terrestrial' ? 20 : (kind === 'Gaseous' ? 0 : 5))),
+        hasArtifact: false,
+        hasVoidMass: false,
+        artifactIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
+        voidMassIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
+        civilizationIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
+        lesserBeingIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
+        resourceStock: stock,
         orbit: { center: { ...center }, semiMajor: a, semiMinor: b, orientation: orient, angle: angle0, angularSpeed: 0.00003 * Math.pow(50000 / a, 1.5), normal: { ...n }, u: { ...u0 } }
       });
     }

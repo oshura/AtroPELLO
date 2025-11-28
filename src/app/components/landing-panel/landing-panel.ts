@@ -2,11 +2,12 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Modal } from '../modal/modal';
 import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/landing.types';
+import { LandingMenuComponent } from '../landing-menu/landing-menu';
 
 @Component({
   selector: 'app-landing-panel',
   standalone: true,
-  imports: [CommonModule, Modal],
+  imports: [CommonModule, Modal, LandingMenuComponent],
   templateUrl: './landing-panel.html',
   styleUrl: './landing-panel.scss'
 })

@@ -23,6 +23,11 @@ import {
 } from '../../game/types/inventory.types';
 import { LandingStatus, LandingThreatState } from '../../game/types/landing.types';
 import { SpellType, getSpellSanityCost } from '../../game/types/spell.types';
+import {
+  PlanetIntelSnapshot,
+  PlanetResourceStock,
+  createEmptyPlanetIntelSnapshot
+} from '../../game/types/planet-intel.types';
 
 /**
  * Evento de cambio de estado del juego
@@ -222,6 +227,9 @@ export class GameStateStore {
    * Usado por sistema de audio espacial.
    */
   public readonly dopplerCues = new Map<string, any>();
+
+  /** Intel planetario persistente (artefactos, void mass, misiones). */
+  public readonly planetIntelById = new Map<string, PlanetIntelSnapshot>();
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  REACTIVE STATE (Observabilidad)
@@ -290,6 +298,59 @@ export class GameStateStore {
         snapshot[spell] = { ...entry };
       }
     }
+    return snapshot;
+  }
+
+  /** Limpia todo el cache de intel planetario (se usa al regenerar sistemas). */
+  public clearPlanetIntelCache(): void {
+    this.planetIntelById.clear();
+  }
+
+  /** Obtiene una copia inmutable del intel almacenado para un planeta. */
+  public getPlanetIntelSnapshot(planetId: string): PlanetIntelSnapshot | null {
+    const entry = this.planetIntelById.get(planetId);
+    if (!entry) {
+      return null;
+    }
+    return {
+      ...entry,
+      resourceStock: this.mergeResourceStock(entry.resourceStock)
+    };
+  }
+
+  /** Fusiona o crea un registro de intel planetario. */
+  public upsertPlanetIntelSnapshot(planetId: string, patch?: Partial<PlanetIntelSnapshot>): PlanetIntelSnapshot {
+    const base = this.planetIntelById.get(planetId) ?? createEmptyPlanetIntelSnapshot(planetId);
+    const merged: PlanetIntelSnapshot = {
+      ...base,
+      ...patch,
+      planetId,
+      resourceStock: this.mergeResourceStock(base.resourceStock, patch?.resourceStock || null),
+      updatedAt: Date.now()
+    };
+    this.planetIntelById.set(planetId, merged);
+    return merged;
+  }
+
+  /** Sincroniza un objeto Planet vivo con el cache de intel. */
+  public syncPlanetIntelFromPlanet(planet: Planet): PlanetIntelSnapshot {
+    const snapshot = this.upsertPlanetIntelSnapshot(planet.id, {
+      planetName: typeof planet.getDisplayName === 'function' ? planet.getDisplayName() : planet.customName,
+      inhabitants: planet.inhabitants,
+      lesserBeing: planet.lesserBeing,
+      hasArtifact: planet.hasArtifact,
+      artifactIntelStatus: planet.artifactIntelStatus,
+      hasVoidMass: planet.hasVoidMass,
+      voidMassIntelStatus: planet.voidMassIntelStatus,
+      civilizationIntelStatus: planet.civilizationIntelStatus,
+      lesserBeingIntelStatus: planet.lesserBeingIntelStatus,
+      pendingMission: planet.pendingMission,
+      resourceStock: { ...planet.resourceStock },
+      visited: planet.visited,
+      lifeScanned: planet.lifeScanned,
+      creatureScanned: planet.creatureScanned,
+      animosity: planet.animosity
+    });
     return snapshot;
   }
   
@@ -928,6 +989,20 @@ export class GameStateStore {
     this.characterProfile.level += 1;
     this.characterProfile.experience = 0;
     this.characterProfile.experienceMax = this.getExperienceCapForLevel(this.characterProfile.level);
+  }
+
+  private mergeResourceStock(base: PlanetResourceStock | null | undefined, patch?: PlanetResourceStock | null): PlanetResourceStock {
+    const snapshot: PlanetResourceStock = { ...(base || {}) };
+    if (!patch) {
+      return snapshot;
+    }
+    for (const key of Object.keys(patch) as Array<keyof PlanetResourceStock>) {
+      const value = patch[key];
+      if (typeof value === 'number' && Number.isFinite(value)) {
+        snapshot[key] = value;
+      }
+    }
+    return snapshot;
   }
 
   private createDefaultEquipmentLoadout(): Record<EquipmentSlot, EquipmentSlotState | null> {
