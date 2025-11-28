@@ -286,6 +286,8 @@ export class GateRiteAnimation implements GameAnimation {
     this.wrapperElapsed = 0;
     const cam = engine.camera;
     if (cam) this.baseCamPos = { x: cam.position.x, y: cam.position.y, z: cam.position.z };
+    // With the planet fully framed, stop collision responses before debris effects begin
+    try { engine.collisionsDisabled = true; } catch {}
   }
 
   private updatePlanetWrapper(engine: GameEngine, dt: number) {
@@ -603,6 +605,8 @@ export class GateRiteAnimation implements GameAnimation {
         }
         // Reiniciar velocidades para rampa +10u/s
         ship.targetSpeed = ship.currentSpeed = Math.max(0, ship.currentSpeed || 0);
+        // Ship now sits safely in front of the portal, collisions can come back
+        try { engine.collisionsDisabled = false; } catch {}
       }
     } catch {}
   }
@@ -734,7 +738,6 @@ export class GateRiteAnimation implements GameAnimation {
           const genOptions: any = {
             disableTrail: true,
             staticClouds: true,
-            cloudGroupScale: 0.1, // one tenth of previous random cloud group count
             allowCanonicalNames: false,
             maxGiantRadius: 3400,
             colorPaletteOverride: prevPalette && prevPalette.length ? prevPalette : undefined,

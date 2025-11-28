@@ -4861,8 +4861,8 @@ export class GameEngine {
       } else if (i === saturnIdx) {
         // Saturn (Ringed) en 6ª órbita, con anillo de mega-asteroides
         // pos precomputada en su plano orbital
-        // Tamaño entre planetoide y giant, más cerca de giant
-        radius = 1800; // significativamente mayor que planetoide, menor que giant
+        // Tamaño entre planetoide y giant, más cerca de planetoide
+        radius = 1100; // significativamente mayor que planetoide, menor que giant
         planetObj = new RingedPlanet(`planet-saturn`, 'gris', radius, pos);
         planetObj.customName = 'Saturn';
   // Generar y registrar cinturón de mega-asteroides similar al de la Tierra

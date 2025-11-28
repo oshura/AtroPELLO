@@ -336,11 +336,17 @@ export class SystemGeneratorService {
     // Additional asteroid "cloud" clusters between orbits to differentiate systems.
     // Clouds: free-floating groups not constrained to the trail; placed at random orbital radii and slight vertical offsets.
     // CLOUD GROUPS: each 'cloud' is a group of 10-20 standard clusters plus 1-3 mega-asteroids
-    // Cloud group count scaled by cloudGroupScale (e.g., 0.1 => one tenth the previous random count)
-    const baseCloudCount = 8 + Math.floor(rnd() * 12); // 8..19
-    const scale = (typeof options?.cloudGroupScale === 'number' && options.cloudGroupScale >= 0) ? options.cloudGroupScale : 1;
-    let cloudGroupCount = Math.max(1, Math.floor(baseCloudCount * scale));
-    // If minClouds is specified, interpret it as minimum total clusters if scale not provided; otherwise ignore here
+    const sampleCloudGroupCount = (): number => 1 + Math.floor(rnd() * 8); // 1..8 groups
+    let cloudGroupCount = sampleCloudGroupCount();
+    if (typeof options?.cloudGroupScale === 'number' && options.cloudGroupScale >= 0) {
+      const scaled = cloudGroupCount * options.cloudGroupScale;
+      cloudGroupCount = Math.max(1, Math.min(8, Math.round(scaled)));
+    }
+    cloudGroupCount = Math.min(8, Math.max(1, cloudGroupCount));
+    const clampPad = (value: number) => value.toString().padStart(4, '0');
+    let cloudClusterSerial = 0;
+    const nextCloudClusterId = () => `cloud-${clampPad(cloudClusterSerial++)}`;
+    const cloudGroupSummaries: Array<{ index: number; normalClusters: number; megaClusters: number; }> = [];
     for (let gi = 0; gi < cloudGroupCount; gi++) {
       // Choose a random orbital band for the group's center
       const bandT = rnd();
@@ -373,6 +379,7 @@ export class SystemGeneratorService {
       // Cluster counts
       const normalClusters = 10 + Math.floor(rnd() * 11); // 10..20
       const megaClusters = 1 + Math.floor(rnd() * 3); // 1..3
+      cloudGroupSummaries.push({ index: gi, normalClusters, megaClusters });
       const makeOffset = () => {
         // Sample inside ellipse with near-uniform distribution
         const theta = rnd() * Math.PI * 2;
@@ -391,7 +398,7 @@ export class SystemGeneratorService {
         const off = makeOffset();
         const center = vec(groupCenter.x + off.x, groupCenter.y + off.y, groupCenter.z + off.z);
         clusters.push({
-          id: `cloudG-${gi}-c-${ci}`,
+          id: nextCloudClusterId(),
           center,
           direction: dir,
           speed: options?.staticClouds ? 0 : (0.25 + rnd()*0.5),
@@ -406,7 +413,7 @@ export class SystemGeneratorService {
         const off = makeOffset();
         const center = vec(groupCenter.x + off.x, groupCenter.y + off.y, groupCenter.z + off.z);
         clusters.push({
-          id: `cloudG-${gi}-m-${mi}`,
+          id: nextCloudClusterId(),
           center,
           direction: dir,
           speed: options?.staticClouds ? 0 : (0.2 + rnd()*0.3),
@@ -425,7 +432,13 @@ export class SystemGeneratorService {
       sun, 
       planets, 
       clusters, 
-      meta: { optionsUsed: options || null, sunCount, trailDisabled: !!options?.disableTrail },
+      meta: {
+        optionsUsed: options || null,
+        sunCount,
+        trailDisabled: !!options?.disableTrail,
+        cloudGroupsGenerated: cloudGroupCount,
+        cloudGroupBreakdown: cloudGroupSummaries
+      },
       // Configuración de debris efímero con varianza sobre valores base
       // Base (sistema humano): checkInterval=10000ms, probability=0.05, count=1-3
       // Varianza: tiempo ±25%, probabilidad ±10%, cantidad ±50%

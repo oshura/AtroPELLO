@@ -54,3 +54,28 @@
  - La historia del principio para que gane algun hechizo, esconder hechizos, visitando la nave nodriza, y descubra ese 20% de memoria.
 
  - Scroll en landing menus.
+ 
+ - Weapons
+ 
+ - Criaturas entrada por portal o desdeel vacío.
+ 
+Efectos de slots auxiliares: 
+- Cargar void energy de la radiación solar.
+- Protección solar.
+- Tractor beam para minar.
+- Sistema de navegación mejorado: Landing automatizado a 300u del planeta.
+- Sistema de salto interplanetario.
+- Tanques de void energy extra.
+- Escaner de vida en el planeta (civ y lesser being).
+
+- Marquee messages.
+
+- Drift por el vacío intergalactico:
+	- Sistema de control de drift.
+	- Hechizo de control de drift mejorado.
+	- Random events:
+		- Terminar en un nuevo sistema solar sin portal que lo vinculen a los anteriores sistemas. 10% de que uno nuevo lleve a sistemas antiguos.
+		- Llegar a un espacio vacío con un dios primigenio (-10 cordura y 1 punto mas por minuto) para luchar con él o perecer y tener que respawnear.
+		- Perdido en el vacío exterior: +1 año entero de edad y -10 de cordura, con posibilidad claro de morir y tener que respawnear.
+
+- Debries no se oye el fiuuuushhh.
