@@ -21,7 +21,7 @@ import {
   PlanetResourceStock,
   MissionSubTask
 } from '../../game/types/planet-intel.types';
-import { PlanetInhabitants } from '../../game/types/cosmic-life.types';
+import { LesserBeing, PlanetInhabitants } from '../../game/types/cosmic-life.types';
 import { getLandingDiplomacyScript, LandingDiplomacyScript } from '../../game/config/landing-diplomacy.config';
 
 @Component({
@@ -128,11 +128,33 @@ export class LandingMenuComponent {
   }
 
   protected get isCivilizationActionDisabled(): boolean {
-    return this.disabled || this.isIntelResolved(this.planetIntel?.civilizationIntelStatus);
+    if (this.disabled) {
+      return true;
+    }
+    const intel = this.planetIntel;
+    if (!intel) {
+      return true;
+    }
+    const hasCivilization = !!intel.inhabitants && intel.inhabitants !== PlanetInhabitants.NONE;
+    const absenceKnown =
+      intel.civilizationIntelStatus === PLANET_INTEL_STATUS.CONFIRMED_ABSENT ||
+      (!!intel.lifeScanned && !hasCivilization);
+    return absenceKnown;
   }
 
   protected get isLesserBeingActionDisabled(): boolean {
-    return this.disabled || this.isIntelResolved(this.planetIntel?.lesserBeingIntelStatus);
+    if (this.disabled) {
+      return true;
+    }
+    const intel = this.planetIntel;
+    if (!intel) {
+      return true;
+    }
+    const hasLesserBeing = !!intel.lesserBeing && intel.lesserBeing !== LesserBeing.NONE;
+    const absenceKnown =
+      intel.lesserBeingIntelStatus === PLANET_INTEL_STATUS.CONFIRMED_ABSENT ||
+      (!!intel.creatureScanned && !hasLesserBeing);
+    return absenceKnown;
   }
 
   protected get isVoidMassActionDisabled(): boolean {

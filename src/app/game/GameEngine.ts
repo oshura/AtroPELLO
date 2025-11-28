@@ -66,6 +66,7 @@ import {
   LesserBeing,
   PlanetInhabitants,
 } from './types/cosmic-life.types';
+import { PLANET_INTEL_STATUS } from './types/planet-intel.types';
 import { GameObjectAnimosity } from './types/animosity.types';
 import { CompassCountdownPayload } from './types/hud.types';
 import { OrientationBasis, computeHeadingFromForward } from './targeting/compass-direction.util';
@@ -1426,6 +1427,42 @@ export class GameEngine {
         if (p.name) planetObj.customName = p.name;
         if (typeof p.probabilityOfLifePct === 'number') (planetObj as any).probabilityOfLifePct = p.probabilityOfLifePct;
         planetObj.assignInhabitantsFromProbability();
+        if (typeof p.inhabitants === 'string') {
+          planetObj.inhabitants = p.inhabitants as PlanetInhabitants;
+        }
+        if (typeof p.lesserBeing !== 'undefined') {
+          planetObj.lesserBeing = (p.lesserBeing as LesserBeing | null) ?? null;
+        }
+        if (typeof p.hasArtifact === 'boolean') {
+          planetObj.hasArtifact = p.hasArtifact;
+        }
+        if (typeof p.artifactIntelStatus === 'string') {
+          planetObj.artifactIntelStatus = p.artifactIntelStatus as any;
+        }
+        if (typeof p.civilizationIntelStatus === 'string') {
+          planetObj.civilizationIntelStatus = p.civilizationIntelStatus as any;
+        }
+        if (typeof p.lesserBeingIntelStatus === 'string') {
+          planetObj.lesserBeingIntelStatus = p.lesserBeingIntelStatus as any;
+        }
+        if (typeof p.pendingMission !== 'undefined') {
+          planetObj.pendingMission = p.pendingMission as any;
+        }
+        if (p.resourceStock) {
+          planetObj.resourceStock = { ...planetObj.resourceStock, ...p.resourceStock };
+        }
+        if (typeof p.visited === 'boolean') {
+          planetObj.visited = p.visited;
+        }
+        if (typeof p.lifeScanned === 'boolean') {
+          planetObj.lifeScanned = p.lifeScanned;
+        }
+        if (typeof p.creatureScanned === 'boolean') {
+          planetObj.creatureScanned = p.creatureScanned;
+        }
+        if (typeof p.animosity === 'string' && typeof (planetObj as any).setAnimosity === 'function') {
+          try { (planetObj as any).setAnimosity(p.animosity); } catch {}
+        }
         if (p.orbit) {
           planetObj.orbitCenter = { ...(p.orbit.center || { x: 0, y: 0, z: 0 }) } as any;
           planetObj.semiMajor = p.orbit.semiMajor;
@@ -1468,6 +1505,7 @@ export class GameEngine {
         } catch {}
         if (gl && !planetObj.vertexBuffer) planetObj.initBuffers(gl as WebGL2RenderingContext);
         this.gameState.planets.push(planetObj);
+        try { this.gameState.syncPlanetIntelFromPlanet?.(planetObj); } catch {}
         // Register reactive destruction callback
         this.registerDestructionCallback(planetObj);
         // Saturn debris belt similar to legacy if available
@@ -2962,6 +3000,16 @@ export class GameEngine {
     const creatureLabel = planet.lesserBeing
       ? (LESSER_BEING_LABELS[planet.lesserBeing] ?? 'Presencia anómala detectada')
       : LESSER_BEING_LABELS[LesserBeing.NONE];
+
+    const hasCivilization = planet.inhabitants && planet.inhabitants !== PlanetInhabitants.NONE;
+    planet.civilizationIntelStatus = hasCivilization
+      ? PLANET_INTEL_STATUS.CONFIRMED_PRESENT
+      : PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
+    const hasLesserBeing = planet.lesserBeing && planet.lesserBeing !== LesserBeing.NONE;
+    planet.lesserBeingIntelStatus = hasLesserBeing
+      ? PLANET_INTEL_STATUS.CONFIRMED_PRESENT
+      : PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
+    try { this.gameState.syncPlanetIntelFromPlanet(planet); } catch {}
 
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Auxiliary scanner executed', {
       planetId: planet.id,
