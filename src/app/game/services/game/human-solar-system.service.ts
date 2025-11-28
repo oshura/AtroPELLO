@@ -49,7 +49,7 @@ export class HumanSolarSystemService {
     const getVoidMassCapacityForIndex = (index: number): number => {
       switch (index) {
         case mercuryIdx:
-          return 0;
+          return 600;
         case venusIdx:
           return 2200;
         case earthIdx:

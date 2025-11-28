@@ -1447,6 +1447,20 @@ export class GameEngine {
           (planetObj as any).orbitNormal = { ...(p.orbit.normal || { x: 0, y: 1, z: 0 }) };
           (planetObj as any).orbitU = { ...(p.orbit.u || { x: 1, y: 0, z: 0 }) };
         }
+        // Preserve serialized void-mass metadata so handcrafted/procedural systems stay in sync.
+        const hasVoidMassFields = typeof p.voidMassCapacity === 'number' || typeof p.voidMassRemaining === 'number';
+        if (hasVoidMassFields) {
+          const capacity = Number.isFinite(p.voidMassCapacity) ? Math.max(0, p.voidMassCapacity!)
+            : Math.max(0, Number.isFinite(p.voidMassRemaining) ? p.voidMassRemaining! : 0);
+          const remaining = Number.isFinite(p.voidMassRemaining) ? Math.max(0, p.voidMassRemaining!) : undefined;
+          planetObj.setVoidMassLevels(capacity, remaining);
+        } else if (typeof p.hasVoidMass === 'boolean' && p.hasVoidMass) {
+          const fallbackCapacity = Math.max(1, Math.round((planetObj.initialRadius || 100) * 0.25));
+          planetObj.setVoidMassLevels(fallbackCapacity, fallbackCapacity);
+        }
+        if (typeof p.voidMassIntelStatus !== 'undefined') {
+          planetObj.voidMassIntelStatus = p.voidMassIntelStatus;
+        }
         // Ensure a sensible default spin so debris belts rotate with their parent
         try {
           const kindSpin = ((): number => {
@@ -4700,6 +4714,25 @@ export class GameEngine {
 
     // Rastrea el borde exterior (a) de la órbita previa para garantizar separación mínima
     let lastOuterA = 0;
+    const legacyVoidMassCapacityByIndex: Record<number, number> = {
+      [mercuryIdx]: 600,
+      [venusIdx]: 2200,
+      [earthIdx]: 3600,
+      [marsIdx]: 1500,
+      [jupiterIdx]: 9000,
+      [saturnIdx]: 7800,
+      [uranusIdx]: 5200,
+      [neptuneIdx]: 4200,
+      [plutoIdx]: 600
+    };
+    const assignLegacyVoidMass = (index: number, planet: Planet) => {
+      const capacity = legacyVoidMassCapacityByIndex[index] ?? 0;
+      if (capacity > 0) {
+        planet.setVoidMassLevels(capacity, capacity);
+      } else {
+        planet.setVoidMassLevels(0, 0);
+      }
+    };
     for (let i = 0; i < count; i++) {
       const { a: aBase, b: bBase, orient, angle0 } = baseOrbits[i];
       let a = aBase;
@@ -4865,6 +4898,7 @@ export class GameEngine {
       planetObj.angularVelocity.y = (Math.PI * 2) / 300;
 
         planetObj.assignInhabitantsFromProbability();
+      assignLegacyVoidMass(i, planetObj);
 
   // Assign canonical catalog-like name at construction only if not already named
   try {
