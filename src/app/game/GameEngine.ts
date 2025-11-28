@@ -674,6 +674,7 @@ export class GameEngine {
     this.takeoffSequenceActive = false;
     const resolvedContext = context ?? this.landingTouchdownContext;
     if (outcome === 'completed') {
+      try { this.gameState.setActiveLandingPlanet?.(null); } catch {}
       this.landingTouchdownContext = null;
       this.collisionsDisabled = false;
       this.setLandingDamageSuppressed(false, 'takeoff-completed');
@@ -712,12 +713,15 @@ export class GameEngine {
 
   private registerPlanetLandingVisit(planetId?: string | null): void {
     if (!planetId) {
+      try { this.gameState.setActiveLandingPlanet?.(null); } catch {}
       return;
     }
     const planet = this.gameState.planets.find(p => p.id === planetId) as Planet | undefined;
     if (!planet) {
+      try { this.gameState.setActiveLandingPlanet?.(null); } catch {}
       return;
     }
+    try { this.gameState.setActiveLandingPlanet?.(planet); } catch {}
     const alreadyVisited = planet.visited;
     try {
       if (typeof (planet as any).markVisited === 'function') {

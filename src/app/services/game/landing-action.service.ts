@@ -359,12 +359,20 @@ export class LandingActionService {
   }
 
   private resolvePlanet(planetId: string): Planet | null {
-    const maybe = this.gameState.findPlanetById(planetId);
-    if (!maybe) {
-      return null;
+    const resolveCandidate = (candidate?: Planet | null) => {
+      if (!candidate) {
+        return null;
+      }
+      return candidate.getType && candidate.getType() === GameObjectType.PLANET ? candidate : null;
+    };
+
+    const direct = resolveCandidate(this.gameState.findPlanetById(planetId));
+    if (direct) {
+      return direct;
     }
-    if ((maybe as Planet).getType && (maybe as Planet).getType() === GameObjectType.PLANET) {
-      return maybe as Planet;
+    const fallback = resolveCandidate(this.gameState.getActiveLandingPlanet?.() || null);
+    if (fallback && fallback.id === planetId) {
+      return fallback;
     }
     return null;
   }

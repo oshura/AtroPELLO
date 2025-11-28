@@ -85,6 +85,18 @@
   background: rgba(2, 4, 12, 0.7);
 }
 
+.landing-panel__menu--expanded {
+  min-height: 420px;
+  display: flex;
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+
+.landing-panel__menu--expanded app-landing-menu {
+  flex: 1;
+}
+
 .intel-card {
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 0.5rem;

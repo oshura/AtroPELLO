@@ -5,55 +5,64 @@
   [closeOnEscape]="false"
   (onClose)="onStay()">
   <div class="landing-panel" *ngIf="context as ctx">
-    <div class="landing-panel__metrics">
-      <div class="metric">
-        <div class="metric__label">Tipo</div>
-        <div class="metric__value">{{ planetType }}</div>
-      </div>
-      <div class="metric">
-        <div class="metric__label">Radio</div>
-        <div class="metric__value" *ngIf="radiusKm !== null">~{{ radiusKm | number:'1.0-0' }} u</div>
-        <div class="metric__value" *ngIf="radiusKm === null">-</div>
-      </div>
-    </div>
-
-    <p class="landing-panel__hint">
-      Permanece en el planeta para realizar lo que desees. Inicia los protocolos de despegue cuando estés listo.
-    </p>
-
-    <section class="landing-panel__intel" *ngIf="showIntelSection">
-      <div class="landing-panel__intel-header">Intel planetario</div>
-      <div class="landing-panel__intel-grid">
-        <div class="intel-card" *ngIf="inhabitantsIntel">
-          <div class="intel-card__label">Habitantes</div>
-          <div class="intel-card__value">{{ inhabitantsIntel }}</div>
-          <div class="intel-card__hint" *ngIf="inhabitantsHint">{{ inhabitantsHint }}</div>
+    <ng-container *ngIf="!inMenuView; else landingMenuView">
+      <div class="landing-panel__metrics">
+        <div class="metric">
+          <div class="metric__label">Tipo</div>
+          <div class="metric__value">{{ planetType }}</div>
         </div>
-        <div class="intel-card" *ngIf="lifeProbabilityIntel">
-          <div class="intel-card__label">Prob. de vida</div>
-          <div class="intel-card__value">{{ lifeProbabilityIntel }}</div>
-          <div class="intel-card__hint" *ngIf="lifeProbabilityHint">{{ lifeProbabilityHint }}</div>
-        </div>
-        <div class="intel-card" *ngIf="lesserBeingIntel">
-          <div class="intel-card__label">Ser menor</div>
-          <div class="intel-card__value">{{ lesserBeingIntel }}</div>
-          <div class="intel-card__hint" *ngIf="lesserBeingHint">{{ lesserBeingHint }}</div>
+        <div class="metric">
+          <div class="metric__label">Radio</div>
+          <div class="metric__value" *ngIf="radiusKm !== null">~{{ radiusKm | number:'1.0-0' }} u</div>
+          <div class="metric__value" *ngIf="radiusKm === null">-</div>
         </div>
       </div>
-    </section>
 
-    <section class="landing-panel__menu">
-      <app-landing-menu [context]="ctx"></app-landing-menu>
-    </section>
+      <p class="landing-panel__hint">
+        Permanece en el planeta para realizar lo que desees. Inicia los protocolos de despegue cuando estés listo.
+      </p>
+
+      <section class="landing-panel__intel" *ngIf="showIntelSection">
+        <div class="landing-panel__intel-header">Intel planetario</div>
+        <div class="landing-panel__intel-grid">
+          <div class="intel-card" *ngIf="inhabitantsIntel">
+            <div class="intel-card__label">Habitantes</div>
+            <div class="intel-card__value">{{ inhabitantsIntel }}</div>
+            <div class="intel-card__hint" *ngIf="inhabitantsHint">{{ inhabitantsHint }}</div>
+          </div>
+          <div class="intel-card" *ngIf="lifeProbabilityIntel">
+            <div class="intel-card__label">Prob. de vida</div>
+            <div class="intel-card__value">{{ lifeProbabilityIntel }}</div>
+            <div class="intel-card__hint" *ngIf="lifeProbabilityHint">{{ lifeProbabilityHint }}</div>
+          </div>
+          <div class="intel-card" *ngIf="lesserBeingIntel">
+            <div class="intel-card__label">Ser menor</div>
+            <div class="intel-card__value">{{ lesserBeingIntel }}</div>
+            <div class="intel-card__hint" *ngIf="lesserBeingHint">{{ lesserBeingHint }}</div>
+          </div>
+        </div>
+      </section>
+    </ng-container>
+
+    <ng-template #landingMenuView>
+      <section class="landing-panel__menu landing-panel__menu--expanded">
+        <app-landing-menu [context]="ctx"></app-landing-menu>
+      </section>
+    </ng-template>
   </div>
 
   <div slot="footer" class="landing-panel__actions">
-    <button type="button" class="btn ghost" (click)="onStay()">Permanecer</button>
-    <button type="button" class="btn primary" (click)="onTakeoff()">
-      Despegar
-      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-        <path d="M5 11L11 5M11 5H6M11 5V10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-      </svg>
-    </button>
+    <ng-container *ngIf="!inMenuView; else menuFooter">
+      <button type="button" class="btn ghost" (click)="enterMenu()">Permanecer</button>
+      <button type="button" class="btn primary" (click)="onTakeoff()">
+        Despegar
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <path d="M5 11L11 5M11 5H6M11 5V10" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </ng-container>
+    <ng-template #menuFooter>
+      <button type="button" class="btn ghost" (click)="exitMenu()">Embarcar</button>
+    </ng-template>
   </div>
 </app-modal>

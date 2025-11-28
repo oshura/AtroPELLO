@@ -107,6 +107,9 @@ export class GameStateStore {
   
   /** Planetas del sistema solar actual */
   public readonly planets: Planet[] = [];
+  /** Referencia al planeta activo durante secuencias de aterrizaje */
+  private activeLandingPlanet: Planet | null = null;
+  private activeLandingPlanetId: string | null = null;
   
   /** Portales activos (void jumps) */
   public readonly portals: Portal[] = [];
@@ -461,6 +464,29 @@ export class GameStateStore {
    */
   findPlanetById(id: string): Planet | undefined {
     return this.planets.find(p => p.id === id);
+  }
+
+  /** Registra el planeta activo para acciones de aterrizaje. */
+  public setActiveLandingPlanet(planet: Planet | null): void {
+    this.activeLandingPlanet = planet ?? null;
+    this.activeLandingPlanetId = planet?.id ?? null;
+  }
+
+  /** Recupera el planeta activo aunque no esté indexado aún en colecciones. */
+  public getActiveLandingPlanet(): Planet | null {
+    if (this.activeLandingPlanet && this.activeLandingPlanet.id === this.activeLandingPlanetId) {
+      return this.activeLandingPlanet;
+    }
+    if (this.activeLandingPlanetId) {
+      const fallback = this.findPlanetById(this.activeLandingPlanetId) ?? null;
+      if (fallback) {
+        this.activeLandingPlanet = fallback;
+        return fallback;
+      }
+    }
+    this.activeLandingPlanet = null;
+    this.activeLandingPlanetId = null;
+    return null;
   }
   
   /**

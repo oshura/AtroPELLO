@@ -72,6 +72,7 @@ export class SolarSystemService {
       // Reset planets and sun
       this.gameState.planets.length = 0;
       this.gameState.sun = null;
+      this.gameState.setActiveLandingPlanet?.(null);
       this.gameState.clearPlanetIntelCache?.();
       // Reset target catalog buckets
       targetCatalog?.register?.(TargetType.ASTEROID, []);

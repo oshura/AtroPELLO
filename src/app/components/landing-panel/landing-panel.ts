@@ -1,4 +1,4 @@
-import { Component, EventEmitter, Input, Output } from '@angular/core';
+import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Modal } from '../modal/modal';
 import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/landing.types';
@@ -11,11 +11,18 @@ import { LandingMenuComponent } from '../landing-menu/landing-menu';
   templateUrl: './landing-panel.html',
   styleUrl: './landing-panel.scss'
 })
-export class LandingPanelComponent {
+export class LandingPanelComponent implements OnChanges {
   @Input() visible: boolean = false;
   @Input() context: LandingApproachContext | null = null;
   @Output() takeoff = new EventEmitter<void>();
   @Output() stay = new EventEmitter<void>();
+  protected menuMode = false;
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if ((changes['visible'] && !this.visible) || changes['context']) {
+      this.menuMode = false;
+    }
+  }
 
   get title(): string {
     return this.context?.planetName
@@ -44,6 +51,10 @@ export class LandingPanelComponent {
 
   protected get showIntelSection(): boolean {
     return Boolean(this.inhabitantsIntel || this.lifeProbabilityIntel || this.lesserBeingIntel);
+  }
+
+  protected get inMenuView(): boolean {
+    return this.menuMode && !!this.context;
   }
 
   protected get inhabitantsIntel(): string | null {
@@ -100,7 +111,19 @@ export class LandingPanelComponent {
     this.takeoff.emit();
   }
 
+  enterMenu(): void {
+    if (!this.context) {
+      return;
+    }
+    this.menuMode = true;
+  }
+
+  exitMenu(): void {
+    this.menuMode = false;
+  }
+
   onStay(): void {
+    this.menuMode = false;
     this.stay.emit();
   }
 }
