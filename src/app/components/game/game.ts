@@ -87,6 +87,12 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
     }
   }
 
+  /** Permite que GameEngine cierre el panel de aterrizaje ante eventos forzados (p. ej. colapso). */
+  public forceCloseLandingPanel(reason?: string): void {
+    this.logger.info(LogCategory.GAME_LOOP, 'Landing panel force-closed', { reason });
+    this.closeLandingPanel();
+  }
+
   private closeLandingPanel(): void {
     const wasVisible = this.showLandingPanel;
     this.showLandingPanel = false;

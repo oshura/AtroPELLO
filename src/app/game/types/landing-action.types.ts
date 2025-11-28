@@ -38,6 +38,9 @@ export interface LandingActionEffects {
   sanityDelta?: number;
   healthDelta?: number;
   voidEnergyDelta?: number;
+  voidMassDrained?: number;
+  planetVoidMassRemaining?: number;
+  planetCollapsed?: boolean;
   ageDaysDelta?: number;
   experienceDelta?: number;
   intel?: LandingActionIntelDelta;

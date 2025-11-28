@@ -130,7 +130,13 @@ export class SolarSystemService {
         if (typeof p.creatureScanned === 'boolean') obj.creatureScanned = p.creatureScanned;
         if (typeof p.hasArtifact === 'boolean') obj.hasArtifact = p.hasArtifact;
         obj.artifactIntelStatus = p.artifactIntelStatus ?? PLANET_INTEL_STATUS.UNKNOWN;
-        if (typeof p.hasVoidMass === 'boolean') obj.hasVoidMass = p.hasVoidMass;
+        const snapshotVoidMassCap = typeof p.voidMassCapacity === 'number' ? p.voidMassCapacity : (p.hasVoidMass ? 2000 + Math.floor(Math.random() * 3001) : 0);
+        const snapshotVoidMassRemaining = typeof p.voidMassRemaining === 'number' ? p.voidMassRemaining : snapshotVoidMassCap;
+        obj.setVoidMassLevels(snapshotVoidMassCap, snapshotVoidMassRemaining);
+        if (typeof p.hasVoidMass === 'boolean') {
+          obj.hasVoidMass = p.hasVoidMass;
+          obj.refreshVoidMassFlags();
+        }
         obj.voidMassIntelStatus = p.voidMassIntelStatus ?? PLANET_INTEL_STATUS.UNKNOWN;
         obj.civilizationIntelStatus = p.civilizationIntelStatus ?? PLANET_INTEL_STATUS.UNKNOWN;
         obj.lesserBeingIntelStatus = p.lesserBeingIntelStatus ?? PLANET_INTEL_STATUS.UNKNOWN;

@@ -81,9 +81,10 @@ export class TakeoffSequenceAnimation implements GameAnimation {
 
     const normal = this.normalize(this.context.surfaceNormal);
     const surfacePoint = { ...this.context.surfacePoint };
-    const burrowDepth = Math.max(5, this.context.radius * 0.01);
-    const ascendHeight = Math.max(120, this.context.radius * 0.2);
-    const exitDrift = Math.max(80, this.context.radius * 0.12);
+    const clearance = this.computeClearanceDistance();
+    const burrowDepth = Math.max(5, Math.min(this.context.radius * 0.05, clearance * 0.15));
+    const ascendHeight = Math.max(120, clearance);
+    const exitDrift = Math.max(120, clearance * 0.6);
     this.burrowTarget = {
       x: surfacePoint.x - normal.x * burrowDepth,
       y: surfacePoint.y - normal.y * burrowDepth,
@@ -176,6 +177,7 @@ export class TakeoffSequenceAnimation implements GameAnimation {
       ship.currentSpeed = ship.targetSpeed;
       ship.voidEnergyPaused = false;
       ship.thrusterState = ThrusterState.CRUISING;
+      this.ensureShipClearOfPlanet(ship);
     }
     this.savedShipDynamics = null;
 
@@ -263,6 +265,42 @@ export class TakeoffSequenceAnimation implements GameAnimation {
       z: ship.position.z + dir.z
     };
     ship.lookAt(lookTarget, up);
+    ship.updateModelMatrix();
+    if (ship.boundingSphere?.center) {
+      ship.boundingSphere.center.x = ship.position.x;
+      ship.boundingSphere.center.y = ship.position.y;
+      ship.boundingSphere.center.z = ship.position.z;
+    }
+  }
+
+  private computeClearanceDistance(): number {
+    const baseRadius = Math.max(10, this.context?.radius ?? 0);
+    return Math.max(250, baseRadius * 0.35);
+  }
+
+  private ensureShipClearOfPlanet(ship: any): void {
+    if (!this.context) {
+      return;
+    }
+    const normal = this.normalize(this.context.surfaceNormal);
+    const center = {
+      x: this.context.surfacePoint.x - normal.x * this.context.radius,
+      y: this.context.surfacePoint.y - normal.y * this.context.radius,
+      z: this.context.surfacePoint.z - normal.z * this.context.radius
+    };
+    const dx = ship.position.x - center.x;
+    const dy = ship.position.y - center.y;
+    const dz = ship.position.z - center.z;
+    const distance = Math.hypot(dx, dy, dz);
+    const clearance = this.computeClearanceDistance();
+    const minDistance = this.context.radius + clearance;
+    if (distance >= minDistance) {
+      return;
+    }
+    const dir = distance > 1e-3 ? { x: dx / distance, y: dy / distance, z: dz / distance } : normal;
+    ship.position.x = center.x + dir.x * minDistance;
+    ship.position.y = center.y + dir.y * minDistance;
+    ship.position.z = center.z + dir.z * minDistance;
     ship.updateModelMatrix();
     if (ship.boundingSphere?.center) {
       ship.boundingSphere.center.x = ship.position.x;

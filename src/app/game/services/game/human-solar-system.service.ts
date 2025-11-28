@@ -118,6 +118,8 @@ export class HumanSolarSystemService {
         probabilityOfLifePct: (i === earthIdx ? 100 : (kind === 'Terrestrial' ? 20 : (kind === 'Gaseous' ? 0 : 5))),
         hasArtifact: false,
         hasVoidMass: false,
+        voidMassCapacity: 0,
+        voidMassRemaining: 0,
         artifactIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
         voidMassIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
         civilizationIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,

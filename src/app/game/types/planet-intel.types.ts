@@ -14,6 +14,10 @@ export interface PlanetIntelState {
   artifactIntelStatus: PlanetIntelStatus;
   hasVoidMass: boolean;
   voidMassIntelStatus: PlanetIntelStatus;
+  /** Total void mass the planet once held (units). */
+  voidMassCapacity: number;
+  /** Remaining void mass after harvests (units). */
+  voidMassRemaining: number;
   civilizationIntelStatus: PlanetIntelStatus;
   lesserBeingIntelStatus: PlanetIntelStatus;
 }
@@ -71,6 +75,8 @@ export function createDefaultPlanetIntelState(): PlanetIntelState {
     artifactIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
     hasVoidMass: false,
     voidMassIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
+    voidMassCapacity: 0,
+    voidMassRemaining: 0,
     civilizationIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
     lesserBeingIntelStatus: PLANET_INTEL_STATUS.UNKNOWN
   };

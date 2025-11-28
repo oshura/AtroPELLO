@@ -36,6 +36,8 @@ export class Planet extends GameObject implements ITargetable {
   public planetType: PlanetType = PlanetType.Planetoid;
   // Probability of Life in percent [0..100]
   public probabilityOfLifePct: number = 0;
+  /** Radius assigned at construction time (used for shrink calculations). */
+  public readonly initialRadius: number;
   public inhabitants: PlanetInhabitants = PlanetInhabitants.NONE;
   public lesserBeing: LesserBeing | null = null;
   public visited: boolean = false;
@@ -45,6 +47,10 @@ export class Planet extends GameObject implements ITargetable {
   public artifactIntelStatus: PlanetIntelStatus = PLANET_INTEL_STATUS.UNKNOWN;
   public hasVoidMass: boolean = false;
   public voidMassIntelStatus: PlanetIntelStatus = PLANET_INTEL_STATUS.UNKNOWN;
+  /** Total void mass this planet started with (units). */
+  public voidMassCapacity: number = 0;
+  /** Remaining void mass units after harvests. */
+  public voidMassRemaining: number = 0;
   public civilizationIntelStatus: PlanetIntelStatus = PLANET_INTEL_STATUS.UNKNOWN;
   public lesserBeingIntelStatus: PlanetIntelStatus = PLANET_INTEL_STATUS.UNKNOWN;
   public pendingMission: PlanetMissionState | null = null;
@@ -65,6 +71,7 @@ export class Planet extends GameObject implements ITargetable {
 
   constructor(id: string, colorName: PlanetColorName, radius: number, initialPos: Vector3) {
     super(id, initialPos, { x: 0, y: 0, z: 0 }, { x: radius, y: radius, z: radius });
+    this.initialRadius = radius;
     this.baseColorName = colorName;
     const c = PLANET_COLORS[colorName];
     this.color = { r: c[0], g: c[1], b: c[2], a: 1 } as any;
@@ -133,6 +140,49 @@ export class Planet extends GameObject implements ITargetable {
 
   public setPendingMission(mission: PlanetMissionState | null): void {
     this.pendingMission = mission;
+  }
+
+  /** Assign both capacity and remaining void mass, clamping to valid ranges. */
+  public setVoidMassLevels(capacity: number, remaining?: number): void {
+    this.voidMassCapacity = Math.max(0, Number.isFinite(capacity) ? capacity : 0);
+    if (typeof remaining === 'number' && Number.isFinite(remaining)) {
+      this.voidMassRemaining = Math.max(0, Math.min(this.voidMassCapacity, remaining));
+    } else {
+      this.voidMassRemaining = this.voidMassCapacity;
+    }
+    this.refreshVoidMassFlags();
+    this.updateScaleFromVoidMass();
+  }
+
+  /** Returns fraction of void mass remaining [0,1]. */
+  public getVoidMassRatio(): number {
+    if (this.voidMassCapacity <= 0) {
+      return 0;
+    }
+    return Math.max(0, Math.min(1, this.voidMassRemaining / this.voidMassCapacity));
+  }
+
+  /** Ensure hasVoidMass and HUD metadata stay in sync with remaining units. */
+  public refreshVoidMassFlags(): void {
+    this.voidMassRemaining = Math.max(0, Math.min(this.voidMassRemaining, this.voidMassCapacity));
+    this.hasVoidMass = this.voidMassRemaining > 0;
+    try { (this as any).voidMassUnits = this.voidMassRemaining; } catch {}
+  }
+
+  /** Adjust the visible radius of the planet based on remaining void mass. */
+  public updateScaleFromVoidMass(minScaleRatio: number = 0.25): void {
+    if (!Number.isFinite(this.initialRadius) || this.initialRadius <= 0 || this.voidMassCapacity <= 0) {
+      return;
+    }
+    const ratio = this.getVoidMassRatio();
+    const clampedRatio = this.hasVoidMass ? Math.max(minScaleRatio, ratio) : minScaleRatio;
+    const targetRadius = this.initialRadius * clampedRatio;
+    this.scale.x = targetRadius;
+    this.scale.y = targetRadius;
+    this.scale.z = targetRadius;
+    if (this.boundingSphere) {
+      this.boundingSphere.radius = targetRadius;
+    }
   }
 
   public getDisplayName(): string { return this.customName ?? `Planet ${this.baseColorName}`; }

@@ -32,7 +32,7 @@ export class LandingSequenceAnimation implements GameAnimation {
   private readonly diveDuration = 0.8; // dip beneath the surface
   private readonly interiorDuration = 5.0; // surf along the inner shell
   private readonly fadeDuration = 1.0; // fade to black once aligned
-  private readonly surfSpeed = 20;
+  private readonly surfSpeed = 60;
   private readonly surfFlareDegrees = 16;
 
   private shipStart!: Vector3;
@@ -46,6 +46,7 @@ export class LandingSequenceAnimation implements GameAnimation {
   private surfaceNormal!: Vector3;
   private finalForward!: Vector3;
   private finalNormal!: Vector3;
+  private fadeGlideDistance = 0;
 
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
@@ -124,6 +125,7 @@ export class LandingSequenceAnimation implements GameAnimation {
     this.finalNormal = finalState.normal;
 
     this.installKeyBlockers();
+    this.fadeGlideDistance = 0;
     engine.notifyLandingSequenceStarted?.(this.context);
   }
 
@@ -167,10 +169,16 @@ export class LandingSequenceAnimation implements GameAnimation {
     } else {
       const fadeT = (this.elapsed - interiorEndTime) / Math.max(0.001, this.fadeDuration);
       this.overlayAlpha = clamp01(fadeT);
-      this.applyShipPose(ship, this.glideEnd, this.finalNormal, this.finalForward, this.surfFlareDegrees);
-      ship.thrusterState = ThrusterState.IDLE;
-      ship.currentSpeed = 0;
-      ship.targetSpeed = 0;
+      this.fadeGlideDistance += this.surfSpeed * 0.6 * dt;
+      const glidePosition = {
+        x: this.glideEnd.x + this.finalForward.x * this.fadeGlideDistance,
+        y: this.glideEnd.y + this.finalForward.y * this.fadeGlideDistance,
+        z: this.glideEnd.z + this.finalForward.z * this.fadeGlideDistance
+      };
+      this.applyShipPose(ship, glidePosition, this.finalNormal, this.finalForward, this.surfFlareDegrees);
+      ship.thrusterState = ThrusterState.CRUISING;
+      ship.currentSpeed = this.surfSpeed * 0.6;
+      ship.targetSpeed = ship.currentSpeed;
     }
 
     if (this.elapsed >= interiorEndTime + this.fadeDuration) {

@@ -38,6 +38,8 @@ export interface PlanetSnapshot {
   hasArtifact?: boolean;
   artifactIntelStatus?: PlanetIntelStatus;
   hasVoidMass?: boolean;
+  voidMassCapacity?: number;
+  voidMassRemaining?: number;
   voidMassIntelStatus?: PlanetIntelStatus;
   civilizationIntelStatus?: PlanetIntelStatus;
   lesserBeingIntelStatus?: PlanetIntelStatus;

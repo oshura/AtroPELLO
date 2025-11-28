@@ -69,6 +69,7 @@ import {
 import { GameObjectAnimosity } from './types/animosity.types';
 import { CompassCountdownPayload } from './types/hud.types';
 import { OrientationBasis, computeHeadingFromForward } from './targeting/compass-direction.util';
+import { Vector3 } from '../types/game.types';
 
 interface AuxiliaryAbilityRuntime {
   id: string;
@@ -78,6 +79,13 @@ interface AuxiliaryAbilityRuntime {
   cooldownMs: number;
   lastUsedAtMs: number;
   handler: () => boolean;
+}
+
+interface PlanetCollapsePayload {
+  planetId: string;
+  position: Vector3;
+  radius: number;
+  clusterCount?: number;
 }
 
 /**
@@ -197,6 +205,7 @@ export class GameEngine {
   private portalPrevDistances: Map<string, number> = new Map();
   // Previous ship position (for segment-plane intersection tests)
   private lastShipPos: { x: number; y: number; z: number } | null = null;
+  private collapseClusterSerial: number = 0;
   // Collision damage cooldown tracking (object id -> next allowed timestamp ms)
   private collisionDamageCooldown: Map<string, number> = new Map();
   private collisionPairCooldown: Map<string, number> = new Map(); // Cooldown para pares de objetos (ship-obj)
@@ -783,6 +792,27 @@ export class GameEngine {
     return true;
   }
 
+  public handleLandingPlanetCollapse(planet: Planet, info?: PlanetCollapsePayload): void {
+    if (!planet) {
+      return;
+    }
+    const collapseCenter = info?.position ? { ...info.position } : { ...planet.position };
+    const collapseRadius = info?.radius ?? this.estimatePlanetRadius(planet);
+    const clusterCount = Math.max(0, Math.floor(info?.clusterCount ?? 40));
+    if (clusterCount > 0) {
+      this.spawnCollapseDebrisClusters(planet.id, collapseCenter, collapseRadius, clusterCount);
+    }
+    const landedOnPlanet = this.landingTouchdownContext?.planetId === planet.id;
+    if (landedOnPlanet) {
+      this.forceExitLandingAfterCollapse(collapseCenter, collapseRadius);
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Processed landing planet collapse', {
+      planetId: planet.id,
+      clustersSpawned: clusterCount,
+      landingInterrupted: landedOnPlanet
+    });
+  }
+
   private collectActiveSuns(): Sun[] {
     const suns: Sun[] = [];
     const seen = new Set<string>();
@@ -800,6 +830,139 @@ export class GameEngine {
       }
     }
     return suns;
+  }
+
+  private forceExitLandingAfterCollapse(center: Vector3, radius: number): void {
+    const context = this.landingTouchdownContext;
+    const anchor = context?.surfacePoint ?? center;
+    const normal = context?.surfaceNormal ?? { x: 0, y: 1, z: 0 };
+    const safeNormal = this.normalize(normal);
+    const safeDistance = Math.max(radius * 2, 800);
+    const safePosition = {
+      x: anchor.x + safeNormal.x * safeDistance,
+      y: anchor.y + safeNormal.y * safeDistance,
+      z: anchor.z + safeNormal.z * safeDistance,
+    };
+    this.repositionShipAfterCollapse(safePosition);
+    this.landingTouchdownContext = null;
+    this.landingSequenceActive = false;
+    this.takeoffSequenceActive = false;
+    this.landingCandidatePlanetId = null;
+    this.landingCandidateStartMs = null;
+    this.collisionsDisabled = false;
+    this.setLandingDamageSuppressed(false, 'planet-collapse');
+    try { this.gameState.setActiveLandingPlanet?.(null); } catch {}
+    const resetStatus: LandingStatus = { ready: false, context: null };
+    this.landingStatus = resetStatus;
+    try { this.gameState.setLandingStatus(resetStatus); } catch {}
+    this.closeLandingPanelUI('planet-collapse');
+    try { this.showPlaceholderText('PLANETA COLAPSADO', 2500); } catch {}
+  }
+
+  private repositionShipAfterCollapse(position: Vector3): void {
+    if (!this.spaceship) {
+      return;
+    }
+    this.spaceship.position = { ...position };
+    this.spaceship.velocity = { x: 0, y: 0, z: 0 };
+    this.spaceship.angularVelocity = { x: 0, y: 0, z: 0 };
+    this.spaceship.currentSpeed = 0;
+    this.spaceship.targetSpeed = 0;
+    this.spaceship.isThrusting = false;
+    this.spaceship.thrusterState = ThrusterState.IDLE;
+    this.spaceship.updateModelMatrix();
+    if (this.spaceship.boundingSphere) {
+      this.spaceship.boundingSphere.center = { ...this.spaceship.position };
+    }
+    this.lastShipPos = { ...this.spaceship.position };
+  }
+
+  private spawnCollapseDebrisClusters(planetId: string, center: Vector3, radius: number, clusterCount: number): void {
+    if (!this.asteroidClusterService) {
+      return;
+    }
+    const gl = this.gl as WebGL2RenderingContext | null;
+    for (let i = 0; i < clusterCount; i++) {
+      const clusterId = `collapse-${planetId}-${++this.collapseClusterSerial}-${i}`;
+      const clusterCenter = this.randomPointInShell(center, radius * 0.2, radius * 1.25);
+      const direction = this.normalize({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 });
+      const speed = 5 + Math.random() * 35;
+      const includeSuper = Math.random() < 0.2;
+      const memberCount = includeSuper ? 5 + Math.floor(Math.random() * 4) : 4 + Math.floor(Math.random() * 4);
+      const inst = this.asteroidClusterService.createCluster({
+        id: clusterId,
+        center: clusterCenter,
+        direction,
+        speed,
+        count: memberCount,
+        includeSuper,
+        radius: Math.max(30, radius * 0.25),
+        centerSpeedFactor: 0.55
+      });
+      if (gl) {
+        for (const obj of inst.objects) {
+          if (!obj.vertexBuffer) {
+            try { obj.initBuffers(gl); } catch {}
+          }
+        }
+      }
+      this.registerClusterObjects(inst);
+    }
+  }
+
+  private registerClusterObjects(inst: ReturnType<AsteroidClusterService['createCluster']>): void {
+    for (const obj of inst.objects) {
+      this.registerDestructionCallback(obj);
+      if (!this.targetCatalog) {
+        continue;
+      }
+      try {
+        const targetType = obj.getTargetType?.() ?? TargetType.ASTEROID;
+        if (targetType === TargetType.SUPER_ASTEROID) {
+          this.targetCatalog.add(TargetType.SUPER_ASTEROID, obj as any);
+        } else {
+          this.targetCatalog.add(TargetType.ASTEROID, obj as any);
+        }
+      } catch {}
+    }
+  }
+
+  private randomPointInShell(center: Vector3, innerRadius: number, outerRadius: number): Vector3 {
+    const min = Math.max(0, Math.min(innerRadius, outerRadius));
+    const max = Math.max(min + 1, Math.max(innerRadius, outerRadius));
+    const dir = this.normalize({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 });
+    const distance = min + Math.random() * (max - min);
+    return {
+      x: center.x + dir.x * distance,
+      y: center.y + dir.y * distance,
+      z: center.z + dir.z * distance,
+    };
+  }
+
+  private estimatePlanetRadius(planet: Planet): number {
+    const candidates = [
+      planet.scale?.x ?? 0,
+      planet.initialRadius ?? 0,
+      planet.boundingSphere?.radius ?? 0
+    ].filter(value => Number.isFinite(value) && value > 0) as number[];
+    const candidate = candidates.length ? Math.max(...candidates) : 0;
+    return Math.max(200, candidate);
+  }
+
+  private closeLandingPanelUI(reason?: string): void {
+    try {
+      const gameComponent = (globalThis as any).GameComponentInstance;
+      if (!gameComponent) {
+        return;
+      }
+      if (typeof gameComponent.forceCloseLandingPanel === 'function') {
+        gameComponent.forceCloseLandingPanel(reason);
+      } else if (typeof gameComponent.onLandingStay === 'function') {
+        gameComponent.onLandingStay();
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to close landing panel after collapse', { reason, error });
+    }
   }
 
   private getSunRadius(sun: Sun): number {
@@ -2494,9 +2657,8 @@ export class GameEngine {
     // Backfill planet-specific runtime props if selected
     if (selected && selected.getTargetType && selected.getTargetType() === TargetType.PLANET) {
       const p: any = selected as any;
-      if (!(typeof p.voidMassUnits === 'number' && isFinite(p.voidMassUnits) && p.voidMassUnits > 0)) {
-        p.voidMassUnits = 2000 + Math.floor(Math.random() * 3001);
-      }
+      const remaining = typeof p.voidMassRemaining === 'number' ? p.voidMassRemaining : p.voidMassUnits;
+      p.voidMassUnits = Number.isFinite(remaining) ? Math.max(0, remaining) : 0;
       if (!p.customName) {
         p.customName = this.generatePlanetName();
       }
@@ -2847,9 +3009,8 @@ export class GameEngine {
       const tt = target.getTargetType?.();
       if (tt === TargetType.PLANET) {
         const p: any = target as any;
-        if (!(typeof p.voidMassUnits === 'number' && isFinite(p.voidMassUnits) && p.voidMassUnits > 0)) {
-          p.voidMassUnits = 2000 + Math.floor(Math.random() * 3001);
-        }
+        const intrinsicVoidMass = typeof p.voidMassRemaining === 'number' ? p.voidMassRemaining : p.voidMassUnits;
+        p.voidMassUnits = Number.isFinite(intrinsicVoidMass) ? Math.max(0, intrinsicVoidMass) : 0;
         if (!p.customName) {
           p.customName = this.generatePlanetName();
         }
@@ -2886,18 +3047,22 @@ export class GameEngine {
       // Enrich planets with requested details if missing
       if (res.type === TargetType.PLANET) {
         const data: any = res.data as any;
+        const planetTarget: any = target as any;
         // Planet type: prefer Planet.planetType enum, fallback to baseColorName
         if (!('planetType' in data)) {
-          const p: any = target as any;
-          data.planetType = p?.planetType ?? (p?.baseColorName ? String(p.baseColorName) : 'unknown');
+          data.planetType = planetTarget?.planetType ?? (planetTarget?.baseColorName ? String(planetTarget.baseColorName) : 'unknown');
         }
         // Probability of Life: default to 0 if missing
         if (typeof (data as any).probabilityOfLifePct !== 'number' || !isFinite((data as any).probabilityOfLifePct)) {
           (data as any).probabilityOfLifePct = 0;
         }
-        // Void mass between 2000 and 5000 units if not provided
+        const remainingVoidMass = typeof planetTarget?.voidMassRemaining === 'number' && isFinite(planetTarget.voidMassRemaining)
+          ? Math.max(0, planetTarget.voidMassRemaining)
+          : undefined;
         if (typeof data.voidMassUnits !== 'number' || !isFinite(data.voidMassUnits)) {
-          data.voidMassUnits = 2000 + Math.floor(Math.random() * 3001);
+          data.voidMassUnits = typeof remainingVoidMass === 'number' ? remainingVoidMass : 0;
+        } else if (typeof remainingVoidMass === 'number') {
+          data.voidMassUnits = remainingVoidMass;
         }
         // If an older service returns volumeGu, convert to Mu
         if (typeof (data as any).volumeMu !== 'number' && typeof (data as any).volumeGu === 'number') {
@@ -2905,18 +3070,16 @@ export class GameEngine {
         }
         // Volume in Mu (Mega units) ≈ (4/3 π r^3) / 1e6 (compute if still missing)
         if (typeof (data as any).volumeMu !== 'number' || !isFinite((data as any).volumeMu)) {
-          const p: any = target as any;
-          const r = Number(p?.scale?.x ?? p?.radius ?? 0);
+          const r = Number(planetTarget?.scale?.x ?? planetTarget?.radius ?? 0);
           const vol = (4.0 / 3.0) * Math.PI * Math.pow(Math.max(0, r), 3);
           (data as any).volumeMu = Number.isFinite(vol) ? Number((vol / 1e6).toFixed(2)) : 0;
         }
         // Random planet-like name if none provided
-        const pl = target as any;
-        if (!pl.customName) {
-          pl.customName = this.generatePlanetName();
+        if (!planetTarget.customName) {
+          planetTarget.customName = this.generatePlanetName();
         }
         if (!('name' in data) || !data.name) {
-          data.name = pl.customName;
+          data.name = planetTarget.customName;
         }
       }
       cache[target.id] = res.data;
@@ -2938,7 +3101,9 @@ export class GameEngine {
       }
   const r = Number(p?.scale?.x ?? p?.radius ?? 0);
   const volumeMu = Number((((4.0 / 3.0) * Math.PI * Math.pow(Math.max(0, r), 3)) / 1e6).toFixed(2));
-  const voidMassUnits = 2000 + Math.floor(Math.random() * 3001);
+  const voidMassUnits = typeof p?.voidMassRemaining === 'number' && isFinite(p.voidMassRemaining)
+    ? Math.max(0, p.voidMassRemaining)
+    : 0;
   const planetType = p?.planetType ?? (p?.baseColorName ? String(p.baseColorName) : 'unknown');
   const probabilityOfLifePct = (() => {
     const raw = Number(p?.probabilityOfLifePct);

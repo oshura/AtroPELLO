@@ -53,6 +53,10 @@ export class LandingMenuComponent {
     return this.disabled || this.isIntelResolved(this.planetIntel?.lesserBeingIntelStatus);
   }
 
+  protected get isVoidMassActionDisabled(): boolean {
+    return this.disabled;
+  }
+
   protected formatIntelStatus(status?: PlanetIntelStatus | null): string {
     switch (status) {
       case PLANET_INTEL_STATUS.CONFIRMED_PRESENT:

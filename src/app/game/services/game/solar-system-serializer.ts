@@ -36,6 +36,8 @@ export class SolarSystemSerializer {
       hasArtifact?: boolean;
       artifactIntelStatus?: PlanetIntelStatus;
       hasVoidMass?: boolean;
+      voidMassCapacity?: number;
+      voidMassRemaining?: number;
       voidMassIntelStatus?: PlanetIntelStatus;
       civilizationIntelStatus?: PlanetIntelStatus;
       lesserBeingIntelStatus?: PlanetIntelStatus;
@@ -104,6 +106,8 @@ export class SolarSystemSerializer {
       hasArtifact: p.hasArtifact,
       artifactIntelStatus: p.artifactIntelStatus,
       hasVoidMass: p.hasVoidMass,
+      voidMassCapacity: typeof (p as any).voidMassCapacity === 'number' ? (p as any).voidMassCapacity : undefined,
+      voidMassRemaining: typeof (p as any).voidMassRemaining === 'number' ? (p as any).voidMassRemaining : undefined,
       voidMassIntelStatus: p.voidMassIntelStatus,
       civilizationIntelStatus: p.civilizationIntelStatus,
       lesserBeingIntelStatus: p.lesserBeingIntelStatus,

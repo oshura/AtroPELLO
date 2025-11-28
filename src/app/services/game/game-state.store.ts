@@ -344,6 +344,8 @@ export class GameStateStore {
       hasArtifact: planet.hasArtifact,
       artifactIntelStatus: planet.artifactIntelStatus,
       hasVoidMass: planet.hasVoidMass,
+      voidMassCapacity: planet.voidMassCapacity,
+      voidMassRemaining: planet.voidMassRemaining,
       voidMassIntelStatus: planet.voidMassIntelStatus,
       civilizationIntelStatus: planet.civilizationIntelStatus,
       lesserBeingIntelStatus: planet.lesserBeingIntelStatus,

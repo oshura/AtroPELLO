@@ -20,7 +20,7 @@
           <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.ARTIFACT)" [disabled]="isArtifactActionDisabled">
             Buscar artefacto
           </button>
-          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.VOID_MASS)" [disabled]="disabled">
+          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.VOID_MASS)" [disabled]="isVoidMassActionDisabled">
             Capturar void mass
           </button>
           <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.CIVILIZATION)" [disabled]="isCivilizationActionDisabled">
@@ -64,6 +64,9 @@
             <span class="pill pill--positive" *ngIf="eff.sanityDelta">Cordura {{ formatDelta(eff.sanityDelta) }}</span>
             <span class="pill pill--positive" *ngIf="eff.healthDelta">Salud {{ formatDelta(eff.healthDelta) }}</span>
             <span class="pill pill--positive" *ngIf="eff.voidEnergyDelta">Void {{ formatDelta(eff.voidEnergyDelta) }}</span>
+            <span class="pill pill--neutral" *ngIf="eff.voidMassDrained">Drenado {{ eff.voidMassDrained | number:'1.0-0' }}u</span>
+            <span class="pill pill--neutral" *ngIf="eff.planetVoidMassRemaining !== undefined">Restan {{ eff.planetVoidMassRemaining | number:'1.0-0' }}u</span>
+            <span class="pill pill--danger" *ngIf="eff.planetCollapsed">Planeta colapsado</span>
             <span class="pill pill--neutral" *ngIf="eff.ageDaysDelta">Edad {{ formatDelta(eff.ageDaysDelta) }}d</span>
             <span class="pill pill--positive" *ngIf="eff.experienceDelta">XP {{ formatDelta(eff.experienceDelta) }}</span>
             <span class="pill pill--warning" *ngIf="eff.interrupted">Descanso interrumpido</span>

@@ -7,18 +7,32 @@ import { LandingActionRequest, LandingActionKind, LandingExploreObjective, Landi
 import { PLANET_INTEL_STATUS } from '../../game/types/planet-intel.types';
 import { PlanetInhabitants } from '../../game/types/cosmic-life.types';
 import { GameObjectCategory, GameObjectType, getCategory } from '../../game/types/game-object.types';
+import { Vector3 } from '../../types/game.types';
+import { GameInitializer } from './game-initializer.service';
 
 interface RollOutcome {
   success: boolean;
   roll: number;
 }
 
+interface PlanetCollapseNotification {
+  planetId: string;
+  position: Vector3;
+  radius: number;
+  clusterCount: number;
+}
+
+const VOID_MASS_PER_ENERGY_UNIT = 30; // units of planetary void mass needed per ship energy
+const PLANET_MIN_VOID_MASS_TO_SURVIVE = 100; // collapse threshold
+const MIN_PLANET_SCALE_RATIO = 0.25; // never shrink below 25% before collapse
+
 @Injectable({ providedIn: 'root' })
 export class LandingActionService {
   constructor(
     private readonly gameState: GameStateStore,
     private readonly characterProfile: CharacterProfileService,
-    private readonly logger: LoggingService
+    private readonly logger: LoggingService,
+    private readonly gameInitializer: GameInitializer
   ) {}
 
   performAction(request: LandingActionRequest): LandingEventResult {
@@ -170,13 +184,25 @@ export class LandingActionService {
     ];
 
     if (roll.success) {
-      if (planet.hasVoidMass) {
-        const delta = ship.voidEnergyMax - ship.voidEnergyCurrent;
-        ship.voidEnergyCurrent = ship.voidEnergyMax;
-        effects.voidEnergyDelta = delta;
+      if (planet.hasVoidMass && planet.voidMassRemaining > 0) {
+        const harvest = this.harvestVoidMass(planet, ship);
+        effects.voidEnergyDelta = harvest.energyGained;
+        effects.voidMassDrained = harvest.massDrained;
+        effects.planetVoidMassRemaining = harvest.remainingMass;
+        effects.planetCollapsed = harvest.collapsed;
         planet.voidMassIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
         effects.intel = { voidMass: planet.voidMassIntelStatus };
-        narrative.push({ tone: 'success', text: 'La cascada gravitatoria llena los depósitos de la nave.' });
+        if (harvest.filledShip) {
+          narrative.push({ tone: 'success', text: 'La cascada gravitatoria llena los depósitos de la nave.' });
+        } else {
+          narrative.push({ tone: 'warning', text: 'Solo logras canalizar una fracción: el pozo vacío titubea.' });
+        }
+        if (harvest.massDrained > 0) {
+          narrative.push({ tone: 'info', text: `La corteza se repliega ${harvest.collapsed ? 'antes de implosionar' : 'y reduce el planeta a una cáscara más pequeña'}.` });
+        }
+        if (harvest.collapsed) {
+          narrative.push({ tone: 'danger', text: 'El núcleo se extingue: el planeta se colapsa en una navaja de polvo oscuro.' });
+        }
       } else {
         planet.voidMassIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
         effects.intel = { voidMass: planet.voidMassIntelStatus };
@@ -185,6 +211,11 @@ export class LandingActionService {
         narrative.push({ tone: 'warning', text: 'Los sensores confirman que el vacío fue drenado hace eras.' });
       }
 
+      const metadata = effects.voidMassDrained ? {
+        voidMassDrained: effects.voidMassDrained,
+        voidMassRemaining: effects.planetVoidMassRemaining,
+        planetCollapsed: effects.planetCollapsed
+      } : undefined;
       const result = this.composeResult(request, planet, {
         title: 'Captura de void mass',
         narrative,
@@ -192,8 +223,14 @@ export class LandingActionService {
         success: true,
         roll: roll.roll,
         probability: 0.5,
+        metadata,
       });
-      this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Void mass search success', { planetId: planet.id });
+      this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Void mass search success', {
+        planetId: planet.id,
+        drained: effects.voidMassDrained ?? 0,
+        remaining: planet.voidMassRemaining,
+        collapsed: effects.planetCollapsed
+      });
       return result;
     }
 
@@ -321,6 +358,7 @@ export class LandingActionService {
       success: boolean;
       roll?: number;
       probability?: number;
+      metadata?: Record<string, any>;
     }
   ): LandingEventResult {
     const result: LandingEventResult = {
@@ -336,6 +374,7 @@ export class LandingActionService {
       probability: params.probability,
       roll: params.roll,
       timestamp: Date.now(),
+      metadata: params.metadata,
     };
     this.gameState.syncPlanetIntelFromPlanet(planet);
     return result;
@@ -361,6 +400,9 @@ export class LandingActionService {
   private resolvePlanet(planetId: string): Planet | null {
     const resolveCandidate = (candidate?: Planet | null) => {
       if (!candidate || typeof candidate.getType !== 'function') {
+        return null;
+      }
+      if (typeof candidate.isActive === 'function' && !candidate.isActive()) {
         return null;
       }
       const type = candidate.getType();
@@ -393,5 +435,95 @@ export class LandingActionService {
     }
     const info = this.characterProfile.addDaysToAge(days);
     return info?.daysApplied ?? days;
+  }
+
+  private harvestVoidMass(planet: Planet, ship: { voidEnergyCurrent: number; voidEnergyMax: number }): {
+    energyGained: number;
+    massDrained: number;
+    remainingMass: number;
+    collapsed: boolean;
+    filledShip: boolean;
+  } {
+    const capacityDelta = Math.max(0, ship.voidEnergyMax - ship.voidEnergyCurrent);
+    if (capacityDelta <= 0) {
+      return { energyGained: 0, massDrained: 0, remainingMass: planet.voidMassRemaining, collapsed: false, filledShip: true };
+    }
+    const massNeeded = capacityDelta * VOID_MASS_PER_ENERGY_UNIT;
+    const available = Math.max(0, planet.voidMassRemaining);
+    const massDrained = Math.min(available, massNeeded);
+    const energyGained = massDrained / VOID_MASS_PER_ENERGY_UNIT;
+    const newEnergy = Math.min(ship.voidEnergyMax, ship.voidEnergyCurrent + energyGained);
+    ship.voidEnergyCurrent = newEnergy;
+    planet.voidMassRemaining = Math.max(0, available - massDrained);
+    planet.refreshVoidMassFlags();
+    planet.updateScaleFromVoidMass(MIN_PLANET_SCALE_RATIO);
+    const collapsed = planet.voidMassRemaining <= PLANET_MIN_VOID_MASS_TO_SURVIVE;
+    if (collapsed) {
+      this.processPlanetCollapse(planet);
+    }
+    return {
+      energyGained,
+      massDrained,
+      remainingMass: planet.voidMassRemaining,
+      collapsed,
+      filledShip: Math.abs(newEnergy - ship.voidEnergyMax) < 1e-3
+    };
+  }
+
+  private retireDepletedPlanet(planet: Planet): void {
+    planet.voidMassRemaining = 0;
+    planet.hasVoidMass = false;
+    planet.voidMassIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
+    planet.refreshVoidMassFlags();
+    planet.visible = false;
+    planet.active = false;
+    planet.renderOpacity = 0;
+    try { this.gameState.removeObject(planet); } catch {}
+    this.gameState.upsertPlanetIntelSnapshot(planet.id, {
+      hasVoidMass: false,
+      voidMassRemaining: 0,
+      voidMassCapacity: planet.voidMassCapacity,
+      voidMassIntelStatus: PLANET_INTEL_STATUS.CONFIRMED_ABSENT
+    });
+  }
+
+  private processPlanetCollapse(planet: Planet): void {
+    const info = this.buildPlanetCollapseNotification(planet);
+    this.retireDepletedPlanet(planet);
+    this.dispatchPlanetCollapse(planet, info);
+  }
+
+  private buildPlanetCollapseNotification(planet: Planet): PlanetCollapseNotification {
+    const radiusCandidates = [
+      planet.scale?.x ?? 0,
+      planet.initialRadius ?? 0,
+      planet.boundingSphere?.radius ?? 0,
+      planet.voidMassCapacity > 0 ? planet.voidMassCapacity ** (1 / 3) : 0
+    ];
+    const radius = Math.max(100, ...radiusCandidates.filter(v => Number.isFinite(v)));
+    return {
+      planetId: planet.id,
+      position: { ...planet.position },
+      radius,
+      clusterCount: 40
+    };
+  }
+
+  private dispatchPlanetCollapse(planet: Planet, info: PlanetCollapseNotification): void {
+    try {
+      const engine = this.gameInitializer.getGameEngine();
+      if (!engine || typeof (engine as any).handleLandingPlanetCollapse !== 'function') {
+        this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Game engine not ready for collapse dispatch', {
+          planetId: planet.id
+        });
+        return;
+      }
+      (engine as any).handleLandingPlanetCollapse(planet, info);
+    } catch (error) {
+      this.logger.log(LogLevel.ERROR, LogCategory.LANDING, 'Failed to dispatch planet collapse to engine', {
+        planetId: planet.id,
+        error
+      });
+    }
   }
 }

@@ -246,6 +246,7 @@ export class SystemGeneratorService {
       }
       const hasArtifact = rnd() < 0.35;
       const hasVoidMass = rnd() < 0.45;
+      const voidMassCapacity = hasVoidMass ? Math.round(2000 + rnd() * 3000) : 0;
       const stock = createEmptyResourceStock();
       stock.metal = Math.round(5 + rnd() * 25);
       stock.non_metal = Math.round(3 + rnd() * 20);
@@ -261,6 +262,8 @@ export class SystemGeneratorService {
         probabilityOfLifePct: life,
         hasArtifact,
         hasVoidMass,
+        voidMassCapacity,
+        voidMassRemaining: voidMassCapacity,
         artifactIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
         voidMassIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
         civilizationIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
