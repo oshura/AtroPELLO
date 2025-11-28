@@ -135,11 +135,7 @@ export class LandingMenuComponent {
     if (!intel) {
       return true;
     }
-    const hasCivilization = !!intel.inhabitants && intel.inhabitants !== PlanetInhabitants.NONE;
-    const absenceKnown =
-      intel.civilizationIntelStatus === PLANET_INTEL_STATUS.CONFIRMED_ABSENT ||
-      (!!intel.lifeScanned && !hasCivilization);
-    return absenceKnown;
+    return this.isIntelResolved(intel.civilizationIntelStatus) || !!intel.lifeScanned;
   }
 
   protected get isLesserBeingActionDisabled(): boolean {
@@ -150,11 +146,7 @@ export class LandingMenuComponent {
     if (!intel) {
       return true;
     }
-    const hasLesserBeing = !!intel.lesserBeing && intel.lesserBeing !== LesserBeing.NONE;
-    const absenceKnown =
-      intel.lesserBeingIntelStatus === PLANET_INTEL_STATUS.CONFIRMED_ABSENT ||
-      (!!intel.creatureScanned && !hasLesserBeing);
-    return absenceKnown;
+    return this.isIntelResolved(intel.lesserBeingIntelStatus) || !!intel.creatureScanned;
   }
 
   protected get isVoidMassActionDisabled(): boolean {
