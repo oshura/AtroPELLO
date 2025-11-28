@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, Input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, Input, OnChanges, SimpleChanges } from '@angular/core';
 import { LandingApproachContext } from '../../game/types/landing.types';
 import {
   LandingActionKind,
@@ -23,6 +23,8 @@ import {
 } from '../../game/types/planet-intel.types';
 import { LesserBeing, PlanetInhabitants } from '../../game/types/cosmic-life.types';
 import { getLandingDiplomacyScript, LandingDiplomacyScript } from '../../game/config/landing-diplomacy.config';
+import { MissionService } from '../../game/services/game/mission.service';
+import { Planet } from '../../game/game-objects/Planet';
 
 @Component({
   selector: 'app-landing-menu',
@@ -32,7 +34,7 @@ import { getLandingDiplomacyScript, LandingDiplomacyScript } from '../../game/co
   styleUrl: './landing-menu.scss',
   changeDetection: ChangeDetectionStrategy.OnPush
 })
-export class LandingMenuComponent {
+export class LandingMenuComponent implements OnChanges {
   @Input() context: LandingApproachContext | null = null;
 
   protected pending = false;
@@ -43,8 +45,15 @@ export class LandingMenuComponent {
 
   constructor(
     private readonly landingActions: LandingActionService,
-    private readonly gameState: GameStateStore
+    private readonly gameState: GameStateStore,
+    private readonly missionService: MissionService
   ) {}
+
+  ngOnChanges(changes: SimpleChanges): void {
+    if (changes['context']) {
+      this.ensureMissionSeeded();
+    }
+  }
 
   protected get hasPlanet(): boolean {
     return Boolean(this.context?.planetId);
@@ -327,6 +336,43 @@ export class LandingMenuComponent {
       return null;
     }
     return this.gameState.getPlanetIntelSnapshot(this.context!.planetId) ?? null;
+  }
+
+  private ensureMissionSeeded(): void {
+    if (!this.context?.planetId) {
+      return;
+    }
+    const planet = this.resolveLandingPlanet(this.context.planetId);
+    if (!planet) {
+      return;
+    }
+    const hasCivilization = planet.inhabitants && planet.inhabitants !== PlanetInhabitants.NONE;
+    if (!hasCivilization) {
+      return;
+    }
+    if (planet.pendingMission) {
+      this.gameState.syncPlanetIntelFromPlanet(planet);
+      return;
+    }
+    const script = getLandingDiplomacyScript(planet.inhabitants);
+    if (!script) {
+      return;
+    }
+    this.missionService.offerMission(planet, {
+      race: planet.inhabitants,
+      description: script.missionTemplate.description,
+      missionName: script.missionTemplate.name,
+      requiredClueTiers: script.missionTemplate.requiredClueTiers
+    });
+    this.gameState.syncPlanetIntelFromPlanet(planet);
+  }
+
+  private resolveLandingPlanet(planetId: string): Planet | null {
+    const planet = this.gameState.findPlanetById(planetId) ?? this.gameState.getActiveLandingPlanet();
+    if (planet?.id === planetId) {
+      return planet;
+    }
+    return null;
   }
 
   private isIntelResolved(status?: PlanetIntelStatus | null): boolean {
