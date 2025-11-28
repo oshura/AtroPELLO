@@ -21,6 +21,7 @@ export interface LandingApproachContext {
   alignmentDot: number;
   surfaceNormal: Vector3;
   surfacePoint: Vector3;
+  planetCenter: Vector3;
   lastUpdatedMs: number;
   planetIntel?: LandingPlanetIntel;
   probabilityOfLifePct?: number;

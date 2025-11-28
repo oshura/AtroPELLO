@@ -178,75 +178,106 @@ export class LandingActionService {
 
     planet.markVisited();
     const effects: LandingActionEffects = { ageDaysDelta: this.applyAgeDelta(2) };
-    const roll = this.roll(0.5);
     const narrative: LandingActionLogEntry[] = [
       { tone: 'info', text: 'Descendiste a una catarata gravitacional que canta frecuencias imposibles.' }
     ];
 
-    if (roll.success) {
-      if (planet.hasVoidMass && planet.voidMassRemaining > 0) {
+    if (planet.voidMassRemaining <= 0) {
+      planet.voidMassIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
+      effects.intel = { voidMass: planet.voidMassIntelStatus };
+      this.characterProfile.awardExperience(1, 'landing-void-absence');
+      effects.experienceDelta = 1;
+      narrative.push({ tone: 'warning', text: 'Los sensores confirman que el vacío fue drenado hace eras.' });
+    } else {
+      const probability = 0.5;
+      const roll = this.roll(probability);
+      planet.voidMassIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
+      effects.intel = { voidMass: planet.voidMassIntelStatus };
+
+      if (roll.success) {
         const harvest = this.harvestVoidMass(planet, ship);
         effects.voidEnergyDelta = harvest.energyGained;
         effects.voidMassDrained = harvest.massDrained;
         effects.planetVoidMassRemaining = harvest.remainingMass;
         effects.planetCollapsed = harvest.collapsed;
-        planet.voidMassIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
-        effects.intel = { voidMass: planet.voidMassIntelStatus };
         if (harvest.filledShip) {
-          narrative.push({ tone: 'success', text: 'La cascada gravitatoria llena los depósitos de la nave.' });
+          narrative.push({ tone: 'success', text: 'La catarata gravitacional llena los depósitos de la nave y chisporrotea contra el fuselaje.' });
         } else {
-          narrative.push({ tone: 'warning', text: 'Solo logras canalizar una fracción: el pozo vacío titubea.' });
+          narrative.push({ tone: 'warning', text: 'Drenas todo lo accesible, pero la reserva planetaria estaba casi agotada.' });
         }
         if (harvest.massDrained > 0) {
-          narrative.push({ tone: 'info', text: `La corteza se repliega ${harvest.collapsed ? 'antes de implosionar' : 'y reduce el planeta a una cáscara más pequeña'}.` });
+          narrative.push({ tone: 'info', text: `La corteza se repliega ${harvest.collapsed ? 'antes de implosionar en un filo negro' : 'y contrae el planeta hasta un cascarón hueco'}.` });
         }
         if (harvest.collapsed) {
           narrative.push({ tone: 'danger', text: 'El núcleo se extingue: el planeta se colapsa en una navaja de polvo oscuro.' });
         }
-      } else {
-        planet.voidMassIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
-        effects.intel = { voidMass: planet.voidMassIntelStatus };
-        this.characterProfile.awardExperience(1, 'landing-void-absence');
-        effects.experienceDelta = 1;
-        narrative.push({ tone: 'warning', text: 'Los sensores confirman que el vacío fue drenado hace eras.' });
+
+        const metadata = effects.voidMassDrained ? {
+          voidMassDrained: effects.voidMassDrained,
+          voidMassRemaining: effects.planetVoidMassRemaining,
+          planetCollapsed: effects.planetCollapsed
+        } : undefined;
+        const result = this.composeResult(request, planet, {
+          title: 'Captura de void mass',
+          narrative,
+          effects,
+          success: true,
+          metadata,
+          roll: roll.roll,
+          probability
+        });
+        this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Void mass harvest resolved', {
+          planetId: planet.id,
+          drained: effects.voidMassDrained ?? 0,
+          remaining: planet.voidMassRemaining,
+          collapsed: effects.planetCollapsed,
+          roll: roll.roll
+        });
+        return result;
       }
 
-      const metadata = effects.voidMassDrained ? {
-        voidMassDrained: effects.voidMassDrained,
-        voidMassRemaining: effects.planetVoidMassRemaining,
-        planetCollapsed: effects.planetCollapsed
-      } : undefined;
+      const sanityLoss = -3;
+      const healthLoss = -6;
+      this.characterProfile.adjustVitals({ sanity: sanityLoss, health: healthLoss });
+      effects.sanityDelta = sanityLoss;
+      effects.healthDelta = healthLoss;
+      effects.needsRetry = true;
+      narrative.push(
+        { tone: 'danger', text: 'La catarata se desborda y la nave vibra hasta casi partirse; la extracción fracasa.' },
+        { tone: 'warning', text: 'Pierdes salud y cordura antes de poder estabilizar los campos.' }
+      );
+
       const result = this.composeResult(request, planet, {
         title: 'Captura de void mass',
         narrative,
         effects,
-        success: true,
+        success: false,
         roll: roll.roll,
-        probability: 0.5,
-        metadata,
+        probability
       });
-      this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Void mass search success', {
+      this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Void mass harvest failed', {
         planetId: planet.id,
-        drained: effects.voidMassDrained ?? 0,
-        remaining: planet.voidMassRemaining,
-        collapsed: effects.planetCollapsed
+        roll: roll.roll
       });
       return result;
     }
 
-    this.characterProfile.adjustVitals({ health: -5 });
-    effects.healthDelta = -5;
-    narrative.push({ tone: 'danger', text: 'Deslizas por placas gravitacionales fracturadas y vuelves con heridas abiertas.' });
-
+    const metadata = effects.voidMassDrained ? {
+      voidMassDrained: effects.voidMassDrained,
+      voidMassRemaining: effects.planetVoidMassRemaining,
+      planetCollapsed: effects.planetCollapsed
+    } : undefined;
     const result = this.composeResult(request, planet, {
       title: 'Captura de void mass',
       narrative,
       effects,
-      success: false,
-      roll: roll.roll,
-      probability: 0.5,
+      success: true,
+      metadata
     });
-    this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Void mass search failed', { planetId: planet.id, roll: roll.roll });
+    this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Void mass harvest resolved (empty planet)', {
+      planetId: planet.id,
+      remaining: planet.voidMassRemaining
+    });
     return result;
   }
 

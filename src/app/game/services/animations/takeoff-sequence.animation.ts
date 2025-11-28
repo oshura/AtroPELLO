@@ -31,6 +31,7 @@ export class TakeoffSequenceAnimation implements GameAnimation {
   private ascentTarget!: Vector3;
   private exitTarget!: Vector3;
   private tangentDir!: Vector3;
+  private coreStart!: Vector3;
 
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
@@ -80,15 +81,18 @@ export class TakeoffSequenceAnimation implements GameAnimation {
     engine.camera?.setCameraMode?.(CameraMode.COCKPIT);
 
     const normal = this.normalize(this.context.surfaceNormal);
+    const center = this.getPlanetCenter();
+    this.coreStart = { ...center };
     const surfacePoint = { ...this.context.surfacePoint };
     const clearance = this.computeClearanceDistance();
     const burrowDepth = Math.max(5, Math.min(this.context.radius * 0.05, clearance * 0.15));
     const ascendHeight = Math.max(120, clearance);
     const exitDrift = Math.max(120, clearance * 0.6);
+    const interiorRadius = Math.max(0, this.context.radius - burrowDepth);
     this.burrowTarget = {
-      x: surfacePoint.x - normal.x * burrowDepth,
-      y: surfacePoint.y - normal.y * burrowDepth,
-      z: surfacePoint.z - normal.z * burrowDepth
+      x: center.x + normal.x * interiorRadius,
+      y: center.y + normal.y * interiorRadius,
+      z: center.z + normal.z * interiorRadius
     };
     this.ascentTarget = {
       x: surfacePoint.x + normal.x * ascendHeight,
@@ -116,7 +120,7 @@ export class TakeoffSequenceAnimation implements GameAnimation {
 
     if (this.elapsed <= this.prepDuration) {
       const t = smoothstep(this.elapsed / Math.max(0.001, this.prepDuration));
-      const pos = this.lerpVec(this.context.surfacePoint, this.burrowTarget, t);
+      const pos = this.lerpVec(this.coreStart, this.burrowTarget, t);
       this.applyShipPose(ship, pos, normal, normal, -10);
       ship.thrusterState = ThrusterState.BRAKING;
       ship.targetSpeed = 0;
@@ -283,11 +287,7 @@ export class TakeoffSequenceAnimation implements GameAnimation {
       return;
     }
     const normal = this.normalize(this.context.surfaceNormal);
-    const center = {
-      x: this.context.surfacePoint.x - normal.x * this.context.radius,
-      y: this.context.surfacePoint.y - normal.y * this.context.radius,
-      z: this.context.surfacePoint.z - normal.z * this.context.radius
-    };
+    const center = this.getPlanetCenter();
     const dx = ship.position.x - center.x;
     const dy = ship.position.y - center.y;
     const dz = ship.position.z - center.z;
@@ -307,5 +307,17 @@ export class TakeoffSequenceAnimation implements GameAnimation {
       ship.boundingSphere.center.y = ship.position.y;
       ship.boundingSphere.center.z = ship.position.z;
     }
+  }
+
+  private getPlanetCenter(): Vector3 {
+    if (this.context?.planetCenter) {
+      return { ...this.context.planetCenter };
+    }
+    const normal = this.normalize(this.context.surfaceNormal);
+    return {
+      x: this.context.surfacePoint.x - normal.x * this.context.radius,
+      y: this.context.surfacePoint.y - normal.y * this.context.radius,
+      z: this.context.surfacePoint.z - normal.z * this.context.radius
+    };
   }
 }

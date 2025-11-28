@@ -104,11 +104,7 @@ export class LandingSequenceAnimation implements GameAnimation {
     };
 
     this.glideDir = this.computeGlideDirection(ship.forwardDirection, normal);
-    this.planetCenter = {
-      x: this.context.surfacePoint.x - normal.x * this.context.radius,
-      y: this.context.surfacePoint.y - normal.y * this.context.radius,
-      z: this.context.surfacePoint.z - normal.z * this.context.radius
-    };
+    this.planetCenter = this.getPlanetCenter();
     const interiorDepth = clamp(this.context.radius * 0.015, 8, Math.max(10, this.context.radius - 5));
     this.interiorRadius = Math.max(1, this.context.radius - interiorDepth);
     this.interiorStart = {
@@ -313,6 +309,18 @@ export class LandingSequenceAnimation implements GameAnimation {
       z: -n.z * r * sinT + g.z * r * cosT
     });
     return { position, forward, normal };
+  }
+
+  private getPlanetCenter(): Vector3 {
+    if (this.context?.planetCenter) {
+      return { ...this.context.planetCenter };
+    }
+    const normal = this.normalize(this.context.surfaceNormal);
+    return {
+      x: this.context.surfacePoint.x - normal.x * this.context.radius,
+      y: this.context.surfacePoint.y - normal.y * this.context.radius,
+      z: this.context.surfacePoint.z - normal.z * this.context.radius
+    };
   }
 
   private applyShipPose(

@@ -562,6 +562,7 @@ export class GameEngine {
       alignmentDot,
       surfaceNormal: normal,
       surfacePoint,
+      planetCenter: { x: planet.position.x, y: planet.position.y, z: planet.position.z },
       lastUpdatedMs: now
     };
 
@@ -701,6 +702,7 @@ export class GameEngine {
 
   private handleLandingTouchdown(context: LandingApproachContext): void {
     const enrichedContext = this.enrichLandingContext(context);
+    this.parkShipAtPlanetCore(enrichedContext);
     this.landingTouchdownContext = enrichedContext;
     this.registerPlanetLandingVisit(context.planetId);
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing touchdown registered', {
@@ -860,6 +862,33 @@ export class GameEngine {
   }
 
   private repositionShipAfterCollapse(position: Vector3): void {
+    this.placeShipAtPosition(position);
+  }
+
+  private parkShipAtPlanetCore(context: LandingApproachContext): void {
+    const anchor = this.resolvePlanetCenterFromContext(context);
+    if (!anchor) {
+      return;
+    }
+    this.placeShipAtPosition(anchor);
+  }
+
+  private resolvePlanetCenterFromContext(context: LandingApproachContext): Vector3 | null {
+    if (context.planetCenter) {
+      return { ...context.planetCenter };
+    }
+    if (!context.surfacePoint || !context.surfaceNormal) {
+      return null;
+    }
+    const normal = this.normalize(context.surfaceNormal);
+    return {
+      x: context.surfacePoint.x - normal.x * context.radius,
+      y: context.surfacePoint.y - normal.y * context.radius,
+      z: context.surfacePoint.z - normal.z * context.radius
+    };
+  }
+
+  private placeShipAtPosition(position: Vector3): void {
     if (!this.spaceship) {
       return;
     }
