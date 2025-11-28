@@ -22,7 +22,7 @@ interface PlanetCollapseNotification {
   clusterCount: number;
 }
 
-const VOID_MASS_PER_ENERGY_UNIT = 30; // units of planetary void mass needed per ship energy
+const VOID_MASS_PER_ENERGY_UNIT = 10; // units of planetary void mass needed per ship energy
 const PLANET_MIN_VOID_MASS_TO_SURVIVE = 100; // collapse threshold
 const MIN_PLANET_SCALE_RATIO = 0.25; // never shrink below 25% before collapse
 
