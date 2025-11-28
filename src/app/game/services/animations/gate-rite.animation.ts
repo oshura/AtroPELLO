@@ -155,6 +155,23 @@ export class GateRiteAnimation implements GameAnimation {
       });
       // Persist original snapshot if portal persistence is available (only once per rite start)
       try {
+        const engineAny: any = engine as any;
+        const currentSnapshotRef: any = engineAny?.currentSnapshot || null;
+        const isProcedural = currentSnapshotRef ? currentSnapshotRef.meta?.handcrafted !== true : false;
+        if (isProcedural && typeof engine.gameState?.archiveProceduralSystemSnapshot === 'function') {
+          const archiveSnapshot = {
+            ...this.originalSnapshot,
+            meta: {
+              ...(this.originalSnapshot.meta || {}),
+              handcrafted: false,
+              proceduralSystemId: currentSnapshotRef?.id || this.originalSnapshot.id,
+              archivedFrom: currentSnapshotRef?.id || null
+            }
+          };
+          engine.gameState.archiveProceduralSystemSnapshot(archiveSnapshot);
+        }
+      } catch {}
+      try {
         const persistence: any = engine.portalPersistenceService;
         if (persistence && this.originalSnapshot) {
           persistence.autoLabelAndSave?.('gate-origin', this.originalSnapshot);
@@ -701,8 +718,12 @@ export class GateRiteAnimation implements GameAnimation {
           eyeState: { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
         } : null;
         let snapshot: any = null;
+        let reusedArchivedSystem = false;
         if (solarSvc && originPortal) {
-          // Destination generation constraints
+          const archiveApi: any = engine.gameState;
+          const archivedCount = typeof archiveApi?.getArchivedProceduralSystemCount === 'function'
+            ? archiveApi.getArchivedProceduralSystemCount()
+            : 0;
           const prevPalette = Array.isArray(this.originalSnapshot?.planets)
             ? Array.from(new Set(this.originalSnapshot.planets.map((p: any) => p?.baseColorName).filter((c: any) => !!c)))
             : [];
@@ -714,14 +735,48 @@ export class GateRiteAnimation implements GameAnimation {
             maxGiantRadius: 3400,
             colorPaletteOverride: prevPalette && prevPalette.length ? prevPalette : undefined,
           };
-          snapshot = solarSvc.generateWithLinkedPortal(originPortal, Date.now(), genOptions);
+
+          let archivedSnapshot: any = null;
+          let archiveRoll: number | null = null;
+          if (archivedCount > 0 && typeof archiveApi?.pickRandomArchivedProceduralSystem === 'function') {
+            archiveRoll = Math.random();
+            if (archiveRoll <= 0.10) {
+              archivedSnapshot = archiveApi.pickRandomArchivedProceduralSystem();
+            }
+          }
+
+          if (archivedSnapshot) {
+            reusedArchivedSystem = true;
+            snapshot = archivedSnapshot;
+            snapshot.meta = { ...(snapshot.meta || {}), reusedFromArchive: true, reusedAt: Date.now(), archiveRoll };
+            if (!snapshot.meta.proceduralSystemId && snapshot.id) {
+              snapshot.meta.proceduralSystemId = snapshot.id;
+            }
+            try {
+              const destPortal = solarSvc.createPairedPortal(originPortal, { x: 0, y: 0, z: 1000 });
+              snapshot.portals = (snapshot.portals || []).concat(destPortal);
+            } catch {}
+            try {
+              GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite reused archived system', {
+                archiveRoll,
+                archivedCount,
+                systemId: snapshot.meta?.proceduralSystemId || snapshot.id
+              });
+            } catch {}
+          } else {
+            snapshot = solarSvc.generateWithLinkedPortal(originPortal, Date.now(), genOptions);
+            snapshot.meta = { ...(snapshot.meta || {}), handcrafted: false };
+            if (!snapshot.meta.proceduralSystemId && snapshot.id) {
+              snapshot.meta.proceduralSystemId = snapshot.id;
+            }
+          }
         }
         else if (this.generator) snapshot = this.generator.generate(Date.now());
         if (snapshot && engine.applySolarSystemSnapshot) {
           // Registrar portales en el PortalRegistryService
           const registry = engine.portalRegistry;
           const originSystemId = this.originalSnapshot?.id || 'unknown-origin';
-          const destSystemId = snapshot.id || 'unknown-dest';
+          const destSystemId = snapshot.meta?.proceduralSystemId || snapshot.id || 'unknown-dest';
           
           // Vincular portal de origen con destino
           let dest: any = null;
@@ -830,7 +885,7 @@ export class GateRiteAnimation implements GameAnimation {
             }
           } catch {}
           // Logs y persistencia del generado
-          try { GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite switched system after fade', { id: snapshot.id }); } catch {}
+          try { GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite switched system after fade', { id: snapshot.id, reusedArchivedSystem }); } catch {}
           try {
             const persistence: any = engine.portalPersistenceService;
             if (persistence && snapshot) persistence.autoLabelAndSave?.('gate-generated', snapshot);

@@ -23,6 +23,7 @@ import {
 } from '../../game/types/inventory.types';
 import { LandingStatus, LandingThreatState } from '../../game/types/landing.types';
 import { SpellType, getSpellSanityCost } from '../../game/types/spell.types';
+import { SolarSystemSnapshot } from '../../game/types/solar-system.types';
 import {
   PlanetIntelSnapshot,
   PlanetResourceStock,
@@ -233,6 +234,9 @@ export class GameStateStore {
 
   /** Intel planetario persistente (artefactos, void mass, misiones). */
   public readonly planetIntelById = new Map<string, PlanetIntelSnapshot>();
+  /** Archivo de snapshots procedurales visitados previamente para Gate Rite. */
+  private readonly proceduralSystemArchive: SolarSystemSnapshot[] = [];
+  private readonly PROCEDURAL_ARCHIVE_LIMIT = 8;
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  REACTIVE STATE (Observabilidad)
@@ -402,6 +406,46 @@ export class GameStateStore {
       ...(this.sun ? [this.sun] : []),
       ...(this.spaceship ? [this.spaceship] : [])
     ];
+  }
+
+  /** Devuelve cuántos sistemas procedurales hay archivados. */
+  public getArchivedProceduralSystemCount(): number {
+    return this.proceduralSystemArchive.length;
+  }
+
+  /**
+   * Guarda o actualiza un snapshot procedural visitado para posibles Gate Rite rerolls.
+   * Ignora sistemas artesanales.
+   */
+  public archiveProceduralSystemSnapshot(snapshot: SolarSystemSnapshot | null | undefined): void {
+    if (!snapshot || snapshot.meta?.['handcrafted'] === true) {
+      return;
+    }
+    const clone = this.cloneSnapshot(snapshot);
+    clone.meta = { ...(clone.meta || {}) };
+    const proceduralId = this.resolveProceduralSystemId(clone);
+    clone.meta['proceduralSystemId'] = proceduralId;
+    clone.meta['handcrafted'] = false;
+    clone.meta['archivedAt'] = Date.now();
+
+    const existingIdx = this.proceduralSystemArchive.findIndex(entry => entry.meta?.['proceduralSystemId'] === proceduralId);
+    if (existingIdx >= 0) {
+      this.proceduralSystemArchive[existingIdx] = clone;
+    } else {
+      this.proceduralSystemArchive.push(clone);
+      if (this.proceduralSystemArchive.length > this.PROCEDURAL_ARCHIVE_LIMIT) {
+        this.proceduralSystemArchive.shift();
+      }
+    }
+  }
+
+  /** Obtiene una copia clonada aleatoria del archivo procedural (o null si está vacío). */
+  public pickRandomArchivedProceduralSystem(): SolarSystemSnapshot | null {
+    if (!this.proceduralSystemArchive.length) {
+      return null;
+    }
+    const idx = Math.floor(Math.random() * this.proceduralSystemArchive.length);
+    return this.cloneSnapshot(this.proceduralSystemArchive[idx]);
   }
   
   /**
@@ -1072,6 +1116,21 @@ export class GameStateStore {
         ]
       }
     };
+  }
+
+  private cloneSnapshot(snapshot: SolarSystemSnapshot): SolarSystemSnapshot {
+    return JSON.parse(JSON.stringify(snapshot)) as SolarSystemSnapshot;
+  }
+
+  private resolveProceduralSystemId(snapshot: SolarSystemSnapshot): string {
+    const metaId = snapshot.meta?.['proceduralSystemId'] || snapshot.meta?.['systemId'];
+    if (metaId) {
+      return metaId;
+    }
+    if (snapshot.id) {
+      return snapshot.id;
+    }
+    return `procedural-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   }
   
   /**
