@@ -10,6 +10,8 @@ import { LandingActionKind, LandingDiplomacyAction } from '../../game/types/land
 import { Planet } from '../../game/game-objects/Planet';
 import { PlanetInhabitants } from '../../game/types/cosmic-life.types';
 import { Vector3 } from '../../types/game.types';
+import { Spaceship } from '../../game/game-objects/Spaceship';
+import { CargoItemType, RarityTier } from '../../game/types/inventory.types';
 
 class MockGameInitializer {
   getGameEngine() {
@@ -40,6 +42,9 @@ describe('LandingActionService diplomacy flow', () => {
     service = TestBed.inject(LandingActionService);
     store = TestBed.inject(GameStateStore);
     store.planets.length = 0;
+    store.setCargoManifest([]);
+    store.spaceship = null;
+    store.characterProfile.health = 100;
   });
 
   function registerPlanet(): Planet {
@@ -49,6 +54,20 @@ describe('LandingActionService diplomacy flow', () => {
     store.planets.push(planet);
     store.setActiveLandingPlanet(planet);
     return planet;
+  }
+
+  function seedCargo(kind: 'metallic' | 'carbonaceous', units = 1): void {
+    store.setCargoManifest([
+      {
+        id: `cargo-${kind}`,
+        type: CargoItemType.RAW_MATERIAL,
+        label: kind === 'metallic' ? 'Lingotes' : 'Resinas',
+        massTons: 10,
+        units,
+        rarity: RarityTier.COMMON,
+        composition: kind
+      }
+    ]);
   }
 
   it('adds a clue token when executing a bribe', () => {
@@ -102,5 +121,55 @@ describe('LandingActionService diplomacy flow', () => {
 
     expect(result.blocked).toBeTrue();
     expect(result.effects.blockedReason).toBe('mission-not-ready');
+  });
+
+  it('repairs the ship by spending metallic cargo', () => {
+    const planet = registerPlanet();
+    store.spaceship = new Spaceship();
+    store.spaceship.healthCurrent = store.spaceship.healthMax / 2;
+    seedCargo('metallic', 2);
+
+    const result = service.performAction({
+      planetId: planet.id,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.REPAIR_SHIP }
+    });
+
+    expect(result.success).toBeTrue();
+    expect(result.effects.shipHealthDelta).toBeGreaterThan(0);
+    expect(result.effects.cargoSpent?.[0].kind).toBe('metallic');
+    expect(store.getRawMaterialUnits('metallic')).toBe(1);
+  });
+
+  it('heals the pilot when trading carbon cargo', () => {
+    const planet = registerPlanet();
+    store.characterProfile.health = 70;
+    seedCargo('carbonaceous', 1);
+
+    const result = service.performAction({
+      planetId: planet.id,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.HEAL_CREW }
+    });
+
+    expect(result.success).toBeTrue();
+    expect(result.effects.healthDelta).toBe(10);
+    expect(store.characterProfile.health).toBe(80);
+    expect(store.getRawMaterialUnits('carbonaceous')).toBe(0);
+  });
+
+  it('blocks neutral repair if there is no metallic cargo', () => {
+    const planet = registerPlanet();
+    store.spaceship = new Spaceship();
+    store.spaceship.healthCurrent = store.spaceship.healthMax - 50;
+
+    const result = service.performAction({
+      planetId: planet.id,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.REPAIR_SHIP }
+    });
+
+    expect(result.blocked).toBeTrue();
+    expect(result.effects.blockedReason).toBe('missing-metal-resource');
   });
 });

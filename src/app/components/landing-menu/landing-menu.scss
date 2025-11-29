@@ -296,6 +296,41 @@
   flex-wrap: wrap;
 }
 
+.mission-panel__requirements {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.mission-panel__requirement {
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.85rem;
+}
+
+.mission-panel__requirement small {
+  display: block;
+  margin-top: 0.15rem;
+  font-size: 0.7rem;
+  opacity: 0.8;
+}
+
+.mission-panel__requirement.is-missing {
+  border: 1px solid rgba(255, 133, 133, 0.7);
+  background: rgba(255, 133, 133, 0.08);
+}
+
+.mission-panel__meta-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.mission-panel__meta-actions .menu-btn {
+  flex: 1 1 180px;
+}
+
 .mission-panel__label {
   display: block;
   font-size: 0.65rem;

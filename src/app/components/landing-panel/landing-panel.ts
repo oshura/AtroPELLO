@@ -1,10 +1,10 @@
-import { Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
+import { Component, EventEmitter, HostListener, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Modal } from '../modal/modal';
 import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/landing.types';
 import { LandingMenuComponent } from '../landing-menu/landing-menu';
 import { GameStateStore } from '../../services/game/game-state.store';
-import { PlanetIntelSnapshot } from '../../game/types/planet-intel.types';
+import { PLANET_INTEL_STATUS, PlanetIntelSnapshot, PlanetIntelStatus } from '../../game/types/planet-intel.types';
 import { PlanetInhabitants, PLANET_INHABITANT_LABELS, LesserBeing, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
 
 @Component({
@@ -19,13 +19,13 @@ export class LandingPanelComponent implements OnChanges {
   @Input() context: LandingApproachContext | null = null;
   @Output() takeoff = new EventEmitter<void>();
   @Output() stay = new EventEmitter<void>();
-  protected menuMode = false;
+  protected viewMode: 'overview' | 'actions' | 'diplomacy' = 'overview';
 
   constructor(private readonly gameState: GameStateStore) {}
 
   ngOnChanges(changes: SimpleChanges): void {
     if ((changes['visible'] && !this.visible) || changes['context']) {
-      this.menuMode = false;
+      this.viewMode = 'overview';
     }
   }
 
@@ -59,7 +59,27 @@ export class LandingPanelComponent implements OnChanges {
   }
 
   protected get inMenuView(): boolean {
-    return this.menuMode && !!this.context;
+    return this.viewMode !== 'overview' && !!this.context;
+  }
+
+  protected get inDiplomacyView(): boolean {
+    return this.viewMode === 'diplomacy';
+  }
+
+  protected get landingMenuViewMode(): 'actions' | 'diplomacy' {
+    return this.inDiplomacyView ? 'diplomacy' : 'actions';
+  }
+
+  protected get canOpenDiplomacyPanel(): boolean {
+    const snapshot = this.rawPlanetIntelSnapshot;
+    if (snapshot) {
+      const hasCivilization = !!snapshot.inhabitants && snapshot.inhabitants !== PlanetInhabitants.NONE;
+      if (!hasCivilization) {
+        return false;
+      }
+      return snapshot.lifeScanned || this.isIntelResolved(snapshot.civilizationIntelStatus);
+    }
+    return Boolean(this.context?.planetIntel?.planetHasKnownSpecies);
   }
 
   protected get inhabitantsIntel(): string | null {
@@ -120,6 +140,14 @@ export class LandingPanelComponent implements OnChanges {
     return this.mapSnapshotToLandingIntel(snapshot);
   }
 
+  private get rawPlanetIntelSnapshot(): PlanetIntelSnapshot | null {
+    const planetId = this.context?.planetId;
+    if (!planetId) {
+      return null;
+    }
+    return this.gameState.getPlanetIntelSnapshot(planetId) ?? null;
+  }
+
   private mapSnapshotToLandingIntel(snapshot: PlanetIntelSnapshot): LandingPlanetIntel {
     const lifeKnown = !!snapshot.lifeScanned;
     const creatureKnown = !!snapshot.creatureScanned;
@@ -157,15 +185,31 @@ export class LandingPanelComponent implements OnChanges {
     if (!this.context) {
       return;
     }
-    this.menuMode = true;
+    this.viewMode = 'actions';
+  }
+
+  enterDiplomacyMenu(): void {
+    if (!this.context || !this.canOpenDiplomacyPanel) {
+      return;
+    }
+    this.viewMode = 'diplomacy';
   }
 
   exitMenu(): void {
-    this.menuMode = false;
+    this.viewMode = 'overview';
   }
 
   onStay(): void {
-    this.menuMode = false;
+    this.viewMode = 'overview';
     this.stay.emit();
+  }
+
+  @HostListener('wheel', ['$event'])
+  handleWheelWithinPanel(event: WheelEvent): void {
+    event.stopPropagation();
+  }
+
+  private isIntelResolved(status?: PlanetIntelStatus | null): boolean {
+    return !!status && status !== PLANET_INTEL_STATUS.UNKNOWN;
   }
 }

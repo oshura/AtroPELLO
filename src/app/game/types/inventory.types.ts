@@ -1,5 +1,36 @@
 import { GameObjectType } from './game-object.types';
 
+export type CargoCompositionKind =
+  | 'metallic'
+  | 'carbonaceous'
+  | 'silicate'
+  | 'organic'
+  | 'mixed'
+  | 'unknown';
+
+export function classifyCargoComposition(value?: string | null): CargoCompositionKind {
+  const raw = (value ?? '').toLowerCase().trim();
+  if (!raw.length) {
+    return 'unknown';
+  }
+  if (raw.includes('iron') || raw.includes('nickel') || raw.includes('metal')) {
+    return 'metallic';
+  }
+  if (raw.includes('carbon')) {
+    return 'carbonaceous';
+  }
+  if (raw.includes('silicate') || raw.includes('silica')) {
+    return 'silicate';
+  }
+  if (raw.includes('organic')) {
+    return 'organic';
+  }
+  if (raw.includes('mixed')) {
+    return 'mixed';
+  }
+  return 'unknown';
+}
+
 /** Slots asociados al piloto (inventario personal). */
 export enum PersonalGearSlot {
   SUIT = 'SUIT',
@@ -84,6 +115,7 @@ export interface CargoManifestEntry {
   source?: GameObjectType | 'FABRICATED';
   rarity: RarityTier;
   notes?: string;
+  composition?: CargoCompositionKind;
 }
 
 /** Snapshot completo para alimentar el InventoryPanel. */

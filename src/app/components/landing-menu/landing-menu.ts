@@ -1,6 +1,6 @@
 import { CommonModule } from '@angular/common';
 import { ChangeDetectionStrategy, Component, Input, OnChanges, SimpleChanges } from '@angular/core';
-import { LandingApproachContext } from '../../game/types/landing.types';
+import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/landing.types';
 import {
   LandingActionKind,
   LandingActionRequest,
@@ -16,6 +16,7 @@ import {
   PlanetIntelSnapshot,
   PlanetIntelStatus,
   PlanetMissionState,
+  PlanetMissionStatus,
   MissionClueToken,
   MissionClueTier,
   PlanetResourceStock,
@@ -25,6 +26,7 @@ import { LesserBeing, PlanetInhabitants } from '../../game/types/cosmic-life.typ
 import { getLandingDiplomacyScript, LandingDiplomacyScript } from '../../game/config/landing-diplomacy.config';
 import { MissionService } from '../../game/services/game/mission.service';
 import { Planet } from '../../game/game-objects/Planet';
+import { GameObjectAnimosity, RelationAffinity } from '../../game/types/animosity.types';
 
 @Component({
   selector: 'app-landing-menu',
@@ -36,6 +38,7 @@ import { Planet } from '../../game/game-objects/Planet';
 })
 export class LandingMenuComponent implements OnChanges {
   @Input() context: LandingApproachContext | null = null;
+  @Input() viewMode: 'actions' | 'diplomacy' = 'actions';
 
   protected pending = false;
   protected actionLog: LandingEventResult[] = [];
@@ -67,8 +70,88 @@ export class LandingMenuComponent implements OnChanges {
     return !this.disabled && !!this.mission;
   }
 
+  protected get showActionSections(): boolean {
+    return this.viewMode === 'actions';
+  }
+
+  protected get showDiplomacySection(): boolean {
+    return this.viewMode === 'diplomacy';
+  }
+
+  protected get canAcceptMission(): boolean {
+    return !!this.mission && this.mission.status === 'offered' && !this.disabled;
+  }
+
+  protected get canReviewMission(): boolean {
+    return !!this.mission && !this.disabled;
+  }
+
   protected get mission(): PlanetMissionState | null {
     return this.planetIntel?.pendingMission ?? null;
+  }
+
+  protected get missionRequiresCargo(): boolean {
+    return Boolean(this.mission?.requiredCargoEntryId);
+  }
+
+  protected get missionCargoLabel(): string | null {
+    if (!this.missionRequiresCargo) {
+      return null;
+    }
+    return this.mission?.requiredCargoLabel ?? 'Carga solicitada';
+  }
+
+  protected get missionHasCargo(): boolean {
+    const mission = this.mission;
+    if (!mission || !mission.requiredCargoEntryId) {
+      return true;
+    }
+    return this.missionService.hasRequiredCargoReady(mission.id);
+  }
+
+  protected get relationAffinity(): RelationAffinity {
+    const animosity = this.planetIntel?.animosity ?? GameObjectAnimosity.NEUTRAL;
+    switch (animosity) {
+      case GameObjectAnimosity.FRIENDLY:
+        return 'ally';
+      case GameObjectAnimosity.ENEMY:
+        return 'enemy';
+      default:
+        return 'neutral';
+    }
+  }
+
+  protected get isNeutralRelation(): boolean {
+    return this.relationAffinity === 'neutral';
+  }
+
+  protected get metallicCargoUnits(): number {
+    return this.gameState.getRawMaterialUnits('metallic');
+  }
+
+  protected get carbonCargoUnits(): number {
+    return this.gameState.getRawMaterialUnits('carbonaceous');
+  }
+
+  protected get canUseNeutralRepair(): boolean {
+    if (!this.isNeutralRelation || this.disabled) {
+      return false;
+    }
+    const ship = this.gameState.spaceship;
+    if (!ship || ship.healthCurrent >= ship.healthMax) {
+      return false;
+    }
+    return this.metallicCargoUnits >= 1;
+  }
+
+  protected get canUseNeutralHeal(): boolean {
+    if (!this.isNeutralRelation || this.disabled) {
+      return false;
+    }
+    if (this.gameState.characterProfile.health >= 100) {
+      return false;
+    }
+    return this.carbonCargoUnits >= 1;
   }
 
   protected get diplomacyScript(): LandingDiplomacyScript | null {
@@ -125,7 +208,18 @@ export class LandingMenuComponent implements OnChanges {
   }
 
   protected get canTurnInMission(): boolean {
-    return !this.disabled && !!this.mission;
+    const mission = this.mission;
+    if (!mission || this.disabled) {
+      return false;
+    }
+    const readyStates: PlanetMissionStatus[] = ['ready-to-turn-in', 'completed'];
+    if (!readyStates.includes(mission.status)) {
+      return false;
+    }
+    if (this.missionRequiresCargo && !this.missionHasCargo) {
+      return false;
+    }
+    return true;
   }
 
   protected get primarySubTaskConfig(): string | undefined {
@@ -144,7 +238,7 @@ export class LandingMenuComponent implements OnChanges {
     if (!intel) {
       return true;
     }
-    return this.isIntelResolved(intel.civilizationIntelStatus) || !!intel.lifeScanned;
+    return this.isIntelResolved(intel.civilizationIntelStatus) || this.lifeIntelKnown;
   }
 
   protected get isLesserBeingActionDisabled(): boolean {
@@ -155,7 +249,7 @@ export class LandingMenuComponent implements OnChanges {
     if (!intel) {
       return true;
     }
-    return this.isIntelResolved(intel.lesserBeingIntelStatus) || !!intel.creatureScanned;
+    return this.isIntelResolved(intel.lesserBeingIntelStatus) || this.creatureIntelKnown;
   }
 
   protected get isVoidMassActionDisabled(): boolean {
@@ -261,6 +355,50 @@ export class LandingMenuComponent implements OnChanges {
     });
   }
 
+  protected handleMissionAccept(): void {
+    if (!this.canAcceptMission || !this.context?.planetId) {
+      return;
+    }
+    this.executeAction({
+      planetId: this.context.planetId,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.ACCEPT_MISSION }
+    });
+  }
+
+  protected handleMissionReview(): void {
+    if (!this.canReviewMission || !this.context?.planetId) {
+      return;
+    }
+    this.executeAction({
+      planetId: this.context.planetId,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.REVIEW_MISSION }
+    });
+  }
+
+  protected handleNeutralRepair(): void {
+    if (!this.canUseNeutralRepair || !this.context?.planetId) {
+      return;
+    }
+    this.executeAction({
+      planetId: this.context.planetId,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.REPAIR_SHIP }
+    });
+  }
+
+  protected handleNeutralHeal(): void {
+    if (!this.canUseNeutralHeal || !this.context?.planetId) {
+      return;
+    }
+    this.executeAction({
+      planetId: this.context.planetId,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.HEAL_CREW }
+    });
+  }
+
   protected selectEvent(event: LandingEventResult): void {
     this.selectedEventId = event.id;
   }
@@ -336,6 +474,18 @@ export class LandingMenuComponent implements OnChanges {
       return null;
     }
     return this.gameState.getPlanetIntelSnapshot(this.context!.planetId) ?? null;
+  }
+
+  private get landingIntelFallback(): LandingPlanetIntel | null {
+    return this.context?.planetIntel ?? null;
+  }
+
+  private get lifeIntelKnown(): boolean {
+    return Boolean(this.planetIntel?.lifeScanned || this.landingIntelFallback?.planetLifeIntelKnown);
+  }
+
+  private get creatureIntelKnown(): boolean {
+    return Boolean(this.planetIntel?.creatureScanned || this.landingIntelFallback?.planetCreatureIntelKnown);
   }
 
   private ensureMissionSeeded(): void {

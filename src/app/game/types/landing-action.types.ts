@@ -5,6 +5,7 @@ import {
   PlanetMissionStatus,
   PlanetResourceStock
 } from './planet-intel.types';
+import { CargoCompositionKind } from './inventory.types';
 
 export enum LandingActionKind {
   REST = 'rest',
@@ -16,7 +17,11 @@ export enum LandingDiplomacyAction {
   OFFER_BRIBE = 'offer_bribe',
   RUN_SUBTASK = 'run_subtask',
   REQUEST_VISION = 'request_vision',
-  COMPLETE_MISSION = 'complete_mission'
+  COMPLETE_MISSION = 'complete_mission',
+  ACCEPT_MISSION = 'accept_mission',
+  REVIEW_MISSION = 'review_mission',
+  REPAIR_SHIP = 'repair_ship',
+  HEAL_CREW = 'heal_crew'
 }
 
 export interface LandingDiplomacyRequest {
@@ -73,6 +78,9 @@ export interface LandingActionEffects {
     status: MissionSubTaskStatus;
   };
   resourcesSpent?: Partial<PlanetResourceStock>;
+  shipHealthDelta?: number;
+  shipHealthSnapshot?: { current: number; max: number };
+  cargoSpent?: Array<{ kind: CargoCompositionKind; units: number }>;
 }
 
 export interface LandingActionRequest {

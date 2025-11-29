@@ -83,6 +83,8 @@ export interface PlanetMissionState {
   type: PlanetMissionType;
   targetLocation: PlanetMissionTarget;
   itemId: string;
+  requiredCargoEntryId?: string;
+  requiredCargoLabel?: string;
   description?: string;
   dialogueScriptId?: string;
   status: PlanetMissionStatus;

@@ -46,7 +46,7 @@
 
     <ng-template #landingMenuView>
       <section class="landing-panel__menu landing-panel__menu--expanded">
-        <app-landing-menu [context]="ctx"></app-landing-menu>
+        <app-landing-menu [context]="ctx" [viewMode]="landingMenuViewMode"></app-landing-menu>
       </section>
     </ng-template>
   </div>
@@ -62,7 +62,23 @@
       </button>
     </ng-container>
     <ng-template #menuFooter>
-      <button type="button" class="btn primary" (click)="exitMenu()">Embarcar</button>
+      <ng-container [ngSwitch]="viewMode">
+        <ng-container *ngSwitchCase="'actions'">
+          <button type="button" class="btn primary" (click)="exitMenu()">Embarcar</button>
+          <button
+            *ngIf="canOpenDiplomacyPanel"
+            type="button"
+            class="btn primary"
+            (click)="enterDiplomacyMenu()"
+          >
+            Relacionarse
+          </button>
+        </ng-container>
+        <ng-container *ngSwitchCase="'diplomacy'">
+          <button type="button" class="btn primary" (click)="enterMenu()">Permanecer</button>
+          <button type="button" class="btn primary" (click)="exitMenu()">Embarcar</button>
+        </ng-container>
+      </ng-container>
     </ng-template>
   </div>
 </app-modal>

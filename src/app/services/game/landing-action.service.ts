@@ -19,6 +19,7 @@ import {
   MissionClueToken
 } from '../../game/types/planet-intel.types';
 import { PlanetInhabitants } from '../../game/types/cosmic-life.types';
+import { GameObjectAnimosity } from '../../game/types/animosity.types';
 import { GameObjectCategory, GameObjectType, getCategory } from '../../game/types/game-object.types';
 import { Vector3 } from '../../types/game.types';
 import { GameInitializer } from './game-initializer.service';
@@ -139,7 +140,16 @@ export class LandingActionService {
     if (!diplomacy) {
       return this.buildBlockedResult(request, 'Falta seleccionar una opción diplomática.', 'missing-diplomacy-action');
     }
+    if (diplomacy.action === LandingDiplomacyAction.REPAIR_SHIP) {
+      return this.handleNeutralRepair(planet, request);
+    }
+    if (diplomacy.action === LandingDiplomacyAction.HEAL_CREW) {
+      return this.handleNeutralHeal(planet, request);
+    }
     const script = getLandingDiplomacyScript(planet.inhabitants);
+    if (!script) {
+      return this.buildBlockedResult(request, 'Esta civilización no puede negociar todavía.', 'missing-diplomacy-script');
+    }
     const mission = this.ensureMissionForDiplomacy(planet, script);
 
     switch (diplomacy.action) {
@@ -151,6 +161,10 @@ export class LandingActionService {
         return this.handleDiplomacySubTask(planet, mission, script, request, diplomacy.subTaskId);
       case LandingDiplomacyAction.COMPLETE_MISSION:
         return this.handleDiplomacyCompletion(planet, mission, request);
+      case LandingDiplomacyAction.ACCEPT_MISSION:
+        return this.handleMissionAccept(planet, mission, request);
+      case LandingDiplomacyAction.REVIEW_MISSION:
+        return this.handleMissionReview(planet, mission, request);
       default:
         return this.buildBlockedResult(request, 'Acción diplomática desconocida.', 'unknown-diplomacy-action');
     }
@@ -166,6 +180,155 @@ export class LandingActionService {
       missionName: script.missionTemplate.name,
       requiredClueTiers: script.missionTemplate.requiredClueTiers
     });
+  }
+
+  private handleMissionAccept(
+    planet: Planet,
+    mission: PlanetMissionState,
+    request: LandingActionRequest
+  ): LandingEventResult {
+    if (mission.status !== 'offered') {
+      return this.buildBlockedResult(
+        request,
+        'Solo puedes aceptar encargos recién ofrecidos por la facción.',
+        'mission-not-offered'
+      );
+    }
+    const updated = this.missionService.acceptMission(mission.id) ?? mission;
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'info', text: 'Presentas tus credenciales y sellas el pacto tribal.' },
+      { tone: 'success', text: 'El encargo queda registrado en tu bitácora diplomática.' }
+    ];
+    return this.composeResult(request, planet, {
+      title: 'Aceptar misión',
+      narrative,
+      effects: { missionStatus: updated.status },
+      success: true,
+      metadata: { missionId: mission.id }
+    });
+  }
+
+  private handleMissionReview(
+    planet: Planet,
+    mission: PlanetMissionState,
+    request: LandingActionRequest
+  ): LandingEventResult {
+    const snapshot = this.missionService.getMissionSnapshot(mission.id) ?? mission;
+    const missingClues = this.missionService.getMissingClueTiers(mission.id);
+    const hasCargo = this.missionService.hasRequiredCargoReady(mission.id);
+    const requiredLabel = snapshot.requiredCargoLabel ?? 'el cargamento solicitado';
+    const pendingSubTasks = (snapshot.subTasks ?? []).filter(task => task.status !== 'completed').length;
+
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'info', text: `Estado actual: ${snapshot.status}.` }
+    ];
+    if (missingClues.length) {
+      narrative.push({
+        tone: 'warning',
+        text: `Faltan pistas clave: ${missingClues.map(tier => tier).join(', ')}.`
+      });
+    } else {
+      narrative.push({ tone: 'success', text: 'Todas las pistas requeridas están aseguradas.' });
+    }
+    if (snapshot.requiredCargoEntryId) {
+      narrative.push({
+        tone: hasCargo ? 'success' : 'warning',
+        text: hasCargo ? `Carga lista para entregar (${requiredLabel}).` : `Aún falta ${requiredLabel}.`
+      });
+    }
+    if (pendingSubTasks > 0) {
+      narrative.push({
+        tone: 'info',
+        text: `Recados activos pendientes: ${pendingSubTasks}.`
+      });
+    }
+
+    return this.composeResult(request, planet, {
+      title: 'Revisar misión',
+      narrative,
+      effects: { missionStatus: snapshot.status },
+      success: true,
+      metadata: { missionId: mission.id }
+    });
+  }
+
+  private handleNeutralRepair(planet: Planet, request: LandingActionRequest): LandingEventResult {
+    if (!this.isNeutralPlanet(planet)) {
+      return this.buildBlockedResult(request, 'Necesitas una relación neutral para acceder al taller.', 'relation-mismatch');
+    }
+    const ship = this.gameState.spaceship;
+    if (!ship) {
+      return this.buildBlockedResult(request, 'No hay nave para reparar.', 'missing-ship');
+    }
+    const missingHealth = Math.max(0, ship.healthMax - ship.healthCurrent);
+    if (missingHealth <= 0) {
+      return this.buildBlockedResult(request, 'La nave ya está a plena integridad.', 'ship-full-health');
+    }
+    if (this.gameState.getRawMaterialUnits('metallic') < 1) {
+      return this.buildBlockedResult(request, 'Hace falta 1 unidad de mineral metálico.', 'missing-metal-resource');
+    }
+    const consumed = this.gameState.spendRawMaterial('metallic', 1);
+    if (consumed < 1) {
+      return this.buildBlockedResult(request, 'No se pudo consumir el mineral metálico.', 'spend-metal-failed');
+    }
+    const repairAmount = Math.max(1, Math.round(ship.healthMax * 0.1));
+    const applied = Math.min(repairAmount, missingHealth);
+    ship.healthCurrent = ship.healthCurrent + applied;
+
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'info', text: 'La fragua tribal enciende crisoles con tu mineral como tributo.' },
+      { tone: 'success', text: 'Las placas del casco quedan alineadas; la nave vibra como nueva.' }
+    ];
+    const effects: LandingActionEffects = {
+      shipHealthDelta: applied,
+      shipHealthSnapshot: { current: ship.healthCurrent, max: ship.healthMax },
+      cargoSpent: [{ kind: 'metallic', units: consumed }]
+    };
+    return this.composeResult(request, planet, {
+      title: 'Reparar casco',
+      narrative,
+      effects,
+      success: true
+    });
+  }
+
+  private handleNeutralHeal(planet: Planet, request: LandingActionRequest): LandingEventResult {
+    if (!this.isNeutralPlanet(planet)) {
+      return this.buildBlockedResult(request, 'La cofradía solo ofrece cuidados a visitantes neutrales.', 'relation-mismatch');
+    }
+    const currentHealth = this.gameState.characterProfile.health;
+    const missingHealth = Math.max(0, 100 - currentHealth);
+    if (missingHealth <= 0) {
+      return this.buildBlockedResult(request, 'Ya estás al máximo de salud.', 'pilot-full-health');
+    }
+    if (this.gameState.getRawMaterialUnits('carbonaceous') < 1) {
+      return this.buildBlockedResult(request, 'Necesitas 1 unidad de material carbonáceo.', 'missing-carbon-resource');
+    }
+    const consumed = this.gameState.spendRawMaterial('carbonaceous', 1);
+    if (consumed < 1) {
+      return this.buildBlockedResult(request, 'No se pudo consumir el material carbonáceo.', 'spend-carbon-failed');
+    }
+    const healDelta = Math.min(10, missingHealth);
+    this.characterProfile.adjustVitals({ health: healDelta });
+
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'info', text: 'Los sanadores carbonizan resinas aromáticas para purificar la sangre.' },
+      { tone: 'success', text: 'Sientes la carne sellarse mientras entregas el paquete de compuestos.' }
+    ];
+    const effects: LandingActionEffects = {
+      healthDelta: healDelta,
+      cargoSpent: [{ kind: 'carbonaceous', units: consumed }]
+    };
+    return this.composeResult(request, planet, {
+      title: 'Ritual de sanación',
+      narrative,
+      effects,
+      success: true
+    });
+  }
+
+  private isNeutralPlanet(planet: Planet): boolean {
+    return (planet.animosity ?? GameObjectAnimosity.NEUTRAL) === GameObjectAnimosity.NEUTRAL;
   }
 
   private handleDiplomacyBribe(
@@ -332,6 +495,10 @@ export class LandingActionService {
     mission: PlanetMissionState,
     request: LandingActionRequest
   ): LandingEventResult {
+    if (mission.requiredCargoEntryId && !this.missionService.hasRequiredCargoReady(mission.id)) {
+      const label = mission.requiredCargoLabel ?? 'el cargamento solicitado';
+      return this.buildBlockedResult(request, `Debes entregar ${label}.`, 'missing-mission-cargo');
+    }
     const updated = this.missionService.completeMission(mission.id);
     if (updated?.status === 'completed') {
       const narrative: LandingActionLogEntry[] = [

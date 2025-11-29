@@ -1,7 +1,7 @@
 <div class="landing-menu" [class.landing-menu--disabled]="!hasPlanet">
   <div class="landing-menu__columns">
     <section class="landing-menu__actions">
-      <article class="action-group">
+      <article class="action-group" *ngIf="showActionSections">
         <header>
           <h4>Descanso</h4>
           <p>Recupera cordura y salud; riesgo de interrupción si hay ser menor activo.</p>
@@ -11,7 +11,7 @@
         </button>
       </article>
 
-      <article class="action-group">
+      <article class="action-group" *ngIf="showActionSections">
         <header>
           <h4>Explorar</h4>
           <p>Acciones de riesgo 50/50. Aumentan edad +2 días.</p>
@@ -32,13 +32,26 @@
         </div>
       </article>
 
-      <article class="action-group">
+      <article class="action-group" *ngIf="showDiplomacySection">
         <header>
           <h4>Diplomacia</h4>
           <ng-container *ngIf="mission as missionPreview; else diplomacyIntro">
             <p>Negocia pistas y favores para completar {{ missionPreview.missionName || 'el encargo planetario' }}.</p>
           </ng-container>
         </header>
+        <div class="mission-panel mission-panel--neutral" *ngIf="isNeutralRelation">
+          <span class="mission-panel__label">Servicios neutrales</span>
+          <div class="mission-panel__actions">
+            <button type="button" class="menu-btn" (click)="handleNeutralRepair()" [disabled]="!canUseNeutralRepair">
+              Reparar casco (+10%)
+              <small>Coste: 1 metal ({{ metallicCargoUnits }}u)</small>
+            </button>
+            <button type="button" class="menu-btn" (click)="handleNeutralHeal()" [disabled]="!canUseNeutralHeal">
+              Ritual de curación (+10 salud)
+              <small>Coste: 1 carbonaceo ({{ carbonCargoUnits }}u)</small>
+            </button>
+          </div>
+        </div>
         <ng-container *ngIf="mission as missionState; else diplomacyEmpty">
           <ng-container *ngIf="diplomacyScript as script; else diplomacyNoScript">
           <div class="mission-panel">
@@ -49,6 +62,29 @@
                 <p class="mission-panel__description">{{ missionState.description || script.missionTemplate.description }}</p>
               </div>
               <div class="mission-panel__status">Estado: <span>{{ missionState.status }}</span></div>
+            </div>
+
+            <div class="mission-panel__requirements" *ngIf="missionRequiresCargo">
+              <span class="mission-panel__label">Entrega requerida</span>
+              <div class="mission-panel__requirement" [class.is-missing]="!missionHasCargo">
+                {{ missionCargoLabel }}
+                <small *ngIf="!missionHasCargo">Carga faltante en bodega</small>
+              </div>
+            </div>
+
+            <div class="mission-panel__meta-actions">
+              <button type="button" class="menu-btn ghost" (click)="handleMissionReview()" [disabled]="!canReviewMission">
+                Revisar misión
+              </button>
+              <button
+                type="button"
+                class="menu-btn"
+                (click)="handleMissionAccept()"
+                *ngIf="missionState.status === 'offered'"
+                [disabled]="!canAcceptMission"
+              >
+                Aceptar misión
+              </button>
             </div>
 
             <div class="mission-panel__clues">
@@ -91,6 +127,7 @@
               </button>
               <button type="button" class="menu-btn ghost" (click)="handleDiplomacyTurnIn()" [disabled]="!canTurnInMission">
                 Entregar misión
+                <small *ngIf="missionRequiresCargo">{{ missionHasCargo ? 'Carga lista' : 'Carga incompleta' }}</small>
               </button>
             </div>
 

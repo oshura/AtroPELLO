@@ -14,12 +14,15 @@ import { GameObjectType } from '../../game/types/game-object.types';
 import { ITargetable } from '../../game/types/targeting.types';
 import {
   CargoManifestEntry,
+  CargoItemType,
   CharacterProfile,
   EquipmentSlot,
   EquipmentSlotState,
   PersonalGearItem,
   PersonalGearSlot,
-  RarityTier
+  RarityTier,
+  CargoCompositionKind,
+  classifyCargoComposition
 } from '../../game/types/inventory.types';
 import { LandingStatus, LandingThreatState } from '../../game/types/landing.types';
 import { SpellType, getSpellSanityCost } from '../../game/types/spell.types';
@@ -875,20 +878,21 @@ export class GameStateStore {
 
   /** Reemplaza todo el manifiesto de carga. */
   setCargoManifest(entries: CargoManifestEntry[]): void {
-    this.cargoManifest = [...entries];
+    this.cargoManifest = entries.map(entry => this.normalizeCargoEntry(entry));
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'cargo' } });
     this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'Cargo manifest replaced', { count: this.cargoManifest.length });
   }
 
   /** Inserta o actualiza una entrada de carga. */
   upsertCargoEntry(entry: CargoManifestEntry): void {
+    const normalized = this.normalizeCargoEntry(entry);
     const idx = this.cargoManifest.findIndex(c => c.id === entry.id);
     if (idx >= 0) {
-      this.cargoManifest[idx] = entry;
+      this.cargoManifest[idx] = normalized;
     } else {
-      this.cargoManifest.push(entry);
+      this.cargoManifest.push(normalized);
     }
-    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'cargo', entryId: entry.id } });
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'cargo', entryId: normalized.id } });
   }
 
   /** Elimina una entrada de carga por ID. */
@@ -898,6 +902,72 @@ export class GameStateStore {
     this.cargoManifest.splice(idx, 1);
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'cargo', entryId } });
     return true;
+  }
+
+  /** Devuelve el total de unidades de material bruto disponibles por composición. */
+  getRawMaterialUnits(kind: CargoCompositionKind): number {
+    const normalized = this.normalizeCompositionKind(kind);
+    return this.cargoManifest.reduce((sum, entry) => {
+      if (entry.type !== CargoItemType.RAW_MATERIAL) {
+        return sum;
+      }
+      return this.normalizeCompositionKind(entry.composition) === normalized ? sum + entry.units : sum;
+    }, 0);
+  }
+
+  /**
+   * Consume unidades de material crudo de una composición concreta.
+   * Devuelve la cantidad efectivamente gastada.
+   */
+  spendRawMaterial(kind: CargoCompositionKind, units: number): number {
+    if (!Number.isFinite(units) || units <= 0) {
+      return 0;
+    }
+    const normalized = this.normalizeCompositionKind(kind);
+    let remaining = units;
+    for (let i = 0; i < this.cargoManifest.length && remaining > 0; ) {
+      const entry = this.cargoManifest[i];
+      if (entry.type !== CargoItemType.RAW_MATERIAL) {
+        i++;
+        continue;
+      }
+      if (this.normalizeCompositionKind(entry.composition) !== normalized) {
+        i++;
+        continue;
+      }
+      const take = Math.min(entry.units, remaining);
+      if (take <= 0) {
+        i++;
+        continue;
+      }
+      const leftover = entry.units - take;
+      if (leftover <= 0) {
+        this.cargoManifest.splice(i, 1);
+      } else {
+        this.cargoManifest[i] = { ...entry, units: leftover };
+        i++;
+      }
+      remaining -= take;
+    }
+    const consumed = units - remaining;
+    if (consumed > 0) {
+      this._notifyChange({
+        type: 'inventory-updated',
+        metadata: { scope: 'cargo', reason: 'raw-material-spent', kind: normalized }
+      });
+    }
+    return consumed;
+  }
+
+  private normalizeCargoEntry(entry: CargoManifestEntry): CargoManifestEntry {
+    return {
+      ...entry,
+      composition: classifyCargoComposition(entry.composition ?? entry.notes ?? null)
+    };
+  }
+
+  private normalizeCompositionKind(value?: string | CargoCompositionKind | null): CargoCompositionKind {
+    return classifyCargoComposition(value ?? undefined);
   }
 
   /** Actualiza el estado de preparación de aterrizaje utilizado por el HUD. */

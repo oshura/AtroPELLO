@@ -3,6 +3,7 @@ import { LoggingService, LogCategory, LogLevel } from '../../../services/logging
 import { GameStateStore } from '../../../services/game/game-state.store';
 import { Planet } from '../../game-objects/Planet';
 import { PlanetInhabitants } from '../../types/cosmic-life.types';
+import { GameObjectAnimosity } from '../../types/animosity.types';
 import {
   MissionClueTier,
   MissionClueToken,
@@ -113,6 +114,14 @@ export class MissionService {
       });
       return snapshot;
     }
+    if (!this.missionHasRequiredCargo(snapshot)) {
+      this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Mission completion blocked: delivery cargo missing', {
+        missionId,
+        requiredCargoEntryId: snapshot.requiredCargoEntryId,
+        cargoSize: this.gameState.cargoManifest.length
+      });
+      return snapshot;
+    }
     const updated = this.updateMission(
       missionId,
       mission => {
@@ -121,10 +130,21 @@ export class MissionService {
       'completed'
     );
     if (updated) {
+      this.consumeMissionCargo(updated);
+      this.promotePlanetToAlly(updated);
+      this.restorePilotVitals();
       this.applyMissionReward(updated);
       this.detachMission(updated.id);
     }
     return updated;
+  }
+
+  public hasRequiredCargoReady(missionId: string): boolean {
+    const snapshot = this.gameState.getPlanetMissionSnapshot(missionId);
+    if (!snapshot) {
+      return false;
+    }
+    return this.missionHasRequiredCargo(snapshot);
   }
 
   public failMission(missionId: string, reason?: string): PlanetMissionState | null {
@@ -304,6 +324,43 @@ export class MissionService {
     }
     const owned = new Set((mission.clueTokens || []).map(token => token.tier));
     return mission.requiredClueTiers.every(tier => owned.has(tier));
+  }
+
+  private missionHasRequiredCargo(mission: PlanetMissionState): boolean {
+    if (!mission.requiredCargoEntryId) {
+      return true;
+    }
+    return this.gameState.cargoManifest.some(entry => entry.id === mission.requiredCargoEntryId);
+  }
+
+  private consumeMissionCargo(mission: PlanetMissionState): void {
+    if (!mission.requiredCargoEntryId) {
+      return;
+    }
+    const removed = this.gameState.removeCargoEntry(mission.requiredCargoEntryId);
+    this.logger.log(removed ? LogLevel.INFO : LogLevel.WARN, LogCategory.LANDING, 'Mission cargo delivery processed', {
+      missionId: mission.id,
+      cargoEntryId: mission.requiredCargoEntryId,
+      removed
+    });
+  }
+
+  private promotePlanetToAlly(mission: PlanetMissionState): void {
+    const planetId = mission.targetLocation.planetId;
+    if (!planetId) {
+      return;
+    }
+    const planet = this.gameState.findPlanetById(planetId);
+    if (!planet) {
+      return;
+    }
+    try { planet.setAnimosity(GameObjectAnimosity.FRIENDLY); } catch {}
+    planet.setPendingMission(null);
+    this.gameState.syncPlanetIntelFromPlanet(planet);
+  }
+
+  private restorePilotVitals(): void {
+    this.gameState.updateCharacterVitals({ health: 100, sanity: 100 });
   }
 
   private generateClueId(missionId: string, tier: MissionClueTier): string {

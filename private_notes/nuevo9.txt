@@ -61,6 +61,9 @@ Efectos de slots auxiliares:
 - Tanques de void energy extra.
 - Escaner de vida en el planeta (civ y lesser being).
 - Mind control (mouse).
+- Shoggot prisionero: genera void energy por minuto.
+- Mapa interestelar.
+	- Programar viaje interestelar.
 
 - Drift por el vacío intergalactico:
 	- Sistema de control de drift.
@@ -71,3 +74,5 @@ Efectos de slots auxiliares:
 		- Perdido en el vacío exterior: +1 año entero de edad y -10 de cordura, con posibilidad claro de morir y tener que respawnear.
 
 - Colision? then apply improved algorithm.
+
+- demasiadas particulas.

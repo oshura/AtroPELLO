@@ -2,7 +2,12 @@ import { Injectable } from '@angular/core';
 import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 import { GameStateStore } from './game-state.store';
 import { Asteroid } from '../../game/game-objects/Asteroid';
-import { CargoManifestEntry, CargoItemType, RarityTier } from '../../game/types/inventory.types';
+import {
+  CargoManifestEntry,
+  CargoItemType,
+  RarityTier,
+  classifyCargoComposition
+} from '../../game/types/inventory.types';
 import { GameObjectType } from '../../game/types/game-object.types';
 
 @Injectable({ providedIn: 'root' })
@@ -25,7 +30,8 @@ export class CargoHoldService {
       units: storedUnits,
       source: asteroid.getType?.() ?? GameObjectType.UNKNOWN,
       rarity: this.resolveRarity(asteroid),
-      notes: (asteroid as any).composition || undefined
+      notes: (asteroid as any).composition || undefined,
+      composition: classifyCargoComposition((asteroid as any).composition)
     };
 
     this.gameState.upsertCargoEntry(entry);

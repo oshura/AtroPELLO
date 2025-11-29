@@ -1,0 +1,68 @@
+Vamos a modificar el landing menu para que tenga las opciones siguientes y se desarrolle de la siguiente manera mediante clicks a botones:
+	- Rest(descansar): Recupera 1 puntos de cordura y 5 de salud del character. Aumenta 1 dia de edad. Si hay lesserBeing en el planeta, el descanso es interrumpido, se desvela qeu existe lesserBeing y en lugar de ganar, se pierden esas cantidades. LA edad, aumenta igualmente.
+	- Explorar, con sub opciones una vez seleccionado: 
+		- Buscar artefacto: 50% encontrarlo si está o desvelar que no está (+1XP), y 50% salir mal parado y tener que volver a intentarlo (-5 pv). +2 dias de edad en cualquier caso. Debe haber un nuevo setting para los planetas y com ointel, que diga si se ha desvelado si hay o no artefacto. Dependiendo del resultado de la busqueda, puede ser que siga sin saberse o que se desvele que si o que no hay.
+		- Encontrar void mass(energy). Como buscar artefacto, 50% llenado a tope del void energy de la nave, 50% de salir mal parado y tener que volver a intentarlo (-5 pv).
+		- Contactar con civilizacion para saber si hay o no: Otra vez igual que buscar artefacto, 50% encontrarla si está o desvelar que no está (+1XP), y 50% salir mal parado y tener que volver a intentarlo (-5 pv).
+		- Encontrar lesserBeing para saber si hay o no: Mas de lo mismo pero peor todavía para el character, 50% de encontrarlo o desvelar que no está, 50% mal parado (-5pv). Pero si está y lo encuentra (-5 cordura temporal)
+	- Segun la animosidad del planeta, habrá una serie de opciones disponibles:
+		- Ally: 
+			- Reparar nave a cambio de 10 unidades de raw material.
+			- Comerciar -> x unidades de raw material por algun artefacto/traje/botas para equipo personal, o modulo para la nave segun raza.
+			- Profundizar en sabiduria de raza: Obtener glifos. AL inicio del juego, el personaje, tras un a parte de historia, solo contará con Void Jump, portal, void kinesis y anchoring pulse. El resto, deben 'comprarlos' por materiales concretos mas raros de encontrar a las civilizaciones. Cada una dispondrá de 2 glifos para 'vender'.
+			- Misiones especiales de zona: Es posible que te pida, aunque por ahora no, sistemas solares predefinidos en que una raza concreta que no tenemos todavía en la lista pedirá una misión especial. Ahora siempre escondida esta opción.
+			- Compartir tiempo de vida con la raza (COR a max, Salud a max). Describe como comvive el personaje con la raza en el planeta. Aumenta entre 20 y 30 dias de edad.
+		- Neutral(default):
+			- Reparar 10% de salud nave a cambio de 1 unidades de raw material metalico tipo iron, nickel,...
+			- Curarse 10 de vida a cambio de 1 unidad de raw material tipo carbonaceo o similar, no metalico.
+			- Misiones de raza para pasar a ally, recuperar COR y SALUD a tope del personaje, y avanzar en historia (++memoria)  (botón para ir a ver la misión y pasar al sistema de dialogos, o si traes la misión resuelta, boton completar y que se elimine del cargo de la nave el item solicitado por la misión, y se cambie de estado a ally el planeta):
+				Opcion 1:Conseguir un artefacto de algun planeta:
+					Que se añada el artefacto a uno de los planetas ya descubiertos y se resetee su estado de desvelado si tiene o no artefacto.
+					Si se destruye el planeta, por ejemplo con un portal, mala suerte.
+				Opcion 2:Conseguir un material extremadamente raro de asteroides de una zona concreta de un sistema solar concreto ya descubierto. Se tratará de añadir un cloud de mas el sistema solar con ese material nuevo inventado.
+		- Enemy(porque hay lesserBeing en el planeta):
+			- Luchar con lesserBeing para destruirlo y pasar a Neutral o aLly, lo que sea segun si hay raza o no y si se ha completadao l amision de raza o no. +25PX. COR a tope, SALUD a la mitad de lo que tenia el PJ. +2 dias de edad.
+
+Para poder preparar las misiones y descripciones de cada resultado de acciones en este juego de naves en el/los dialogos de langing, en que el último humano a bordo de su nave espacial impulsada por un motor magico, con algunos poderes y posibilidad de buscar artefactos en planetas y de buscar materiales en asteroides.
+Viaja por los sistemas solares en busca de planetas habitados, mas magiaa y nuevos componentes para la nave y equipo para su exploración espacial. En estos planetas encuentr una de las siguientes razas del universo creado por HP Lovecraft.
+- `MI_GO`
+- `YIG`
+- `LENG`
+- `ORGANISMO_VEGETAL`
+- `ANGELES_DESCARNADOS`
+- `PROFUNDOS`
+- `ANTIGUOS`
+- `DOHLE`
+- `CHTHONIAN`
+- `GULES`
+- `GHASTS`
+- `VAMPIRO_ESTELAR`
+- `BYHKEE`
+Que son las que hemos ya implementado.
+Cada opcion que te pido o mision o resultado de una acción en los menus de landing, a ver si puedes inventar el texto con un poco de sentido y relación con la animosidad.
+Quiero que cuando me crees una misión de busqueda de artefacto o material del que está compuesto algun cluster concreto en una ubicación concreata, adecuada a la raza y con algo de historia. Que pueda generarse unas cuantas opciones de dialogo para conocer la localización del artefacto o asteroide con el material. Que sea una aproximación a nivel de sistema solar, que tenga que buscar el personaje, pero si es un planeta en concreto o un asteroide en concreto, que tenga alguna pista a través de los dialogos con la raza. Para impulsar a los jugadores a leer las opciones de dialogo.
+Piensa, para crearlas, que la raza se presentará como neutral en cuanto a animosidad con el jugador y esta misión, completada lleva a ser de animosidad aliada esa civilización de ese planeta.
+Quiero que cada una de las razas, tras completar la misión neutral a ally, le resuelva parte del misterio, aunque de forma misteriosa, al jugador. Veo que tenemos 13 razas, pues el inicio de juego presentará ya unaa secuencia de aconteciomientos que pueden llevar al personaje a tener un 20% de memoria ya recuperada. Pues el 80% restante, que sea repartido en partes proporcionales a la historia que le desvela la raza tras completar esa misión.
+La historia a desvelar por partes y de forma misteriosa un poco:
+"El personaje protagonista y piloto, pertenece a un culto a un dios del vacio exterior. 
+Tras estudiar libros de Mitos de Cthulhu, han descubierto que las runas en él contenidas en realidad eran los planos para un motor alimentado con magia del vacio.
+La secta, del culto, con muchos recursos a su alcance y en pleno auge de la IA, decidió lanzar una misión al espacio para probar el 'motor' y desvelar los misterios de un hechizo portal que podria traer a este plano al dios del vacío.
+La cosa sale mal por no cupmlir los requisitos del hechizo correctamente y la tierra estalla y se parte por la mitad debido a un campo de fuerza del vacio que ha envuelto el core.
+La epxlosión mata a todos los ocupantes de la nave nodriza de la que venía la nave individual que pilota el jugador. La nave del jugaor sale despedida y éste queda golpeado en la cabeza olvidando quien es y que ha pasado. No sabe que hacia aquí.
+Como último superviviente de la humanidad empezará a abrir portales a otros sitemas solares, explorarlos y contactar con otras razas. Se enfrentará a los lesserBeings se en el espacio en cmbate de naves o en los planetas con las reglas ya descritas en el menu de landing.
+La idea es que irá cmabiando piezas de la nave, el traje y los accesorios para acabar pareciendo él mismo un ente y siente the old & only one humano del universo destructor de mundos y de primigenios.
+La misión final es destruirl los 4 primigenios que presentaremos como bosses en combate de naves, y así acabar con la amenaza de sus lesserBeings cada vez que se hacen void jumps o un portal es abierto y permite el paso de estos seres enviados por el dios primigenio. 
+Creo que ya teniamos la relación de lesserBeing/Primigenio. (Planetas_Inhabitantes_Plan.md)
+Así que como final, se trata por ahora de destruir los 4 primienios y eso se lo introduciran las razas a medida que complete misiones para pasar de neutral a ally.
+Dale narrativa y genera dialogos (con dialogos siempre me refiero a una secuencia narrada y luego presentar alguans opciones al jugador para preguntar y profundizar en algun aspecto, recibir esa información y al final o cuando quiera, terminar la conversación) para todas las opcione sy resultados porfavor. Ya ves la tematia, HP Lovecarft y unas razas perfidas, destructivas y demoledoras que pasaran a ser nuestros aliados. 
+Vaya, que el personaje pasará a convertirse en un nuevo dios primigeio :) Y si consigue derrotar a los otros 4, el único.
+
+Lo que es equipacion y modulos para comerciar, dejalo pendiente, que los diseñaré yo uno a uno y te daré las caracteristicas y sus efectos.
+
+Analiza el código, leete la documentación necesaria y hazme un plan en la carpeta documentacion para llevar a cabo semejante hazaña de narrativa, dialogos botones y menus, y sistema de misiones.
+
+Adelante porfavor!
+
+ 
+ 
+ 
