@@ -289,6 +289,18 @@
   gap: 0.75rem;
 }
 
+.mission-panel--ally {
+  border-color: rgba(122, 231, 181, 0.6);
+  background: rgba(20, 45, 35, 0.7);
+  box-shadow: 0 0 18px rgba(122, 231, 181, 0.2);
+}
+
+.mission-panel--enemy {
+  border-color: rgba(255, 133, 133, 0.7);
+  background: rgba(55, 12, 18, 0.7);
+  box-shadow: 0 0 18px rgba(255, 133, 133, 0.2);
+}
+
 .mission-panel__meta {
   display: flex;
   justify-content: space-between;
@@ -351,8 +363,60 @@
   opacity: 0.85;
 }
 
+.mission-panel__objective {
+  margin-top: 0.35rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.mission-panel__objective p {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+
+.mission-panel__objective-target {
+  font-size: 0.8rem;
+  opacity: 0.8;
+}
+
 .mission-panel__status span {
   font-weight: 600;
+}
+
+.mission-panel__status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.3rem;
+}
+
+.mission-panel__status-description {
+  margin: 0;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.mission-panel__status-callout {
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.5rem;
+  font-size: 0.8rem;
+  border-left: 3px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.mission-panel__status-callout--success {
+  border-left-color: rgba(122, 231, 181, 0.9);
+  background: rgba(122, 231, 181, 0.12);
+}
+
+.mission-panel__status-callout--warning {
+  border-left-color: rgba(255, 211, 105, 0.85);
+  background: rgba(255, 211, 105, 0.12);
 }
 
 .mission-panel__clues {
@@ -388,6 +452,10 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 0.5rem;
+}
+
+.mission-panel__actions--stacked {
+  grid-template-columns: 1fr;
 }
 
 .mission-panel__actions .menu-btn {

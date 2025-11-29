@@ -17,6 +17,8 @@ import {
   PlanetMissionLogEntry,
   PlanetResourceStock
 } from '../../types/planet-intel.types';
+import { CargoManifestEntry, CargoItemType, CargoCompositionKind, RarityTier } from '../../types/inventory.types';
+import { GameObjectType } from '../../types/game-object.types';
 
 export interface MissionOfferOptions {
   race?: PlanetInhabitants;
@@ -28,6 +30,9 @@ export interface MissionOfferOptions {
   requiredClueTiers?: MissionClueTier[];
   reward?: PlanetMissionReward;
   missionName?: string;
+  preferredResourceKind?: CargoCompositionKind;
+  objectiveSummary?: string;
+  targetHint?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -41,12 +46,13 @@ export class MissionService {
 
   /** Create (or refresh) a mission for the given planet and return the stored state. */
   public offerMission(planet: Planet, options?: MissionOfferOptions): PlanetMissionState {
+    const resolvedType = this.determineMissionType(planet, options);
     const mission: PlanetMissionState = {
       id: this.generateMissionId(planet.id),
       race: options?.race ?? planet.inhabitants ?? PlanetInhabitants.NONE,
-      type: options?.type ?? 'artifact',
+      type: resolvedType,
       targetLocation: options?.targetLocation ?? this.buildDefaultTarget(planet),
-      itemId: options?.itemId ?? this.deriveDefaultItemId(options?.type ?? 'artifact', planet.id),
+      itemId: options?.itemId ?? this.deriveDefaultItemId(resolvedType, planet.id),
       description: options?.description,
       dialogueScriptId: options?.dialogueScriptId,
       status: 'offered',
@@ -56,8 +62,11 @@ export class MissionService {
       requestedBy: options?.race ?? planet.inhabitants ?? PlanetInhabitants.NONE,
       clueTokens: [],
       requiredClueTiers: options?.requiredClueTiers,
-      subTasks: []
+      subTasks: [],
+      objectiveSummary: options?.objectiveSummary,
+      targetHint: options?.targetHint
     };
+    this.assignMissionObjective(mission, planet, options);
     const stored = this.gameState.upsertPlanetMission(mission);
     planet.setPendingMission(stored);
     this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Planet mission offered', {
@@ -166,6 +175,75 @@ export class MissionService {
     return this.updateMission(missionId, () => void 0, event, payload);
   }
 
+  /** Registers that an artifact was recovered on a given planet and tags matching missions. */
+  public registerArtifactRecovery(
+    planet: Planet,
+    options?: { cargoLabel?: string }
+  ): Array<{ mission: PlanetMissionState; cargoEntryId: string }> {
+    const matches = this.listMissions().filter(mission => this.shouldAttachArtifactPickup(mission, planet.id));
+    const updates: Array<{ mission: PlanetMissionState; cargoEntryId: string }> = [];
+    let genericAssigned = false;
+    for (const mission of matches) {
+      const missionHasSpecificTarget = Boolean(mission.targetLocation?.planetId);
+      if (!missionHasSpecificTarget && genericAssigned) {
+        continue;
+      }
+      const label = options?.cargoLabel ?? `Artefacto recuperado en ${this.describePlanet(planet)}`;
+      const entry = this.createMissionCargoEntry(mission, { label });
+      const updated = this.updateMission(
+        mission.id,
+        state => {
+          state.requiredCargoEntryId = entry.id;
+          state.requiredCargoLabel = entry.label;
+        },
+        'artifact-recovered',
+        { planetId: planet.id, cargoEntryId: entry.id }
+      );
+      if (updated) {
+        updates.push({ mission: updated, cargoEntryId: entry.id });
+        this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Mission artifact cargo secured', {
+          missionId: updated.id,
+          planetId: planet.id,
+          cargoEntryId: entry.id
+        });
+        if (!missionHasSpecificTarget) {
+          genericAssigned = true;
+        }
+      }
+    }
+    return updates;
+  }
+
+  /** Evaluates new cargo entries produced by mining to see if they satisfy material missions. */
+  public handleCargoRegistered(entry: CargoManifestEntry): PlanetMissionState | null {
+    if (!entry) {
+      return null;
+    }
+    for (const mission of this.listMissions()) {
+      if (!this.matchesMaterialRequirement(mission, entry)) {
+        continue;
+      }
+      const updated = this.updateMission(
+        mission.id,
+        state => {
+          state.requiredCargoEntryId = entry.id;
+          state.requiredCargoLabel = entry.label;
+        },
+        'material-cargo-stowed',
+        { entryId: entry.id, composition: entry.composition }
+      );
+      if (updated) {
+        this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Mission material cargo registered', {
+          missionId: updated.id,
+          entryId: entry.id,
+          composition: entry.composition
+        });
+        return updated;
+      }
+    }
+    return null;
+  }
+
   /** Registers or updates a sub-task available for this mission. */
   public registerSubTask(missionId: string, task: Omit<MissionSubTask, 'status' | 'lastUpdatedAt'> & { status?: MissionSubTaskStatus }): PlanetMissionState | null {
     return this.updateMission(missionId, mission => {
@@ -244,11 +322,56 @@ export class MissionService {
     if (!snapshot) {
       return null;
     }
+    const statusBefore = snapshot.status;
     mutator(snapshot);
-    snapshot.log = [...snapshot.log, this.makeLogEntry(event, payload)];
+    const statusAfterMutator = snapshot.status;
+    this.applyAutoStatusTransitions(snapshot);
+    const statusAfter = snapshot.status;
+    const logEntries: PlanetMissionLogEntry[] = [this.makeLogEntry(event, payload)];
+    if (statusAfter !== statusAfterMutator) {
+      logEntries.push(this.makeLogEntry('status-auto-transition', { from: statusAfterMutator, to: statusAfter }));
+    } else if (statusAfterMutator !== statusBefore) {
+      logEntries.push(this.makeLogEntry('status-change', { from: statusBefore, to: statusAfterMutator }));
+    }
+    snapshot.log = [...snapshot.log, ...logEntries];
     const stored = this.gameState.upsertPlanetMission(snapshot);
     this.syncPlanetPendingMission(stored);
     return stored;
+  }
+
+  private applyAutoStatusTransitions(mission: PlanetMissionState): void {
+    const immutableStates: PlanetMissionStatus[] = ['completed', 'failed'];
+    if (immutableStates.includes(mission.status)) {
+      return;
+    }
+
+    if (mission.status === 'offered' && this.hasMissionProgress(mission)) {
+      mission.status = 'accepted';
+    }
+
+    if (mission.status === 'accepted' && this.hasMissionProgress(mission)) {
+      mission.status = 'in-progress';
+    }
+
+    if (['accepted', 'in-progress', 'ready-to-turn-in'].includes(mission.status)) {
+      if (this.missionMeetsClueRequirements(mission)) {
+        mission.status = 'ready-to-turn-in';
+        return;
+      }
+      if (mission.status === 'ready-to-turn-in' && !this.missionMeetsClueRequirements(mission)) {
+        mission.status = this.hasMissionProgress(mission) ? 'in-progress' : 'accepted';
+      }
+    }
+  }
+
+  private hasMissionProgress(mission: PlanetMissionState): boolean {
+    if ((mission.clueTokens?.length ?? 0) > 0) {
+      return true;
+    }
+    if (mission.requiredCargoEntryId) {
+      return true;
+    }
+    return Boolean(mission.subTasks?.some(task => task.status === 'completed'));
   }
 
   private syncPlanetPendingMission(mission: PlanetMissionState): void {
@@ -316,6 +439,152 @@ export class MissionService {
       cost
     };
     mission.clueTokens.push(token);
+  }
+
+  private determineMissionType(planet: Planet, options?: MissionOfferOptions): PlanetMissionType {
+    if (options?.type) {
+      return options.type;
+    }
+    if (options?.targetLocation?.planetId) {
+      return 'artifact';
+    }
+    const candidate = this.pickArtifactDestination(planet.id);
+    if (!candidate) {
+      return 'material';
+    }
+    return Math.random() < 0.65 ? 'artifact' : 'material';
+  }
+
+  private assignMissionObjective(mission: PlanetMissionState, origin: Planet, options?: MissionOfferOptions): void {
+    if (mission.type === 'artifact') {
+      const forcedTargetId = options?.targetLocation?.planetId;
+      const target = forcedTargetId
+        ? this.gameState.findPlanetById(forcedTargetId) ?? null
+        : this.pickArtifactDestination(origin.id);
+      if (target) {
+        mission.targetLocation = {
+          systemId: mission.targetLocation?.systemId ?? 'current-system',
+          planetId: target.id
+        };
+        const targetLabel = this.describePlanet(target);
+        mission.objectiveSummary = mission.objectiveSummary ?? `Recupera el artefacto custodiado en ${targetLabel}.`;
+        mission.targetHint = mission.targetHint ?? targetLabel;
+      } else {
+        mission.objectiveSummary = mission.objectiveSummary ?? 'Recupera cualquier artefacto intacto y consérvalo para la entrega.';
+      }
+      return;
+    }
+    const requirement = this.pickMaterialRequirement(origin, options?.preferredResourceKind);
+    mission.requiredCargoComposition = requirement.composition;
+    mission.objectiveSummary = mission.objectiveSummary ?? requirement.summary;
+    mission.targetHint = mission.targetHint ?? requirement.hint;
+  }
+
+  private pickArtifactDestination(excludePlanetId: string): Planet | null {
+    const candidates = this.gameState.planets.filter(planet => planet.id !== excludePlanetId && planet.hasArtifact);
+    if (!candidates.length) {
+      return null;
+    }
+    candidates.sort((a, b) => Number(a.visited) - Number(b.visited));
+    return candidates[0];
+  }
+
+  private shouldAttachArtifactPickup(mission: PlanetMissionState, planetId: string): boolean {
+    if (mission.type !== 'artifact' || mission.requiredCargoEntryId) {
+      return false;
+    }
+    const targetId = mission.targetLocation?.planetId;
+    if (!targetId) {
+      return true;
+    }
+    return targetId === planetId;
+  }
+
+  private pickMaterialRequirement(
+    planet: Planet,
+    preferred?: CargoCompositionKind
+  ): { composition: CargoCompositionKind; summary: string; hint: string } {
+    const composition = preferred ?? this.resolvePreferredCompositionFromStock(planet) ?? 'metallic';
+    const label = this.describeMaterial(composition);
+    return {
+      composition,
+      summary: `Recolecta una muestra ${label} y mantenla intacta hasta entregar el encargo.`,
+      hint: label
+    };
+  }
+
+  private resolvePreferredCompositionFromStock(planet: Planet): CargoCompositionKind | null {
+    const stock = planet.resourceStock ?? ({} as PlanetResourceStock);
+    const mapping: Array<{ key: keyof PlanetResourceStock; kind: CargoCompositionKind }> = [
+      { key: 'metal', kind: 'metallic' },
+      { key: 'non_metal', kind: 'silicate' },
+      { key: 'organic', kind: 'organic' },
+      { key: 'void_matter', kind: 'mixed' }
+    ];
+    mapping.sort((a, b) => (stock[a.key] ?? 0) - (stock[b.key] ?? 0));
+    return mapping[0]?.kind ?? null;
+  }
+
+  private describeMaterial(kind: CargoCompositionKind): string {
+    switch (kind) {
+      case 'metallic':
+        return 'metálica consagrada';
+      case 'carbonaceous':
+        return 'carbonácea purificada';
+      case 'organic':
+        return 'orgánica viva';
+      case 'silicate':
+        return 'silicatada resonante';
+      case 'mixed':
+        return 'híbrida arcana';
+      default:
+        return 'de origen desconocido';
+    }
+  }
+
+  private describePlanet(planet: Planet): string {
+    try {
+      if (typeof planet.getDisplayName === 'function') {
+        return planet.getDisplayName();
+      }
+    } catch {}
+    return planet.customName ?? planet.id;
+  }
+
+  private createMissionCargoEntry(
+    mission: PlanetMissionState,
+    context: { label: string }
+  ): CargoManifestEntry {
+    const entry: CargoManifestEntry = {
+      id: this.generateCargoEntryId(mission.id),
+      type: mission.type === 'artifact' ? CargoItemType.ARTIFACT : CargoItemType.RAW_MATERIAL,
+      label: context.label,
+      massTons: mission.type === 'artifact' ? 5 : 20,
+      units: mission.type === 'artifact' ? 1 : 25,
+      source: GameObjectType.PLANET,
+      rarity: mission.type === 'artifact' ? RarityTier.UNIQUE : RarityTier.RARE,
+      composition: mission.requiredCargoComposition ?? 'unknown'
+    };
+    this.gameState.upsertCargoEntry(entry);
+    return entry;
+  }
+
+  private generateCargoEntryId(missionId: string): string {
+    return `${missionId}-cargo-${Date.now().toString(36)}-${Math.floor(Math.random() * 1e4).toString(36)}`;
+  }
+
+  private matchesMaterialRequirement(mission: PlanetMissionState, entry: CargoManifestEntry): boolean {
+    if (mission.type !== 'material' || mission.requiredCargoEntryId) {
+      return false;
+    }
+    if (!mission.requiredCargoComposition) {
+      return false;
+    }
+    if (entry.type !== CargoItemType.RAW_MATERIAL) {
+      return false;
+    }
+    const composition = entry.composition ?? 'unknown';
+    return composition === mission.requiredCargoComposition;
   }
 
   private missionMeetsClueRequirements(mission: PlanetMissionState): boolean {

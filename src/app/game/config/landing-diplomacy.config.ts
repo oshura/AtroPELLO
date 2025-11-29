@@ -2,8 +2,10 @@ import { PlanetInhabitants } from '../types/cosmic-life.types';
 import {
   MissionClueTier,
   MissionClueToken,
+  PlanetMissionType,
   PlanetResourceStock
 } from '../types/planet-intel.types';
+import { CargoCompositionKind } from '../types/inventory.types';
 
 export interface DiplomacyClueOptionConfig {
   id: string;
@@ -39,6 +41,8 @@ export interface LandingDiplomacyScript {
     name: string;
     description: string;
     requiredClueTiers: MissionClueTier[];
+    type?: PlanetMissionType;
+    preferredResourceKind?: CargoCompositionKind;
   };
   bribeOption: DiplomacyClueOptionConfig;
   visionOption: DiplomacyClueOptionConfig;
@@ -50,7 +54,8 @@ const PROFUNDOS_SCRIPT: LandingDiplomacyScript = {
   missionTemplate: {
     name: 'Perla Tétrica',
     description: 'Hallarla en las mareas rotas y sellar la grieta que filtra cantos abisales.',
-    requiredClueTiers: ['minor', 'major', 'final']
+    requiredClueTiers: ['minor', 'major', 'final'],
+    type: 'artifact'
   },
   bribeOption: {
     id: 'profundos-bribe',
@@ -94,7 +99,9 @@ const DEFAULT_SCRIPT: LandingDiplomacyScript = {
   missionTemplate: {
     name: 'Encargo ancestral',
     description: 'Rastrear un artefacto prestado y devolverlo a la cofradía.',
-    requiredClueTiers: ['minor', 'major']
+    requiredClueTiers: ['minor', 'major'],
+    type: 'material',
+    preferredResourceKind: 'metallic'
   },
   bribeOption: {
     id: 'default-bribe',

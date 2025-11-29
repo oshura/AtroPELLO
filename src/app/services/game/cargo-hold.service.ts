@@ -9,10 +9,15 @@ import {
   classifyCargoComposition
 } from '../../game/types/inventory.types';
 import { GameObjectType } from '../../game/types/game-object.types';
+import { MissionService } from '../../game/services/game/mission.service';
 
 @Injectable({ providedIn: 'root' })
 export class CargoHoldService {
-  constructor(private readonly gameState: GameStateStore, private readonly logger: LoggingService) {}
+  constructor(
+    private readonly gameState: GameStateStore,
+    private readonly logger: LoggingService,
+    private readonly missionService: MissionService
+  ) {}
 
   /**
    * Registra la conversión de un asteroide en carga granular y añade/actualiza el manifiesto.
@@ -35,6 +40,14 @@ export class CargoHoldService {
     };
 
     this.gameState.upsertCargoEntry(entry);
+    try {
+      this.missionService.handleCargoRegistered(entry);
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.HUD, 'Mission cargo registration failed', {
+        entryId: entry.id,
+        error
+      });
+    }
     this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Cargo entry registered', entry);
     return entry;
   }

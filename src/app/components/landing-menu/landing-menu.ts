@@ -22,7 +22,7 @@ import {
   PlanetResourceStock,
   MissionSubTask
 } from '../../game/types/planet-intel.types';
-import { LesserBeing, PlanetInhabitants } from '../../game/types/cosmic-life.types';
+import { LesserBeing, PlanetInhabitants, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
 import { getLandingDiplomacyScript, LandingDiplomacyScript } from '../../game/config/landing-diplomacy.config';
 import { MissionService } from '../../game/services/game/mission.service';
 import { Planet } from '../../game/game-objects/Planet';
@@ -109,6 +109,56 @@ export class LandingMenuComponent implements OnChanges {
     return this.missionService.hasRequiredCargoReady(mission.id);
   }
 
+  protected get missionStatusLabel(): string {
+    const mission = this.mission;
+    if (!mission) {
+      return 'Sin misión';
+    }
+    return this.missionStatusMeta[mission.status]?.label ?? mission.status;
+  }
+
+  protected get missionStatusDescription(): string {
+    const mission = this.mission;
+    if (!mission) {
+      return 'Contacta una civilización para recibir encargos.';
+    }
+    const meta = this.missionStatusMeta[mission.status];
+    return meta?.description ?? '';
+  }
+
+  protected get missionStatusPillClass(): string {
+    const mission = this.mission;
+    if (!mission) {
+      return 'pill--neutral';
+    }
+    return this.missionStatusMeta[mission.status]?.pillClass ?? 'pill--neutral';
+  }
+
+  protected get missionObjectiveSummary(): string | null {
+    return this.mission?.objectiveSummary ?? null;
+  }
+
+  protected get missionTargetName(): string | null {
+    const mission = this.mission;
+    if (!mission) {
+      return null;
+    }
+    const targetPlanetId = mission.targetLocation?.planetId;
+    if (targetPlanetId) {
+      const target = this.gameState.findPlanetById(targetPlanetId);
+      if (target) {
+        try {
+          if (typeof target.getDisplayName === 'function') {
+            return target.getDisplayName();
+          }
+        } catch {}
+        return target.customName ?? targetPlanetId;
+      }
+      return mission.targetHint ?? targetPlanetId;
+    }
+    return mission.targetHint ?? null;
+  }
+
   protected get relationAffinity(): RelationAffinity {
     const animosity = this.planetIntel?.animosity ?? GameObjectAnimosity.NEUTRAL;
     switch (animosity) {
@@ -125,12 +175,28 @@ export class LandingMenuComponent implements OnChanges {
     return this.relationAffinity === 'neutral';
   }
 
+  protected get isAllyRelation(): boolean {
+    return this.relationAffinity === 'ally';
+  }
+
+  protected get isEnemyRelation(): boolean {
+    return this.relationAffinity === 'enemy';
+  }
+
   protected get metallicCargoUnits(): number {
     return this.gameState.getRawMaterialUnits('metallic');
   }
 
   protected get carbonCargoUnits(): number {
     return this.gameState.getRawMaterialUnits('carbonaceous');
+  }
+
+  protected get organicCargoUnits(): number {
+    return this.gameState.getRawMaterialUnits('organic');
+  }
+
+  protected get silicateCargoUnits(): number {
+    return this.gameState.getRawMaterialUnits('silicate');
   }
 
   protected get canUseNeutralRepair(): boolean {
@@ -152,6 +218,36 @@ export class LandingMenuComponent implements OnChanges {
       return false;
     }
     return this.carbonCargoUnits >= 1;
+  }
+
+  protected get canUseAllyRefit(): boolean {
+    if (!this.isAllyRelation || this.disabled) {
+      return false;
+    }
+    const ship = this.gameState.spaceship;
+    if (!ship || ship.healthCurrent >= ship.healthMax) {
+      return false;
+    }
+    return this.metallicCargoUnits >= 10;
+  }
+
+  protected get canUseAllyWisdom(): boolean {
+    if (!this.isAllyRelation || this.disabled) {
+      return false;
+    }
+    return this.organicCargoUnits >= 1 && this.silicateCargoUnits >= 1;
+  }
+
+  protected get canUseAllyLifespan(): boolean {
+    return this.isAllyRelation && !this.disabled;
+  }
+
+  protected get canConfrontLesser(): boolean {
+    if (!this.isEnemyRelation || this.disabled) {
+      return false;
+    }
+    const being = this.planetIntel?.lesserBeing;
+    return Boolean(being && being !== LesserBeing.NONE);
   }
 
   protected get diplomacyScript(): LandingDiplomacyScript | null {
@@ -265,6 +361,14 @@ export class LandingMenuComponent implements OnChanges {
       default:
         return 'desconocido';
     }
+  }
+
+  protected get lesserBeingName(): string {
+    const being = this.planetIntel?.lesserBeing;
+    if (!being || being === LesserBeing.NONE) {
+      return 'la entidad hostil';
+    }
+    return LESSER_BEING_LABELS[being] ?? 'la entidad hostil';
   }
 
   protected get selectedEvent(): LandingEventResult | null {
@@ -399,6 +503,50 @@ export class LandingMenuComponent implements OnChanges {
     });
   }
 
+  protected handleAllyRefit(): void {
+    if (!this.canUseAllyRefit || !this.context?.planetId) {
+      return;
+    }
+    this.executeAction({
+      planetId: this.context!.planetId,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.ALLY_FULL_REPAIR }
+    });
+  }
+
+  protected handleAllyWisdom(): void {
+    if (!this.canUseAllyWisdom || !this.context?.planetId) {
+      return;
+    }
+    this.executeAction({
+      planetId: this.context!.planetId,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.ALLY_WISDOM_RITE }
+    });
+  }
+
+  protected handleAllyLifespan(): void {
+    if (!this.canUseAllyLifespan || !this.context?.planetId) {
+      return;
+    }
+    this.executeAction({
+      planetId: this.context!.planetId,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.ALLY_SHARE_LIFESPAN }
+    });
+  }
+
+  protected handleEnemyConfrontation(): void {
+    if (!this.canConfrontLesser || !this.context?.planetId) {
+      return;
+    }
+    this.executeAction({
+      planetId: this.context!.planetId,
+      action: LandingActionKind.DIPLOMACY,
+      diplomacy: { action: LandingDiplomacyAction.ENEMY_CONFRONT_LESSER }
+    });
+  }
+
   protected selectEvent(event: LandingEventResult): void {
     this.selectedEventId = event.id;
   }
@@ -476,6 +624,39 @@ export class LandingMenuComponent implements OnChanges {
     return this.gameState.getPlanetIntelSnapshot(this.context!.planetId) ?? null;
   }
 
+  private readonly missionStatusMeta: Record<PlanetMissionStatus, { label: string; description: string; pillClass: string }> = {
+    offered: {
+      label: 'Oferta pendiente',
+      description: 'Acepta el encargo para registrar el contrato diplomático.',
+      pillClass: 'pill--neutral'
+    },
+    accepted: {
+      label: 'Contrato aceptado',
+      description: 'Reúne pistas iniciales para demostrar tu compromiso.',
+      pillClass: 'pill--neutral'
+    },
+    'in-progress': {
+      label: 'En progreso',
+      description: 'Completa recados y consume recursos para avanzar la misión.',
+      pillClass: 'pill--warning'
+    },
+    'ready-to-turn-in': {
+      label: 'Listo para entregar',
+      description: 'Todos los requisitos están cubiertos. Entrega la misión para sellar la alianza.',
+      pillClass: 'pill--success'
+    },
+    completed: {
+      label: 'Completada',
+      description: 'La facción ya confía plenamente en ti.',
+      pillClass: 'pill--success'
+    },
+    failed: {
+      label: 'Fracaso',
+      description: 'La facción retiró su confianza. Requerirá un nuevo intento.',
+      pillClass: 'pill--danger'
+    }
+  };
+
   private get landingIntelFallback(): LandingPlanetIntel | null {
     return this.context?.planetIntel ?? null;
   }
@@ -512,7 +693,9 @@ export class LandingMenuComponent implements OnChanges {
       race: planet.inhabitants,
       description: script.missionTemplate.description,
       missionName: script.missionTemplate.name,
-      requiredClueTiers: script.missionTemplate.requiredClueTiers
+      requiredClueTiers: script.missionTemplate.requiredClueTiers,
+      type: script.missionTemplate.type,
+      preferredResourceKind: script.missionTemplate.preferredResourceKind
     });
     this.gameState.syncPlanetIntelFromPlanet(planet);
   }

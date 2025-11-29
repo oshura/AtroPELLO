@@ -39,6 +39,23 @@
             <p>Negocia pistas y favores para completar {{ missionPreview.missionName || 'el encargo planetario' }}.</p>
           </ng-container>
         </header>
+        <div class="mission-panel mission-panel--ally" *ngIf="isAllyRelation">
+          <span class="mission-panel__label">Ritos de alianza</span>
+          <div class="mission-panel__actions mission-panel__actions--stacked">
+            <button type="button" class="menu-btn" (click)="handleAllyRefit()" [disabled]="!canUseAllyRefit">
+              Forja total del casco
+              <small>Coste: 10 metal ({{ metallicCargoUnits }}u)</small>
+            </button>
+            <button type="button" class="menu-btn" (click)="handleAllyWisdom()" [disabled]="!canUseAllyWisdom">
+              Profundizar en sabiduría
+              <small>Coste: 1 orgánico ({{ organicCargoUnits }}u) + 1 silicato ({{ silicateCargoUnits }}u)</small>
+            </button>
+            <button type="button" class="menu-btn" (click)="handleAllyLifespan()" [disabled]="!canUseAllyLifespan">
+              Compartir tiempo de vida
+              <small>Restaura salud y cordura · +20-30 días de edad</small>
+            </button>
+          </div>
+        </div>
         <div class="mission-panel mission-panel--neutral" *ngIf="isNeutralRelation">
           <span class="mission-panel__label">Servicios neutrales</span>
           <div class="mission-panel__actions">
@@ -52,6 +69,19 @@
             </button>
           </div>
         </div>
+        <div class="mission-panel mission-panel--enemy" *ngIf="isEnemyRelation">
+          <span class="mission-panel__label">Zona de guerra</span>
+          <p class="mission-panel__description">
+            {{ lesserBeingName }} domina la órbita; hasta derrotarlo no habrá tratados.
+          </p>
+          <div class="mission-panel__actions mission-panel__actions--stacked">
+            <button type="button" class="menu-btn" (click)="handleEnemyConfrontation()" [disabled]="!canConfrontLesser">
+              Confrontar a {{ lesserBeingName }}
+              <small *ngIf="canConfrontLesser">+25 XP · salud queda a la mitad · cordura al máximo</small>
+              <small *ngIf="!canConfrontLesser">No hay criatura detectable</small>
+            </button>
+          </div>
+        </div>
         <ng-container *ngIf="mission as missionState; else diplomacyEmpty">
           <ng-container *ngIf="diplomacyScript as script; else diplomacyNoScript">
           <div class="mission-panel">
@@ -60,16 +90,44 @@
                 <span class="mission-panel__label">Encargo</span>
                 <div class="mission-panel__title">{{ missionState.missionName || 'Encargo de la cofradía' }}</div>
                 <p class="mission-panel__description">{{ missionState.description || script.missionTemplate.description }}</p>
+                <div class="mission-panel__objective" *ngIf="missionObjectiveSummary || missionTargetName">
+                  <span class="mission-panel__label">Objetivo</span>
+                  <p>
+                    <span *ngIf="missionObjectiveSummary">{{ missionObjectiveSummary }}</span>
+                    <span class="mission-panel__objective-target" *ngIf="missionTargetName">
+                      Destino: {{ missionTargetName }}
+                    </span>
+                  </p>
+                </div>
               </div>
-              <div class="mission-panel__status">Estado: <span>{{ missionState.status }}</span></div>
+              <div class="mission-panel__status">
+                <span class="mission-panel__label">Estado</span>
+                <span class="pill" [ngClass]="missionStatusPillClass">{{ missionStatusLabel }}</span>
+              </div>
             </div>
+
+            <p class="mission-panel__status-description">{{ missionStatusDescription }}</p>
 
             <div class="mission-panel__requirements" *ngIf="missionRequiresCargo">
               <span class="mission-panel__label">Entrega requerida</span>
               <div class="mission-panel__requirement" [class.is-missing]="!missionHasCargo">
                 {{ missionCargoLabel }}
+                <small *ngIf="missionHasCargo">Carga localizada en bodega</small>
                 <small *ngIf="!missionHasCargo">Carga faltante en bodega</small>
               </div>
+            </div>
+
+            <div
+              class="mission-panel__status-callout mission-panel__status-callout--success"
+              *ngIf="canTurnInMission"
+            >
+              Todo listo para entregarlo y forjar la alianza.
+            </div>
+            <div
+              class="mission-panel__status-callout mission-panel__status-callout--warning"
+              *ngIf="missionRequiresCargo && !missionHasCargo"
+            >
+              Aún falta {{ missionCargoLabel }} para completar el envío.
             </div>
 
             <div class="mission-panel__meta-actions">

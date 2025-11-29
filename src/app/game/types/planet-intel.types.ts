@@ -1,5 +1,6 @@
 import { GameObjectAnimosity } from './animosity.types';
 import { LesserBeing, PlanetInhabitants } from './cosmic-life.types';
+import { CargoCompositionKind } from './inventory.types';
 
 export const PLANET_INTEL_STATUS = {
   UNKNOWN: 'unknown',
@@ -85,6 +86,7 @@ export interface PlanetMissionState {
   itemId: string;
   requiredCargoEntryId?: string;
   requiredCargoLabel?: string;
+  requiredCargoComposition?: CargoCompositionKind;
   description?: string;
   dialogueScriptId?: string;
   status: PlanetMissionStatus;
@@ -92,6 +94,8 @@ export interface PlanetMissionState {
   log: PlanetMissionLogEntry[];
   missionName?: string;
   requestedBy?: PlanetInhabitants;
+  objectiveSummary?: string;
+  targetHint?: string;
   clueTokens: MissionClueToken[];
   requiredClueTiers?: MissionClueTier[];
   subTasks?: MissionSubTask[];

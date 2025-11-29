@@ -21,7 +21,11 @@ export enum LandingDiplomacyAction {
   ACCEPT_MISSION = 'accept_mission',
   REVIEW_MISSION = 'review_mission',
   REPAIR_SHIP = 'repair_ship',
-  HEAL_CREW = 'heal_crew'
+  HEAL_CREW = 'heal_crew',
+  ALLY_FULL_REPAIR = 'ally_full_repair',
+  ALLY_WISDOM_RITE = 'ally_wisdom_rite',
+  ALLY_SHARE_LIFESPAN = 'ally_share_lifespan',
+  ENEMY_CONFRONT_LESSER = 'enemy_confront_lesser'
 }
 
 export interface LandingDiplomacyRequest {
@@ -81,6 +85,7 @@ export interface LandingActionEffects {
   shipHealthDelta?: number;
   shipHealthSnapshot?: { current: number; max: number };
   cargoSpent?: Array<{ kind: CargoCompositionKind; units: number }>;
+  memoryDelta?: number;
 }
 
 export interface LandingActionRequest {

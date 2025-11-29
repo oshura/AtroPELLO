@@ -146,6 +146,18 @@ export class LandingActionService {
     if (diplomacy.action === LandingDiplomacyAction.HEAL_CREW) {
       return this.handleNeutralHeal(planet, request);
     }
+    if (diplomacy.action === LandingDiplomacyAction.ALLY_FULL_REPAIR) {
+      return this.handleAllyFullRepair(planet, request);
+    }
+    if (diplomacy.action === LandingDiplomacyAction.ALLY_WISDOM_RITE) {
+      return this.handleAllyWisdom(planet, request);
+    }
+    if (diplomacy.action === LandingDiplomacyAction.ALLY_SHARE_LIFESPAN) {
+      return this.handleAllyLifespan(planet, request);
+    }
+    if (diplomacy.action === LandingDiplomacyAction.ENEMY_CONFRONT_LESSER) {
+      return this.handleEnemyConfrontation(planet, request);
+    }
     const script = getLandingDiplomacyScript(planet.inhabitants);
     if (!script) {
       return this.buildBlockedResult(request, 'Esta civilización no puede negociar todavía.', 'missing-diplomacy-script');
@@ -178,7 +190,9 @@ export class LandingActionService {
       race: planet.inhabitants ?? PlanetInhabitants.NONE,
       description: script.missionTemplate.description,
       missionName: script.missionTemplate.name,
-      requiredClueTiers: script.missionTemplate.requiredClueTiers
+      requiredClueTiers: script.missionTemplate.requiredClueTiers,
+      type: script.missionTemplate.type,
+      preferredResourceKind: script.missionTemplate.preferredResourceKind
     });
   }
 
@@ -327,8 +341,182 @@ export class LandingActionService {
     });
   }
 
+  private handleAllyFullRepair(planet: Planet, request: LandingActionRequest): LandingEventResult {
+    if (!this.isAllyPlanet(planet)) {
+      return this.buildBlockedResult(request, 'Solo los aliados acceden a la forja total.', 'relation-mismatch');
+    }
+    const ship = this.gameState.spaceship;
+    if (!ship) {
+      return this.buildBlockedResult(request, 'Necesitas una nave para recibir la forja.', 'missing-ship');
+    }
+    const missingHealth = Math.max(0, ship.healthMax - ship.healthCurrent);
+    if (missingHealth <= 0) {
+      return this.buildBlockedResult(request, 'El casco ya vibra a plenitud.', 'ship-full-health');
+    }
+    const alloyCost = 10;
+    if (this.gameState.getRawMaterialUnits('metallic') < alloyCost) {
+      return this.buildBlockedResult(request, 'La forja exige 10 unidades metálicas.', 'missing-metal-resource');
+    }
+    const consumed = this.gameState.spendRawMaterial('metallic', alloyCost);
+    if (consumed < alloyCost) {
+      return this.buildBlockedResult(request, 'No se pudo consagrar todo el metal requerido.', 'spend-metal-failed');
+    }
+    ship.healthCurrent = ship.healthMax;
+
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'info', text: 'Los maestros calientan crisoles arcanos y sumergen la nave en luz líquida.' },
+      { tone: 'success', text: 'Cada plancha vuelve a soldarse: sales de la forja como recién lanzado.' }
+    ];
+    const effects: LandingActionEffects = {
+      shipHealthDelta: missingHealth,
+      shipHealthSnapshot: { current: ship.healthCurrent, max: ship.healthMax },
+      cargoSpent: [{ kind: 'metallic', units: consumed }]
+    };
+    return this.composeResult(request, planet, {
+      title: 'Forja de alianza',
+      narrative,
+      effects,
+      success: true
+    });
+  }
+
+  private handleAllyWisdom(planet: Planet, request: LandingActionRequest): LandingEventResult {
+    if (!this.isAllyPlanet(planet)) {
+      return this.buildBlockedResult(request, 'Necesitas confianza aliada para recibir sus glifos.', 'relation-mismatch');
+    }
+    const organicCost = 1;
+    const silicateCost = 1;
+    if (this.gameState.getRawMaterialUnits('organic') < organicCost) {
+      return this.buildBlockedResult(request, 'Falta una muestra orgánica viva para el ritual.', 'missing-organic-resource');
+    }
+    if (this.gameState.getRawMaterialUnits('silicate') < silicateCost) {
+      return this.buildBlockedResult(request, 'Requiere cristales silicatados para grabar el glifo.', 'missing-silicate-resource');
+    }
+    const spentOrganic = this.gameState.spendRawMaterial('organic', organicCost);
+    if (spentOrganic < organicCost) {
+      return this.buildBlockedResult(request, 'No se pudo ofrendar el tejido orgánico.', 'spend-organic-failed');
+    }
+    const spentSilicate = this.gameState.spendRawMaterial('silicate', silicateCost);
+    if (spentSilicate < silicateCost) {
+      return this.buildBlockedResult(request, 'El cristal silicatado no quedó consagrado.', 'spend-silicate-failed');
+    }
+    const memoryGain = 2;
+    this.gameState.memoryPercent = Math.min(100, this.gameState.memoryPercent + memoryGain);
+    this.gameState.characterProfile.memory = Math.min(100, this.gameState.characterProfile.memory + memoryGain);
+
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'info', text: 'El consejo despliega pergaminos vivos y talla el glifo sobre tus retinas.' },
+      { tone: 'success', text: 'Recuerdas fragmentos dormidos: la runa despierta memoria ancestral.' }
+    ];
+    const glyphRewardId = `ally-glyph-${Date.now().toString(36)}`;
+    const effects: LandingActionEffects = {
+      cargoSpent: [
+        { kind: 'organic', units: spentOrganic },
+        { kind: 'silicate', units: spentSilicate }
+      ],
+      memoryDelta: memoryGain,
+      itemsAwarded: [
+        {
+          id: glyphRewardId,
+          label: 'Glifo coralino compartido',
+          type: 'memory',
+          quantity: memoryGain
+        }
+      ]
+    };
+    return this.composeResult(request, planet, {
+      title: 'Profundizar en sabiduría',
+      narrative,
+      effects,
+      success: true
+    });
+  }
+
+  private handleAllyLifespan(planet: Planet, request: LandingActionRequest): LandingEventResult {
+    if (!this.isAllyPlanet(planet)) {
+      return this.buildBlockedResult(request, 'Solo aliados comparten su tiempo de vida.', 'relation-mismatch');
+    }
+    const profile = this.characterProfile.profile;
+    const sanityDelta = 100 - profile.sanity;
+    const healthDelta = 100 - profile.health;
+    if (sanityDelta || healthDelta) {
+      this.characterProfile.adjustVitals({ sanity: sanityDelta, health: healthDelta });
+    }
+    const daysShared = Math.floor(Math.random() * 11) + 20;
+    const ageDaysDelta = this.applyAgeDelta(daysShared);
+
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'info', text: 'Pasas un día entero compartiendo historias ante braseros que doblan el tiempo.' },
+      { tone: 'warning', text: 'Sientes la edad avanzar décadas, pero la mente y el cuerpo quedan restaurados.' }
+    ];
+    const effects: LandingActionEffects = {
+      sanityDelta: sanityDelta || undefined,
+      healthDelta: healthDelta || undefined,
+      ageDaysDelta
+    };
+    return this.composeResult(request, planet, {
+      title: 'Compartir tiempo de vida',
+      narrative,
+      effects,
+      success: true
+    });
+  }
+
+  private handleEnemyConfrontation(planet: Planet, request: LandingActionRequest): LandingEventResult {
+    if (!this.isEnemyPlanet(planet)) {
+      return this.buildBlockedResult(request, 'Solo los planetas hostiles exigen esta confrontación.', 'relation-mismatch');
+    }
+    if (!planet.lesserBeing) {
+      return this.buildBlockedResult(request, 'El lesser being ya no ronda este mundo.', 'no-lesser-being');
+    }
+    const profile = this.characterProfile.profile;
+    const newHealth = Math.max(1, Math.floor(profile.health / 2));
+    const healthDelta = newHealth - profile.health;
+    const sanityDelta = 100 - profile.sanity;
+    this.characterProfile.adjustVitals({ health: healthDelta, sanity: sanityDelta });
+    const ageDaysDelta = this.applyAgeDelta(2);
+    const experienceDelta = 25;
+    this.characterProfile.awardExperience(experienceDelta, 'landing-lesser-confrontation');
+
+    planet.setLesserBeing(null);
+    planet.creatureScanned = true;
+    planet.lesserBeingIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
+    const missionSnapshot = planet.pendingMission?.id
+      ? this.missionService.getMissionSnapshot(planet.pendingMission.id)
+      : null;
+    if (missionSnapshot?.status === 'completed') {
+      planet.setAnimosity(GameObjectAnimosity.FRIENDLY);
+    }
+
+    const narrative: LandingActionLogEntry[] = [
+      { tone: 'danger', text: 'Desciendes a la sima donde la criatura cantaba tu nombre al revés.' },
+      { tone: 'success', text: 'Regresas cubierto de hollín cósmico: el lesser being se disuelve en silencio.' }
+    ];
+    const effects: LandingActionEffects = {
+      healthDelta,
+      sanityDelta,
+      ageDaysDelta,
+      experienceDelta,
+      intel: { lesserBeing: planet.lesserBeingIntelStatus }
+    };
+    return this.composeResult(request, planet, {
+      title: 'Confrontar lesser being',
+      narrative,
+      effects,
+      success: true
+    });
+  }
+
   private isNeutralPlanet(planet: Planet): boolean {
     return (planet.animosity ?? GameObjectAnimosity.NEUTRAL) === GameObjectAnimosity.NEUTRAL;
+  }
+
+  private isAllyPlanet(planet: Planet): boolean {
+    return (planet.animosity ?? GameObjectAnimosity.NEUTRAL) === GameObjectAnimosity.FRIENDLY;
+  }
+
+  private isEnemyPlanet(planet: Planet): boolean {
+    return (planet.animosity ?? GameObjectAnimosity.NEUTRAL) === GameObjectAnimosity.ENEMY;
   }
 
   private handleDiplomacyBribe(
@@ -549,6 +737,18 @@ export class LandingActionService {
           { id: `artifact-${planet.id}-${Date.now()}`, label: 'Artefacto translúcido recuperado', type: 'artifact', quantity: 1 }
         ];
         narrative.push({ tone: 'success', text: 'Entre la grava hallas un prisma translúcido que late al contacto.' });
+        const cargoAssignments = this.missionService.registerArtifactRecovery(planet, {
+          cargoLabel: `Artefacto recuperado de ${planet.getDisplayName?.() ?? planet.id}`
+        });
+        if (cargoAssignments.length) {
+          narrative.push({
+            tone: 'success',
+            text: cargoAssignments.length > 1
+              ? 'Varias cofradías identifican el hallazgo y etiquetan el cargamento en tu bodega.'
+              : 'El encargo activo reconoce el hallazgo y el artefacto queda listo para su entrega.'
+          });
+          effects.missionStatus = cargoAssignments[0].mission.status;
+        }
       } else {
         planet.artifactIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
         effects.intel = { artifact: planet.artifactIntelStatus };
