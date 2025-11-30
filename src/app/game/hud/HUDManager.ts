@@ -946,11 +946,12 @@ export class HUDManager {
     ctx.arc(centerX, centerY, radius + 2, 0, Math.PI * 2);
     ctx.stroke();
 
-    ctx.fillStyle = options.active ? '#f8fafc' : 'rgba(226,232,240,0.7)';
-    ctx.font = '600 14px "Segoe UI", sans-serif';
+    const labelColor = options.active ? 'rgba(248,250,252,0.95)' : 'rgba(148,163,184,0.85)';
+    ctx.fillStyle = labelColor;
+    ctx.font = '600 13px "Segoe UI", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
-    ctx.fillText(options.label, centerX, centerY + radius + 4);
+    ctx.fillText(options.label, centerX, centerY + radius + 8);
 
     ctx.restore();
   }

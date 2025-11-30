@@ -48,6 +48,7 @@ export class HealthGauge {
 
     const halfW = this.width / 2;
     const halfH = this.height / 2;
+    const pct = Math.max(0, Math.min(1, this.currentValue / Math.max(1, this.maxValue)));
 
     // Background panel
     ctx.fillStyle = 'rgba(15, 20, 25, 0.8)';
@@ -55,15 +56,16 @@ export class HealthGauge {
     ctx.lineWidth = 1.5;
     this.drawRoundedRect(ctx, -halfW, -halfH, this.width, this.height, 8);
 
-    // Cross icon (phosphorescent green)
+    // Cross icon (phosphorescent green with dimming based on pct)
     ctx.save();
     ctx.translate(-halfW + 20, -halfH + 26);
-    ctx.fillStyle = '#00ff80';
+    const iconFill = 0.25 + 0.55 * pct;
+    ctx.fillStyle = `rgba(0,255,128,${Math.min(1, iconFill)})`;
+    ctx.shadowColor = 'rgba(0,0,0,0.3)';
+    ctx.shadowBlur = 4;
     ctx.fillRect(-3, -9, 6, 18);
     ctx.fillRect(-9, -3, 18, 6);
     ctx.restore();
-
-    const pct = Math.max(0, Math.min(1, this.currentValue / Math.max(1, this.maxValue)));
 
     // Current health readout
     ctx.font = 'bold 20px "Share Tech Mono", monospace';

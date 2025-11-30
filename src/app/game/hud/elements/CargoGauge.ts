@@ -47,6 +47,7 @@ export class CargoGauge {
 
     const halfW = this.width / 2;
     const halfH = this.height / 2;
+    const pct = Math.max(0, Math.min(1, this.currentValue / Math.max(1, this.maxValue)));
 
     // Background panel
     ctx.fillStyle = 'rgba(15, 20, 25, 0.8)';
@@ -55,9 +56,7 @@ export class CargoGauge {
     this.drawRoundedRect(ctx, -halfW, -halfH, this.width, this.height, 8);
 
     // Cargo icon (phosphorescent green) mirrored to the right side
-    this.drawCargoIcon(ctx, halfW - 20, -halfH + 26);
-
-    const pct = Math.max(0, Math.min(1, this.currentValue / Math.max(1, this.maxValue)));
+    this.drawCargoIcon(ctx, halfW - 20, -halfH + 26, pct);
 
     // Cargo readout mirrored toward the right edge but left-to-right readable
     ctx.font = 'bold 20px "Share Tech Mono", monospace';
@@ -141,11 +140,12 @@ export class CargoGauge {
     ctx.restore();
   }
 
-  private drawCargoIcon(ctx: CanvasRenderingContext2D, x: number, y: number): void {
+  private drawCargoIcon(ctx: CanvasRenderingContext2D, x: number, y: number, pct: number): void {
     ctx.save();
     ctx.translate(x, y);
-    ctx.strokeStyle = '#00ff80';
-    ctx.fillStyle = 'rgba(0,255,128,0.1)';
+    const baseAlpha = 0.2 + 0.6 * pct;
+    ctx.strokeStyle = `rgba(0,255,128,${Math.min(1, baseAlpha + 0.25)})`;
+    ctx.fillStyle = `rgba(0,255,128,${Math.min(1, baseAlpha)})`;
     ctx.lineWidth = 1.5;
     const size = 18;
     const half = size / 2;

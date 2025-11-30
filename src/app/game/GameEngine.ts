@@ -143,6 +143,7 @@ export class GameEngine {
   private landingSequenceActive: boolean = false;
   private landingSequenceContext: LandingApproachContext | null = null;
   private landingTouchdownContext: LandingApproachContext | null = null;
+  private landedShipAttachment: { planetId: string; offset: Vector3 } | null = null;
   private takeoffSequenceActive: boolean = false;
   private landingCandidatePlanetId: string | null = null;
   private landingCandidateStartMs: number | null = null;
@@ -650,6 +651,7 @@ export class GameEngine {
       this.setLandingDamageSuppressed(true, 'landing-touchdown');
       this.handleLandingTouchdown(context);
     } else {
+      this.clearLandedShipAttachment();
       this.landingTouchdownContext = null;
       this.setLandingDamageSuppressed(false, 'landing-aborted');
       try { this.showPlaceholderText('ATERRIZAJE CANCELADO', 2000); } catch {}
@@ -676,6 +678,7 @@ export class GameEngine {
     if (outcome === 'completed') {
       try { this.gameState.setActiveLandingPlanet?.(null); } catch {}
       this.landingTouchdownContext = null;
+      this.clearLandedShipAttachment();
       this.collisionsDisabled = false;
       this.setLandingDamageSuppressed(false, 'takeoff-completed');
       try { this.showPlaceholderText('DESPEGUE COMPLETADO', 2000); } catch {}
@@ -837,6 +840,7 @@ export class GameEngine {
     };
     this.repositionShipAfterCollapse(safePosition);
     this.landingTouchdownContext = null;
+    this.clearLandedShipAttachment();
     this.landingSequenceActive = false;
     this.takeoffSequenceActive = false;
     this.landingCandidatePlanetId = null;
@@ -858,9 +862,11 @@ export class GameEngine {
   private parkShipAtPlanetCore(context: LandingApproachContext): void {
     const anchor = this.resolvePlanetCenterFromContext(context);
     if (!anchor) {
+      this.clearLandedShipAttachment();
       return;
     }
     this.placeShipAtPosition(anchor);
+    this.bindShipToPlanet(context, anchor);
   }
 
   private resolvePlanetCenterFromContext(context: LandingApproachContext): Vector3 | null {
@@ -894,6 +900,67 @@ export class GameEngine {
       this.spaceship.boundingSphere.center = { ...this.spaceship.position };
     }
     this.lastShipPos = { ...this.spaceship.position };
+  }
+
+  private bindShipToPlanet(context: LandingApproachContext, anchor: Vector3): void {
+    if (!context.planetId) {
+      this.clearLandedShipAttachment();
+      return;
+    }
+    const planet = this.gameState.findPlanetById(context.planetId);
+    if (!planet) {
+      this.clearLandedShipAttachment();
+      return;
+    }
+    this.landedShipAttachment = {
+      planetId: planet.id,
+      offset: {
+        x: anchor.x - planet.position.x,
+        y: anchor.y - planet.position.y,
+        z: anchor.z - planet.position.z
+      }
+    };
+  }
+
+  private maintainLandedShipAttachment(): void {
+    if (!this.landedShipAttachment || !this.landingTouchdownContext) {
+      return;
+    }
+    if (this.landingSequenceActive || this.takeoffSequenceActive || !this.spaceship) {
+      return;
+    }
+    const planet = this.gameState.findPlanetById(this.landedShipAttachment.planetId);
+    if (!planet) {
+      return;
+    }
+    const desired = {
+      x: planet.position.x + this.landedShipAttachment.offset.x,
+      y: planet.position.y + this.landedShipAttachment.offset.y,
+      z: planet.position.z + this.landedShipAttachment.offset.z
+    };
+    const dx = desired.x - this.spaceship.position.x;
+    const dy = desired.y - this.spaceship.position.y;
+    const dz = desired.z - this.spaceship.position.z;
+    const distSq = dx * dx + dy * dy + dz * dz;
+    if (distSq < 1e-4) {
+      return;
+    }
+    this.spaceship.position.x = desired.x;
+    this.spaceship.position.y = desired.y;
+    this.spaceship.position.z = desired.z;
+    this.spaceship.velocity = { x: 0, y: 0, z: 0 };
+    this.spaceship.angularVelocity = { x: 0, y: 0, z: 0 };
+    this.spaceship.currentSpeed = 0;
+    this.spaceship.targetSpeed = 0;
+    this.spaceship.updateModelMatrix();
+    if (this.spaceship.boundingSphere) {
+      this.spaceship.boundingSphere.center = { ...this.spaceship.position };
+    }
+    this.lastShipPos = { ...this.spaceship.position };
+  }
+
+  private clearLandedShipAttachment(): void {
+    this.landedShipAttachment = null;
   }
 
   private spawnCollapseDebrisClusters(planetId: string, center: Vector3, radius: number, clusterCount: number): void {
@@ -2163,6 +2230,7 @@ export class GameEngine {
   // Capture ship position before integration for portal plane crossing tests
   try { this.lastShipPos = { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }; } catch {}
   this.spaceship.update(deltaTime);
+  this.maintainLandedShipAttachment();
   this.handleSunProximityDamage(deltaTime);
 
     // Update independent asteroids (ejected from clusters after collision)

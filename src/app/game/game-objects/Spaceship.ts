@@ -163,7 +163,7 @@ export class Spaceship extends GameObject {
     this.color = { r: 0.7, g: 0.75, b: 0.8, a: 1.0 }; // Color metálico plateado base
 
     // Salud inicial de la nave (podrá equilibrarse luego)
-    this.healthMax = 540; // valor de referencia mencionado
+    this.healthMax = 100;
     this._healthCurrent = this.healthMax; // Usar backing field directamente en constructor
     
     // Inicializar matriz de orientación como identidad
