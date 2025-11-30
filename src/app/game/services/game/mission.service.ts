@@ -7,6 +7,8 @@ import { GameObjectAnimosity } from '../../types/animosity.types';
 import {
   MissionClueTier,
   MissionClueToken,
+  MissionClueProgress,
+  MissionClueTierProgress,
   MissionSubTask,
   MissionSubTaskStatus,
   PlanetMissionState,
@@ -270,6 +272,11 @@ export class MissionService {
     status: MissionSubTaskStatus,
     options?: { clueSummary?: string }
   ): PlanetMissionState | null {
+    const snapshot = this.gameState.getPlanetMissionSnapshot(missionId);
+    if (!snapshot) {
+      return null;
+    }
+    const rewardTier = snapshot?.subTasks?.find(task => task.id === subTaskId)?.rewardTier;
     return this.updateMission(missionId, mission => {
       mission.subTasks = mission.subTasks ?? [];
       const target = mission.subTasks.find(task => task.id === subTaskId);
@@ -279,7 +286,10 @@ export class MissionService {
       if (status === 'completed') {
         this.appendClueTokenInternal(mission, target.rewardTier, options?.clueSummary || target.label, 'subtask');
       }
-    }, `subtask-${status}`, { subTaskId });
+    }, `subtask-${status}`, {
+      subTaskId,
+      rewardTier: status === 'completed' ? rewardTier : undefined
+    });
   }
 
   /** Adds a clue token directly (e.g., bribe or vision). */
@@ -292,7 +302,19 @@ export class MissionService {
   ): PlanetMissionState | null {
     return this.updateMission(missionId, mission => {
       this.appendClueTokenInternal(mission, tier, summary, method, cost);
-    }, `clue-${tier}`, { tier, summary, method });
+    }, `clue-${tier}`, { tier, summary, method, cost });
+  }
+
+  public getClueProgress(missionId: string): MissionClueProgress | null {
+    const snapshot = this.gameState.getPlanetMissionSnapshot(missionId);
+    if (!snapshot) {
+      return null;
+    }
+    return this.summarizeClueProgress(snapshot);
+  }
+
+  public summarizeClueProgress(mission: PlanetMissionState): MissionClueProgress {
+    return this.computeClueProgress(mission);
   }
 
   public hasClueTier(missionId: string, tier: MissionClueTier): boolean {
@@ -428,7 +450,7 @@ export class MissionService {
     summary: string,
     method: MissionClueToken['method'],
     cost?: Partial<PlanetResourceStock>
-  ): void {
+  ): MissionClueToken {
     mission.clueTokens = mission.clueTokens ?? [];
     const token: MissionClueToken = {
       id: this.generateClueId(mission.id, tier),
@@ -439,6 +461,7 @@ export class MissionService {
       cost
     };
     mission.clueTokens.push(token);
+    return token;
   }
 
   private determineMissionType(planet: Planet, options?: MissionOfferOptions): PlanetMissionType {
@@ -600,6 +623,66 @@ export class MissionService {
       return true;
     }
     return this.gameState.cargoManifest.some(entry => entry.id === mission.requiredCargoEntryId);
+  }
+
+  private computeClueProgress(mission: PlanetMissionState): MissionClueProgress {
+    const required = mission.requiredClueTiers ?? [];
+    const tokens = mission.clueTokens ?? [];
+    const requiredCounts = new Map<MissionClueTier, number>();
+    for (const tier of required) {
+      requiredCounts.set(tier, (requiredCounts.get(tier) ?? 0) + 1);
+    }
+    const obtainedCounts = new Map<MissionClueTier, number>();
+    for (const token of tokens) {
+      obtainedCounts.set(token.tier, (obtainedCounts.get(token.tier) ?? 0) + 1);
+    }
+    const tiers: MissionClueTierProgress[] = [];
+    requiredCounts.forEach((count, tier) => {
+      const obtained = Math.min(count, obtainedCounts.get(tier) ?? 0);
+      tiers.push({ tier, required: count, obtained, remaining: Math.max(0, count - obtained) });
+    });
+    const methodCounts: Partial<Record<MissionClueToken['method'], number>> = {};
+    const totalResources: Partial<PlanetResourceStock> = {};
+    for (const token of tokens) {
+      methodCounts[token.method] = (methodCounts[token.method] ?? 0) + 1;
+      this.accumulateResourceCost(totalResources, token.cost);
+    }
+    const missingTiers: MissionClueTier[] = [];
+    const remainingForTier: Partial<Record<MissionClueTier, number>> = {};
+    for (const tier of required) {
+      remainingForTier[tier] = (remainingForTier[tier] ?? 0) + 1;
+    }
+    for (const token of tokens) {
+      if (remainingForTier[token.tier]) {
+        remainingForTier[token.tier]! -= 1;
+      }
+    }
+    for (const tier of required) {
+      if ((remainingForTier[tier] ?? 0) > 0) {
+        remainingForTier[tier]! -= 1;
+        missingTiers.push(tier);
+      }
+    }
+    return {
+      tiers,
+      missingTiers,
+      tokens,
+      methodsUsed: methodCounts,
+      totalResourcesSpent: totalResources
+    };
+  }
+
+  private accumulateResourceCost(target: Partial<PlanetResourceStock>, cost?: Partial<PlanetResourceStock>): void {
+    if (!cost) {
+      return;
+    }
+    for (const key of Object.keys(cost) as Array<keyof PlanetResourceStock>) {
+      const delta = cost[key];
+      if (!delta) {
+        continue;
+      }
+      target[key] = (target[key] ?? 0) + delta;
+    }
   }
 
   private consumeMissionCargo(mission: PlanetMissionState): void {

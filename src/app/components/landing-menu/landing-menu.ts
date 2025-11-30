@@ -19,6 +19,8 @@ import {
   PlanetMissionStatus,
   MissionClueToken,
   MissionClueTier,
+  MissionClueProgress,
+  MissionClueTierProgress,
   PlanetResourceStock,
   MissionSubTask
 } from '../../game/types/planet-intel.types';
@@ -88,6 +90,14 @@ export class LandingMenuComponent implements OnChanges {
 
   protected get mission(): PlanetMissionState | null {
     return this.planetIntel?.pendingMission ?? null;
+  }
+
+  protected get missionClueProgress(): MissionClueProgress | null {
+    const mission = this.mission;
+    if (!mission) {
+      return null;
+    }
+    return this.missionService.summarizeClueProgress(mission);
   }
 
   protected get missionRequiresCargo(): boolean {
@@ -272,11 +282,7 @@ export class LandingMenuComponent implements OnChanges {
   }
 
   protected get missingClueTiers(): MissionClueTier[] {
-    if (!this.mission?.requiredClueTiers?.length) {
-      return [];
-    }
-    const owned = new Set(this.clueTokens.map(token => token.tier));
-    return this.mission.requiredClueTiers.filter(tier => !owned.has(tier));
+    return this.missionClueProgress?.missingTiers ?? [];
   }
 
   protected get subTasks(): MissionSubTask[] {
@@ -596,6 +602,33 @@ export class LandingMenuComponent implements OnChanges {
       default:
         return tier;
     }
+  }
+
+  protected formatTierProgress(tier: MissionClueTierProgress): string {
+    return `${this.formatTier(tier.tier)} ${tier.obtained}/${tier.required}`;
+  }
+
+  protected hasResourceCost(cost?: Partial<PlanetResourceStock>): boolean {
+    if (!cost) {
+      return false;
+    }
+    return Object.values(cost).some(value => (value ?? 0) > 0);
+  }
+
+  protected methodEntries(methods?: Partial<Record<MissionClueToken['method'], number>>): Array<{ key: MissionClueToken['method']; label: string; count: number }> {
+    if (!methods) {
+      return [];
+    }
+    const labels: Record<MissionClueToken['method'], string> = {
+      bribe: 'Sobornos',
+      subtask: 'Recados',
+      vision: 'Visiones',
+      reward: 'Recompensas',
+      other: 'Otros'
+    } as const;
+    return Object.entries(methods)
+      .filter(([, count]) => (count ?? 0) > 0)
+      .map(([key, count]) => ({ key: key as MissionClueToken['method'], label: labels[key as MissionClueToken['method']] ?? key, count: count ?? 0 }));
   }
 
   protected formatResourceLabel(key: keyof PlanetResourceStock): string {

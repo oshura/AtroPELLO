@@ -77,6 +77,7 @@ Si `threatActive` es true, `tryStartLandingSequence` rechaza la petición y mues
 
 - `LandingPanelComponent` se monta sobre la vista del game component cuando `GameEngine` llama `openLandingPanel(context)`.
 - Muestra nombre, tipo, radio, distancia, y datos adicionales del planeta (`LandingApproachContext`).
+- Además del bloque de métricas, ahora incluye un resumen del encargo diplomático activo: nombre de misión, objetivo, destino, recompensa de memoria y progreso de pistas (tiers completados, recursos invertidos y métodos utilizados).
 - Acciones: `Despegar` delega a `GameEngine.startTakeoffSequence()`; `Permanecer` simplemente cierra el panel y mantiene controles deshabilitados.
 - Mientras está abierto, `GameInputHandler` permanece bloqueado y la supresión de daños sigue activa.
 

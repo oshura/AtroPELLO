@@ -43,6 +43,21 @@ export interface MissionClueToken {
   cost?: Partial<PlanetResourceStock>;
 }
 
+export interface MissionClueTierProgress {
+  tier: MissionClueTier;
+  required: number;
+  obtained: number;
+  remaining: number;
+}
+
+export interface MissionClueProgress {
+  tiers: MissionClueTierProgress[];
+  missingTiers: MissionClueTier[];
+  tokens: MissionClueToken[];
+  methodsUsed: Partial<Record<MissionClueToken['method'], number>>;
+  totalResourcesSpent: Partial<PlanetResourceStock>;
+}
+
 export type MissionSubTaskStatus = 'available' | 'in-progress' | 'completed' | 'failed';
 
 export interface MissionSubTask {

@@ -132,12 +132,13 @@ Integración de código inicial:
 - `LandingNarrativeService` carga los JSON y expone helpers para Rest + subacciones de exploración.
 - `LandingActionService` ya usa dichos textos para `Rest`, `Buscar artefacto`, `Encontrar void mass`, `Contactar civilización` y `Encontrar lesserBeing`.
 - `landing-diplomacy.config.ts` ahora define scripts completos por raza (sobornos, visiones, submisiones) e integra los porcentajes de memoria compartida al aceptar misiones diplomáticas.
+- `MissionService` expone `summarizeClueProgress` para centralizar el estado de pistas (tiers, métodos usados, coste acumulado) y la UI de `LandingMenuComponent` + `LandingPanelComponent` ahora lo muestra directamente junto a la recompensa de memoria.
 
 Checklist actualizada:
 - [x] Generar JSON de diálogos por acción/raza (baseline ES).
 - [x] Mapear scripts diplomáticos por raza y recompensas de memoria en configuración.
+- [x] Crear hooks de pistas en `MissionService` y UI para mostrar tiers.
 - [ ] Implementar HUD `landingLog` y exponerlo al panel.
-- [ ] Crear hooks de pistas en `MissionService` y UI para mostrar tiers.
 - [ ] Escribir copy completo para Rest + subacciones (éxito/fracaso). *(cubierto en JSON inicial, aún abierto para versiones multilenguaje).* 
 - [ ] Revisar economía de recursos para sobornos y curaciones.
 

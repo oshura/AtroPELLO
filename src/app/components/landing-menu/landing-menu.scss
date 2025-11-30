@@ -428,6 +428,19 @@
   gap: 0.5rem;
 }
 
+.mission-panel__clue-stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+}
+
+.mission-panel__cost,
+.mission-panel__methods {
+  font-size: 0.8rem;
+  opacity: 0.85;
+}
+
 .clue-chip-list {
   display: flex;
   flex-wrap: wrap;

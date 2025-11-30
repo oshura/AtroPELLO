@@ -164,6 +164,23 @@
                   <span class="pill pill--warning" *ngFor="let tier of missingClueTiers">{{ formatTier(tier) }}</span>
                 </div>
               </div>
+              <div class="mission-panel__clue-stats" *ngIf="missionClueProgress as progress">
+                <span class="mission-panel__label">Resumen de progreso</span>
+                <div class="clue-chip-list" *ngIf="progress.tiers.length">
+                  <span class="pill pill--neutral" *ngFor="let tier of progress.tiers">
+                    {{ formatTierProgress(tier) }}
+                  </span>
+                </div>
+                <div class="mission-panel__cost" *ngIf="hasResourceCost(progress.totalResourcesSpent)">
+                  Coste invertido: {{ describeCost(progress.totalResourcesSpent) }}
+                </div>
+                <div class="mission-panel__methods" *ngIf="methodEntries(progress.methodsUsed).length">
+                  Métodos utilizados:
+                  <span *ngFor="let method of methodEntries(progress.methodsUsed); let last = last">
+                    {{ method.label }} ({{ method.count }})<span *ngIf="!last"> · </span>
+                  </span>
+                </div>
+              </div>
             </div>
 
             <div class="mission-panel__resources" *ngIf="resourceStockEntries.length">
