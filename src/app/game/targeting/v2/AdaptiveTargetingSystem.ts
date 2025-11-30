@@ -156,6 +156,8 @@ export class AdaptiveTargetingSystem {
   // Screen-anchor sampling for dominant targets
   private screenAnchorRadiusFraction: number = 0.18; // fraction of min screen dim required to attempt surface samples
   private screenAnchorMinPx: number = 32; // absolute minimum size in pixels to justify alternate anchors
+  private forceCenterRadiusFraction: number = 0.28; // when projected radius exceeds this, keep center projected even if off-screen
+  private forceCenterMinPx: number = 72;
   
   constructor(
     private webglService: WebGLService,
@@ -719,7 +721,22 @@ export class AdaptiveTargetingSystem {
       }
     }
 
+    if (this.shouldForceCenterAnchor(projectedRadius, minDim)) {
+      const forced = this.worldToScreen(center, { allowOffscreen: true });
+      if (forced) {
+        return { world: center, screen: forced };
+      }
+    }
+
     return { world: center, screen: null };
+  }
+
+  private shouldForceCenterAnchor(projectedRadius: number, minDim: number): boolean {
+    if (!Number.isFinite(projectedRadius) || projectedRadius <= 0) {
+      return false;
+    }
+    const threshold = Math.max(this.forceCenterMinPx, this.forceCenterRadiusFraction * minDim);
+    return projectedRadius >= threshold;
   }
 
   private buildSurfaceDirections(facing: { x: number; y: number; z: number }): Array<{ x: number; y: number; z: number }> {
@@ -797,7 +814,10 @@ export class AdaptiveTargetingSystem {
   // PROJECTION UTILITIES
   // ===================================
 
-  private worldToScreen(worldPos: { x: number; y: number; z: number }): { x: number; y: number } | null {
+  private worldToScreen(
+    worldPos: { x: number; y: number; z: number },
+    options?: { allowOffscreen?: boolean }
+  ): { x: number; y: number } | null {
     if (!this.camera || !this.canvas) return null;
     
     const proj = this.camera.projectionMatrix as unknown as mat4;
@@ -810,18 +830,25 @@ export class AdaptiveTargetingSystem {
     
     if (v[3] <= 1e-6) return null;
     
-  const ndcX = v[0] / v[3];
-  const ndcY = v[1] / v[3];
+    const ndcX = v[0] / v[3];
+    const ndcY = v[1] / v[3];
     const ndcZ = v[2] / v[3];
-  // Require within clip volume with small margin (relaxed slightly to avoid flapping at edges)
-  if (ndcZ < -1.2 || ndcZ > 1.2) return null;
-  const margin = 1.06; // allow tiny overflow for numerical stability
-  if (ndcX < -margin || ndcX > margin || ndcY < -margin || ndcY > margin) return null;
+    if (ndcZ < -1.2 || ndcZ > 1.2) return null;
     
     const dims = this.getCanvasDimensions();
-    const screenX = (ndcX + 1.0) * dims.width * 0.5;
-    const screenY = (1.0 - ndcY) * dims.height * 0.5;
-    
+    const margin = 1.06;
+
+    if (!options?.allowOffscreen) {
+      if (ndcX < -margin || ndcX > margin || ndcY < -margin || ndcY > margin) return null;
+      const screenX = (ndcX + 1.0) * dims.width * 0.5;
+      const screenY = (1.0 - ndcY) * dims.height * 0.5;
+      return { x: screenX, y: screenY };
+    }
+
+    const clampedX = Math.max(-1, Math.min(1, ndcX));
+    const clampedY = Math.max(-1, Math.min(1, ndcY));
+    const screenX = (clampedX + 1.0) * dims.width * 0.5;
+    const screenY = (1.0 - clampedY) * dims.height * 0.5;
     return { x: screenX, y: screenY };
   }
 

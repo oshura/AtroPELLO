@@ -16,8 +16,10 @@ Este documento resume la nueva implementación del sistema de targeting y los ca
   - Clasifica targets por categorías de distancia: immediate, close, medium, far, extreme.
   - Calcula proyección a pantalla anclando en el centro de la bounding sphere.
   - Hover por raycasting: genera un rayo desde el mouse y comprueba intersección con la esfera de cada target (ray-sphere).
+  - Si el raycast impacta un objetivo cuyo centro no tiene proyección válida, se usa el punto exacto del impacto para reconstruir `screenPosition` y mantener activo el HUD/hover.
   - Gating de objetivos dominantes: si el radio proyectado ocupa ≥ fracción de la pantalla, sólo se selecciona cerca del centro.
   - Enforce on-screen: si la proyección cae fuera del volumen de clip/NDC, ese target no es candidato visible.
+  - Tratamiento para objetivos gigantes: cuando el radio proyectado supera ~30 % del lado corto, se muestrean puntos sobre la superficie orientada a cámara y, si aún así el centro queda fuera del frustum, se clampa el ancla al borde de la pantalla para que el HUD y el ciclo de selección sigan teniendo coordenadas válidas.
   - Tuning por categoría: tolerancia en píxeles, frecuencia de actualización y pequeña histéresis para evitar flicker.
 
 - AdaptiveTargetingIntegrator (src/app/game/targeting/v2/AdaptiveTargetingIntegrator.ts)
@@ -59,6 +61,7 @@ Este documento resume la nueva implementación del sistema de targeting y los ca
 - Gating de objetivos gigantes: previene que un planeta o el Sol capturen siempre el hover; sólo cerca del centro del objeto.
 - Ciclo de selección en pantalla: Tab/Shift+Tab ignora objetivos fuera de NDC.
 - Outliner más suave: mayor frecuencia de refresco con caches y snapping.
+- Anclas resilientes para objetos que llenan la vista: MegaAsteroides y planetas cercanos mantienen un `screenPosition` aunque el centro salga del frustum —ya sea usando los samples superficiales o, en última instancia, proyectando el centro y clampándolo al borde—, de modo que `hover`, tecla `T` y el panel HUD no “pierdan” el target.
 
 ## Toggles de runtime (consola)
 
