@@ -56,6 +56,7 @@ export class LandingMenuComponent implements OnChanges {
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['context']) {
+      this.loadActionLog();
       this.ensureMissionSeeded();
     }
   }
@@ -781,8 +782,7 @@ export class LandingMenuComponent implements OnChanges {
     this.pending = true;
     try {
       const result = this.landingActions.performAction(request);
-      this.actionLog = [result, ...this.actionLog].slice(0, 10);
-      this.selectedEventId = result.id;
+      this.persistActionResult(request.planetId, result);
     } catch (error) {
       const fallback: LandingEventResult = {
         id: `landing-error-${Date.now()}`,
@@ -802,10 +802,26 @@ export class LandingMenuComponent implements OnChanges {
         timestamp: Date.now(),
         metadata: { error: error instanceof Error ? error.message : String(error) }
       };
-      this.actionLog = [fallback, ...this.actionLog].slice(0, 10);
-      this.selectedEventId = fallback.id;
+      this.persistActionResult(request.planetId, fallback);
     } finally {
       this.pending = false;
     }
+  }
+
+  private loadActionLog(): void {
+    if (!this.context?.planetId) {
+      this.actionLog = [];
+      this.selectedEventId = null;
+      return;
+    }
+    const history = this.gameState.getLandingLogHistory(this.context.planetId);
+    this.actionLog = history;
+    this.selectedEventId = history[0]?.id ?? null;
+  }
+
+  private persistActionResult(planetId: string, event: LandingEventResult): void {
+    const history = this.gameState.appendLandingLogEntry(planetId, event);
+    this.actionLog = history;
+    this.selectedEventId = event.id;
   }
 }

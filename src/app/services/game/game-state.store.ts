@@ -25,6 +25,7 @@ import {
   classifyCargoComposition
 } from '../../game/types/inventory.types';
 import { LandingStatus, LandingThreatState } from '../../game/types/landing.types';
+import { LandingEventResult } from '../../game/types/landing-action.types';
 import { SpellType, getSpellSanityCost } from '../../game/types/spell.types';
 import { SolarSystemSnapshot } from '../../game/types/solar-system.types';
 import {
@@ -245,6 +246,7 @@ export class GameStateStore {
   /** Archivo de snapshots procedurales visitados previamente para Gate Rite. */
   private readonly proceduralSystemArchive: SolarSystemSnapshot[] = [];
   private readonly PROCEDURAL_ARCHIVE_LIMIT = 8;
+  private readonly LANDING_LOG_LIMIT = 10;
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  REACTIVE STATE (Observabilidad)
@@ -329,8 +331,30 @@ export class GameStateStore {
     }
     return {
       ...entry,
-      resourceStock: this.mergeResourceStock(entry.resourceStock)
+      resourceStock: this.mergeResourceStock(entry.resourceStock),
+      landingLog: this.cloneLandingLog(entry.landingLog)
     };
+  }
+
+  /** Obtiene la bitácora persistente de aterrizajes para un planeta. */
+  public getLandingLogHistory(planetId: string): LandingEventResult[] {
+    const entry = this.planetIntelById.get(planetId);
+    return entry ? this.cloneLandingLog(entry.landingLog) : [];
+  }
+
+  /** Agrega un evento al historial persistente, aplicando el límite circular. */
+  public appendLandingLogEntry(planetId: string, entry: LandingEventResult): LandingEventResult[] {
+    const history = [entry, ...this.getLandingLogHistory(planetId)].slice(0, this.LANDING_LOG_LIMIT);
+    this.upsertPlanetIntelSnapshot(planetId, { landingLog: history });
+    return history;
+  }
+
+  /** Limpia el historial persistente de un planeta concreto. */
+  public clearLandingLog(planetId: string): void {
+    if (!this.planetIntelById.has(planetId)) {
+      return;
+    }
+    this.upsertPlanetIntelSnapshot(planetId, { landingLog: [] });
   }
 
   /** Fusiona o crea un registro de intel planetario. */
@@ -341,6 +365,7 @@ export class GameStateStore {
       ...patch,
       planetId,
       resourceStock: this.mergeResourceStock(base.resourceStock, patch?.resourceStock || null),
+      landingLog: patch?.landingLog ? this.cloneLandingLog(patch.landingLog) : this.cloneLandingLog(base.landingLog),
       updatedAt: Date.now()
     };
     this.planetIntelById.set(planetId, merged);
@@ -1191,6 +1216,33 @@ export class GameStateStore {
     this.characterProfile.level += 1;
     this.characterProfile.experience = 0;
     this.characterProfile.experienceMax = this.getExperienceCapForLevel(this.characterProfile.level);
+  }
+
+  private cloneLandingLog(log?: LandingEventResult[] | null): LandingEventResult[] {
+    if (!log?.length) {
+      return [];
+    }
+    return log.map(event => this.cloneLandingEvent(event));
+  }
+
+  private cloneLandingEvent(event: LandingEventResult): LandingEventResult {
+    const effects = event.effects || {};
+    const clonedEffects: LandingEventResult['effects'] = {
+      ...effects,
+      intel: effects.intel ? { ...effects.intel } : undefined,
+      itemsAwarded: effects.itemsAwarded ? effects.itemsAwarded.map(item => ({ ...item })) : undefined,
+      clueTokensAwarded: effects.clueTokensAwarded ? effects.clueTokensAwarded.map(token => ({ ...token })) : undefined,
+      resourcesSpent: effects.resourcesSpent ? { ...effects.resourcesSpent } : undefined,
+      cargoSpent: effects.cargoSpent ? effects.cargoSpent.map(entry => ({ ...entry })) : undefined,
+      subTaskUpdate: effects.subTaskUpdate ? { ...effects.subTaskUpdate } : undefined,
+      shipHealthSnapshot: effects.shipHealthSnapshot ? { ...effects.shipHealthSnapshot } : undefined
+    };
+    return {
+      ...event,
+      narrative: Array.isArray(event.narrative) ? event.narrative.map(step => ({ ...step })) : [],
+      effects: clonedEffects,
+      metadata: event.metadata ? { ...event.metadata } : undefined
+    };
   }
 
   private mergeResourceStock(base: PlanetResourceStock | null | undefined, patch?: PlanetResourceStock | null): PlanetResourceStock {

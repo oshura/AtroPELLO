@@ -10,33 +10,19 @@
  CREATURE_SCAN 1/3
  
   
- - Scroll en landing menus.
+ - Poder subir a la nave mientras está aterrizada.
  - Criaturas entrada por portal o desdeel vacío.
  - Debries no se oye el fiuuuushhh.
  - Marquee messages.
-
+ - Cantidad y distribución de polvo estelar. Sobretodo despues de despegar.
  
  - Landing menus:
-	- Explorar: 
-		Mejorar explicaciones para coherencia con resultado final.
-	- Animosidad:
-		- Ally: 
-			- Reparar nave a cambio de x(<X) unidades de raw material.
-			- Comerciar -> x unidades de raw material por algun artefacto/traje/botas para equipo personal, o modulo para la nave segun raza.
-			- Profundizar en sabiduria de raza: Obtener glifos de raza.
-			- Misiones especiales de zona.
-			- Compartir tiempo de vida con la raza (COR a max, Salud a max).
-		- Neutral(default):
-			- Reparar nave a cambio de X(>x) unidades de raw material.
-			- Curarse a cambio de X(>x) unidades de raw material.
-			- Misiones de raza para pasar a ally, recuperar COR y SALUD a tope del personaje, y avanzar en historia (++memoria):
-				Conseguir un artefacto de algun planeta:
-					Que se añada el artefacto a uno de los planetas ya descubiertos y se resetee su estado de desvelado si tiene o no artefacto.
-					Si se destruye el planeta, por ejemplo con un portal, mala suerte.
-					
-					
-		- Enemy(xq hay lesserBeing en el planeta):
-			- Luchar con lesserBeing para destruirlo. +50PX. COR a tope, SALUD a la mitad de lo que tenia el PJ.
+	Cambiar:
+	- Menuses de misiones reordenar y que haya arbol de dialogos.
+	- Que la solucion sea en otro lugar para tener que regresar: landing_diplomacy.json, landing-diplomacy.config.ts, landing_missions_[CIV].json
+	Probar:
+	- Enemy(xq hay lesserBeing en el planeta):
+		- Luchar con lesserBeing para destruirlo. +50PX. COR a tope, SALUD a la mitad de lo que tenia el PJ.
   
  - Efectos de subir de nivel.
  
@@ -52,6 +38,14 @@
  
  - Weapons
  
+ - Rules del respawn:
+	- Que se mantengan las razas, criaturas, artefactos y todo lo descubierto.
+	- Se mantengan los portales.
+	
+ - Despegue: La nave no empieza en el centro en ese momento si no en el centro de cuando aterrizó
+ 
+ - Aterrizar: A veces no surfea bien por dentro y se va fuera.
+ 
 Efectos de slots auxiliares: 
 - Cargar void energy de la radiación solar.
 - Protección solar.
@@ -64,6 +58,9 @@ Efectos de slots auxiliares:
 - Shoggot prisionero: genera void energy por minuto.
 - Mapa interestelar.
 	- Programar viaje interestelar.
+- Planet teleports.
+
+- Resurrección en portal más recientemente cruzado. Memoria ancestral.
 
 - Drift por el vacío intergalactico:
 	- Sistema de control de drift.
@@ -76,3 +73,8 @@ Efectos de slots auxiliares:
 - Colision? then apply improved algorithm.
 
 - demasiadas particulas.
+
+
+
+aws s3 sync . s3://inverter-ia --acl public-read --delete --exclude "node_modules/*" --exclude ".git/*" --exclude "*.md"      
+aws cloudfront create-invalidation --distribution-id E8G73EYE943D2 --paths "/*"

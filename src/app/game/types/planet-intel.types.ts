@@ -1,6 +1,7 @@
 import { GameObjectAnimosity } from './animosity.types';
 import { LesserBeing, PlanetInhabitants } from './cosmic-life.types';
 import { CargoCompositionKind } from './inventory.types';
+import type { LandingEventResult } from './landing-action.types';
 
 export const PLANET_INTEL_STATUS = {
   UNKNOWN: 'unknown',
@@ -127,6 +128,7 @@ export interface PlanetIntelSnapshot extends PlanetIntelState {
   lesserBeing?: LesserBeing | null;
   pendingMission?: PlanetMissionState | null;
   resourceStock: PlanetResourceStock;
+  landingLog: LandingEventResult[];
   visited: boolean;
   lifeScanned: boolean;
   creatureScanned: boolean;
@@ -163,6 +165,7 @@ export function createEmptyPlanetIntelSnapshot(planetId: string): PlanetIntelSna
     lesserBeing: null,
     pendingMission: null,
     resourceStock: createEmptyResourceStock(),
+    landingLog: [],
     visited: false,
     lifeScanned: false,
     creatureScanned: false,
