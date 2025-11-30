@@ -153,6 +153,9 @@ export class AdaptiveTargetingSystem {
   private dominantGateState = new Map<string, boolean>();
   private dominantGateReleaseFactor = 0.9; // ungate when below 90% of threshold
   private targetsByCategory = new Map<string, TargetDisplayInfo[]>();
+  // Screen-anchor sampling for dominant targets
+  private screenAnchorRadiusFraction: number = 0.18; // fraction of min screen dim required to attempt surface samples
+  private screenAnchorMinPx: number = 32; // absolute minimum size in pixels to justify alternate anchors
   
   constructor(
     private webglService: WebGLService,
@@ -346,6 +349,7 @@ export class AdaptiveTargetingSystem {
     const distanceToEdge = this.getDistanceToEdge(target, distanceToCenter);
     const category = this.getCategoryForDistance(distanceToCenter);
     const relation = this.relationService.getRelation(target);
+    const screenAnchor = this.getScreenAnchorForTarget(target, anchor);
     
     return {
       target,
@@ -359,7 +363,7 @@ export class AdaptiveTargetingSystem {
       displaySize: this.calculateDisplaySize(target, category, distanceToCenter),
       accentColor: this.getAccentColor(relation),
       showDetails: category.name !== 'extreme',
-      screenPosition: this.worldToScreen(anchor)
+      screenPosition: screenAnchor.screen
     };
   }
 
@@ -382,20 +386,26 @@ export class AdaptiveTargetingSystem {
   // ===================================
 
   private getDistanceToEdge(target: ITargetable, distanceToCenter: number): number {
-    // Get bounding sphere radius
-    let radius = 10; // default
-    const anyTarget = target as any;
-    
-    if (anyTarget.boundingSphere && typeof anyTarget.boundingSphere.radius === 'number') {
-      radius = anyTarget.boundingSphere.radius;
-    } else if (anyTarget.size && typeof anyTarget.size === 'number') {
-      radius = anyTarget.size;
-    } else if (anyTarget.radius && typeof anyTarget.radius === 'number') {
-      radius = anyTarget.radius;
-    }
-    
+    const radius = this.getTargetRadius(target);
     // Distance to edge = distance to center - radius (clamped at 0)
     return Math.max(0, distanceToCenter - radius);
+  }
+
+  private getTargetRadius(target: ITargetable): number {
+    const anyTarget = target as any;
+    if (anyTarget?.boundingSphere?.radius !== undefined) {
+      const r = Number(anyTarget.boundingSphere.radius);
+      if (Number.isFinite(r) && r > 0) {
+        return r;
+      }
+    }
+    if (typeof anyTarget?.size === 'number' && Number.isFinite(anyTarget.size)) {
+      return Math.max(1, Number(anyTarget.size));
+    }
+    if (typeof anyTarget?.radius === 'number' && Number.isFinite(anyTarget.radius)) {
+      return Math.max(1, Number(anyTarget.radius));
+    }
+    return 10;
   }
 
   private getWorldDistance(worldPos: { x: number; y: number; z: number }): number {
@@ -464,17 +474,14 @@ export class AdaptiveTargetingSystem {
     let bestByPixel: { info: TargetDisplayInfo; d: number } | null = null;
     for (const targets of categorizedTargets.values()) {
       for (const info of targets) {
-        if (!info.screenPosition) continue; // must be on-screen
         if (this.isDominantAndGated(info)) continue; // skip dominant gated
-        const anyT: any = info.target as any;
         const center = this.getTargetAnchorPosition(info.target);
-        let radius = 10;
-        if (anyT?.boundingSphere?.radius) radius = Number(anyT.boundingSphere.radius);
-        else if (typeof anyT.radius === 'number') radius = Number(anyT.radius);
+        const radius = this.getTargetRadius(info.target);
         const t = this.raySphere(ray.origin, ray.dir, center, radius);
         if (t !== null && t > 0) {
           if (!best || t < best.t) best = { info, t };
         } else {
+          if (!info.screenPosition) continue; // cannot measure pixel distance without screen projection
           // Pixel distance fallback within category tolerance
           const category = info.category;
           const dx = mousePos.x - info.screenPosition.x;
@@ -487,7 +494,21 @@ export class AdaptiveTargetingSystem {
         }
       }
     }
-    return best?.info || bestByPixel?.info || null;
+    if (best) {
+      if (!best.info.screenPosition) {
+        const hitPoint = {
+          x: ray.origin.x + ray.dir.x * best.t,
+          y: ray.origin.y + ray.dir.y * best.t,
+          z: ray.origin.z + ray.dir.z * best.t
+        };
+        const projected = this.worldToScreen(hitPoint);
+        if (projected) {
+          best.info.screenPosition = projected;
+        }
+      }
+      return best.info;
+    }
+    return bestByPixel?.info || null;
   }
 
   private screenToRay(mouse: { x: number; y: number }): { origin: { x: number; y: number; z: number }; dir: { x: number; y: number; z: number } } | null {
@@ -555,10 +576,7 @@ export class AdaptiveTargetingSystem {
 
   public getProjectedRadiusPx(target: ITargetable): number {
     if (!this.camera || !this.canvas) return 0;
-    const anyT: any = target as any;
-    let radius = 10;
-    if (anyT?.boundingSphere?.radius) radius = Number(anyT.boundingSphere.radius);
-    else if (typeof anyT.radius === 'number') radius = Number(anyT.radius);
+    const radius = this.getTargetRadius(target);
     const center = this.getTargetAnchorPosition(target);
     // View-space z (camera forward is -Z in our view matrix)
     const view = this.camera.viewMatrix as unknown as mat4;
@@ -650,6 +668,129 @@ export class AdaptiveTargetingSystem {
     
     // Limit to prevent UI clutter
     return nearby.slice(0, 10);
+  }
+
+  private getScreenAnchorForTarget(
+    target: ITargetable,
+    center: { x: number; y: number; z: number }
+  ): { world: { x: number; y: number; z: number }; screen: { x: number; y: number } | null } {
+    const primary = this.worldToScreen(center);
+    if (primary) {
+      return { world: center, screen: primary };
+    }
+
+    if (!this.camera) {
+      return { world: center, screen: null };
+    }
+
+    const radius = this.getTargetRadius(target);
+    if (!Number.isFinite(radius) || radius <= 0) {
+      return { world: center, screen: null };
+    }
+
+    const dims = this.getCanvasDimensions();
+    const minDim = Math.min(dims.width, dims.height) || 1;
+    const projectedRadius = this.getProjectedRadiusPx(target);
+    const minPx = Math.max(this.screenAnchorMinPx, this.screenAnchorRadiusFraction * minDim);
+    if (projectedRadius < minPx) {
+      return { world: center, screen: null };
+    }
+
+    const camPos = this.camera.position;
+    let toCamera = this.normalize3({
+      x: camPos.x - center.x,
+      y: camPos.y - center.y,
+      z: camPos.z - center.z
+    });
+    if (Math.hypot(toCamera.x, toCamera.y, toCamera.z) < 1e-4) {
+      toCamera = this.getCameraBasis().forward;
+    }
+
+    const directions = this.buildSurfaceDirections(toCamera);
+    for (const dir of directions) {
+      const sample = {
+        x: center.x + dir.x * radius,
+        y: center.y + dir.y * radius,
+        z: center.z + dir.z * radius
+      };
+      const screen = this.worldToScreen(sample);
+      if (screen) {
+        return { world: sample, screen };
+      }
+    }
+
+    return { world: center, screen: null };
+  }
+
+  private buildSurfaceDirections(facing: { x: number; y: number; z: number }): Array<{ x: number; y: number; z: number }> {
+    const dirs: Array<{ x: number; y: number; z: number }> = [];
+    const base = this.normalize3(facing);
+    dirs.push(base);
+
+    const basis = this.getCameraBasis();
+    const mixes = [
+      { x: base.x + basis.right.x * 0.65, y: base.y + basis.right.y * 0.65, z: base.z + basis.right.z * 0.65 },
+      { x: base.x - basis.right.x * 0.65, y: base.y - basis.right.y * 0.65, z: base.z - basis.right.z * 0.65 },
+      { x: base.x + basis.up.x * 0.65, y: base.y + basis.up.y * 0.65, z: base.z + basis.up.z * 0.65 },
+      { x: base.x - basis.up.x * 0.65, y: base.y - basis.up.y * 0.65, z: base.z - basis.up.z * 0.65 },
+      { x: base.x + basis.right.x * 0.45 + basis.up.x * 0.45, y: base.y + basis.right.y * 0.45 + basis.up.y * 0.45, z: base.z + basis.right.z * 0.45 + basis.up.z * 0.45 },
+      { x: base.x - basis.right.x * 0.45 + basis.up.x * 0.45, y: base.y - basis.right.y * 0.45 + basis.up.y * 0.45, z: base.z - basis.right.z * 0.45 + basis.up.z * 0.45 },
+      { x: base.x + basis.right.x * 0.45 - basis.up.x * 0.45, y: base.y + basis.right.y * 0.45 - basis.up.y * 0.45, z: base.z + basis.right.z * 0.45 - basis.up.z * 0.45 },
+      { x: base.x - basis.right.x * 0.45 - basis.up.x * 0.45, y: base.y - basis.right.y * 0.45 - basis.up.y * 0.45, z: base.z - basis.right.z * 0.45 - basis.up.z * 0.45 }
+    ];
+
+    for (const mix of mixes) {
+      const normalized = this.normalize3(mix);
+      dirs.push(normalized);
+    }
+
+    return dirs;
+  }
+
+  private getCameraBasis(): {
+    forward: { x: number; y: number; z: number };
+    right: { x: number; y: number; z: number };
+    up: { x: number; y: number; z: number };
+  } {
+    if (!this.camera) {
+      return {
+        forward: { x: 0, y: 0, z: -1 },
+        right: { x: 1, y: 0, z: 0 },
+        up: { x: 0, y: 1, z: 0 }
+      };
+    }
+
+    const cam = this.camera as any;
+    const camPos = cam.position ?? { x: 0, y: 0, z: 0 };
+    const camTarget = cam.target ?? { x: camPos.x, y: camPos.y, z: camPos.z - 1 };
+    let forward = this.normalize3({
+      x: camTarget.x - camPos.x,
+      y: camTarget.y - camPos.y,
+      z: camTarget.z - camPos.z
+    });
+    if (!Number.isFinite(forward.x) || !Number.isFinite(forward.y) || !Number.isFinite(forward.z)) {
+      forward = { x: 0, y: 0, z: -1 };
+    }
+    let upRaw = cam.up ? { x: cam.up.x, y: cam.up.y, z: cam.up.z } : { x: 0, y: 1, z: 0 };
+    upRaw = this.normalize3(upRaw);
+    let right = this.cross3(forward, upRaw);
+    if (Math.hypot(right.x, right.y, right.z) < 1e-4) {
+      // forward and up almost parallel, pick fallback up
+      const fallback = Math.abs(forward.y) > 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+      upRaw = this.normalize3(fallback);
+      right = this.cross3(forward, upRaw);
+    }
+    right = this.normalize3(right);
+    const up = this.normalize3(this.cross3(right, forward));
+    return { forward, right, up };
+  }
+
+  private cross3(a: { x: number; y: number; z: number }, b: { x: number; y: number; z: number }) {
+    return {
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x
+    };
   }
 
   // ===================================
