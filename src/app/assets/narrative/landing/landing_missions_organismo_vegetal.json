@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "ORGANISMO_VEGETAL",
+    "memoryShare": 6,
+    "missionType": "material",
+    "materialName": "Polen Lúgubre",
+    "targetHint": "Jungla radiactiva cubriendo un planeta selvático"
+  },
+  "offer": {
+    "scene": "Un coro fotosintético habla mediante olores dulces y notas verdes. Sus raíces se enredan en tus botas.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Por qué necesitan el polen?",
+        "text": "El polen estabiliza brotes conscientes y fue usado por tu culto para alimentar el motor mágico."
+      },
+      {
+        "id": "destination",
+        "label": "Describe la jungla",
+        "text": "Un dosel radiactivo que brilla incluso de noche; sigue la luz ultravioleta constante." 
+      },
+      {
+        "id": "danger",
+        "label": "Riesgos",
+        "text": "Esporas inteligentes intentarán germinar en tus pulmones si fallas en sellar el traje." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te obsequian una espora guía que parpadea cuando detecta la radiación correcta." 
+    },
+    "major": {
+      "subTask": "cortar-raiz",
+      "success": "Cicatrizas una raíz corrompida y la red vegetal revela el sector preciso de la jungla.",
+      "failure": "La raíz infecta te inocula toxinas y necesitas quemarlas." 
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Permites que ramas neuronales perforen tu casco; ves el polen guardado en cápsulas bioluminiscentes."
+    }
+  },
+  "turnIn": {
+    "success": "Inhalan el polen y cantan tu antiguo nombre como gratitud.",
+    "memoryFragment": "Recuerdas cómo el polen lúgubre mantuvo estable el prototipo del motor antes del desastre." 
+  }
+}

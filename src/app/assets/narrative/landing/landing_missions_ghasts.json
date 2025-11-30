@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "GHASTS",
+    "memoryShare": 5,
+    "missionType": "artifact",
+    "artifactName": "Espejo de Penumbra",
+    "targetHint": "Mundo subterráneo sin luz"
+  },
+  "offer": {
+    "scene": "Ojos brillantes miran desde cavernas infinitas. Cada frase parece un gruñido desfasado.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Para qué el espejo?",
+        "text": "Refleja la verdadera forma de los primigenios; tu culto lo necesitaba para identificar rivales." 
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde hallarlo?",
+        "text": "En una sala invertida donde el techo es un río negro." 
+      },
+      {
+        "id": "danger",
+        "label": "Riesgos",
+        "text": "La oscuridad come recuerdos si no enciendes faros de sangre." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te regalan hongos lumínicos que solo brillan cerca del espejo." 
+    },
+    "major": {
+      "subTask": "calibrar-resonador",
+      "success": "Sintonizas su red de chasquidos y obtienes el pasadizo correcto.",
+      "failure": "Los chasquidos te confunden y te pierdes horas." 
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Te muestran cómo el culto juró destruir a cuatro primigenios rivales." 
+    }
+  },
+  "turnIn": {
+    "success": "Usan el espejo para identificar amenazas y te nombran cazador aliado.",
+    "memoryFragment": "Vuelven recuerdos de juramentos contra los primigenios restantes." 
+  }
+}

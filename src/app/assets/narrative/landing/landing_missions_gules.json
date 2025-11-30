@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "GULES",
+    "memoryShare": 5,
+    "missionType": "material",
+    "materialName": "Hueso Cantor",
+    "targetHint": "Catacumbas en planeta desierto"
+  },
+  "offer": {
+    "scene": "La necrópolis viva huele a hierro dulce. Los gules cavan túneles nuevos mientras hablan.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Para qué el hueso?",
+        "text": "Con él tallan flautas que invocan memoria de los muertos, incluidas tus tripulaciones." 
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde está enterrado?",
+        "text": "En catacumbas secas donde el viento produce acordes. Busca obeliscos partidos." 
+      },
+      {
+        "id": "danger",
+        "label": "Riesgos",
+        "text": "Trampas de arena líquida se activan si no respetas los cantos funerarios." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te enseñan un canto que resuena solo cerca del osario correcto." 
+    },
+    "major": {
+      "subTask": "cortar-raiz",
+      "success": "Ayudas a purgar un tumor de carne y ganan confianza, revelando el mapa.",
+      "failure": "El tumor te muerde y deja marcas negras." 
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Comparten el banquete en el que devoraron a la nave nodriza tras el desastre." 
+    }
+  },
+  "turnIn": {
+    "success": "Tallan el hueso en tu honor y prometen devorar a tus enemigos.",
+    "memoryFragment": "Recuerdas cómo tu tripulación cayó aquí, convertida en festín por los gules." 
+  }
+}

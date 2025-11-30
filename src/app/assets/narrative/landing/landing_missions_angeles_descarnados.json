@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "ANGELES_DESCARNADOS",
+    "memoryShare": 6,
+    "missionType": "artifact",
+    "artifactName": "Pluma de Vacío",
+    "targetHint": "Escombros orbitando una estrella moribunda"
+  },
+  "offer": {
+    "scene": "Arpas óseas tensan el aire. Las figuras sin piel hablan por medio de resonancias.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Por qué la necesitan?",
+        "text": "La pluma mantuvo sus alas en fase. Dicen que se la entregaste como pago antes de la catástrofe."
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde buscar?",
+        "text": "Flota entre escombros de una estrella moribunda, protegida por un viento cortante constante."
+      },
+      {
+        "id": "danger",
+        "label": "Riesgos",
+        "text": "Vigías fotónicos te confundirán con un intruso si no sincronizas la respiración con sus cantos."
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te dejan escuchar una escala que solo suena cerca del objetivo."
+    },
+    "major": {
+      "subTask": "calibrar-resonador",
+      "success": "Afinas la resonancia y obtienes el vector exacto de la órbita.",
+      "failure": "La nota se rompe y te deja sangrando por los oídos."
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Compartes tu mente: ves a los ángeles cubriendo tu nave durante el cataclismo."
+    }
+  },
+  "turnIn": {
+    "success": "Recuperan la pluma y envuelven tu casco con alas invisibles.",
+    "memoryFragment": "Te muestran el momento en que te protegieron de la explosión, exigiendo que algún día pagaras la deuda."
+  }
+}

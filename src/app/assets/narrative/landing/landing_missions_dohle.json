@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "DOHLE",
+    "memoryShare": 6,
+    "missionType": "material",
+    "materialName": "Resina Coralina",
+    "targetHint": "Asteroide volcánico cubierto de corales cristalizados"
+  },
+  "offer": {
+    "scene": "Artesanos coralinos golpean tambores de magma y saludan levantando herramientas traslúcidas.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Para qué la resina?",
+        "text": "La resina alimenta esculturas vivas; dicen que antes la usabas para blindar el casco." 
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde buscar?",
+        "text": "En un asteroide volcánico con fumarolas turquesa y tormentas de vidrio." 
+      },
+      {
+        "id": "danger",
+        "label": "Riesgos",
+        "text": "El asteroide gira tan rápido que tendrás que anclarte con pulsos void." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te entregan fragmentos de coral que se calientan cuando te acercas al destino." 
+    },
+    "major": {
+      "subTask": "cortar-raiz",
+      "success": "Eliminas un brote corrupto en su taller y te dan el mapa orbital.",
+      "failure": "El brote libera ácido y agujerea tu armadura." 
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Comparten visiones de la rebelión interna del culto donde participaste." 
+    }
+  },
+  "turnIn": {
+    "success": "Moldean la resina y la convierten en estandarte a tu nombre.",
+    "memoryFragment": "Recuerdas estar del lado de los rebeldes dentro de la secta, buscando romper el monopolio del motor." 
+  }
+}

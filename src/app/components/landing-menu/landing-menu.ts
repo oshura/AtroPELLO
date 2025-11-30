@@ -135,13 +135,13 @@ export class LandingMenuComponent implements OnChanges {
   }
 
   protected get missionObjectiveSummary(): string | null {
-    return this.mission?.objectiveSummary ?? null;
+    return this.mission?.objectiveSummary ?? this.diplomacyScript?.missionTemplate.objectiveSummary ?? null;
   }
 
   protected get missionTargetName(): string | null {
     const mission = this.mission;
     if (!mission) {
-      return null;
+      return this.diplomacyScript?.missionTemplate.targetHint ?? null;
     }
     const targetPlanetId = mission.targetLocation?.planetId;
     if (targetPlanetId) {
@@ -156,7 +156,16 @@ export class LandingMenuComponent implements OnChanges {
       }
       return mission.targetHint ?? targetPlanetId;
     }
-    return mission.targetHint ?? null;
+    return mission.targetHint ?? this.diplomacyScript?.missionTemplate.targetHint ?? null;
+  }
+
+  protected get missionRewardMemoryShare(): number | null {
+    const missionShare = this.mission?.reward?.memorySharePct;
+    if (typeof missionShare === 'number') {
+      return missionShare;
+    }
+    const templateShare = this.diplomacyScript?.missionTemplate.memorySharePct;
+    return typeof templateShare === 'number' ? templateShare : null;
   }
 
   protected get relationAffinity(): RelationAffinity {
@@ -695,7 +704,12 @@ export class LandingMenuComponent implements OnChanges {
       missionName: script.missionTemplate.name,
       requiredClueTiers: script.missionTemplate.requiredClueTiers,
       type: script.missionTemplate.type,
-      preferredResourceKind: script.missionTemplate.preferredResourceKind
+      preferredResourceKind: script.missionTemplate.preferredResourceKind,
+      objectiveSummary: script.missionTemplate.objectiveSummary,
+      targetHint: script.missionTemplate.targetHint,
+      reward: script.missionTemplate.memorySharePct
+        ? { memorySharePct: script.missionTemplate.memorySharePct }
+        : undefined
     });
     this.gameState.syncPlanetIntelFromPlanet(planet);
   }

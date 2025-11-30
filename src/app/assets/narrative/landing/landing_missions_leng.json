@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "LENG",
+    "memoryShare": 7,
+    "missionType": "artifact",
+    "artifactName": "Campana de Leng",
+    "targetHint": "Luna brumosa en sistema binario"
+  },
+  "offer": {
+    "scene": "Monjes con máscaras de escarcha forman un círculo. Hablan sin mover la boca: \"Ya viniste antes\".",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Por qué perdieron la campana?",
+        "text": "Dicen que la ocultaste tú mismo para impedir que otros cultos la sonaran."
+      },
+      {
+        "id": "destination",
+        "label": "Dame pistas de la luna",
+        "text": "Describe un océano de niebla y torres gemelas iluminadas por dos soles."
+      },
+      {
+        "id": "danger",
+        "label": "¿Qué me hará daño?",
+        "text": "Cualquier sonido físico despierta guardianes; debes tocar la campana solo con mente."
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te entregan un medallón helado que vibra cuando te aproximas al sistema binario correcto."
+    },
+    "major": {
+      "subTask": "sellar-micro-portal",
+      "success": "Cierras la grieta cantando en silencio. Los monjes graban coordenadas exactas en tu mente.",
+      "failure": "El portal te rechaza y roba fragmentos de memoria temporal."
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Sujetan tu frente; recuerdas haber tocado la campana antes del accidente y ocultado su eco."
+    }
+  },
+  "turnIn": {
+    "success": "Restauran la campana y hacen sonar un pulso que desbloquea memorias selladas.",
+    "memoryFragment": "Ves cómo accediste a Leng para negociar, pero decidiste borrar tu identidad para proteger el trato."
+  }
+}

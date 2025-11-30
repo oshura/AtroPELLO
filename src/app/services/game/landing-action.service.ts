@@ -25,6 +25,7 @@ import { Vector3 } from '../../types/game.types';
 import { GameInitializer } from './game-initializer.service';
 import { MissionService } from '../../game/services/game/mission.service';
 import { getLandingDiplomacyScript, LandingDiplomacyScript, DiplomacySubTaskConfig } from '../../game/config/landing-diplomacy.config';
+import { LandingNarrativeService } from './landing-narrative.service';
 
 interface RollOutcome {
   success: boolean;
@@ -46,6 +47,7 @@ const MIN_PLANET_SCALE_RATIO = 0.25; // never shrink below 25% before collapse
 export class LandingActionService {
   constructor(
     private readonly gameState: GameStateStore,
+    private readonly landingNarrative: LandingNarrativeService,
     private readonly characterProfile: CharacterProfileService,
     private readonly logger: LoggingService,
     private readonly gameInitializer: GameInitializer,
@@ -76,6 +78,9 @@ export class LandingActionService {
     const narrative: LandingActionLogEntry[] = [];
     const hasLesserBeing = !!planet.lesserBeing;
     const title = 'Descanso planetario';
+    const restScript = this.landingNarrative.getRestScript();
+    const introText = this.pickNarrativeText(restScript?.intro, 'Acampas junto a la estela magnética del motor, dejando que la arena púrpura silencie la radio.');
+    narrative.push({ tone: 'info', text: introText });
 
     const sanityDelta = hasLesserBeing ? -1 : 1;
     const healthDelta = hasLesserBeing ? -5 : 5;
@@ -90,15 +95,17 @@ export class LandingActionService {
       planet.markCreatureScanned();
       effects.interrupted = true;
       effects.intel = { lesserBeing: planet.lesserBeingIntelStatus };
-      narrative.push(
-        { tone: 'warning', text: 'Un chillido subarmónico rompe el refugio justo cuando cierras los ojos.' },
-        { tone: 'danger', text: 'La criatura interrumpe el descanso: pierdes cordura y salud.' }
+      const interruptedText = this.pickNarrativeText(
+        restScript?.outcomes?.interrupted,
+        'Un chillido subarmónico rompe el refugio; la criatura muerde tu mente antes de incorporarte.'
       );
+      narrative.push({ tone: 'danger', text: interruptedText });
     } else {
-      narrative.push(
-        { tone: 'info', text: 'Acampas junto a la estela magnética del motor, dejando que la arena púrpura silencie la radio.' },
-        { tone: 'success', text: 'Sueñas con constelaciones imposibles. Recuperas fuerza y cordura.' }
+      const successText = this.pickNarrativeText(
+        restScript?.outcomes?.success,
+        'Sueñas con constelaciones imposibles. Recuperas fuerza y cordura.'
       );
+      narrative.push({ tone: 'success', text: successText });
     }
 
     const result = this.composeResult(request, planet, {
@@ -192,7 +199,12 @@ export class LandingActionService {
       missionName: script.missionTemplate.name,
       requiredClueTiers: script.missionTemplate.requiredClueTiers,
       type: script.missionTemplate.type,
-      preferredResourceKind: script.missionTemplate.preferredResourceKind
+      preferredResourceKind: script.missionTemplate.preferredResourceKind,
+      objectiveSummary: script.missionTemplate.objectiveSummary,
+      targetHint: script.missionTemplate.targetHint,
+      reward: script.missionTemplate.memorySharePct
+        ? { memorySharePct: script.missionTemplate.memorySharePct }
+        : undefined
     });
   }
 
@@ -723,10 +735,13 @@ export class LandingActionService {
   private exploreArtifact(planet: Planet, request: LandingActionRequest): LandingEventResult {
     planet.markVisited();
     const effects: LandingActionEffects = { ageDaysDelta: this.applyAgeDelta(2) };
+    const script = this.landingNarrative.getExplorationScript(LandingExploreObjective.ARTIFACT);
     const roll = this.roll(0.5);
-    const narrative: LandingActionLogEntry[] = [
-      { tone: 'info', text: 'Sigues las runas talladas en pilares basálticos hacia una cámara de ozono quemado.' }
-    ];
+    const introText = this.pickNarrativeText(
+      script?.intro,
+      'Sigues las runas talladas en pilares basálticos hacia una cámara de ozono quemado.'
+    );
+    const narrative: LandingActionLogEntry[] = [{ tone: 'info', text: introText }];
 
     if (roll.success) {
       if (planet.hasArtifact) {
@@ -736,7 +751,12 @@ export class LandingActionService {
         effects.itemsAwarded = [
           { id: `artifact-${planet.id}-${Date.now()}`, label: 'Artefacto translúcido recuperado', type: 'artifact', quantity: 1 }
         ];
-        narrative.push({ tone: 'success', text: 'Entre la grava hallas un prisma translúcido que late al contacto.' });
+        const successText = this.pickNestedNarrativeText(
+          script,
+          ['success', 'hasArtifact'],
+          'Entre la grava hallas un prisma translúcido que late al contacto.'
+        );
+        narrative.push({ tone: 'success', text: successText });
         const cargoAssignments = this.missionService.registerArtifactRecovery(planet, {
           cargoLabel: `Artefacto recuperado de ${planet.getDisplayName?.() ?? planet.id}`
         });
@@ -754,7 +774,12 @@ export class LandingActionService {
         effects.intel = { artifact: planet.artifactIntelStatus };
         this.characterProfile.awardExperience(1, 'landing-artifact-absence');
         effects.experienceDelta = 1;
-        narrative.push({ tone: 'info', text: 'Los nichos están vacíos: registras que el guardián evacuó el tesoro hace siglos.' });
+        const absentText = this.pickNestedNarrativeText(
+          script,
+          ['success', 'confirmedAbsent'],
+          'Los nichos están vacíos: registras que el guardián evacuó el tesoro hace siglos.'
+        );
+        narrative.push({ tone: 'info', text: absentText });
       }
 
       const result = this.composeResult(request, planet, {
@@ -772,7 +797,11 @@ export class LandingActionService {
     this.characterProfile.adjustVitals({ health: -5 });
     effects.healthDelta = -5;
     effects.needsRetry = true;
-    narrative.push({ tone: 'danger', text: 'Un mecanismo despierta y te hiere con agujas de luz negra. Necesitas reagruparte.' });
+    const failureText = this.pickNarrativeText(
+      script?.failure,
+      'Un mecanismo despierta y te hiere con agujas de luz negra. Necesitas reagruparte.'
+    );
+    narrative.push({ tone: 'danger', text: failureText });
 
     const result = this.composeResult(request, planet, {
       title: 'Búsqueda de artefacto',
@@ -797,9 +826,12 @@ export class LandingActionService {
 
     planet.markVisited();
     const effects: LandingActionEffects = { ageDaysDelta: this.applyAgeDelta(2) };
-    const narrative: LandingActionLogEntry[] = [
-      { tone: 'info', text: 'Descendiste a una catarata gravitacional que canta frecuencias imposibles.' }
-    ];
+    const script = this.landingNarrative.getExplorationScript(LandingExploreObjective.VOID_MASS);
+    const introText = this.pickNarrativeText(
+      script?.intro,
+      'Descendiste a una catarata gravitacional que canta frecuencias imposibles.'
+    );
+    const narrative: LandingActionLogEntry[] = [{ tone: 'info', text: introText }];
 
     if (planet.voidMassRemaining <= 0) {
       planet.voidMassIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
@@ -819,9 +851,12 @@ export class LandingActionService {
         effects.voidMassDrained = harvest.massDrained;
         effects.planetVoidMassRemaining = harvest.remainingMass;
         effects.planetCollapsed = harvest.collapsed;
-        if (harvest.filledShip) {
-          narrative.push({ tone: 'success', text: 'La catarata gravitacional llena los depósitos de la nave y chisporrotea contra el fuselaje.' });
-        } else {
+        const successText = this.pickNarrativeText(
+          script?.success,
+          'La catarata gravitacional llena los depósitos de la nave y chisporrotea contra el fuselaje.'
+        );
+        narrative.push({ tone: 'success', text: successText });
+        if (!harvest.filledShip) {
           narrative.push({ tone: 'warning', text: 'Drenas todo lo accesible, pero la reserva planetaria estaba casi agotada.' });
         }
         if (harvest.massDrained > 0) {
@@ -861,10 +896,12 @@ export class LandingActionService {
       effects.sanityDelta = sanityLoss;
       effects.healthDelta = healthLoss;
       effects.needsRetry = true;
-      narrative.push(
-        { tone: 'danger', text: 'La catarata se desborda y la nave vibra hasta casi partirse; la extracción fracasa.' },
-        { tone: 'warning', text: 'Pierdes salud y cordura antes de poder estabilizar los campos.' }
+      const failureText = this.pickNarrativeText(
+        script?.failure,
+        'La catarata se desborda y la nave vibra hasta casi partirse; la extracción fracasa.'
       );
+      narrative.push({ tone: 'danger', text: failureText });
+      narrative.push({ tone: 'warning', text: 'Pierdes salud y cordura antes de poder estabilizar los campos.' });
 
       const result = this.composeResult(request, planet, {
         title: 'Captura de void mass',
@@ -903,16 +940,23 @@ export class LandingActionService {
   private exploreCivilization(planet: Planet, request: LandingActionRequest): LandingEventResult {
     planet.markVisited();
     const effects: LandingActionEffects = { ageDaysDelta: this.applyAgeDelta(2) };
+    const script = this.landingNarrative.getExplorationScript(LandingExploreObjective.CIVILIZATION);
     const roll = this.roll(0.5);
-    const narrative: LandingActionLogEntry[] = [
-      { tone: 'info', text: 'Te recibe una plaza en silencio, con emisarios telepáticos aguardando tu gesto.' }
-    ];
+    const introText = this.pickNarrativeText(
+      script?.intro,
+      'Te recibe una plaza en silencio, con emisarios telepáticos aguardando tu gesto.'
+    );
+    const narrative: LandingActionLogEntry[] = [{ tone: 'info', text: introText }];
 
     if (roll.success) {
       planet.markLifeScanned();
       if (planet.inhabitants !== PlanetInhabitants.NONE) {
         planet.civilizationIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
-        narrative.push({ tone: 'success', text: 'El consejo local comparte símbolos y reconoce tu llegada.' });
+        const successText = this.pickNarrativeText(
+          script?.success,
+          'El consejo local comparte símbolos y reconoce tu llegada.'
+        );
+        narrative.push({ tone: 'success', text: successText });
       } else {
         planet.civilizationIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
         this.characterProfile.awardExperience(1, 'landing-civilization-absence');
@@ -935,7 +979,11 @@ export class LandingActionService {
 
     this.characterProfile.adjustVitals({ health: -5 });
     effects.healthDelta = -5;
-    narrative.push({ tone: 'danger', text: 'Negociadores hostiles regresan con lanzas sónicas. Te retiras herido.' });
+    const failureText = this.pickNarrativeText(
+      script?.failure,
+      'Negociadores hostiles regresan con lanzas sónicas. Te retiras herido.'
+    );
+    narrative.push({ tone: 'danger', text: failureText });
 
     const result = this.composeResult(request, planet, {
       title: 'Contacto con civilización',
@@ -952,10 +1000,13 @@ export class LandingActionService {
   private exploreLesserBeing(planet: Planet, request: LandingActionRequest): LandingEventResult {
     planet.markVisited();
     const effects: LandingActionEffects = { ageDaysDelta: this.applyAgeDelta(2) };
+    const script = this.landingNarrative.getExplorationScript(LandingExploreObjective.LESSER_BEING);
     const roll = this.roll(0.5);
-    const narrative: LandingActionLogEntry[] = [
-      { tone: 'info', text: 'Desciendes a catacumbas donde el eco pronuncia tu nombre al revés.' }
-    ];
+    const introText = this.pickNarrativeText(
+      script?.intro,
+      'Desciendes a catacumbas donde el eco pronuncia tu nombre al revés.'
+    );
+    const narrative: LandingActionLogEntry[] = [{ tone: 'info', text: introText }];
 
     if (roll.success) {
       planet.markCreatureScanned();
@@ -965,9 +1016,19 @@ export class LandingActionService {
       if (hasBeing) {
         this.characterProfile.adjustVitals({ sanity: -5 });
         effects.sanityDelta = -5;
-        narrative.push({ tone: 'warning', text: 'Lo observas, pero el precio es la cordura: la criatura canta desde tu mente.' });
+        const presentText = this.pickNestedNarrativeText(
+          script,
+          ['success', 'present'],
+          'Lo observas, pero el precio es la cordura: la criatura canta desde tu mente.'
+        );
+        narrative.push({ tone: 'warning', text: presentText });
       } else {
-        narrative.push({ tone: 'success', text: 'Solo encuentras un sarcófago vacío: confirmas que no hay lesser beings activos.' });
+        const absentText = this.pickNestedNarrativeText(
+          script,
+          ['success', 'absent'],
+          'Solo encuentras un sarcófago vacío: confirmas que no hay lesser beings activos.'
+        );
+        narrative.push({ tone: 'success', text: absentText });
       }
 
       const result = this.composeResult(request, planet, {
@@ -984,7 +1045,11 @@ export class LandingActionService {
 
     this.characterProfile.adjustVitals({ health: -5 });
     effects.healthDelta = -5;
-    narrative.push({ tone: 'danger', text: 'Trampas psíquicas cortan el paso y sales herido.' });
+    const failureText = this.pickNarrativeText(
+      script?.failure,
+      'Trampas psíquicas cortan el paso y sales herido.'
+    );
+    narrative.push({ tone: 'danger', text: failureText });
 
     const result = this.composeResult(request, planet, {
       title: 'Rastrear lesser being',
@@ -1212,5 +1277,35 @@ export class LandingActionService {
         error
       });
     }
+  }
+
+  private pickNarrativeText(entry: unknown, fallback: string): string {
+    if (entry == null) {
+      return fallback;
+    }
+    if (typeof entry === 'string') {
+      const trimmed = entry.trim();
+      return trimmed.length ? trimmed : fallback;
+    }
+    if (typeof entry === 'object' && 'text' in (entry as Record<string, unknown>)) {
+      const textValue = (entry as { text?: string }).text;
+      if (typeof textValue === 'string') {
+        const trimmed = textValue.trim();
+        return trimmed.length ? trimmed : fallback;
+      }
+    }
+    return fallback;
+  }
+
+  private pickNestedNarrativeText(source: unknown, path: string[], fallback: string): string {
+    let cursor: unknown = source;
+    for (const segment of path) {
+      if (cursor == null || typeof cursor !== 'object') {
+        cursor = undefined;
+        break;
+      }
+      cursor = (cursor as Record<string, unknown>)[segment];
+    }
+    return this.pickNarrativeText(cursor, fallback);
   }
 }

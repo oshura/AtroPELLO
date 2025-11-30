@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "ANTIGUOS",
+    "memoryShare": 6,
+    "missionType": "artifact",
+    "artifactName": "Cubo Hipergeométrico",
+    "targetHint": "Ruinas enterradas en un planeta ártico"
+  },
+  "offer": {
+    "scene": "Estatuas ciclópeas despiertan al verte. Cada movimiento arrastra nieve fosilizada.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Qué hace el cubo?",
+        "text": "Contiene memoria sólida de civilizaciones; tú lo llevaste durante negociaciones previas." 
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde está?",
+        "text": "Debajo de un glaciar con capas concéntricas; busca la grieta en espiral." 
+      },
+      {
+        "id": "danger",
+        "label": "Peligros",
+        "text": "Guardias de hielo reescriben el tiempo local si alteras la simetría." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te entregan una piedra que vibra cuando el eje planetario coincide correctamente." 
+    },
+    "major": {
+      "subTask": "calibrar-resonador",
+      "success": "Sincronizas el resonador con sus monolitos y recibes la grilla exacta de acceso.",
+      "failure": "Rompes la armonía y expulsa una onda fría que te hiere." 
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Te muestran recuerdos anteriores al golpe que borró tu identidad." 
+    }
+  },
+  "turnIn": {
+    "success": "Guardan el cubo y proyectan escenas completas de tu pasado.",
+    "memoryFragment": "Observas tu rostro antes de la amnesia pactando con los Antiguos sobre el motor de vacío." 
+  }
+}

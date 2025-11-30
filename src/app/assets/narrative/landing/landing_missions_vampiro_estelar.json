@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "VAMPIRO_ESTELAR",
+    "memoryShare": 5,
+    "missionType": "material",
+    "materialName": "Hemoplasma Estelar",
+    "targetHint": "Nebulosa infestada de sanguijuelas luminosas"
+  },
+  "offer": {
+    "scene": "Alas membranosas envuelven la cámara. Sus voces son pulsos lumínicos que se clavan en la piel.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Por qué el hemoplasma?",
+        "text": "Es comida y combustible. Dicen que lo usaste para alimentar tu motor cuando nadie miraba." 
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde recolectarlo?",
+        "text": "En una nebulosa roja donde orbitan sanguijuelas gigantes alrededor de cadáveres de estrellas." 
+      },
+      {
+        "id": "danger",
+        "label": "Riesgos",
+        "text": "Si sangras, la nube entera irá a por ti." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te entregan un vial que reacciona cuando la densidad plasmática es idónea." 
+    },
+    "major": {
+      "subTask": "sellar-micro-portal",
+      "success": "Cierras una grieta en la nebulosa y ellos te muestran el clúster principal.",
+      "failure": "El portal bebe tu sangre y huye." 
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Compartes venas con ellos y recuerdas haber usado la sangre estelar para saltar sistemas." 
+    }
+  },
+  "turnIn": {
+    "success": "Alimentan a la colonia y entonan un himno nocturno.",
+    "memoryFragment": "Aceptas que el motor devoró hemoplasma para esquivar leyes físicas." 
+  }
+}

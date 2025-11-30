@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "MI_GO",
+    "memoryShare": 7,
+    "missionType": "artifact",
+    "artifactName": "Nodo Espectral",
+    "targetHint": "Glaciar con portales fallidos en el sistema Gliese C"
+  },
+  "offer": {
+    "scene": "Las placas metálicas de sus cráneos vibran al compás de tus latidos. Te estudian con calma quirúrgica.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Por qué necesitan el Nodo?",
+        "text": "Dicen que su tecnología fue saqueada por humanos ignorantes; el nodo estabiliza portales que ellos dominan."
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde buscarlo?",
+        "text": "\"Gliese C, hemisferio nocturno, donde los portales dejaron cicatrices azules\"."
+      },
+      {
+        "id": "danger",
+        "label": "¿Qué peligros me esperan?",
+        "text": "Advertencia: el hielo canta fórmulas que vuelven loco a quien las descifra sin blindajes Mi-Go."
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Un técnico desliza coordenadas aproximadas y exige más respeto por su ciencia."
+    },
+    "major": {
+      "subTask": "calibrar-resonador",
+      "success": "El resonador despierta ecos exactos del Nodo, marcando un cuadrante específico del glaciar.",
+      "failure": "El aparato se sobrecarga y deja un zumbido permanente en tus oídos."
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Fusionan tu consciencia con la suya por un instante; ves el Nodo incrustado en una grieta brillante."
+    }
+  },
+  "turnIn": {
+    "success": "Los Mi-Go injertan el Nodo de vuelta en su matriz y te muestran grabaciones del culto robándoles planos del motor.",
+    "memoryFragment": "Recuerdas haber liderado la incursión que hurtó esa tecnología para tu secta. Te prometiste devolverla algún día."
+  }
+}

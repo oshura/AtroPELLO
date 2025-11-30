@@ -99,6 +99,9 @@
                     </span>
                   </p>
                 </div>
+                <div class="mission-panel__reward" *ngIf="missionRewardMemoryShare">
+                  <span class="pill pill--success">Memoria +{{ missionRewardMemoryShare }}%</span>
+                </div>
               </div>
               <div class="mission-panel__status">
                 <span class="mission-panel__label">Estado</span>
@@ -173,14 +176,26 @@
             <div class="mission-panel__actions">
               <button type="button" class="menu-btn" (click)="handleDiplomacyBribe()" [disabled]="isBribeDisabled">
                 {{ script.bribeOption.label || 'Soborno ritual' }}
+                <small *ngIf="script.bribeOption.description">{{ script.bribeOption.description }}</small>
+                <small>Otorga {{ formatTier(script.bribeOption.clueTier) }}</small>
                 <small>{{ describeCost(script.bribeOption.cost) }}</small>
               </button>
               <button type="button" class="menu-btn" (click)="handleDiplomacySubTask(primarySubTaskConfig)" [disabled]="isSubTaskDisabled">
-                {{ script.subTasks[0]?.label || 'Recado veloz' }}
-                <small *ngIf="script.subTasks[0]?.successProbability">Prob {{ script.subTasks[0]?.successProbability | percent:'1.0-0' }}</small>
+                <ng-container *ngIf="script.subTasks[0] as primaryTask; else defaultSubTaskContent">
+                  {{ primaryTask.label || 'Recado veloz' }}
+                  <small *ngIf="primaryTask.description">{{ primaryTask.description }}</small>
+                  <small>Otorga {{ formatTier(primaryTask.rewardTier) }}</small>
+                  <small *ngIf="primaryTask.successProbability">Prob {{ primaryTask.successProbability | percent:'1.0-0' }}</small>
+                </ng-container>
               </button>
+              <ng-template #defaultSubTaskContent>
+                Recado veloz
+                <small>Otorga pista mayor</small>
+              </ng-template>
               <button type="button" class="menu-btn" (click)="handleDiplomacyVision()" [disabled]="isVisionDisabled">
                 {{ script.visionOption.label || 'Compartir visión' }}
+                <small *ngIf="script.visionOption.description">{{ script.visionOption.description }}</small>
+                <small>Otorga {{ formatTier(script.visionOption.clueTier) }}</small>
                 <small *ngIf="script.visionOption.sanityCost">Coste: -{{ script.visionOption.sanityCost }} cordura</small>
               </button>
               <button type="button" class="menu-btn ghost" (click)="handleDiplomacyTurnIn()" [disabled]="!canTurnInMission">

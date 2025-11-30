@@ -4,7 +4,15 @@ import { Modal } from '../modal/modal';
 import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/landing.types';
 import { LandingMenuComponent } from '../landing-menu/landing-menu';
 import { GameStateStore } from '../../services/game/game-state.store';
-import { PLANET_INTEL_STATUS, PlanetIntelSnapshot, PlanetIntelStatus } from '../../game/types/planet-intel.types';
+import {
+  PLANET_INTEL_STATUS,
+  PlanetIntelSnapshot,
+  PlanetIntelStatus,
+  PlanetMissionState,
+  PlanetMissionStatus,
+  MissionClueTier,
+  MissionClueToken
+} from '../../game/types/planet-intel.types';
 import { PlanetInhabitants, PLANET_INHABITANT_LABELS, LesserBeing, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
 
 @Component({
@@ -128,6 +136,92 @@ export class LandingPanelComponent implements OnChanges {
     return intel.planetCreatureIntelKnown ? 'Lectura confirmada' : 'Escáner pendiente';
   }
 
+  protected get missionIntel(): PlanetMissionState | null {
+    return this.rawPlanetIntelSnapshot?.pendingMission ?? null;
+  }
+
+  protected get missionStatusLabel(): string | null {
+    const mission = this.missionIntel;
+    if (!mission) {
+      return null;
+    }
+    return this.missionStatusMeta[mission.status]?.label ?? mission.status;
+  }
+
+  protected get missionStatusPillClass(): string {
+    const mission = this.missionIntel;
+    if (!mission) {
+      return 'landing-panel__pill--neutral';
+    }
+    return this.missionStatusMeta[mission.status]?.pillClass ?? 'landing-panel__pill--neutral';
+  }
+
+  protected get missionIntelSummary(): string | null {
+    const mission = this.missionIntel;
+    if (!mission) {
+      return null;
+    }
+    return mission.objectiveSummary ?? mission.description ?? null;
+  }
+
+  protected get missionTargetDisplay(): string | null {
+    const mission = this.missionIntel;
+    if (!mission) {
+      return null;
+    }
+    const targetPlanetId = mission.targetLocation?.planetId;
+    if (targetPlanetId) {
+      const target = this.gameState.findPlanetById(targetPlanetId);
+      if (target) {
+        try {
+          if (typeof target.getDisplayName === 'function') {
+            return target.getDisplayName();
+          }
+        } catch {}
+        return target.customName ?? targetPlanetId;
+      }
+      return mission.targetHint ?? targetPlanetId;
+    }
+    return mission.targetHint ?? null;
+  }
+
+  protected get missionRewardMemoryShare(): number | null {
+    const reward = this.missionIntel?.reward?.memorySharePct;
+    return typeof reward === 'number' ? reward : null;
+  }
+
+  protected get missionClueProgress(): Array<{ tier: MissionClueTier; obtained: boolean }> {
+    const mission = this.missionIntel;
+    if (!mission?.requiredClueTiers?.length) {
+      return [];
+    }
+    const owned = new Set((mission.clueTokens ?? []).map(token => token.tier));
+    return mission.requiredClueTiers.map(tier => ({ tier, obtained: owned.has(tier) }));
+  }
+
+  protected get missionRecentClues(): MissionClueToken[] {
+    const mission = this.missionIntel;
+    if (!mission?.clueTokens?.length) {
+      return [];
+    }
+    return [...mission.clueTokens]
+      .sort((a, b) => b.obtainedAt - a.obtainedAt)
+      .slice(0, 2);
+  }
+
+  protected formatTier(tier: MissionClueTier): string {
+    switch (tier) {
+      case 'minor':
+        return 'Susurro menor';
+      case 'major':
+        return 'Clave mayor';
+      case 'final':
+        return 'Visión final';
+      default:
+        return tier;
+    }
+  }
+
   private get planetIntelSnapshot(): LandingPlanetIntel | null {
     const planetId = this.context?.planetId;
     if (!planetId) {
@@ -212,4 +306,13 @@ export class LandingPanelComponent implements OnChanges {
   private isIntelResolved(status?: PlanetIntelStatus | null): boolean {
     return !!status && status !== PLANET_INTEL_STATUS.UNKNOWN;
   }
+
+  private readonly missionStatusMeta: Record<PlanetMissionStatus, { label: string; pillClass: string }> = {
+    offered: { label: 'Oferta pendiente', pillClass: 'landing-panel__pill--neutral' },
+    accepted: { label: 'Contrato aceptado', pillClass: 'landing-panel__pill--neutral' },
+    'in-progress': { label: 'En progreso', pillClass: 'landing-panel__pill--warning' },
+    'ready-to-turn-in': { label: 'Listo para entrega', pillClass: 'landing-panel__pill--success' },
+    completed: { label: 'Completada', pillClass: 'landing-panel__pill--success' },
+    failed: { label: 'Fracaso', pillClass: 'landing-panel__pill--danger' }
+  };
 }

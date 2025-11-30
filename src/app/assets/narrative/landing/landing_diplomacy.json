@@ -1,0 +1,82 @@
+{
+  "ally": {
+    "repairShip": {
+      "intro": "Los artesanos trenzan hilos de luz líquida alrededor del casco, tarareando fórmulas olvidadas.",
+      "cost": "10 metal bruto",
+      "resolution": "La nave vuelve a brillar como si jamás hubiera tocado la atmósfera.",
+      "effects": ["salud nave al 100%"]
+    },
+    "shareTime": {
+      "intro": "Aceptas convivir bajo sus cielos durante varias lunas comprimidas.",
+      "resolution": "Fogatas astrales, cantos inversos y banquetes imposibles cicatrizan mente y carne.",
+      "effects": ["cordura al máximo", "salud al máximo", "+20-30 días"]
+    },
+    "glyphMarket": {
+      "intro": "Pergaminos vivos se despliegan mostrando glifos en venta.",
+      "note": "Catálogo pendiente de diseño; mostrar placeholder." 
+    }
+  },
+  "neutral": {
+    "services": {
+      "repairPartial": {
+        "text": "Los mecánicos aceptan soldar diez por ciento del casco a cambio de minerales comunes.",
+        "cost": "1 metal común",
+        "effects": ["+10% salud nave"]
+      },
+      "healPilot": {
+        "text": "Ofrecen ungüentos carbonáceos que restauran algo de carne mortal.",
+        "cost": "1 recurso orgánico",
+        "effects": ["+10 salud piloto"]
+      }
+    },
+    "clues": {
+      "rumor": {
+        "intro": "Un paje con ojos abalorios acepta sobornos a cambio de susurros.",
+        "cost": "1 metal + 1 orgánico",
+        "success": "\"Busca el sol doble donde las mareas se rompen\", anota el mensajero.",
+        "effects": ["pista menor"]
+      },
+      "errand": {
+        "intro": "Proponen un recado veloz para probar tu compromiso.",
+        "subTasks": {
+          "calibrar-resonador": {
+            "success": "Ajustas el resonador y la antena espiritual señala el hemisferio correcto.",
+            "failure": "El aparato explota en coros metálicos. Regresas con quemaduras."
+          },
+          "cortar-raiz": {
+            "success": "La raíz infecta se calcina y el enclave marca el sector en tus mapas.",
+            "failure": "La savia ácida te arroja contra el suelo y apenas logras escapar."
+          }
+        },
+        "effects": ["pista mayor", "posible daño"]
+      },
+      "vision": {
+        "intro": "Ofrecen compartir una visión a cambio de porciones de cordura fresca.",
+        "cost": "-3 cordura",
+        "success": "La mente colectiva te proyecta el planeta exacto envuelto en luz verdosa.",
+        "effects": ["pista final"]
+      }
+    },
+    "mission": {
+      "intro": "El enclave expone su problema y promete alianza si cumples.",
+      "options": [
+        { "id": "askOrigin", "label": "Preguntar por el origen" },
+        { "id": "askDestination", "label": "Preguntar por el destino" },
+        { "id": "askReward", "label": "Preguntar recompensa" }
+      ]
+    }
+  },
+  "enemy": {
+    "lesserFight": {
+      "intro": "La presencia del ser menor vuelve inútil cualquier trato. Solo queda enfrentarlo.",
+      "victory": {
+        "text": "Desciendes a la sima donde canta tu nombre al revés. Lo silencias en una explosión de luz fría.",
+        "effects": ["+25 XP", "cordura al máximo", "salud a la mitad", "+2 días", "lesser eliminado"]
+      },
+      "defeat": {
+        "text": "La criatura reconfigura el espacio y te obliga a huir; la animosidad permanece.",
+        "effects": ["status sin cambios", "daño severo"]
+      }
+    }
+  }
+}

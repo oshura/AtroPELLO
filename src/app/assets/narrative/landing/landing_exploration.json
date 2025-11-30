@@ -1,0 +1,74 @@
+{
+  "artifact": {
+    "intro": "Sigues runas talladas en pilares basálticos hacia una cámara donde el aire huele a ozono quemado.",
+    "options": [
+      { "id": "pressOn", "label": "Forzar entrada" },
+      { "id": "retreat", "label": "Retirarse" }
+    ],
+    "success": {
+      "hasArtifact": {
+        "text": "Entre la grava hallas un prisma translúcido que palpita al ritmo del motor. El registro lo identifica como pieza de culto.",
+        "effects": ["artefacto recuperado", "+1 XP", "+2 días"]
+      },
+      "confirmedAbsent": {
+        "text": "Los nichos están vacíos. Las inscripciones indican que el guardián evacuó el tesoro siglos atrás. Registras la ausencia.",
+        "effects": ["intel actualizado", "+1 XP", "+2 días"]
+      }
+    },
+    "failure": {
+      "text": "Un mecanismo despierta y la estancia se inunda de agujas de luz negra. Escapas a trompicones, sin respuestas.",
+      "effects": ["-5 salud", "+2 días"]
+    }
+  },
+  "voidMass": {
+    "intro": "Los sensores detectan una catarata gravitatoria bajo la corteza. Solo permanecerá estable unos minutos.",
+    "options": [
+      { "id": "descend", "label": "Descender" },
+      { "id": "retreat", "label": "Cancelar" }
+    ],
+    "success": {
+      "text": "Abres los depósitos y dejas que el torrente de energía vacíe su estela en la nave. El motor ronronea agradecido.",
+      "effects": ["void energy al máximo", "+2 días"]
+    },
+    "failure": {
+      "text": "El sifón se descontrola. Conductos chamuscados, vacío desperdiciado y un cuerpo dolorido.",
+      "effects": ["-5 salud", "sin energía", "+2 días"]
+    }
+  },
+  "contactCivilization": {
+    "intro": "Una plaza fractal se despliega entre brumas. Sombras antropomorfas te observan con curiosidad geométrica.",
+    "options": [
+      { "id": "hail", "label": "Presentarte" },
+      { "id": "wait", "label": "Esperar" }
+    ],
+    "success": {
+      "text": "Los emisarios cantan tu nombre en reversa y aceptan negociar. El enclave abre sus cámaras de diplomacia.",
+      "effects": ["civilización revelada", "+2 días"]
+    },
+    "failure": {
+      "text": "Los custodios tensan venas fosforescentes y expulsan tu presencia con ondas de choque.",
+      "effects": ["-5 salud", "status sin cambios", "+2 días"]
+    }
+  },
+  "huntLesser": {
+    "intro": "Sigues rastros de baba ígnea hacia catacumbas donde el aire sabe a cobre y miedo.",
+    "options": [
+      { "id": "pursue", "label": "Perseguir" },
+      { "id": "withdraw", "label": "Retirarse" }
+    ],
+    "success": {
+      "present": {
+        "text": "Contemplas al ser doblado sobre sí, recitando memorias de la Tierra partida. El conocimiento te quema.",
+        "effects": ["intel lesser revelado", "-5 cordura temporal", "+2 días"]
+      },
+      "absent": {
+        "text": "Las cámaras están vacías pero documentas la ausencia; el planeta quedará marcado como libre por ahora.",
+        "effects": ["intel lesser confirmado ausente", "+2 días"]
+      }
+    },
+    "failure": {
+      "text": "Los túneles colapsan en su propia geometría. Sales con la piel abierta y ningún dato fiable.",
+      "effects": ["-5 salud", "intel sin cambios", "+2 días"]
+    }
+  }
+}

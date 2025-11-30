@@ -42,6 +42,41 @@
           </div>
         </div>
       </section>
+
+      <section class="landing-panel__mission" *ngIf="missionIntel as mission">
+        <div class="landing-panel__mission-header">
+          <div>
+            <div class="landing-panel__mission-label">Encargo diplomático</div>
+            <div class="landing-panel__mission-title">{{ mission.missionName || 'Encargo planetario' }}</div>
+          </div>
+          <span class="landing-panel__pill" [ngClass]="missionStatusPillClass" *ngIf="missionStatusLabel">
+            {{ missionStatusLabel }}
+          </span>
+        </div>
+        <p class="landing-panel__mission-summary" *ngIf="missionIntelSummary">{{ missionIntelSummary }}</p>
+        <p class="landing-panel__mission-target" *ngIf="missionTargetDisplay">Destino: {{ missionTargetDisplay }}</p>
+        <div class="landing-panel__mission-reward" *ngIf="missionRewardMemoryShare">
+          Recompensa: +{{ missionRewardMemoryShare }}% memoria
+        </div>
+        <div class="landing-panel__mission-clues" *ngIf="missionClueProgress.length">
+          <span class="landing-panel__mission-label">Pistas requeridas</span>
+          <div class="clue-track">
+            <span
+              class="clue-track__tier"
+              *ngFor="let tier of missionClueProgress"
+              [class.is-complete]="tier.obtained"
+            >
+              {{ formatTier(tier.tier) }}
+            </span>
+          </div>
+        </div>
+        <div class="landing-panel__mission-clues" *ngIf="missionRecentClues.length">
+          <span class="landing-panel__mission-label">Últimas pistas</span>
+          <ul>
+            <li *ngFor="let clue of missionRecentClues">{{ clue.summary }}</li>
+          </ul>
+        </div>
+      </section>
     </ng-container>
 
     <ng-template #landingMenuView>

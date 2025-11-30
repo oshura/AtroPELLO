@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "BYHKEE",
+    "memoryShare": 8,
+    "missionType": "artifact",
+    "artifactName": "Lira de Viento Negro",
+    "targetHint": "Cima de planeta ventoso con tormentas constantes"
+  },
+  "offer": {
+    "scene": "Coros de viento negro bailan alrededor. Los Byhkee trazan círculos en el cielo para saludarte.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Qué logra la lira?",
+        "text": "Abre corrientes para vuelos interdimensionales; dicen que está destinada a tu mano." 
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde suena?",
+        "text": "En la cima más alta de un planeta que nunca deja de soplar, bajo relámpagos violetas." 
+      },
+      {
+        "id": "danger",
+        "label": "Riesgos",
+        "text": "Coros huracanados pueden arrancarte la piel si no tocas la melodía correcta." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te susurran una nota que solo existe cerca del pico correcto." 
+    },
+    "major": {
+      "subTask": "calibrar-resonador",
+      "success": "Afinas tu resonador con el viento y la tormenta revela el mapa.",
+      "failure": "El viento te arroja contra el suelo y rompe instrumentos." 
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Te proclaman heraldo destinado a reemplazar a los primigenios." 
+    }
+  },
+  "turnIn": {
+    "success": "Te entregan la lira afinada y juran volar a tu lado cuando lo necesites.",
+    "memoryFragment": "Comprendes que, tras derrotar a los cuatro primigenios, te convertirás en el único." 
+  }
+}

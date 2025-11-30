@@ -1,0 +1,57 @@
+{
+  "rest": {
+    "intro": {
+      "speaker": "narrator",
+      "text": "Apagas los sensores y dejas que la arena púrpura amortigüe el rumor del motor. El aire vibra con notas imposibles."
+    },
+    "options": [
+      { "id": "rest", "label": "Descansar" }
+    ],
+    "outcomes": {
+      "success": {
+        "speaker": "narrator",
+        "text": "Sueñas constelaciones que jamás existieron. Despiertas con la cabeza más ligera y las heridas cerrando lentamente.",
+        "effects": ["+1 cordura", "+5 salud", "+1 día"]
+      },
+      "interrupted": {
+        "speaker": "narrator",
+        "text": "Un chillido subarmónico raja el refugio. Una silueta famélica atraviesa los velos y muerde tu mente antes de que puedas incorporarte.",
+        "effects": ["revelar lesserBeing", "-1 cordura", "-5 salud"]
+      }
+    }
+  },
+  "logAnomaly": {
+    "intro": {
+      "speaker": "ai",
+      "text": "Telemetría registra un delta inestable bajo la corteza. Registrar la anomalía consumirá parte de tu lucidez."
+    },
+    "options": [
+      { "id": "record", "label": "Registrar anomalía" },
+      { "id": "abort", "label": "Cancelar" }
+    ],
+    "resolution": {
+      "success": {
+        "speaker": "narrator",
+        "text": "Encapsulas la vibración en un cilindro de obsidiana. Algo, allá abajo, responde con un eco creciente.",
+        "effects": ["-1 cordura", "actualizar intel"]
+      },
+      "abort": {
+        "speaker": "pilot",
+        "text": "Prefieres conservar la poca claridad que queda. La anomalía seguirá cantando sola.",
+        "effects": []
+      }
+    }
+  },
+  "generic": {
+    "failure": {
+      "speaker": "narrator",
+      "text": "El vacío te devuelve solo ruido blanco. Las cicatrices arden mientras replanteas el enfoque.",
+      "effects": ["sin progreso"]
+    },
+    "insufficientResources": {
+      "speaker": "ai",
+      "text": "Los inventarios no cumplen los requisitos solicitados por el enclave.",
+      "effects": ["acción bloqueada"]
+    }
+  }
+}

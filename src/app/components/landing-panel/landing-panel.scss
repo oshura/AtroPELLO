@@ -78,6 +78,110 @@
   gap: 0.75rem;
 }
 
+.landing-panel__mission {
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 0.75rem;
+  padding: 1rem;
+  background: rgba(255, 255, 255, 0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.landing-panel__mission-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.landing-panel__mission-label {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 0.25em;
+  opacity: 0.65;
+}
+
+.landing-panel__mission-title {
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+
+.landing-panel__mission-summary,
+.landing-panel__mission-target,
+.landing-panel__mission-reward {
+  margin: 0;
+  font-size: 0.85rem;
+  line-height: 1.3;
+}
+
+.landing-panel__mission-reward {
+  color: #9ef5c2;
+}
+
+.landing-panel__mission-clues {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.landing-panel__mission-clues ul {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.85rem;
+  opacity: 0.85;
+}
+
+.clue-track {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.clue-track__tier {
+  padding: 0.25rem 0.6rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  opacity: 0.8;
+}
+
+.clue-track__tier.is-complete {
+  border-color: rgba(122, 231, 181, 0.8);
+  color: #9ef5c2;
+  opacity: 1;
+}
+
+.landing-panel__pill {
+  padding: 0.3rem 0.9rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+}
+
+.landing-panel__pill--neutral {
+  border-color: rgba(255, 255, 255, 0.35);
+}
+
+.landing-panel__pill--warning {
+  border-color: rgba(255, 211, 105, 0.9);
+  color: #ffd369;
+}
+
+.landing-panel__pill--success {
+  border-color: rgba(122, 231, 181, 0.8);
+  color: #9ef5c2;
+}
+
+.landing-panel__pill--danger {
+  border-color: rgba(255, 133, 133, 0.8);
+  color: #ffb3b3;
+}
+
 .landing-panel__menu {
   border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 1rem;

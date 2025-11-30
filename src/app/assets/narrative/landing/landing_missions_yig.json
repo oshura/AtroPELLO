@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "YIG",
+    "memoryShare": 7,
+    "missionType": "material",
+    "materialName": "Veneno de Muda",
+    "targetHint": "Cinturón de asteroides serpentino con vetas verdes"
+  },
+  "offer": {
+    "scene": "Sacerdotes serpiente se deslizan formando espirales. Sus lenguas dibujan runas sobre tu casco.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Para qué sirve el veneno?",
+        "text": "Sus coros aseguran que el veneno suaviza mudas cósmicas y que tu secta prometió abrir portales a cambio."
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde encontrarlo?",
+        "text": "Hablan de un cinturón serpentino alrededor de una estrella esmeralda, donde los asteroides exudan cobre líquido."
+      },
+      {
+        "id": "danger",
+        "label": "¿Qué me espera allí?",
+        "text": "Avisan que cada asteroide alberga incubadoras vivas que castigan a los ladrones." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Un acólito sisea: \"Busca el asteroide que proyecta dos sombras superpuestas\"."
+    },
+    "major": {
+      "subTask": "cortar-raiz",
+      "success": "Eliminas raíces de serpiente negra; revelan el nombre del sistema y marcan el cluster exacto.",
+      "failure": "La savia tóxica se adhiere a tu traje y te obliga a purgarlo con dolor."
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Aceptas compartir visiones serpentinas; ves el veneno guardado en un crisol cubierto de escamas."
+    }
+  },
+  "turnIn": {
+    "success": "Ofrecen el veneno a Yig y te recuerdan que la secta juró abrir portales serpentinos. Cambian su actitud a aliado.",
+    "memoryFragment": "Imágenes emergen: negociaste personalmente con Yig, prometiendo portales infinitos a cambio de toxinas para el motor."
+  }
+}

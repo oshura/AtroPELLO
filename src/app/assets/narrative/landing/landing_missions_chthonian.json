@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "CHTHONIAN",
+    "memoryShare": 6,
+    "missionType": "artifact",
+    "artifactName": "Órgano Sísmico",
+    "targetHint": "Núcleo de planeta fracturado"
+  },
+  "offer": {
+    "scene": "Los Chtonian emergen desde grietas profundas, con cables de piedra vibrando al unísono.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Qué hace el órgano?",
+        "text": "Regula la música tectónica; sin él, el planeta seguirá partiéndose." 
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde buscar?",
+        "text": "En el núcleo fracturado donde los temblores hablan con voz de trueno." 
+      },
+      {
+        "id": "danger",
+        "label": "Riesgos",
+        "text": "Ondas sónicas pulverizarán la nave si no sincronizas tus motores con su métrica." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Te entregan una cuerda de basalto que vibra cuando el ángulo de entrada es correcto." 
+    },
+    "major": {
+      "subTask": "sellar-micro-portal",
+      "success": "Sellas una fractura secundaria y los Chtonian marcan el vector al núcleo.",
+      "failure": "La fractura se burla de ti, devolviéndote ondas que casi rompen tu cordura." 
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Dejan que escuches el momento en que el motor humano quebró la Tierra." 
+    }
+  },
+  "turnIn": {
+    "success": "Montan el órgano y afinan el planeta de nuevo.",
+    "memoryFragment": "Aceptas que tu motor provocó la grieta central del mundo natal." 
+  }
+}

@@ -1,0 +1,48 @@
+{
+  "meta": {
+    "race": "PROFUNDOS",
+    "memoryShare": 6,
+    "missionType": "material",
+    "materialName": "Perla Tétrica",
+    "targetHint": "Océano profundo de un planeta mareal"
+  },
+  "offer": {
+    "scene": "El anfiteatro submarino se llena con agua negra hasta los tobillos. Voces burbujean directo en tu mente.",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Por qué la perla?",
+        "text": "La perla contiene ecos del primer portal fallido; necesitan estudiarlos." 
+      },
+      {
+        "id": "destination",
+        "label": "¿Dónde está escondida?",
+        "text": "Debajo de un sol frío, en una trinchera iluminada por algas bioluminiscentes dobles." 
+      },
+      {
+        "id": "danger",
+        "label": "Riesgos",
+        "text": "Bestias anfibias hipnóticas protegerán el acceso si no llevas un sello de agua ofrecido por ellos." 
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Susurran: \"busca el doble amanecer donde las mareas se rompen\"." 
+    },
+    "major": {
+      "subTask": "sellar-micro-portal",
+      "success": "Sellas una grieta bajo el agua y obtienes el mapa completo del océano.",
+      "failure": "La presión te roba cordura; la pista debe esperar." 
+    },
+    "final": {
+      "cost": "-3 cordura",
+      "text": "Compartes su visión y ves la perla incrustada en una estatua sumergida." 
+    }
+  },
+  "turnIn": {
+    "success": "Reciben la perla y limpian su superficie, revelando coordenadas exactas del portal fallido.",
+    "memoryFragment": "Recuerdas haber abierto ese portal junto a ellos y provocar la primera grieta marina." 
+  }
+}
