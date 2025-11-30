@@ -10,15 +10,19 @@
  CREATURE_SCAN 1/3
  
   
- - Poder subir a la nave mientras está aterrizada.
- - Criaturas entrada por portal o desdeel vacío.
- - Debries no se oye el fiuuuushhh.
- - Marquee messages.
+ - Poder ver personaje y nave estando aterrizado
+ - Criaturas entrada por portal o desde el vacío.
+ - Bajar el fiushhh a 3u y 5u aljarse, y que a los debries no se lo aplica.
+ - Marquee messages:
+ - Entrada de una nave enemiga (30s).
+ - A veces no marca unos asteroides temp (debries) en el mapa, a parte de estar a 3Ku cuando a no se cuando deben desaparecer del juego.
+	
  - Cantidad y distribución de polvo estelar. Sobretodo despues de despegar.
  
  - Landing menus:
 	Cambiar:
 	- Menuses de misiones reordenar y que haya arbol de dialogos.
+	- Panel para ver lista de misiones, con sus pistas, y otros temas que no me acuerdo.
 	- Que la solucion sea en otro lugar para tener que regresar: landing_diplomacy.json, landing-diplomacy.config.ts, landing_missions_[CIV].json
 	Probar:
 	- Enemy(xq hay lesserBeing en el planeta):

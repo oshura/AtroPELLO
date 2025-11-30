@@ -32,6 +32,11 @@ export class SolarSystemPanel {
   private readonly zoomMax: number = 20; // max zoom-in factor
   private tx: number = 0; // screen-space translation in canvas pixels
   private ty: number = 0;
+  private panActive: boolean = false;
+  private panAnchorPx: number = 0;
+  private panAnchorPy: number = 0;
+  private panStartTx: number = 0;
+  private panStartTy: number = 0;
   private items: Array<{
     id: string;
     label: string;
@@ -84,6 +89,7 @@ export class SolarSystemPanel {
       this.cursorPy = null;
       this.cursorViewportX = null;
       this.cursorViewportY = null;
+      this.panActive = false;
     }
   }
   public isEnabled(): boolean { return this.enabled; }
@@ -163,6 +169,59 @@ export class SolarSystemPanel {
       return;
     }
     this.zoomAtCanvasPoint(mapped.mapX, mapped.mapY, deltaY);
+  }
+
+  /** Begin a pan gesture from viewport coordinates (expects RMB drag) */
+  public beginPanFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): boolean {
+    if (!this.enabled) {
+      return false;
+    }
+    const mapped = mapViewportPointToCanvas(
+      clientX,
+      clientY,
+      rect,
+      viewportW,
+      viewportH,
+      this.canvas.width,
+      this.canvas.height,
+      { horizontalScale: PANEL_HORIZONTAL_STRETCH }
+    );
+    if (!mapped.inside) {
+      return false;
+    }
+    this.panActive = true;
+    this.panAnchorPx = mapped.mapX;
+    this.panAnchorPy = mapped.mapY;
+    this.panStartTx = this.tx;
+    this.panStartTy = this.ty;
+    return true;
+  }
+
+  /** Update an active pan gesture */
+  public updatePanFromViewport(clientX: number, clientY: number, rect: DOMRect, viewportW: number, viewportH: number): void {
+    if (!this.panActive) {
+      return;
+    }
+    const mapped = mapViewportPointToCanvas(
+      clientX,
+      clientY,
+      rect,
+      viewportW,
+      viewportH,
+      this.canvas.width,
+      this.canvas.height,
+      { horizontalScale: PANEL_HORIZONTAL_STRETCH }
+    );
+    this.tx = this.panStartTx + (mapped.mapX - this.panAnchorPx);
+    this.ty = this.panStartTy + (mapped.mapY - this.panAnchorPy);
+  }
+
+  public endPan(): void {
+    this.panActive = false;
+  }
+
+  public isPanActive(): boolean {
+    return this.panActive;
   }
 
   /** Zoom at a canvas pixel coordinate, adjusting translation to keep the focus point stable */

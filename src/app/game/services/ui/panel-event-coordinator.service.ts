@@ -22,6 +22,8 @@ export interface PanelEventCallbacks {
   onMapClick?: (clientX: number, clientY: number) => void;
   onMapMove?: (clientX: number, clientY: number) => void;
   onMapWheel?: (deltaY: number, clientX: number, clientY: number) => void;
+  onMapPointerDown?: (clientX: number, clientY: number, button: number) => void;
+  onMapPointerUp?: (clientX: number, clientY: number, button: number) => void;
   
   // Grimoire panel callbacks (mouse only - keyboard handled by GameEngine)
   onGrimoireClick?: (clientX: number, clientY: number) => void;
@@ -153,6 +155,14 @@ export class PanelEventCoordinator {
       event.stopPropagation();
       return;
     }
+    if (this.mapEnabled) {
+      this.callbacks.onMapPointerDown?.(event.clientX, event.clientY, event.button);
+      if (event.button === 2) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+      return;
+    }
     if (this.grimoireEnabled) {
       this.callbacks.onGrimoirePointerDown?.(event.clientX, event.clientY, event.button);
       if (event.button === 2) {
@@ -167,6 +177,14 @@ export class PanelEventCoordinator {
     if (this.inputsBlocked) {
       event.preventDefault();
       event.stopPropagation();
+      return;
+    }
+    if (this.mapEnabled) {
+      this.callbacks.onMapPointerUp?.(event.clientX, event.clientY, event.button);
+      if (event.button === 2) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
       return;
     }
     if (this.grimoireEnabled) {

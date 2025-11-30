@@ -8797,6 +8797,8 @@ export class GameEngine {
       onMapClick: (clientX, clientY) => this.handleMapClick(clientX, clientY),
       onMapMove: (clientX, clientY) => this.handleMapMove(clientX, clientY),
       onMapWheel: (deltaY, clientX, clientY) => this.handleMapWheel(deltaY, clientX, clientY),
+      onMapPointerDown: (clientX, clientY, button) => this.handleMapPointerDown(clientX, clientY, button),
+      onMapPointerUp: (clientX, clientY, button) => this.handleMapPointerUp(clientX, clientY, button),
       
       // Grimoire panel events (mouse)
       onGrimoireClick: (clientX, clientY) => this.handleGrimoireClick(clientX, clientY),
@@ -8851,6 +8853,29 @@ export class GameEngine {
     this.syncPanelCursorOverlay();
   }
 
+  private handleMapPointerDown(clientX: number, clientY: number, button: number): void {
+    if (button !== 2 || !this.systemPanel || !this.systemPanel.isEnabled() || !this.gl || !this.domCanvas) {
+      return;
+    }
+    const rect = this.domCanvas.getBoundingClientRect();
+    const viewportW = (this.gl.canvas as HTMLCanvasElement).width;
+    const viewportH = (this.gl.canvas as HTMLCanvasElement).height;
+    try {
+      if (this.systemPanel.beginPanFromViewport(clientX, clientY, rect, viewportW, viewportH)) {
+        this.systemPanel.setHoveredId(null);
+      }
+    } catch {}
+  }
+
+  private handleMapPointerUp(_clientX: number, _clientY: number, button: number): void {
+    if (button !== 2 || !this.systemPanel) {
+      return;
+    }
+    try {
+      this.systemPanel.endPan();
+    } catch {}
+  }
+
   private handleMapClick(clientX: number, clientY: number): void {
     if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl || !this.domCanvas) return;
     
@@ -8885,6 +8910,8 @@ export class GameEngine {
     if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl || !this.domCanvas) return;
     
     const rect = this.domCanvas.getBoundingClientRect();
+    const viewportW = (this.gl.canvas as HTMLCanvasElement).width;
+    const viewportH = (this.gl.canvas as HTMLCanvasElement).height;
     
     // Update cursor position on the map
     try {
@@ -8892,18 +8919,32 @@ export class GameEngine {
         clientX,
         clientY,
         rect,
-        (this.gl.canvas as HTMLCanvasElement).width,
-        (this.gl.canvas as HTMLCanvasElement).height
+        viewportW,
+        viewportH
       );
       this.syncPanelCursorOverlay();
     } catch {}
+
+    if (this.systemPanel.isPanActive()) {
+      try {
+        this.systemPanel.updatePanFromViewport(
+          clientX,
+          clientY,
+          rect,
+          viewportW,
+          viewportH
+        );
+        this.systemPanel.setHoveredId(null);
+      } catch {}
+      return;
+    }
     
     const id = this.systemPanel.hitTestViewport(
       clientX,
       clientY,
       rect,
-      (this.gl.canvas as HTMLCanvasElement).width,
-      (this.gl.canvas as HTMLCanvasElement).height,
+      viewportW,
+      viewportH,
       'move'
     );
     
@@ -8920,14 +8961,16 @@ export class GameEngine {
     if (!this.systemPanel || !this.systemPanel.isEnabled() || !this.gl || !this.domCanvas) return;
     
     const rect = this.domCanvas.getBoundingClientRect();
+    const viewportW = (this.gl.canvas as HTMLCanvasElement).width;
+    const viewportH = (this.gl.canvas as HTMLCanvasElement).height;
     try {
       this.systemPanel.handleWheelFromViewport(
         deltaY,
         clientX,
         clientY,
         rect,
-        (this.gl.canvas as HTMLCanvasElement).width,
-        (this.gl.canvas as HTMLCanvasElement).height
+        viewportW,
+        viewportH
       );
     } catch {}
   }
