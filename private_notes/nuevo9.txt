@@ -10,11 +10,12 @@
  CREATURE_SCAN 1/3
  
   
- - Poder ver personaje y nave estando aterrizado
+ - Poder ver personaje y nave estando aterrizado.
  - Criaturas entrada por portal o desde el vacío.
  - Bajar el fiushhh a 3u y 5u aljarse, y que a los debries no se lo aplica.
  - Marquee messages:
- - Entrada de una nave enemiga (30s).
+	- Entrada de una nave enemiga (30s).
+	- 
  - A veces no marca unos asteroides temp (debries) en el mapa, a parte de estar a 3Ku cuando a no se cuando deben desaparecer del juego.
 	
  - Cantidad y distribución de polvo estelar. Sobretodo despues de despegar.
@@ -63,6 +64,7 @@ Efectos de slots auxiliares:
 - Mapa interestelar.
 	- Programar viaje interestelar.
 - Planet teleports.
+- Autofollow target.
 
 - Resurrección en portal más recientemente cruzado. Memoria ancestral.
 
