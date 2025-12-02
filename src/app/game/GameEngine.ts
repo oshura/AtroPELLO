@@ -139,6 +139,24 @@ export class GameEngine {
   // Defers a map selection when the user clicks immediately after opening the map
   // before the id->target mapping has been rebuilt in the first render pass.
   private pendingMapSelectId: string | null = null;
+  
+  public debugSpawnLesserBeing(species: LesserBeing): void {
+    if (!this.lesserBeingSpawner || !this.spaceship) {
+      this.logger.log(LogLevel.WARN, LogCategory.LESSER_BEINGS, 'No se pudo spawnear lesser being de debug', {
+        hasSpawner: !!this.lesserBeingSpawner,
+        hasShip: !!this.spaceship,
+        species
+      });
+      return;
+    }
+    const forward = this.getShipForwardVector();
+    const pos = {
+      x: this.spaceship.position.x + forward.x * 100,
+      y: this.spaceship.position.y + forward.y * 100,
+      z: this.spaceship.position.z + forward.z * 100
+    };
+    this.lesserBeingSpawner.spawnDebugBeing(species, pos);
+  }
   private auxiliaryAbilities: AuxiliaryAbilityRuntime[] = [];
   private readonly auxiliaryBindingActions: GameAction[] = [
     'aux_ability_1',
@@ -9855,6 +9873,26 @@ export class GameEngine {
 
   public handleVoidJumpCompleted(): void {
     this.lesserBeingSpawner?.onVoidJumpCompleted();
+  }
+  
+  private getShipForwardVector(): Vector3 {
+    const fallback = { x: 0, y: 0, z: -1 };
+    if (!this.spaceship) {
+      return fallback;
+    }
+    const forward = (this.spaceship as any).forwardDirection as Vector3 | undefined;
+    if (!forward) {
+      return fallback;
+    }
+    const len = Math.hypot(forward.x, forward.y, forward.z);
+    if (!len || !isFinite(len)) {
+      return fallback;
+    }
+    return {
+      x: forward.x / len,
+      y: forward.y / len,
+      z: forward.z / len
+    };
   }
 }
 

@@ -134,6 +134,33 @@ export class LesserBeingSpawner {
     this.activeBeings.delete(beingId);
   }
 
+  public spawnDebugBeing(species: LesserBeing, position: Vector3): LesserBeingBase | null {
+    const being = this.instantiateBeing(species, position);
+    if (!being) {
+      this.engine.logger?.log(LogLevel.ERROR, LogCategory.LESSER_BEINGS, 'Debug spawn failed: unknown species', {
+        species,
+        position
+      });
+      return null;
+    }
+    this.activeBeings.add(being.id);
+    try {
+      this.engine.registerLesserBeing(being);
+      this.engine.logger?.log(LogLevel.INFO, LogCategory.LESSER_BEINGS, 'Debug lesser being spawned', {
+        species,
+        position
+      });
+      return being;
+    } catch (error) {
+      this.activeBeings.delete(being.id);
+      this.engine.logger?.log(LogLevel.ERROR, LogCategory.LESSER_BEINGS, 'Debug spawn failed: registration error', {
+        species,
+        error: error instanceof Error ? error.message : error
+      });
+      return null;
+    }
+  }
+
   private instantiateBeing(species: LesserBeing, position: Vector3, overrides: LesserBeingSpawnOverrides = {}): LesserBeingBase | null {
     const spawnOverrides: LesserBeingSpawnOverrides = { ...overrides, position };
     switch (species) {

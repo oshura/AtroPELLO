@@ -2,6 +2,7 @@ import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { LoggingService, LogCategory, LogLevel, LogEntry } from '../logging.service';
 import { CharacterProfileService } from '../game/character-profile.service';
+import { LesserBeing, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
 
 @Injectable({ providedIn: 'root' })
 export class DebugStatsOverlayService {
@@ -86,6 +87,12 @@ export class DebugStatsOverlayService {
           <div class="dbg-controls-row">
             <button id="dbg-btn-survivability-minus">Survivencia -9%</button>
             <button id="dbg-btn-age-plus">+365 días edad</button>
+          </div>
+          <div class="dbg-subheader">Spawn Lesser Beings</div>
+          <div class="dbg-controls-row">
+            <button id="dbg-btn-spawn-seed">Semilla estelar</button>
+            <button id="dbg-btn-spawn-shoggoth">Shoggoth</button>
+            <button id="dbg-btn-spawn-vamp">Vampiro de fuego</button>
           </div>
           <div id="dbg-tools-status" class="dbg-tools-status"></div>
         </div>
@@ -287,12 +294,24 @@ export class DebugStatsOverlayService {
     if (!this.overlayElement) return;
     const survBtn = this.overlayElement.querySelector('#dbg-btn-survivability-minus') as HTMLButtonElement | null;
     const ageBtn = this.overlayElement.querySelector('#dbg-btn-age-plus') as HTMLButtonElement | null;
+    const spawnButtons: Array<{ id: string; type: LesserBeing }> = [
+      { id: '#dbg-btn-spawn-seed', type: LesserBeing.SEMILLAS_ESTELARES },
+      { id: '#dbg-btn-spawn-shoggoth', type: LesserBeing.SHOGGOTH },
+      { id: '#dbg-btn-spawn-vamp', type: LesserBeing.VAMPIRO_FUEGO },
+    ];
     if (survBtn) {
       survBtn.onclick = () => this.handleSurvivabilityAdjustment(-9);
     }
     if (ageBtn) {
       ageBtn.onclick = () => this.handleAgeAdvance(365);
     }
+    spawnButtons.forEach(({ id, type }) => {
+      const btn = this.overlayElement?.querySelector(id) as HTMLButtonElement | null;
+      if (!btn) {
+        return;
+      }
+      btn.onclick = () => this.handleSpawnDebugLesser(type);
+    });
   }
 
   private handleSurvivabilityAdjustment(delta: number): void {
@@ -314,6 +333,24 @@ export class DebugStatsOverlayService {
     } catch (error) {
       this.showToolStatus('Error al ajustar edad');
       this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev age advance failed', error);
+    }
+  }
+
+  private handleSpawnDebugLesser(species: LesserBeing): void {
+    if (!this.gameEngine || typeof this.gameEngine.debugSpawnLesserBeing !== 'function') {
+      this.showToolStatus('Engine no disponible para spawn');
+      return;
+    }
+    try {
+      this.gameEngine.debugSpawnLesserBeing(species);
+      const label = LESSER_BEING_LABELS[species] ?? species;
+      this.showToolStatus(`Spawn ${label} solicitado`);
+    } catch (error) {
+      this.showToolStatus('Error al spawnear lesser being');
+      this.logging.log(LogLevel.ERROR, LogCategory.LESSER_BEINGS, 'Dev spawn lesser being failed', {
+        species,
+        error
+      });
     }
   }
 
