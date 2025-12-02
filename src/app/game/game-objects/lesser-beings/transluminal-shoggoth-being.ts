@@ -22,7 +22,7 @@ const SHOGGOTH_STATS: LesserBeingStats = {
 const SHOGGOTH_ATTACK_PROFILE: LesserBeingAttackProfile = {
   id: 'orb_burst',
   kind: 'radial-burst',
-  cooldownMs: 10_000,
+  cooldownMs: 6_000,
   maxRange: 120,
   metadata: {
     orbCount: 40,

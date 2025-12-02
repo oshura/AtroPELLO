@@ -186,24 +186,24 @@ export class LesserBeingRenderer {
     projectionMatrix: Float32Array,
     timeSec: number
   ): void {
-    const baseRadius = Math.max(1.75, projectile.radius * 1.1);
-    const pulse = 0.85 + 0.15 * Math.sin(timeSec * 6 + projectile.remainingLife * 10);
+    const baseRadius = Math.max(0.55, projectile.radius * 0.42);
+    const pulse = 0.8 + 0.2 * Math.sin(timeSec * 6 + projectile.remainingLife * 10);
     const wobbleAxis = this.normalize({
       x: Math.sin(projectile.remainingLife * 13),
       y: Math.cos(projectile.remainingLife * 17),
       z: Math.sin(projectile.remainingLife * 11)
     });
-    const wobbleOffset = this.scaleVector(wobbleAxis, baseRadius * 0.2 * pulse);
+    const wobbleOffset = this.scaleVector(wobbleAxis, baseRadius * 0.005 * pulse);
     const center = this.addVectors(projectile.position, wobbleOffset);
-    const coreColor: [number, number, number, number] = [1.0, 0.92, 0.35, 0.9 * pulse];
-    const shellColor: [number, number, number, number] = [0.99, 0.78, 0.18, 0.55 * pulse];
+    const coreColor: [number, number, number, number] = [0.95, 0.86, 0.32, 0.5 * pulse];
+    const shellColor: [number, number, number, number] = [0.92, 0.68, 0.15, 0.35 * pulse];
 
     this.drawGlowBillboard(
       center,
       camera.right,
       camera.up,
-      baseRadius * 2.6,
-      baseRadius * 2.6,
+      baseRadius * 1.9,
+      baseRadius * 1.9,
       shellColor,
       viewMatrix,
       projectionMatrix,
@@ -215,8 +215,8 @@ export class LesserBeingRenderer {
       center,
       camera.right,
       camera.up,
-      baseRadius * 1.8,
-      baseRadius * 1.8,
+      baseRadius * 1.2,
+      baseRadius * 1.2,
       coreColor,
       viewMatrix,
       projectionMatrix,

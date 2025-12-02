@@ -124,9 +124,12 @@ export class LesserBeingController {
     }
 
     const shipTarget = this.makeShipTarget();
-    if (shipTarget && this.isShipPriorityTarget(context, shipTarget.position)) {
-      this.lockOnShip(context, shipTarget, true);
-      return;
+    if (shipTarget) {
+      this.maybeTriggerShoggothDefense(context, shipTarget.position);
+      if (this.isShipPriorityTarget(context, shipTarget.position)) {
+        this.lockOnShip(context, shipTarget, true);
+        return;
+      }
     }
 
     const direction = this.directionTo(being, target.position);
@@ -154,8 +157,11 @@ export class LesserBeingController {
     being.adjustSpeed(Math.min(being.stats.maxSpeed * 0.5, 30), deltaTime);
 
     const shipTarget = this.makeShipTarget();
-    if (shipTarget && this.isShipPriorityTarget(context, shipTarget.position)) {
-      this.lockOnShip(context, shipTarget, true);
+    if (shipTarget) {
+      this.maybeTriggerShoggothDefense(context, shipTarget.position);
+      if (this.isShipPriorityTarget(context, shipTarget.position)) {
+        this.lockOnShip(context, shipTarget, true);
+      }
     }
   }
 
@@ -217,6 +223,11 @@ export class LesserBeingController {
       return;
     }
 
+    const shipTarget = this.makeShipTarget();
+    if (shipTarget) {
+      this.maybeTriggerShoggothDefense(context, shipTarget.position);
+    }
+
     const direction = this.directionTo(being, target.position);
     being.steerTowards(direction, deltaTime);
     being.adjustSpeed(Math.max(0, being.currentSpeed - being.stats.deceleration * deltaTime), deltaTime);
@@ -262,7 +273,15 @@ export class LesserBeingController {
   }
 
   private shouldIgnoreShip(context: BeingContext): boolean {
-    return context.being.behaviorProfile.ignoresShipWhilePlanetHunting ?? false;
+    const { being } = context;
+    const ignores = being.behaviorProfile.ignoresShipWhilePlanetHunting ?? false;
+    if (!ignores) {
+      return false;
+    }
+    if (being instanceof TransluminalShoggothBeing && !this.hasAvailablePlanet(context)) {
+      return false;
+    }
+    return ignores;
   }
 
   private computeDesiredRange(context: BeingContext): [number, number] {
@@ -457,6 +476,37 @@ export class LesserBeingController {
         }
       }
     }
+  }
+
+  private maybeTriggerShoggothDefense(context: BeingContext, shipPosition: Vector3): void {
+    if (!(context.being instanceof TransluminalShoggothBeing)) {
+      return;
+    }
+    const distance = this.distanceTo(context.being, shipPosition);
+    const maxRange = context.being.attackProfile.maxRange ?? 120;
+    if (distance > maxRange) {
+      return;
+    }
+    const direction = this.directionTo(context.being, shipPosition);
+    this.tryAttack(context, direction, distance);
+  }
+
+  private hasAvailablePlanet(context: BeingContext): boolean {
+    const planets = this.engine.gameState?.planets ?? [];
+    for (const candidate of planets) {
+      if (!(candidate instanceof Planet)) {
+        continue;
+      }
+      if (this.isPlanetOccupied(candidate)) {
+        continue;
+      }
+      const reservedBy = this.planetReservations.get(candidate.id);
+      if (reservedBy && reservedBy !== context.being.id) {
+        continue;
+      }
+      return true;
+    }
+    return false;
   }
 
   private lockOnShip(context: BeingContext, shipTarget: TargetDescriptor, immediateAttack = false): void {

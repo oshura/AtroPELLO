@@ -23,7 +23,7 @@ Guía de referencia sobre la IA, el combate y el estado actual de las Semillas E
 ### Shoggoths transluminales
 - **Stats**: 1000 HP, 40u/s.
 - **Ataque**: `orb_burst` (36 orbes básicos de 50 de daño) distribuidos con muestreo Fibonacci.
-- **IA**: ignoran la nave salvo que no queden planetas libres; priorizan colonizar y permanecen orbitando a ~80u mientras esperan turno.
+- **IA**: ignoran la nave salvo que no queden planetas libres; priorizan colonizar y permanecen orbitando a ~80u mientras esperan turno. Mientras van camino al planeta (o durante el aterrizaje) liberan ráfagas defensivas si la nave entra en el radio de 120u, y únicamente cambian a ENGAGING como una Semilla cuando ya no hay planetas disponibles.
 - **Visuales**: cada orbe ahora se dibuja como una esfera amarillo-pus pulsante (dos capas aditivas sin estela) para que el jugador pueda anticipar la nube radial.
 
 ### Vampiros del Fuego (Rift Vampires)
