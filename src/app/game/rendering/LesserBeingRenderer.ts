@@ -320,17 +320,21 @@ export class LesserBeingRenderer {
       const eyeRadius = Math.max(0.05, descriptor.eyes.radius) * baseRadius;
       for (const eye of cache.eyes) {
         const wobble = Math.sin(timeSec * (descriptor.eyes.wobbleSpeed ?? 0.45) + eye.phase) * eyeRadius * 0.15;
-        const center = being.transformLocalPoint({ x: eye.local.x, y: eye.local.y, z: eye.local.z });
+        const center = being.transformLocalPoint(eye.local);
+        const normalDir = being.transformLocalDirection(eye.local);
+        const outwardOffset = this.scaleVector(normalDir, baseRadius * 0.02);
+        const surfaceAxes = this.buildSurfaceAxes(normalDir);
+        const wobbleShift = this.scaleVector(surfaceAxes.up, wobble);
         const adjustedCenter = {
-          x: center.x + camera.up.x * wobble,
-          y: center.y + camera.up.y * wobble,
-          z: center.z + camera.up.z * wobble
+          x: center.x + outwardOffset.x + wobbleShift.x,
+          y: center.y + outwardOffset.y + wobbleShift.y,
+          z: center.z + outwardOffset.z + wobbleShift.z
         };
         const scleraColor = this.toRgba(descriptor.eyes.color ?? { r: 1, g: 1, b: 1, a: 0.9 }, 0.85);
         this.drawGlowBillboard(
           adjustedCenter,
-          camera.right,
-          camera.up,
+          surfaceAxes.right,
+          surfaceAxes.up,
           eyeRadius * 0.9,
           eyeRadius * 0.9,
           scleraColor,
@@ -342,8 +346,8 @@ export class LesserBeingRenderer {
         const pupilColor = this.toRgba(descriptor.eyes.pupilColor ?? { r: 0.2, g: 0.6, b: 0.9, a: 0.9 }, 0.85);
         this.drawGlowBillboard(
           adjustedCenter,
-          camera.right,
-          camera.up,
+          surfaceAxes.right,
+          surfaceAxes.up,
           eyeRadius * 0.45,
           eyeRadius * 0.45,
           pupilColor,
@@ -359,12 +363,16 @@ export class LesserBeingRenderer {
       for (const pustule of cache.pustules) {
         const pulse = 0.75 + 0.25 * Math.sin(timeSec * (descriptor.pustules.pulseSpeed ?? 1.1) + pustule.phase);
         const center = being.transformLocalPoint(pustule.local);
+        const normalDir = being.transformLocalDirection(pustule.local);
+        const outwardOffset = this.scaleVector(normalDir, baseRadius * 0.015);
+        const surfaceAxes = this.buildSurfaceAxes(normalDir);
+        const adjustedCenter = this.addVectors(center, outwardOffset);
         const radius = baseRadius * pustule.radius * pulse;
         const color = this.toRgba(descriptor.pustules.color ?? { r: 1, g: 0.8, b: 0.25, a: 0.7 }, (descriptor.pustules.color?.a ?? 0.7) * pulse);
         this.drawGlowBillboard(
-          center,
-          camera.right,
-          camera.up,
+          adjustedCenter,
+          surfaceAxes.right,
+          surfaceAxes.up,
           radius,
           radius,
           color,
@@ -634,6 +642,22 @@ export class LesserBeingRenderer {
     const up = this.normalize({ x: viewMatrix[1], y: viewMatrix[5], z: viewMatrix[9] });
     const forward = this.normalize({ x: -viewMatrix[2], y: -viewMatrix[6], z: -viewMatrix[10] });
     return { right, up, forward };
+  }
+
+  private buildSurfaceAxes(normal: Vector3): { right: Vector3; up: Vector3 } {
+    const n = this.normalize(normal);
+    let reference: Vector3 = { x: 0, y: 1, z: 0 };
+    if (Math.abs(n.y) > 0.9) {
+      reference = { x: 1, y: 0, z: 0 };
+    }
+    let right = this.cross(reference, n);
+    if (Math.abs(right.x) + Math.abs(right.y) + Math.abs(right.z) < 1e-4) {
+      reference = { x: 0, y: 0, z: 1 };
+      right = this.cross(reference, n);
+    }
+    right = this.normalize(right);
+    const up = this.normalize(this.cross(n, right));
+    return { right, up };
   }
 
   private toRgba(color: Color | undefined, alphaFallback: number): [number, number, number, number] {

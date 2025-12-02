@@ -66,7 +66,7 @@ export class TransluminalShoggothBeing extends LesserBeingBase {
       seed: Math.random() * 10_000,
       eyes: {
         count: 7,
-        radius: 0.18,
+        radius: 0.48,
         color: SHOGGOTH_EYE_COLOR,
         pupilColor: SHOGGOTH_PUPIL_COLOR,
         wobbleSpeed: 0.45,
@@ -75,7 +75,7 @@ export class TransluminalShoggothBeing extends LesserBeingBase {
       pustules: {
         count: 12,
         color: SHOGGOTH_PUSTULE_COLOR,
-        radiusRange: [0.08, 0.18],
+        radiusRange: [0.24, 0.48],
         pulseSpeed: 1.2
       }
     };

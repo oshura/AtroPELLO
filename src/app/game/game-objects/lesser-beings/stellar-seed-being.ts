@@ -42,7 +42,8 @@ const STELLAR_SEED_BEHAVIOR_PROFILE: LesserBeingBehaviorProfile = {
   notes: 'Prioriza colonizar planetas libres pero acosa la nave si entra en el cono frontal.'
 };
 
-const STELLAR_SEED_COLOR: Color = { r: 0.3, g: 0.9, b: 0.5, a: 1 };
+const STELLAR_SEED_COLOR: Color = { r: 0.12, g: 0.45, b: 0.23, a: 1 };
+const STELLAR_SEED_TENTACLE_COLOR: Color = { r: 0.3, g: 0.9, b: 0.5, a: 1 };
 const STELLAR_SEED_TENTACLE_TIP_COLOR: Color = { r: 0.8, g: 1.0, b: 0.65, a: 0.95 };
 const STELLAR_SEED_HALO_COLOR: Color = { r: 0.25, g: 0.85, b: 0.55, a: 0.35 };
 const STELLAR_SEED_HALO_OUTER: Color = { r: 0.05, g: 0.35, b: 0.22, a: 0.08 };
@@ -71,7 +72,7 @@ export class StellarSeedBeing extends LesserBeingBase {
         count: 6,
         length: 2.2,
         width: 0.16,
-        color: STELLAR_SEED_COLOR,
+        color: STELLAR_SEED_TENTACLE_COLOR,
         tipColor: STELLAR_SEED_TENTACLE_TIP_COLOR,
         noiseScale: 0.65,
         noiseSpeed: 1.35,
