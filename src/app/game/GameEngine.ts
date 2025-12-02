@@ -52,7 +52,7 @@ import { KeyBindingsService, GameAction } from '../services/key-bindings.service
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
-import { getDisplayLabelFromTargetType } from './types/game-object.types';
+import { getDisplayLabelFromTargetType, getCategory, targetTypeToGameObjectType, GameObjectCategory } from './types/game-object.types';
 import {
   EquipmentSlot,
   InventorySnapshot,
@@ -1654,8 +1654,12 @@ export class GameEngine {
         for (const o of inst.objects) {
           // Register reactive destruction callback for each asteroid
           this.registerDestructionCallback(o);
-          const name = (o as any)?.constructor?.name;
-            if (name === 'SuperAsteroid') supers.push(o as any); else normals.push(o as any);
+          const objectType = this.resolveObjectType(o);
+          if (objectType === GameObjectType.SUPER_ASTEROID) {
+            supers.push(o as any);
+          } else {
+            normals.push(o as any);
+          }
         }
       }
       this.targetCatalog.register(TargetType.ASTEROID, normals);
@@ -3454,40 +3458,45 @@ export class GameEngine {
           // Set cooldown for this collision pair (500ms)
           this.collisionPairCooldown.set(pairKey, now + 500);
           
-          // Determine damage based on type/class name (handle underscore prefix from minification)
           const rawName = (obj as any)?.constructor?.name || 'Unknown';
           const name = rawName.startsWith('_') ? rawName.substring(1) : rawName;
-          // Debug: log collision detected
-          this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Collision detected!', { name, rawName, id: obj.id });
-          let dmg = 0;
-          if (name === 'Asteroid') dmg = 10;
-          else if (name === 'SuperAsteroid') dmg = 75;
-          else if (name === 'MegaAsteroid') dmg = 150;
-          else if (name === 'Planet' || name === 'RingedPlanet' || name === 'GaseousPlanet' || name === 'GiantPlanet' || name === 'DwarfPlanet' || name === 'Protoplanet' || name === 'EarthSplitPlanet') dmg = 100000;
-          else if (name === 'Sun') dmg = 100000;
-          else if (name === 'Portal') dmg = 0; // ethereal
-          // Proxy cluster object (ClusterObject) treat like small asteroid
-          else if (name === 'ClusterObject') dmg = 10;
-          else if (obj instanceof LesserBeingBase) {
+          const objectType = (obj as GameObject)?.getType?.() ?? GameObjectType.UNKNOWN;
+          let dmg = this.getCollisionDamageForType(objectType);
+          if (objectType === GameObjectType.LESSER_BEING && obj instanceof LesserBeingBase) {
             if (obj.beingType === LesserBeing.SHOGGOTH || obj.beingType === LesserBeing.SEMILLAS_ESTELARES) {
               dmg = 150;
             } else if (obj.beingType === LesserBeing.VAMPIRO_FUEGO) {
               dmg = 0;
+            } else if (dmg === null) {
+              dmg = 75; // default impact for other corporeal lesser beings
             }
+          } else if (dmg === null) {
+            dmg = this.getCollisionDamageForConstructor(name);
           }
-          if (dmg > 0) {
+
+          // Debug: log collision detected
+          this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Collision detected!', {
+            name,
+            rawName,
+            objectType,
+            id: obj.id,
+            damage: dmg ?? 0
+          });
+
+          const resolvedDamage = dmg ?? 0;
+          if (resolvedDamage > 0) {
             // Physics response before applying potential fatal damage
-            this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Calling handleCollisionResponse', { name, dmg, audioUnlocked: this.audioUnlocked });
+            this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Calling handleCollisionResponse', { name, objectType, dmg: resolvedDamage, audioUnlocked: this.audioUnlocked });
             try { 
-              this.handleCollisionResponse(obj, name, dmg); 
+              this.handleCollisionResponse(obj, name, resolvedDamage); 
             } catch (e) {
               this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'handleCollisionResponse failed', e);
             }
             const cocoonActive = !!(this.voidCocoonActiveUntilMs && now < this.voidCocoonActiveUntilMs);
             if (cocoonActive) {
-              this.handleVoidCocoonImpact(obj, dmg, { reason: name });
+              this.handleVoidCocoonImpact(obj, resolvedDamage, { reason: name });
             } else {
-              applyDamage(obj, dmg);
+              applyDamage(obj, resolvedDamage);
             }
             
             // Apply mutual damage: ship deals 50 damage to the object
@@ -3700,23 +3709,24 @@ export class GameEngine {
    * Get debris particle color based on object type
    */
   private getObjectDebrisColor(obj: GameObject): { r: number; g: number; b: number } {
-    const typeName = obj.constructor?.name || '';
-    
-    // Asteroids: gris-marrón rocoso
-    if (typeName.includes('Asteroid')) {
+    const objectType = this.resolveObjectType(obj);
+    const category = getCategory(objectType);
+
+    // Asteroids / debris fields: gris-marrón rocoso
+    if (category === GameObjectCategory.ASTEROID || objectType === GameObjectType.CLUSTER) {
       return { r: 0.7, g: 0.5, b: 0.3 };
     }
-    
+
     // Planets: tonos azulados/verdosos
-    if (typeName.includes('Planet')) {
+    if (category === GameObjectCategory.PLANET) {
       return { r: 0.3, g: 0.6, b: 0.8 };
     }
-    
+
     // Portals: púrpura místico
-    if (typeName === 'Portal') {
+    if (category === GameObjectCategory.PORTAL) {
       return { r: 0.8, g: 0.3, b: 0.9 };
     }
-    
+
     // Default: gris neutro
     return { r: 0.6, g: 0.6, b: 0.6 };
   }
@@ -3757,6 +3767,7 @@ export class GameEngine {
     const objId = obj.id;
     this.stopDopplerCueForObject(objId);
     const typeName = obj.constructor?.name || 'Unknown';
+    const objectType = this.resolveObjectType(obj);
     let removed = false;
 
     if (obj instanceof LesserBeingBase) {
@@ -3771,7 +3782,7 @@ export class GameEngine {
     } catch {}
 
     // Additional cleanup for transient structures not owned by the store
-    if (typeName === 'Asteroid' || typeName === '_Asteroid') {
+    if (objectType === GameObjectType.ASTEROID) {
       // NOTE: Regular cluster asteroids are managed by AsteroidClusterService
       // and don't need removal here (clusters handle their own lifecycle)
 
@@ -3798,7 +3809,7 @@ export class GameEngine {
           });
         } catch {}
       }
-    } else if (typeName === 'SuperAsteroid' || typeName === '_SuperAsteroid') {
+    } else if (objectType === GameObjectType.SUPER_ASTEROID) {
       // Also remove from cluster service if it's part of a cluster
       try {
         this.asteroidClusterService.getClusters().forEach(cluster => {
@@ -3814,7 +3825,7 @@ export class GameEngine {
           }
         });
       } catch {}
-    } else if (typeName === 'MegaAsteroid' || typeName === '_MegaAsteroid') {
+    } else if (objectType === GameObjectType.MEGA_ASTEROID) {
       // Remove from planet debris map for visual debris trails
       for (const [planetId, debris] of this.planetDebris.entries()) {
         const idx = debris.findIndex(d => d.obj.id === objId);
@@ -3828,7 +3839,7 @@ export class GameEngine {
     }
     
     if (!removed) {
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Object not found in any array for destruction', { id: objId, type: typeName });
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Object not found in any array for destruction', { id: objId, type: typeName, objectType });
     }
     
     // Clear from targeting system
@@ -3872,7 +3883,7 @@ export class GameEngine {
     // Visual feedback
     try { this.hudManager?.addMarqueeMessage?.(`${typeName} destruido`); } catch {}
     
-    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object removed from world', { id: objId, type: typeName, removed });
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object removed from world', { id: objId, type: typeName, objectType, removed });
   }
 
   private handleLesserBeingDestroyed(being: LesserBeingBase): void {
@@ -7024,14 +7035,25 @@ export class GameEngine {
 
   private isAsteroidTarget(target: any): target is Asteroid {
     if (!target) return false;
-    const typeName = target.constructor?.name || '';
     if (typeof target.getTargetType === 'function') {
-      const t = String(target.getTargetType());
-      if (t.toLowerCase().includes('asteroid')) {
-        return true;
-      }
+      try {
+        const legacyType = target.getTargetType();
+        if (legacyType !== undefined && legacyType !== null) {
+          const resolved = targetTypeToGameObjectType(legacyType as TargetType);
+          if (resolved === GameObjectType.ASTEROID || resolved === GameObjectType.SUPER_ASTEROID || resolved === GameObjectType.MEGA_ASTEROID) {
+            return true;
+          }
+          if (typeof legacyType === 'string') {
+            const lowered = legacyType.toLowerCase();
+            if (lowered.includes('asteroid')) {
+              return true;
+            }
+          }
+        }
+      } catch {}
     }
-    return typeName.includes('Asteroid');
+    const objectType = this.resolveObjectType(target);
+    return objectType === GameObjectType.ASTEROID || objectType === GameObjectType.SUPER_ASTEROID || objectType === GameObjectType.MEGA_ASTEROID;
   }
 
   /**
@@ -7078,9 +7100,8 @@ export class GameEngine {
     if (elapsed >= this.disruptionBeam.duration) {
       // Beam finished - destroy target if it's an asteroid
       const target = this.disruptionBeam.target;
-      const typeName = target?.constructor?.name || '';
       
-      if (typeName.includes('Asteroid')) {
+      if (this.isAsteroidTarget(target)) {
         // Apply lethal damage (triggers reactive destruction system)
         this.applyDamageToObject(target, target.healthMax || 9999);
       }
@@ -9947,6 +9968,131 @@ export class GameEngine {
       z: forward.z / len
     };
   }
+  private resolveObjectType(obj: any): GameObjectType {
+    if (!obj) {
+      return GameObjectType.UNKNOWN;
+    }
+    try {
+      if (obj instanceof LesserBeingBase) {
+        return GameObjectType.LESSER_BEING;
+      }
+      if (obj instanceof Spaceship) {
+        return GameObjectType.SPACESHIP;
+      }
+    } catch {}
+    try {
+      const go = obj as GameObject;
+      if (typeof go.getType === 'function') {
+        const type = go.getType();
+        if (type) {
+          return type;
+        }
+      }
+    } catch {}
+    try {
+      if (typeof obj.getTargetType === 'function') {
+        const legacyType = obj.getTargetType();
+        if (legacyType !== undefined && legacyType !== null) {
+          const resolved = targetTypeToGameObjectType(legacyType as TargetType);
+          if (resolved) {
+            return resolved;
+          }
+        }
+      }
+    } catch {}
+    const ctorName = (obj?.constructor?.name || '').replace(/^_/, '');
+    switch (ctorName) {
+      case 'Asteroid':
+        return GameObjectType.ASTEROID;
+      case 'SuperAsteroid':
+        return GameObjectType.SUPER_ASTEROID;
+      case 'MegaAsteroid':
+        return GameObjectType.MEGA_ASTEROID;
+      case 'ClusterObject':
+        return GameObjectType.CLUSTER;
+      case 'Planet':
+        return GameObjectType.PLANET;
+      case 'RingedPlanet':
+        return GameObjectType.RINGED_PLANET;
+      case 'GaseousPlanet':
+        return GameObjectType.GASEOUS_PLANET;
+      case 'GiantPlanet':
+        return GameObjectType.GIANT_PLANET;
+      case 'DwarfPlanet':
+        return GameObjectType.DWARF_PLANET;
+      case 'Protoplanet':
+        return GameObjectType.PROTOPLANET;
+      case 'EarthSplitPlanet':
+        return GameObjectType.EARTH_SPLIT_PLANET;
+      case 'Sun':
+        return GameObjectType.SUN;
+      case 'Portal':
+        return GameObjectType.PORTAL;
+      case 'Spaceship':
+        return GameObjectType.SPACESHIP;
+      default:
+        if (ctorName.includes('Asteroid')) {
+          return GameObjectType.ASTEROID;
+        }
+        if (ctorName.includes('Planet')) {
+          return GameObjectType.PLANET;
+        }
+        return GameObjectType.UNKNOWN;
+    }
+  }
+
+  private getCollisionDamageForType(type: GameObjectType): number | null {
+    switch (type) {
+      case GameObjectType.ASTEROID:
+      case GameObjectType.CLUSTER:
+        return 10;
+      case GameObjectType.SUPER_ASTEROID:
+        return 75;
+      case GameObjectType.MEGA_ASTEROID:
+        return 150;
+      case GameObjectType.PLANET:
+      case GameObjectType.DWARF_PLANET:
+      case GameObjectType.PROTOPLANET:
+      case GameObjectType.GIANT_PLANET:
+      case GameObjectType.GASEOUS_PLANET:
+      case GameObjectType.RINGED_PLANET:
+      case GameObjectType.EARTH_SPLIT_PLANET:
+      case GameObjectType.SUN:
+        return 100000;
+      case GameObjectType.PORTAL:
+        return 0;
+      default:
+        return null;
+    }
+  }
+
+  private getCollisionDamageForConstructor(name: string): number | null {
+    switch (name) {
+      case 'Asteroid':
+      case 'ClusterObject':
+        return 10;
+      case 'SuperAsteroid':
+        return 75;
+      case 'MegaAsteroid':
+        return 150;
+      case 'Planet':
+      case 'RingedPlanet':
+      case 'GaseousPlanet':
+      case 'GiantPlanet':
+      case 'DwarfPlanet':
+      case 'Protoplanet':
+      case 'EarthSplitPlanet':
+        return 100000;
+      case 'Sun':
+        return 100000;
+      case 'Portal':
+        return 0;
+      default:
+        return null;
+    }
+  }
 }
+
+
 
 

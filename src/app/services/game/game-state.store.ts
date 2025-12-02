@@ -278,6 +278,7 @@ export class GameStateStore {
   constructor(private logger: LoggingService) {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 
       '✅ GameStateStore initialized');
+    this.enforceSanityCeiling();
   }
 
   public setGrimoireGlyphPosition(spell: SpellType, normalized: { nx: number; ny: number }): void {

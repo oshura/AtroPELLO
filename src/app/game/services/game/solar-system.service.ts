@@ -12,6 +12,7 @@ import {
   RingedPlanet, GaseousPlanet, GiantPlanet, Portal
 } from '../../game-objects';
 import { TargetType } from '../../types/targeting.types';
+import { GameObjectType } from '../../types/game-object.types';
 import { PLANET_INTEL_STATUS, createEmptyResourceStock } from '../../types/planet-intel.types';
 
 /**
@@ -194,8 +195,12 @@ export class SolarSystemService {
         }
         // Bucketize for target catalog
         for (const o of inst.objects) {
-          const name = (o as any)?.constructor?.name;
-          if (name === 'SuperAsteroid') supers.push(o as any); else normals.push(o as any);
+          const objectType = (o as any)?.getType?.() ?? GameObjectType.UNKNOWN;
+          if (objectType === GameObjectType.SUPER_ASTEROID) {
+            supers.push(o as any);
+          } else {
+            normals.push(o as any);
+          }
         }
       }
       // Register buckets
