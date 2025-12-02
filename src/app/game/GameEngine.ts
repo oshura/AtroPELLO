@@ -76,7 +76,7 @@ import { OrientationBasis, computeHeadingFromForward } from './targeting/compass
 import { Vector3 } from '../types/game.types';
 import { LesserBeingController } from './services/lesser-beings/lesser-being-controller';
 import { LesserBeingSpawner } from './services/lesser-beings/lesser-being-spawner';
-import { LesserBeingCombatService } from './services/lesser-beings/lesser-being-combat.service';
+import { LesserBeingCombatService, LesserBeingProjectileView } from './services/lesser-beings/lesser-being-combat.service';
 
 interface AuxiliaryAbilityRuntime {
   id: string;
@@ -4732,6 +4732,9 @@ export class GameEngine {
       }
     }
 
+    let deferredProjectileViews: LesserBeingProjectileView[] | null = null;
+    let projectilePassTime = 0;
+
     if (this.lesserBeings.length) {
       for (const being of this.lesserBeings) {
         if (!being.active || !being.visible) {
@@ -4754,12 +4757,8 @@ export class GameEngine {
           );
           const projectileViews = this.lesserBeingCombat?.getActiveProjectiles();
           if (projectileViews?.length) {
-            this.lesserBeingRenderer.renderProjectiles(
-              projectileViews,
-              this.camera.viewMatrix,
-              this.camera.projectionMatrix,
-              timeNow
-            );
+            deferredProjectileViews = projectileViews;
+            projectilePassTime = timeNow;
           }
         } catch (e) {
           this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer render falló', e);
@@ -4770,6 +4769,20 @@ export class GameEngine {
 
   // Renderizar planetas después de asteroides
   this.renderPlanets();
+
+  if (deferredProjectileViews?.length && this.lesserBeingRenderer) {
+    try {
+      this.lesserBeingRenderer.renderProjectiles(
+        deferredProjectileViews,
+        this.camera.viewMatrix,
+        this.camera.projectionMatrix,
+        projectilePassTime || (performance.now() || 0) / 1000
+      );
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer renderProjectiles falló post-planetas', e);
+    }
+    restoreLitProgram();
+  }
   // Render portals (halo encapsulado en PortalRenderer)
   try {
     const portalRenderer = this.portalRenderer;

@@ -5,7 +5,6 @@ import { InstancedLitShaderService } from './shaders/InstancedLitShaderService';
 import { HudShaderService } from './shaders/HudShaderService';
 import { ReticleShaderService } from './shaders/ReticleShaderService';
 import { OutlineShaderService } from './shaders/OutlineShaderService';
-import { Vector3 } from '../types/game.types';
 
 /**
  * Shader programs para renderizado 3D
@@ -207,16 +206,15 @@ export class ShaderManager {
     in vec2 a_corner;
     in vec2 a_uv;
     in vec3 a_center;
-    in vec2 a_halfSize;
+    in vec3 a_rightVec;
+    in vec3 a_upVec;
     in vec4 a_color;
     uniform mat4 u_viewMatrix;
     uniform mat4 u_projectionMatrix;
-    uniform vec3 u_cameraRight;
-    uniform vec3 u_cameraUp;
     out vec4 v_color;
     out vec2 v_uv;
     void main(){
-      vec3 offset = u_cameraRight * (a_corner.x * a_halfSize.x) + u_cameraUp * (a_corner.y * a_halfSize.y);
+      vec3 offset = a_rightVec * a_corner.x + a_upVec * a_corner.y;
       vec3 world = a_center + offset;
       vec4 view = u_viewMatrix * vec4(world, 1.0);
       gl_Position = u_projectionMatrix * view;
@@ -257,12 +255,11 @@ export class ShaderManager {
     this.glowInstancedAttributes['corner'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_corner');
     this.glowInstancedAttributes['uv'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_uv');
     this.glowInstancedAttributes['center'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_center');
-    this.glowInstancedAttributes['halfSize'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_halfSize');
+    this.glowInstancedAttributes['rightVec'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_rightVec');
+    this.glowInstancedAttributes['upVec'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_upVec');
     this.glowInstancedAttributes['color'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_color');
     this.glowInstancedUniforms['viewMatrix'] = gl.getUniformLocation(this.glowInstancedProgram, 'u_viewMatrix');
     this.glowInstancedUniforms['projectionMatrix'] = gl.getUniformLocation(this.glowInstancedProgram, 'u_projectionMatrix');
-    this.glowInstancedUniforms['cameraRight'] = gl.getUniformLocation(this.glowInstancedProgram, 'u_cameraRight');
-    this.glowInstancedUniforms['cameraUp'] = gl.getUniformLocation(this.glowInstancedProgram, 'u_cameraUp');
   }
 
   // ===== Unlit textured (diffuse-only) for Sun magma =====
@@ -337,23 +334,16 @@ export class ShaderManager {
     }
   }
 
-  public setGlowInstancedParams(view: Float32Array, proj: Float32Array, cameraRight: Vector3, cameraUp: Vector3): void {
+  public setGlowInstancedParams(view: Float32Array, proj: Float32Array): void {
     if (!this.gl || !this.glowInstancedProgram) {
       return;
     }
-    const gl = this.gl;
     const uniforms = this.glowInstancedUniforms;
     if (uniforms['viewMatrix']) {
-      gl.uniformMatrix4fv(uniforms['viewMatrix'], false, view);
+      this.gl.uniformMatrix4fv(uniforms['viewMatrix'], false, view);
     }
     if (uniforms['projectionMatrix']) {
-      gl.uniformMatrix4fv(uniforms['projectionMatrix'], false, proj);
-    }
-    if (uniforms['cameraRight']) {
-      gl.uniform3f(uniforms['cameraRight'], cameraRight.x, cameraRight.y, cameraRight.z);
-    }
-    if (uniforms['cameraUp']) {
-      gl.uniform3f(uniforms['cameraUp'], cameraUp.x, cameraUp.y, cameraUp.z);
+      this.gl.uniformMatrix4fv(uniforms['projectionMatrix'], false, proj);
     }
   }
 

@@ -30,6 +30,15 @@ interface ShoggothRuntimeState {
   pustules: PustuleState[];
 }
 
+interface GlowInstanceBatch {
+  data: Float32Array;
+  capacity: number;
+  count: number;
+  buffer: WebGLBuffer | null;
+  sizeBytes: number;
+  needsResize: boolean;
+}
+
 /**
  * LesserBeingRenderer: encapsula efectos visuales complementarios (tentáculos, halos, auras)
  * para las entidades Lesser Being sin modificar el pipeline principal lit.
@@ -39,19 +48,27 @@ export class LesserBeingRenderer {
   private readonly identityMatrix = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
   private tentacleCache = new WeakMap<LesserBeingBase, TentacleRuntimeState>();
   private shoggothCache = new WeakMap<LesserBeingBase, ShoggothRuntimeState>();
-  private static readonly ORB_INSTANCE_FLOATS = 9;
-  private orbInstanceData: Float32Array = new Float32Array(0);
-  private orbInstanceCapacity = 0;
-  private orbInstanceCount = 0;
-  private orbInstanceBufferSize = 0;
-  private orbInstanceBufferNeedsResize = false;
-  private orbCornerBuffer: WebGLBuffer | null = null;
-  private orbUvBuffer: WebGLBuffer | null = null;
-  private orbIndexBuffer: WebGLBuffer | null = null;
-  private orbInstanceBuffer: WebGLBuffer | null = null;
+  private static readonly GLOW_INSTANCE_FLOATS = 13;
+  private glowCornerBuffer: WebGLBuffer | null = null;
+  private glowUvBuffer: WebGLBuffer | null = null;
+  private glowIndexBuffer: WebGLBuffer | null = null;
+  private projectileGlowBatch: GlowInstanceBatch = this.createGlowBatch();
+  private additiveGlowBatch: GlowInstanceBatch = this.createGlowBatch();
+  private alphaGlowBatch: GlowInstanceBatch = this.createGlowBatch();
 
   constructor(private readonly webgl: WebGLService, private readonly shaders: ShaderManager) {
     this.gl = this.webgl.getContext() as WebGL2RenderingContext;
+  }
+
+  private createGlowBatch(): GlowInstanceBatch {
+    return {
+      data: new Float32Array(0),
+      capacity: 0,
+      count: 0,
+      buffer: null,
+      sizeBytes: 0,
+      needsResize: false
+    };
   }
 
   public render(
@@ -65,6 +82,8 @@ export class LesserBeingRenderer {
     }
 
     const cameraBasis = this.computeCameraBasis(viewMatrix);
+    this.resetGlowBatch(this.alphaGlowBatch);
+    this.resetGlowBatch(this.additiveGlowBatch);
 
     for (const being of beings) {
       if (!being || !being.visible || !being.isActive()) {
@@ -87,6 +106,9 @@ export class LesserBeingRenderer {
           break;
       }
     }
+
+    this.flushGlowBatch(this.alphaGlowBatch, viewMatrix, projectionMatrix, false);
+    this.flushGlowBatch(this.additiveGlowBatch, viewMatrix, projectionMatrix, true);
   }
 
   public renderProjectiles(
@@ -99,7 +121,7 @@ export class LesserBeingRenderer {
       return;
     }
     const cameraBasis = this.computeCameraBasis(viewMatrix);
-    this.resetOrbInstances();
+    this.resetGlowBatch(this.projectileGlowBatch);
     for (const projectile of projectiles) {
       if (!projectile) {
         continue;
@@ -109,11 +131,11 @@ export class LesserBeingRenderer {
           this.renderAcidProjectile(projectile, cameraBasis, viewMatrix, projectionMatrix, timeSec);
           break;
         case 'orb':
-          this.renderOrbProjectile(projectile, timeSec);
+          this.renderOrbProjectile(projectile, cameraBasis, viewMatrix, timeSec);
           break;
       }
     }
-    this.flushOrbInstances(cameraBasis, viewMatrix, projectionMatrix);
+    this.flushGlowBatch(this.projectileGlowBatch, viewMatrix, projectionMatrix, true);
   }
 
   private renderAcidProjectile(
@@ -137,7 +159,11 @@ export class LesserBeingRenderer {
     swirlAxis = this.normalize(swirlAxis);
     const wobble = Math.sin(swirlPhase) * baseRadius * 0.4;
     const wobbleOffset = this.scaleVector(swirlAxis, wobble);
-    const headCenter = this.addVectors(projectile.position, wobbleOffset);
+    const headCenter = this.applyProjectileDepthBias(
+      this.addVectors(projectile.position, wobbleOffset),
+      camera.forward,
+      viewMatrix
+    );
 
     const headColor: [number, number, number, number] = [0.58, 1.0, 0.46, 0.82 + 0.15 * lifeRatio];
     const shellColor: [number, number, number, number] = [0.36, 0.95, 0.35, 0.55 * lifeRatio + 0.25];
@@ -155,7 +181,11 @@ export class LesserBeingRenderer {
       false
     );
 
-    const bulgeCenter = this.subtractVectors(headCenter, this.scaleVector(direction, baseRadius * 0.9));
+    const bulgeCenter = this.applyProjectileDepthBias(
+      this.subtractVectors(headCenter, this.scaleVector(direction, baseRadius * 0.9)),
+      camera.forward,
+      viewMatrix
+    );
     this.drawGlowBillboard(
       bulgeCenter,
       camera.right,
@@ -172,7 +202,11 @@ export class LesserBeingRenderer {
     for (let i = 1; i <= 3; i++) {
       const t = i / 3;
       const decay = (1 - t * 0.35) * lifeRatio;
-      const center = this.subtractVectors(headCenter, this.scaleVector(direction, trailLength * t));
+      const center = this.applyProjectileDepthBias(
+        this.subtractVectors(headCenter, this.scaleVector(direction, trailLength * t)),
+        camera.forward,
+        viewMatrix
+      );
       const width = baseRadius * (2.6 + t * 1.1);
       const height = width * 0.9;
       const color: [number, number, number, number] = [0.2 + 0.1 * t, 0.9 + 0.07 * (1 - t), 0.3 + 0.05 * (1 - t), 0.35 * decay + 0.12];
@@ -191,14 +225,31 @@ export class LesserBeingRenderer {
     }
   }
 
-  private renderOrbProjectile(projectile: LesserBeingProjectileView, timeSec: number): void {
+  private renderOrbProjectile(
+    projectile: LesserBeingProjectileView,
+    camera: CameraBasis,
+    viewMatrix: Float32Array,
+    timeSec: number
+  ): void {
     const baseRadius = Math.max(0.55, projectile.radius * 0.42);
     const pulse = 0.8 + 0.2 * Math.sin(timeSec * 6 + projectile.remainingLife * 10);
-    const center = { ...projectile.position };
+    const center = this.applyProjectileDepthBias(projectile.position, camera.forward, viewMatrix);
     const coreColor: [number, number, number, number] = [0.95, 0.86, 0.32, 0.5 * pulse];
     const shellColor: [number, number, number, number] = [0.92, 0.68, 0.15, 0.35 * pulse];
-    this.pushOrbInstance(center, baseRadius * 1.9, baseRadius * 1.9, shellColor);
-    this.pushOrbInstance(center, baseRadius * 1.2, baseRadius * 1.2, coreColor);
+    this.pushGlowInstance(
+      this.projectileGlowBatch,
+      center,
+      this.scaleVector(camera.right, baseRadius * 1.9),
+      this.scaleVector(camera.up, baseRadius * 1.9),
+      shellColor
+    );
+    this.pushGlowInstance(
+      this.projectileGlowBatch,
+      center,
+      this.scaleVector(camera.right, baseRadius * 1.2),
+      this.scaleVector(camera.up, baseRadius * 1.2),
+      coreColor
+    );
   }
 
   private renderStellarSeedVisuals(
@@ -307,30 +358,20 @@ export class LesserBeingRenderer {
           z: center.z + outwardOffset.z + wobbleShift.z
         };
         const scleraColor = this.toRgba(descriptor.eyes.color ?? { r: 1, g: 1, b: 1, a: 0.9 }, 0.85);
-        this.drawGlowBillboard(
+        this.pushGlowInstance(
+          this.alphaGlowBatch,
           adjustedCenter,
-          surfaceAxes.right,
-          surfaceAxes.up,
-          eyeRadius * 0.9,
-          eyeRadius * 0.9,
-          scleraColor,
-          viewMatrix,
-          projectionMatrix,
-          false,
-          false
+          this.scaleVector(surfaceAxes.right, eyeRadius * 0.9),
+          this.scaleVector(surfaceAxes.up, eyeRadius * 0.9),
+          scleraColor
         );
         const pupilColor = this.toRgba(descriptor.eyes.pupilColor ?? { r: 0.2, g: 0.6, b: 0.9, a: 0.9 }, 0.85);
-        this.drawGlowBillboard(
+        this.pushGlowInstance(
+          this.additiveGlowBatch,
           adjustedCenter,
-          surfaceAxes.right,
-          surfaceAxes.up,
-          eyeRadius * 0.45,
-          eyeRadius * 0.45,
-          pupilColor,
-          viewMatrix,
-          projectionMatrix,
-          true,
-          false
+          this.scaleVector(surfaceAxes.right, eyeRadius * 0.45),
+          this.scaleVector(surfaceAxes.up, eyeRadius * 0.45),
+          pupilColor
         );
       }
     }
@@ -345,17 +386,12 @@ export class LesserBeingRenderer {
         const adjustedCenter = this.addVectors(center, outwardOffset);
         const radius = baseRadius * pustule.radius * pulse;
         const color = this.toRgba(descriptor.pustules.color ?? { r: 1, g: 0.8, b: 0.25, a: 0.7 }, (descriptor.pustules.color?.a ?? 0.7) * pulse);
-        this.drawGlowBillboard(
+        this.pushGlowInstance(
+          this.additiveGlowBatch,
           adjustedCenter,
-          surfaceAxes.right,
-          surfaceAxes.up,
-          radius,
-          radius,
-          color,
-          viewMatrix,
-          projectionMatrix,
-          true,
-          false
+          this.scaleVector(surfaceAxes.right, radius),
+          this.scaleVector(surfaceAxes.up, radius),
+          color
         );
       }
     }
@@ -429,165 +465,191 @@ export class LesserBeingRenderer {
     }
   }
 
-  private resetOrbInstances(): void {
-    this.orbInstanceCount = 0;
+  private resetGlowBatch(batch: GlowInstanceBatch): void {
+    batch.count = 0;
   }
 
-  private pushOrbInstance(center: Vector3, width: number, height: number, color: [number, number, number, number]): void {
-    this.ensureOrbInstanceCapacity(this.orbInstanceCount + 1);
-    const offset = this.orbInstanceCount * LesserBeingRenderer.ORB_INSTANCE_FLOATS;
-    const data = this.orbInstanceData;
+  private pushGlowInstance(
+    batch: GlowInstanceBatch,
+    center: Vector3,
+    rightVec: Vector3,
+    upVec: Vector3,
+    color: [number, number, number, number]
+  ): void {
+    this.ensureGlowBatchCapacity(batch, batch.count + 1);
+    const offset = batch.count * LesserBeingRenderer.GLOW_INSTANCE_FLOATS;
+    const data = batch.data;
     data[offset] = center.x;
     data[offset + 1] = center.y;
     data[offset + 2] = center.z;
-    data[offset + 3] = width * 0.5;
-    data[offset + 4] = height * 0.5;
-    data[offset + 5] = color[0];
-    data[offset + 6] = color[1];
-    data[offset + 7] = color[2];
-    data[offset + 8] = color[3];
-    this.orbInstanceCount++;
+    data[offset + 3] = rightVec.x;
+    data[offset + 4] = rightVec.y;
+    data[offset + 5] = rightVec.z;
+    data[offset + 6] = upVec.x;
+    data[offset + 7] = upVec.y;
+    data[offset + 8] = upVec.z;
+    data[offset + 9] = color[0];
+    data[offset + 10] = color[1];
+    data[offset + 11] = color[2];
+    data[offset + 12] = color[3];
+    batch.count++;
   }
 
-  private ensureOrbInstanceCapacity(target: number): void {
-    if (target <= this.orbInstanceCapacity) {
+  private ensureGlowBatchCapacity(batch: GlowInstanceBatch, target: number): void {
+    if (target <= batch.capacity) {
       return;
     }
-    let newCapacity = this.orbInstanceCapacity || 32;
+    let newCapacity = batch.capacity || 32;
     while (newCapacity < target) {
       newCapacity *= 2;
     }
-    this.orbInstanceCapacity = newCapacity;
-    this.orbInstanceData = new Float32Array(newCapacity * LesserBeingRenderer.ORB_INSTANCE_FLOATS);
-    this.orbInstanceBufferSize = this.orbInstanceData.byteLength;
-    this.orbInstanceBufferNeedsResize = true;
-    this.uploadOrbInstanceBufferCapacity();
+    batch.capacity = newCapacity;
+    batch.data = new Float32Array(newCapacity * LesserBeingRenderer.GLOW_INSTANCE_FLOATS);
+    batch.sizeBytes = batch.data.byteLength;
+    batch.needsResize = true;
   }
 
-  private uploadOrbInstanceBufferCapacity(): void {
-    if (!this.orbInstanceBufferNeedsResize || !this.gl || !this.orbInstanceBuffer || !this.orbInstanceBufferSize) {
-      return;
-    }
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.orbInstanceBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, this.orbInstanceBufferSize, this.gl.DYNAMIC_DRAW);
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
-    this.orbInstanceBufferNeedsResize = false;
-  }
-
-  private ensureOrbInstancingResources(): boolean {
-    if (!this.gl || !this.shaders?.glowInstancedProgram) {
+  private ensureGlowBaseGeometry(): boolean {
+    if (!this.gl) {
       return false;
     }
     const gl = this.gl;
-    if (!this.orbCornerBuffer) {
+    if (!this.glowCornerBuffer) {
       const corners = new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]);
-      this.orbCornerBuffer = gl.createBuffer();
-      if (!this.orbCornerBuffer) {
+      this.glowCornerBuffer = gl.createBuffer();
+      if (!this.glowCornerBuffer) {
         return false;
       }
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbCornerBuffer);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.glowCornerBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
     }
-    if (!this.orbUvBuffer) {
+    if (!this.glowUvBuffer) {
       const uvs = new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]);
-      this.orbUvBuffer = gl.createBuffer();
-      if (!this.orbUvBuffer) {
+      this.glowUvBuffer = gl.createBuffer();
+      if (!this.glowUvBuffer) {
         return false;
       }
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbUvBuffer);
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.glowUvBuffer);
       gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
     }
-    if (!this.orbIndexBuffer) {
+    if (!this.glowIndexBuffer) {
       const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
-      this.orbIndexBuffer = gl.createBuffer();
-      if (!this.orbIndexBuffer) {
+      this.glowIndexBuffer = gl.createBuffer();
+      if (!this.glowIndexBuffer) {
         return false;
       }
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.orbIndexBuffer);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.glowIndexBuffer);
       gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
     }
-    if (!this.orbInstanceBuffer) {
-      this.orbInstanceBuffer = gl.createBuffer();
-      if (!this.orbInstanceBuffer) {
-        return false;
-      }
-    }
-    this.uploadOrbInstanceBufferCapacity();
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
     return true;
   }
 
-  private flushOrbInstances(camera: CameraBasis, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
-    if (!this.orbInstanceCount) {
+  private ensureGlowBatchBuffer(batch: GlowInstanceBatch): boolean {
+    if (!this.gl) {
+      return false;
+    }
+    if (!batch.buffer) {
+      batch.buffer = this.gl.createBuffer();
+      if (!batch.buffer) {
+        return false;
+      }
+      batch.needsResize = true;
+    }
+    if (batch.needsResize && batch.sizeBytes > 0) {
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, batch.buffer);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, batch.sizeBytes, this.gl.DYNAMIC_DRAW);
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
+      batch.needsResize = false;
+    }
+    return true;
+  }
+
+  private flushGlowBatch(
+    batch: GlowInstanceBatch,
+    viewMatrix: Float32Array,
+    projectionMatrix: Float32Array,
+    additive: boolean
+  ): void {
+    if (!batch.count || !this.gl || !this.shaders?.glowInstancedProgram) {
+      batch.count = 0;
       return;
     }
-    if (!this.ensureOrbInstancingResources() || !this.gl || !this.shaders.glowInstancedProgram || !this.orbInstanceBuffer) {
-      this.orbInstanceCount = 0;
+    if (!this.ensureGlowBaseGeometry() || !this.ensureGlowBatchBuffer(batch) || !batch.buffer) {
+      batch.count = 0;
       return;
     }
     const gl = this.gl;
-    const stride = LesserBeingRenderer.ORB_INSTANCE_FLOATS * 4;
-    const used = this.orbInstanceCount * LesserBeingRenderer.ORB_INSTANCE_FLOATS;
-    const instanceSlice = this.orbInstanceData.subarray(0, used);
+    const stride = LesserBeingRenderer.GLOW_INSTANCE_FLOATS * 4;
+    const used = batch.count * LesserBeingRenderer.GLOW_INSTANCE_FLOATS;
+    const instanceSlice = batch.data.subarray(0, used);
+
     this.shaders.useGlowInstancedProgram();
-    this.shaders.setGlowInstancedParams(viewMatrix, projectionMatrix, camera.right, camera.up);
-    this.uploadOrbInstanceBufferCapacity();
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.orbInstanceBuffer);
+    this.shaders.setGlowInstancedParams(viewMatrix, projectionMatrix);
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
     gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceSlice);
 
     const cornerLoc = this.shaders.glowInstancedAttributes['corner'];
     const uvLoc = this.shaders.glowInstancedAttributes['uv'];
     const centerLoc = this.shaders.glowInstancedAttributes['center'];
-    const halfSizeLoc = this.shaders.glowInstancedAttributes['halfSize'];
+    const rightLoc = this.shaders.glowInstancedAttributes['rightVec'];
+    const upLoc = this.shaders.glowInstancedAttributes['upVec'];
     const colorLoc = this.shaders.glowInstancedAttributes['color'];
 
-    if (cornerLoc >= 0 && this.orbCornerBuffer) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbCornerBuffer);
+    if (cornerLoc >= 0 && this.glowCornerBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.glowCornerBuffer);
       gl.enableVertexAttribArray(cornerLoc);
       gl.vertexAttribPointer(cornerLoc, 2, gl.FLOAT, false, 0, 0);
       gl.vertexAttribDivisor(cornerLoc, 0);
     }
-    if (uvLoc >= 0 && this.orbUvBuffer) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbUvBuffer);
+    if (uvLoc >= 0 && this.glowUvBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.glowUvBuffer);
       gl.enableVertexAttribArray(uvLoc);
       gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 0, 0);
       gl.vertexAttribDivisor(uvLoc, 0);
     }
     if (centerLoc >= 0) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbInstanceBuffer);
+      gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
       gl.enableVertexAttribArray(centerLoc);
       gl.vertexAttribPointer(centerLoc, 3, gl.FLOAT, false, stride, 0);
       gl.vertexAttribDivisor(centerLoc, 1);
     }
-    if (halfSizeLoc >= 0) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbInstanceBuffer);
-      gl.enableVertexAttribArray(halfSizeLoc);
-      gl.vertexAttribPointer(halfSizeLoc, 2, gl.FLOAT, false, stride, 3 * 4);
-      gl.vertexAttribDivisor(halfSizeLoc, 1);
+    if (rightLoc >= 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
+      gl.enableVertexAttribArray(rightLoc);
+      gl.vertexAttribPointer(rightLoc, 3, gl.FLOAT, false, stride, 3 * 4);
+      gl.vertexAttribDivisor(rightLoc, 1);
+    }
+    if (upLoc >= 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
+      gl.enableVertexAttribArray(upLoc);
+      gl.vertexAttribPointer(upLoc, 3, gl.FLOAT, false, stride, 6 * 4);
+      gl.vertexAttribDivisor(upLoc, 1);
     }
     if (colorLoc >= 0) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbInstanceBuffer);
+      gl.bindBuffer(gl.ARRAY_BUFFER, batch.buffer);
       gl.enableVertexAttribArray(colorLoc);
-      gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, stride, 5 * 4);
+      gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, stride, 9 * 4);
       gl.vertexAttribDivisor(colorLoc, 1);
     }
 
-    if (this.orbIndexBuffer) {
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.orbIndexBuffer);
+    if (this.glowIndexBuffer) {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.glowIndexBuffer);
     }
 
     const prevBlend = gl.isEnabled(gl.BLEND);
     const prevDepthMask = gl.getParameter(gl.DEPTH_WRITEMASK) as boolean;
     const prevDepthTest = gl.isEnabled(gl.DEPTH_TEST);
     gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.blendFunc(gl.SRC_ALPHA, additive ? gl.ONE : gl.ONE_MINUS_SRC_ALPHA);
     gl.depthMask(false);
     if (!prevDepthTest) {
       gl.enable(gl.DEPTH_TEST);
     }
 
-    gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, this.orbInstanceCount);
+    gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, batch.count);
 
     if (!prevDepthTest) {
       gl.disable(gl.DEPTH_TEST);
@@ -608,9 +670,13 @@ export class LesserBeingRenderer {
       gl.disableVertexAttribArray(centerLoc);
       gl.vertexAttribDivisor(centerLoc, 0);
     }
-    if (halfSizeLoc >= 0) {
-      gl.disableVertexAttribArray(halfSizeLoc);
-      gl.vertexAttribDivisor(halfSizeLoc, 0);
+    if (rightLoc >= 0) {
+      gl.disableVertexAttribArray(rightLoc);
+      gl.vertexAttribDivisor(rightLoc, 0);
+    }
+    if (upLoc >= 0) {
+      gl.disableVertexAttribArray(upLoc);
+      gl.vertexAttribDivisor(upLoc, 0);
     }
     if (colorLoc >= 0) {
       gl.disableVertexAttribArray(colorLoc);
@@ -619,7 +685,7 @@ export class LesserBeingRenderer {
 
     gl.bindBuffer(gl.ARRAY_BUFFER, null);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
-    this.orbInstanceCount = 0;
+    batch.count = 0;
   }
 
   private drawGlowBillboard(
@@ -827,6 +893,38 @@ export class LesserBeingRenderer {
     right = this.normalize(right);
     const up = this.normalize(this.cross(n, right));
     return { right, up };
+  }
+
+  private applyProjectileDepthBias(position: Vector3, cameraForward: Vector3, viewMatrix: Float32Array): Vector3 {
+    const bias = this.computeProjectileDepthBias(viewMatrix, position);
+    if (bias <= 0) {
+      return { ...position };
+    }
+    return {
+      x: position.x - cameraForward.x * bias,
+      y: position.y - cameraForward.y * bias,
+      z: position.z - cameraForward.z * bias
+    };
+  }
+
+  private computeProjectileDepthBias(viewMatrix: Float32Array, position: Vector3): number {
+    const viewPos = this.transformPoint(viewMatrix, position);
+    const distance = Math.abs(viewPos.z);
+    const biasStart = 120;
+    if (distance <= biasStart) {
+      return 0;
+    }
+    const biasScale = 0.45;
+    const maxBias = 900;
+    return Math.min(maxBias, (distance - biasStart) * biasScale);
+  }
+
+  private transformPoint(matrix: Float32Array, point: Vector3): Vector3 {
+    return {
+      x: matrix[0] * point.x + matrix[4] * point.y + matrix[8] * point.z + matrix[12],
+      y: matrix[1] * point.x + matrix[5] * point.y + matrix[9] * point.z + matrix[13],
+      z: matrix[2] * point.x + matrix[6] * point.y + matrix[10] * point.z + matrix[14]
+    };
   }
 
   private toRgba(color: Color | undefined, alphaFallback: number): [number, number, number, number] {
