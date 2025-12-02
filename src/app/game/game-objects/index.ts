@@ -31,3 +31,10 @@ export * from './Spaceship';
 
 // Clusters
 export * from './Cluster';
+
+// Seres menores
+export * from './lesser-beings/stellar-seed-being';
+export * from './lesser-beings/transluminal-shoggoth-being';
+export * from './lesser-beings/rift-vampire-being';
+
+

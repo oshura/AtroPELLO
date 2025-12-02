@@ -34,6 +34,7 @@ import {
   PlanetResourceStock,
   createEmptyPlanetIntelSnapshot
 } from '../../game/types/planet-intel.types';
+import { LesserBeingInstanceSnapshot } from '../../game/types/cosmic-life.types';
 
 /**
  * Evento de cambio de estado del juego
@@ -122,6 +123,9 @@ export class GameStateStore {
   
   /** Debris de planetas destruidos (asteroides generados) */
   public readonly planetDebris: Array<{ planetId: string; asteroids: MegaAsteroid[] }> = [];
+
+  /** Estado persistente de lesser beings por sistema (clave = snapshotId) */
+  public readonly lesserBeingMemoryBySystem = new Map<string, LesserBeingInstanceSnapshot[]>();
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  MAIN ENTITIES
@@ -347,6 +351,42 @@ export class GameStateStore {
     const history = [entry, ...this.getLandingLogHistory(planetId)].slice(0, this.LANDING_LOG_LIMIT);
     this.upsertPlanetIntelSnapshot(planetId, { landingLog: history });
     return history;
+  }
+
+  public saveLesserBeingSnapshots(systemId: string, snapshots: LesserBeingInstanceSnapshot[]): void {
+    if (!systemId) {
+      return;
+    }
+    const cloned = snapshots.map(s => ({
+      ...s,
+      position: { ...s.position },
+      velocity: s.velocity ? { ...s.velocity } : undefined,
+      metadata: s.metadata ? { ...s.metadata } : undefined
+    }));
+    this.lesserBeingMemoryBySystem.set(systemId, cloned);
+  }
+
+  public getLesserBeingSnapshots(systemId: string): LesserBeingInstanceSnapshot[] {
+    if (!systemId) {
+      return [];
+    }
+    const stored = this.lesserBeingMemoryBySystem.get(systemId);
+    if (!stored) {
+      return [];
+    }
+    return stored.map(s => ({
+      ...s,
+      position: { ...s.position },
+      velocity: s.velocity ? { ...s.velocity } : undefined,
+      metadata: s.metadata ? { ...s.metadata } : undefined
+    }));
+  }
+
+  public clearLesserBeingSnapshots(systemId: string): void {
+    if (!systemId) {
+      return;
+    }
+    this.lesserBeingMemoryBySystem.delete(systemId);
   }
 
   /** Limpia el historial persistente de un planeta concreto. */

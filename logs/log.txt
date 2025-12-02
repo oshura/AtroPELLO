@@ -1,0 +1,17 @@
+[vite] connecting... client:733:9
+[vite] connected. client:827:12
+NG0505: Angular hydration was requested on the client, but there was no serialized information present in the server response, thus hydration was not enabled. Make sure the `provideClientHydration()` is included into the list of providers in the server part of the application configuration. Find more at https://v20.angular.dev/errors/NG0505 chunk-SXD6LUNY.js:14652:13
+Se ha impedido que un AudioContext se inicie automáticamente. Debe crearse o reanudarse después de un gesto del usuario en la página. main.js:1242:16
+Angular is running in development mode. chunk-SXD6LUNY.js:14648:13
+[13:16:16.381Z][DEBUG][LESSER_BEINGS] Void jump spawn roll 
+Object { elderGod: "CTHULHU", roll: 0.1814449833319377, threshold: 1 }
+chunk-XBNPTLFV.js:140:23
+[13:16:16.381Z][DEBUG][LESSER_BEINGS] Attempting lesser being spawn 
+Object { reason: "void-jump", active: 0, max: 3 }
+chunk-XBNPTLFV.js:140:23
+[13:16:16.381Z][DEBUG][LESSER_BEINGS] Resolved species pool for spawn 
+Object { reason: "void-jump", elderGod: "CTHULHU", poolSize: 1 }
+chunk-XBNPTLFV.js:140:23
+[13:16:16.381Z][DEBUG][LESSER_BEINGS] Computed spawn position 
+Object { reason: "void-jump", species: "SEMILLAS_ESTELARES", hasPortal: false, position: {…} }
+chunk-XBNPTLFV.js:140:23

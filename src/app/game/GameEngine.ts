@@ -4,6 +4,7 @@ import { MusicDirectorService } from '../services/audio/music-director.service';
 import { WebGLService } from '../services/webgl.service';
 import { ParticleEffectsService } from '../services/particle-effects.service';
 import { GameObject } from './GameObject';
+import { LesserBeingBase } from './game-objects/lesser-beings/lesser-being-base';
 // Import all GameObjects from centralized barrel export
 import {
   Spaceship, ThrusterState,
@@ -65,12 +66,17 @@ import {
   PLANET_INHABITANT_LABELS,
   LesserBeing,
   PlanetInhabitants,
+  ElderGod,
+  LesserBeingInstanceSnapshot,
 } from './types/cosmic-life.types';
 import { PLANET_INTEL_STATUS } from './types/planet-intel.types';
 import { GameObjectAnimosity } from './types/animosity.types';
 import { CompassCountdownPayload } from './types/hud.types';
 import { OrientationBasis, computeHeadingFromForward } from './targeting/compass-direction.util';
 import { Vector3 } from '../types/game.types';
+import { LesserBeingController } from './services/lesser-beings/lesser-being-controller';
+import { LesserBeingSpawner } from './services/lesser-beings/lesser-being-spawner';
+import { LesserBeingCombatService } from './services/lesser-beings/lesser-being-combat.service';
 
 interface AuxiliaryAbilityRuntime {
   id: string;
@@ -123,6 +129,8 @@ export class GameEngine {
   public collisionsDisabled: boolean = false;
   private landingDamageSuppressed: boolean = false;
   public portalRenderer: any = null; // PortalRenderer instance
+  private lesserBeingRenderer: any = null;
+  private readonly lesserBeingBaseColor = new Float32Array([1, 1, 1]);
   // Runtime toggle to enable/disable the 2D outliner overlay for performance testing
   private outlinerEnabled: boolean = true;
   // Landing overlay removed
@@ -219,6 +227,11 @@ export class GameEngine {
   // Collision debug logging throttle
   private _lastCollisionLogSec: number = 0;
   private _lastIndependentLogTime: number = 0; // Throttle para logs de asteroides independientes
+
+  private lesserBeings: LesserBeingBase[] = [];
+  public lesserBeingController: LesserBeingController | null = null;
+  private lesserBeingSpawner: LesserBeingSpawner | null = null;
+  private lesserBeingCombat: LesserBeingCombatService | null = null;
 
   // Landing minigame removed
   
@@ -354,6 +367,10 @@ export class GameEngine {
     // Logger
     this.logger = loggingService;
     this.registerDefaultAuxiliaryAbilities();
+
+    this.lesserBeingController = new LesserBeingController(this);
+    this.lesserBeingSpawner = new LesserBeingSpawner(this);
+    this.lesserBeingCombat = new LesserBeingCombatService(this);
   }
 
   /**
@@ -423,8 +440,11 @@ export class GameEngine {
         const wasEnergyPaused = this.spaceship.voidEnergyPaused;
         this.spaceship.voidEnergyPaused = true;
         
-  // Apply destination system
-  this.applySolarSystemSnapshot(destSnap);
+          // Persist current system lesser beings before leaving
+          try { this.persistCurrentSystemLesserBeings(); } catch {}
+
+          // Apply destination system
+          this.applySolarSystemSnapshot(destSnap);
         // Find the destination portal in the new scene
         const destPortal = this.gameState.findPortalById(destId);
         if (destPortal) {
@@ -1256,6 +1276,13 @@ export class GameEngine {
   this.overlayRenderer = new ScreenOverlayRenderer(this.gl);
     // Nuevo renderer encapsulado para portales (visual halo/eye futuro)
     try { this.portalRenderer = new (require('./rendering/PortalRenderer').PortalRenderer)(this.webglService as any, this.shaderManager); } catch {}
+    try {
+      const lesserRendererModule = require('./rendering/LesserBeingRenderer');
+      this.lesserBeingRenderer = new lesserRendererModule.LesserBeingRenderer(this.webglService as any, this.shaderManager);
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'No se pudo inicializar LesserBeingRenderer', e);
+      this.lesserBeingRenderer = null;
+    }
   // Landing overlay removed
 
       // Inicializar sistema de retícula con renderizado (FASE 2)
@@ -1409,6 +1436,8 @@ export class GameEngine {
     
     // Guardar snapshot actual para acceder a su configuración
     this.currentSnapshot = snapshot;
+    // Remove any active roaming lesser beings from previous system context
+    this.clearActiveLesserBeings();
     // IMPORTANT: Do NOT carry over existing portals when applying a new system snapshot.
     // Design: The origin portal remains only in the origin system; the destination portal is part of the new snapshot.
     // Clearing the current portal list avoids duplicates (origin + destination) coexisting in the same context.
@@ -1671,6 +1700,9 @@ export class GameEngine {
         }
       }
     } catch (e) { this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Debris restore failed', e); }
+    try { this.restorePersistedLesserBeings(snapshot); } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.LESSER_BEINGS, 'Failed to restore persisted lesser beings', e);
+    }
     this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Snapshot applied', { id: snapshot.id, planetCount: this.gameState.planets.length, portalCount: this.gameState.portals.length });
     return { portalsCreated: createdPortals };
   }
@@ -2235,6 +2267,11 @@ export class GameEngine {
 
     // Update independent asteroids (ejected from clusters after collision)
     this.updateIndependentAsteroids(deltaTime);
+
+    this.lesserBeingSpawner?.update(deltaTime);
+    this.lesserBeingController?.update(deltaTime);
+    this.updateLesserBeings(deltaTime);
+    this.lesserBeingCombat?.update(deltaTime);
 
     // Apply ongoing collision slide (lateral reposition over ~1s)
     if (this.collisionSlide) {
@@ -3590,6 +3627,39 @@ export class GameEngine {
     // No need for manual check here - the callback will fire automatically
   }
 
+  public applyShipDamage(amount: number, sourceId: string, reason: string): number {
+    if (!this.spaceship || !Number.isFinite(amount) || amount <= 0) {
+      return 0;
+    }
+    const previous = this.spaceship.healthCurrent;
+    const next = Math.max(0, previous - amount);
+    if (next === previous) {
+      return 0;
+    }
+    this.spaceship.healthCurrent = next;
+    const dealt = previous - next;
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Ship damaged by hostile entity', {
+      sourceId,
+      reason,
+      damage: dealt,
+      healthBefore: previous,
+      healthAfter: next
+    });
+    try {
+      this.hudManager?.addMarqueeMessage?.(`Daño (${reason}): -${Math.round(dealt)}u`);
+    } catch {}
+    this.impactVignetteLevel = Math.min(1, this.impactVignetteLevel + Math.min(0.25, dealt / 120));
+    return dealt;
+  }
+
+  public logLesserBeingImpact(sourceId: string, attackKind: string, damage: number): void {
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Lesser being attack connected', {
+      sourceId,
+      attackKind,
+      damage
+    });
+  }
+
   /**
    * Get debris particle color based on object type
    */
@@ -3652,6 +3722,12 @@ export class GameEngine {
     this.stopDopplerCueForObject(objId);
     const typeName = obj.constructor?.name || 'Unknown';
     let removed = false;
+
+    if (obj instanceof LesserBeingBase) {
+      this.handleLesserBeingDestroyed(obj);
+      this.unregisterLesserBeing(objId);
+      removed = true;
+    }
 
     // Delegate primary removal to the GameStateStore so all collections stay in sync
     try {
@@ -3761,6 +3837,80 @@ export class GameEngine {
     try { this.hudManager?.addMarqueeMessage?.(`${typeName} destruido`); } catch {}
     
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object removed from world', { id: objId, type: typeName, removed });
+  }
+
+  private handleLesserBeingDestroyed(being: LesserBeingBase): void {
+    if (!being) {
+      return;
+    }
+    if (!being.hasLanded) {
+      this.rewardLesserBeingKill(being);
+      return;
+    }
+    if (being.landedPlanetId) {
+      this.clearPlanetOccupation(being.landedPlanetId);
+    }
+  }
+
+  private rewardLesserBeingKill(being: LesserBeingBase): void {
+    const rewardXp = 100;
+    try {
+      this.characterProfileService?.awardExperience(rewardXp, 'lesser-being');
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to award XP for lesser being kill', { error });
+    }
+    this.tryApplyCorruptionBonus(20);
+    const sanityAwarded = this.grantTemporarySanity(20);
+    try {
+      const corChunk = sanityAwarded > 0 ? `, +${sanityAwarded} COR` : '';
+      this.hudManager?.addMarqueeMessage?.(`${being.getDisplayName()} destruido: +${rewardXp} XP${corChunk}`);
+    } catch {}
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Lesser being destroyed before landing', {
+      beingId: being.id,
+      type: being.beingType
+    });
+  }
+
+  private tryApplyCorruptionBonus(amount: number): void {
+    const svc = this.characterProfileService as any;
+    if (svc?.addCorruption) {
+      try {
+        svc.addCorruption(amount, { temporary: true });
+        return;
+      } catch (error) {
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to apply corruption reward', { amount, error });
+        return;
+      }
+    }
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Corruption reward skipped (service unavailable)', { amount });
+  }
+
+  private clearPlanetOccupation(planetId: string): void {
+    const planet = this.gameState.planets.find(p => p.id === planetId);
+    if (planet) {
+      planet.setLesserBeing(null);
+      planet.creatureScanned = false;
+    }
+  }
+
+  private grantTemporarySanity(amount: number): number {
+    if (!this.characterProfileService || !Number.isFinite(amount) || amount <= 0) {
+      return 0;
+    }
+    const cap = typeof this.gameState.getSanityCap === 'function' ? this.gameState.getSanityCap() : this.gameState.getSanityBaseMax?.() ?? 99;
+    const current = this.gameState.characterProfile.sanity ?? 0;
+    const target = Math.min(cap, current + amount);
+    const delta = Math.max(0, target - current);
+    if (delta <= 0) {
+      return 0;
+    }
+    try {
+      this.characterProfileService.adjustVitals({ sanity: delta });
+      return delta;
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to apply sanity reward', { amount, error });
+      return 0;
+    }
   }
 
   /**
@@ -3907,6 +4057,27 @@ export class GameEngine {
           lifetime: (lifetime / 1000).toFixed(1) + 's'
         });
         this.gameState.independentAsteroids.splice(i, 1);
+      }
+    }
+  }
+
+  private updateLesserBeings(deltaTime: number): void {
+    if (!this.lesserBeings.length) {
+      return;
+    }
+    for (let i = this.lesserBeings.length - 1; i >= 0; i--) {
+      const being = this.lesserBeings[i];
+      if (!being?.active) {
+        continue;
+      }
+      try {
+        being.update(deltaTime);
+      } catch (err) {
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to update lesser being', {
+          id: being.id,
+          type: being.constructor?.name,
+          err
+        });
       }
     }
   }
@@ -4543,6 +4714,32 @@ export class GameEngine {
       }
     }
 
+    if (this.lesserBeings.length) {
+      for (const being of this.lesserBeings) {
+        if (!being.active || !being.visible) {
+          continue;
+        }
+        const opacity = typeof (being as any).renderOpacity === 'number' ? (being as any).renderOpacity : 1.0;
+        this.shaderManager.setLitOpacity(opacity);
+        this.shaderManager.setLitColor(this.lesserBeingBaseColor);
+        this.renderObject(being);
+      }
+      this.shaderManager.setLitOpacity(1.0);
+      if (this.lesserBeingRenderer) {
+        try {
+          this.lesserBeingRenderer.render(
+            this.lesserBeings,
+            this.camera.viewMatrix,
+            this.camera.projectionMatrix,
+            (performance.now() || 0) / 1000
+          );
+        } catch (e) {
+          this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer render falló', e);
+        }
+      }
+      restoreLitProgram();
+    }
+
   // Renderizar planetas después de asteroides
   this.renderPlanets();
   // Render portals (halo encapsulado en PortalRenderer)
@@ -4612,7 +4809,8 @@ export class GameEngine {
         if (rep) this.gameState.mapIdToTarget.set(c.id, rep);
         return { id: c.id, label: c.id, center: { x: c.center.x, y: c.center.y, z: c.center.z } };
       });
-      const debris: Array<{ id: string; pos: { x: number; y: number; z: number }; label?: string }> = [];
+      const debris: Array<{ id: string; pos: { x: number; y: number; z: number }; label?: string; color?: string; radiusPx?: number }> = [];
+      const enemies: Array<{ id: string; pos: { x: number; y: number; z: number }; label?: string; color?: string; radiusPx?: number }> = [];
       for (const arr of this.planetDebris.values()) {
         for (const d of arr) {
           debris.push({ id: d.obj.id, pos: { x: d.obj.position.x, y: d.obj.position.y, z: d.obj.position.z }, label: d.obj.getDisplayName?.() || d.obj.id });
@@ -4632,6 +4830,19 @@ export class GameEngine {
             if (ia.isActive && !ia.isActive()) continue;
             debris.push({ id: ia.id, pos: { x: ia.position.x, y: ia.position.y, z: ia.position.z }, label: ia.getDisplayName?.() || ia.id });
             this.gameState.mapIdToTarget.set(ia.id, ia as unknown as ITargetable);
+          }
+        }
+        if (this.lesserBeings.length) {
+          for (const lb of this.lesserBeings) {
+            if (!lb.active || !lb.visible) continue;
+            enemies.push({
+              id: lb.id,
+              pos: { x: lb.position.x, y: lb.position.y, z: lb.position.z },
+              label: lb.getDisplayName?.() || LESSER_BEING_LABELS[lb.beingType] || lb.id,
+              color: '#ff4040',
+              radiusPx: 3.6,
+            });
+            this.gameState.mapIdToTarget.set(lb.id, lb as unknown as ITargetable);
           }
         }
       const ship = this.spaceship ? { pos: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }, label: 'Ship' } : undefined;
@@ -4717,7 +4928,7 @@ export class GameEngine {
 
   // Only show center label when the star has an explicit customName; do not fallback to id
   const centerLabel = this.gameState.sun ? ((this.gameState.sun as any).customName || undefined) : undefined;
-  this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, ship, portals, marginPx: 48, details });
+  this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, enemies, ship, portals, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.HUD, 'SolarSystemPanel render failed', e);
@@ -6498,8 +6709,8 @@ export class GameEngine {
       this.syncPanelCursorOverlay();
       return;
     }
-    // Toggle Grimoire (ancient book) with 'L'
-    if (key.toLowerCase() === 'l') {
+    // Toggle Grimoire (ancient book) with 'G'
+    if (key.toLowerCase() === 'g') {
       if (this.arePanelsLockedBySpell()) {
         this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Grimoire toggle blocked by spell IO lock');
         return;
@@ -9444,6 +9655,206 @@ export class GameEngine {
     } catch {
       return null;
     }
+  }
+
+  public registerLesserBeing(being: LesserBeingBase): void {
+    if (!being) {
+      return;
+    }
+    const duplicate = this.lesserBeings.find(b => b.id === being.id);
+    if (duplicate) {
+      return;
+    }
+    this.lesserBeings.push(being);
+    this.registerDestructionCallback(being);
+    try {
+      if (this.gl && !being.vertexBuffer) {
+        being.initBuffers(this.gl);
+      }
+    } catch (err) {
+      this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'Failed to init lesser being buffers', { id: being.id, err });
+    }
+    try { this.lesserBeingController?.registerBeing(being as any); } catch {}
+    const currentShips = [...this.targetCatalog.getByType(TargetType.SPACESHIP).filter(t => t.id !== being.id), being as unknown as ITargetable];
+    this.targetCatalog.register(TargetType.SPACESHIP, currentShips);
+    this.gameState.mapIdToTarget.set(being.id, being as unknown as ITargetable);
+  }
+
+  public unregisterLesserBeing(beingId: string): void {
+    if (!beingId) {
+      return;
+    }
+    const idx = this.lesserBeings.findIndex(b => b.id === beingId);
+    if (idx >= 0) {
+      this.lesserBeings.splice(idx, 1);
+    }
+    try { this.lesserBeingController?.unregisterBeing(beingId); } catch {}
+    try { this.lesserBeingSpawner?.handleBeingRemoved(beingId); } catch {}
+    try { this.lesserBeingCombat?.handleBeingRemoved(beingId); } catch {}
+    const remaining = this.targetCatalog.getByType(TargetType.SPACESHIP).filter(t => t.id !== beingId);
+    this.targetCatalog.register(TargetType.SPACESHIP, remaining);
+    this.gameState.mapIdToTarget.delete(beingId);
+  }
+
+  public addGameObject(obj: GameObject): void {
+    if (obj instanceof LesserBeingBase) {
+      this.registerLesserBeing(obj);
+      return;
+    }
+    this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'addGameObject invoked with unsupported type', {
+      id: obj?.id,
+      type: obj?.constructor?.name
+    });
+  }
+
+  private resolveSystemId(snapshot?: SolarSystemSnapshot | null): string | null {
+    const snap = snapshot ?? this.currentSnapshot;
+    if (!snap) {
+      return null;
+    }
+    if (snap.id && snap.id.trim().length) {
+      return snap.id;
+    }
+    if (snap.sun?.id) {
+      return `sun:${snap.sun.id}`;
+    }
+    return null;
+  }
+
+  private snapshotActiveLesserBeings(): LesserBeingInstanceSnapshot[] {
+    const result: LesserBeingInstanceSnapshot[] = [];
+    for (const being of this.lesserBeings) {
+      if (!being || !being.active) {
+        continue;
+      }
+      result.push({
+        id: being.id,
+        type: being.beingType,
+        position: { ...being.position },
+        velocity: { ...being.velocity },
+        forward: { ...being.forwardDirection },
+        hasLanded: being.hasLanded,
+        landedPlanetId: being.landedPlanetId,
+        health: { current: being.healthCurrent, max: being.healthMax }
+      });
+    }
+    return result;
+  }
+
+  private clearActiveLesserBeings(): void {
+    if (!this.lesserBeings.length) {
+      return;
+    }
+    const ids = this.lesserBeings.map(b => b.id);
+    for (const id of ids) {
+      this.unregisterLesserBeing(id);
+    }
+  }
+
+  private persistCurrentSystemLesserBeings(): void {
+    const systemId = this.resolveSystemId();
+    if (!systemId) {
+      return;
+    }
+    const snapshots = this.snapshotActiveLesserBeings().filter(snap => !snap.hasLanded && !snap.landedPlanetId);
+    this.gameState.saveLesserBeingSnapshots(systemId, snapshots);
+    if (snapshots.length) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Persisted roaming lesser beings for system', {
+        systemId,
+        count: snapshots.length
+      });
+    }
+    this.clearActiveLesserBeings();
+  }
+
+  private restorePersistedLesserBeings(snapshot: SolarSystemSnapshot): void {
+    const systemId = this.resolveSystemId(snapshot);
+    if (!systemId) {
+      return;
+    }
+    const stored = this.gameState.getLesserBeingSnapshots(systemId);
+    if (!stored.length) {
+      return;
+    }
+    const revived: string[] = [];
+    for (const data of stored) {
+      const being = this.lesserBeingSpawner?.reviveFromSnapshot(data);
+      if (!being) {
+        continue;
+      }
+      this.registerLesserBeing(being);
+      revived.push(being.id);
+    }
+    this.gameState.clearLesserBeingSnapshots(systemId);
+    if (revived.length) {
+      this.logger.log(LogLevel.INFO, LogCategory.LESSER_BEINGS, 'Restored persistent lesser beings for system', {
+        systemId,
+        count: revived.length
+      });
+    }
+  }
+
+  public getPlayerShip(): Spaceship | null {
+    return this.spaceship ?? null;
+  }
+
+  public getLesserBeingCombat(): LesserBeingCombatService | null {
+    return this.lesserBeingCombat;
+  }
+
+  public findNearestFreePlanet(position: Vector3): Planet | null {
+    let nearest: Planet | null = null;
+    let bestDistance = Infinity;
+    for (const candidate of this.gameState.planets) {
+      if (!(candidate instanceof Planet)) {
+        continue;
+      }
+      const occupant = (candidate as any).lesserBeing as LesserBeing | null | undefined;
+      const occupied = occupant && occupant !== LesserBeing.NONE;
+      if (occupied) {
+        continue;
+      }
+      const dx = candidate.position.x - position.x;
+      const dy = candidate.position.y - position.y;
+      const dz = candidate.position.z - position.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        nearest = candidate;
+      }
+    }
+    return nearest;
+  }
+
+  public getSystemBoundaryRadius(): number {
+    const snapshotRadius = Number(this.currentSnapshot?.meta?.['systemRadius']);
+    if (Number.isFinite(snapshotRadius) && snapshotRadius > 0) {
+      return snapshotRadius;
+    }
+    const center = this.gameState.sun?.position ?? { x: 0, y: 0, z: 0 };
+    let maxDistance = 0;
+    for (const planet of this.gameState.planets) {
+      const dx = planet.position.x - center.x;
+      const dy = planet.position.y - center.y;
+      const dz = planet.position.z - center.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist > maxDistance) {
+        maxDistance = dist;
+      }
+    }
+    return Math.max(1500, maxDistance + 500);
+  }
+
+  public getCurrentSystemElderGod(): ElderGod {
+    const configured = this.currentSnapshot?.meta?.['elderGod'];
+    if (configured && (Object.values(ElderGod) as string[]).includes(configured)) {
+      return configured as ElderGod;
+    }
+    return ElderGod.CTHULHU;
+  }
+
+  public handleVoidJumpCompleted(): void {
+    this.lesserBeingSpawner?.onVoidJumpCompleted();
   }
 }
 

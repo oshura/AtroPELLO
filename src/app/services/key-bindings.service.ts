@@ -28,7 +28,7 @@ const DEFAULT_BINDINGS: Record<GameAction, string> = {
   brake: '-',
   map: 'm',
   pause: 'p',
-  book: 'l',
+  book: 'g',
   inventory: 'i',
   spell: 'h',
   target_next: 't',

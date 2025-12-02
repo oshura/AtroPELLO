@@ -13,6 +13,7 @@ export enum GameObjectType {
   
   // Naves espaciales
   SPACESHIP = 'SPACESHIP',
+  LESSER_BEING = 'LESSER_BEING',
   
   // Asteroides (tamaños variados)
   ASTEROID = 'ASTEROID',
@@ -49,6 +50,7 @@ export enum GameObjectCategory {
   STAR = 'STAR',
   PORTAL = 'PORTAL',
   CLUSTER = 'CLUSTER',
+  ENEMY = 'ENEMY',
   UNKNOWN = 'UNKNOWN'
 }
 
@@ -70,6 +72,7 @@ export enum GameObjectSize {
 export const TYPE_TO_CATEGORY: Record<GameObjectType, GameObjectCategory> = {
   [GameObjectType.UNKNOWN]: GameObjectCategory.UNKNOWN,
   [GameObjectType.SPACESHIP]: GameObjectCategory.SHIP,
+  [GameObjectType.LESSER_BEING]: GameObjectCategory.ENEMY,
   [GameObjectType.ASTEROID]: GameObjectCategory.ASTEROID,
   [GameObjectType.SUPER_ASTEROID]: GameObjectCategory.ASTEROID,
   [GameObjectType.MEGA_ASTEROID]: GameObjectCategory.ASTEROID,
@@ -91,6 +94,7 @@ export const TYPE_TO_CATEGORY: Record<GameObjectType, GameObjectCategory> = {
 export const TYPE_TO_SIZE: Record<GameObjectType, GameObjectSize> = {
   [GameObjectType.UNKNOWN]: GameObjectSize.SMALL,
   [GameObjectType.SPACESHIP]: GameObjectSize.SMALL,
+  [GameObjectType.LESSER_BEING]: GameObjectSize.SMALL,
   [GameObjectType.ASTEROID]: GameObjectSize.SMALL,
   [GameObjectType.CLUSTER]: GameObjectSize.SMALL,
   [GameObjectType.SUPER_ASTEROID]: GameObjectSize.MEDIUM,
@@ -134,6 +138,7 @@ export function getPhysicsSize(type: GameObjectType): GameObjectSize {
 export function getDisplayLabel(type: GameObjectType): string {
   switch (type) {
     case GameObjectType.SPACESHIP: return 'Spaceship';
+    case GameObjectType.LESSER_BEING: return 'Lesser Being';
     case GameObjectType.ASTEROID: return 'Asteroid';
     case GameObjectType.SUPER_ASTEROID: return 'SuperAsteroid';
     case GameObjectType.MEGA_ASTEROID: return 'MegaAsteroid';
@@ -163,6 +168,7 @@ export function getDisplayIcon(type: GameObjectType): string {
     case GameObjectCategory.ASTEROID: return '▪';
     case GameObjectCategory.CLUSTER: return '◈';
     case GameObjectCategory.SHIP: return '▲';
+    case GameObjectCategory.ENEMY: return '✖';
     case GameObjectCategory.PORTAL: return '◉';
     default: return '?';
   }
@@ -179,6 +185,7 @@ export function getCategoryIcon(category: GameObjectCategory): string {
     case GameObjectCategory.CLUSTER: return 'C';
     case GameObjectCategory.SHIP: return 'S';
     case GameObjectCategory.PORTAL: return 'Po';
+    case GameObjectCategory.ENEMY: return 'E';
     default: return '?';
   }
 }

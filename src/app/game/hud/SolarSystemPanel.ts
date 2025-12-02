@@ -60,7 +60,8 @@ export class SolarSystemPanel {
     GameObjectCategory.CLUSTER,
     GameObjectCategory.ASTEROID,
     GameObjectCategory.PORTAL,
-    GameObjectCategory.SHIP
+    GameObjectCategory.SHIP,
+    GameObjectCategory.ENEMY
   ]);
   private showOrbits: boolean = true;
   private filterButtons: Array<{ cat: string; x: number; y: number; w: number; h: number; active: boolean; label: string }> = [];
@@ -320,7 +321,8 @@ export class SolarSystemPanel {
       orbit3d?: { center: Vector3; a: number; b: number; u: Vector3; n: Vector3; orient: number };
     }>;
     clusters: Array<{ id: string; center: Vector3; label?: string }>; // always included regardless of gameplay culling
-    debris: Array<{ id: string; pos: Vector3; label?: string }>; // e.g., Earth mega-asteroids
+    debris: Array<{ id: string; pos: Vector3; label?: string; color?: string; radiusPx?: number }>; // e.g., Earth mega-asteroids
+    enemies?: Array<{ id: string; pos: Vector3; label?: string; color?: string; radiusPx?: number }>;
     ship?: { pos: Vector3; label?: string };
     portals?: Array<{ id: string; pos: Vector3; label?: string }>;
     marginPx?: number;
@@ -336,6 +338,7 @@ export class SolarSystemPanel {
     const megaColor = '#e88d3a'; // shared for debris and clusters
   const shipColor = '#32d296';
   const portalColor = '#c084fc';
+  const enemyColor = '#ff4d4f';
 
   // Local vector math helpers (for orbit projection)
   const len = (v: Vector3) => Math.hypot(v.x, v.y, v.z);
@@ -352,6 +355,7 @@ export class SolarSystemPanel {
     const radXZ = (p: Vector3) => Math.hypot(p.x - data.center.x, p.z - data.center.z);
     for (const p of data.planets) maxR = Math.max(maxR, radXZ(p.pos));
     for (const d of data.debris) maxR = Math.max(maxR, radXZ(d.pos));
+    for (const e of data.enemies || []) maxR = Math.max(maxR, radXZ(e.pos));
     for (const cl of data.clusters) maxR = Math.max(maxR, radXZ(cl.center));
     if (data.ship) maxR = Math.max(maxR, radXZ(data.ship.pos));
 
@@ -374,6 +378,7 @@ export class SolarSystemPanel {
     if (data.planets.length) present.push(GameObjectCategory.PLANET);
     if (data.clusters.length) present.push(GameObjectCategory.CLUSTER);
     if (data.debris.length) present.push(GameObjectCategory.ASTEROID); // debris = asteroids
+    if ((data.enemies?.length ?? 0) > 0) present.push(GameObjectCategory.ENEMY);
     if ((data.portals||[]).length) present.push(GameObjectCategory.PORTAL);
     if (data.ship) present.push(GameObjectCategory.SHIP);
     if (data.centerLabel) present.unshift('center');
@@ -524,7 +529,19 @@ export class SolarSystemPanel {
     }
     // Debris (asteroids)
     if (this.visibleCategories.has(GameObjectCategory.ASTEROID)) {
-      for (const d of data.debris) pushItem(d.id, d.label ?? d.id, GameObjectCategory.ASTEROID, d.pos, 1.5, megaColor);
+      for (const d of data.debris) {
+        const customColor = d.color && d.color.trim().length ? d.color : null;
+        const radius = typeof d.radiusPx === 'number' && isFinite(d.radiusPx) ? Math.max(0.5, d.radiusPx) : 1.5;
+        pushItem(d.id, d.label ?? d.id, GameObjectCategory.ASTEROID, d.pos, radius, customColor ?? megaColor);
+      }
+    }
+    // Enemies (lesser beings)
+    if (this.visibleCategories.has(GameObjectCategory.ENEMY)) {
+      for (const enemy of (data.enemies || [])) {
+        const color = enemy.color && enemy.color.trim().length ? enemy.color : enemyColor;
+        const radius = typeof enemy.radiusPx === 'number' && isFinite(enemy.radiusPx) ? Math.max(0.8, enemy.radiusPx) : 3.2;
+        pushItem(enemy.id, enemy.label ?? enemy.id, GameObjectCategory.ENEMY, enemy.pos, radius, color);
+      }
     }
     // Clusters
     if (this.visibleCategories.has(GameObjectCategory.CLUSTER)) {
@@ -649,6 +666,7 @@ export class SolarSystemPanel {
             case GameObjectCategory.ASTEROID: return 'Escombros';
             case GameObjectCategory.PORTAL: return 'Portal';
             case GameObjectCategory.SHIP: return 'Nave';
+            case GameObjectCategory.ENEMY: return 'Enemigo';
             default: return 'Objeto';
           }
         })();

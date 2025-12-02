@@ -233,6 +233,7 @@ export class VoidJumpAnimation implements GameAnimation {
       // Remove key blockers & flag
       try { this.inputBlockers.forEach(fn => fn()); this.inputBlockers = []; } catch {}
       engine.voidJumpActive = false;
+      try { (engine as any).handleVoidJumpCompleted?.(); } catch {}
       engine['camera']?.setCameraMode?.(this.prevCameraMode);
       this.blocking = false;
       return true;

@@ -1,3 +1,4 @@
+import { Vector3 } from '../../types/game.types';
 export enum PlanetInhabitants {
   NONE = 'NONE',
   MI_GO = 'MI_GO',
@@ -63,3 +64,15 @@ export const LESSER_BEING_LABELS: Record<LesserBeing, string> = {
   [LesserBeing.SHOGGOTH]: 'Shoggoth',
   [LesserBeing.VAMPIRO_FUEGO]: 'Vampiro de fuego'
 };
+
+export interface LesserBeingInstanceSnapshot {
+  id: string;
+  type: LesserBeing;
+  position: Vector3;
+  velocity?: Vector3;
+  forward?: Vector3;
+  hasLanded: boolean;
+  landedPlanetId?: string | null;
+  health?: { current: number; max: number };
+  metadata?: Record<string, any>;
+}

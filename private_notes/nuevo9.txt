@@ -21,6 +21,7 @@
  - Cantidad y distribución de polvo estelar. Sobretodo despues de despegar.
  
  - Landing menus:
+	- Afinar que si es neutral pero no se ha buscado criatura, no de la misión.
 	Cambiar:
 	- Menuses de misiones reordenar y que haya arbol de dialogos.
 	- Panel para ver lista de misiones, con sus pistas, y otros temas que no me acuerdo.

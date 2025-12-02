@@ -118,7 +118,7 @@ interface Glyph {
       <section class="grimoire-info">
         <h2>📖 Cómo usar el Grimorio</h2>
         <p>
-          Pulsa <kbd>L</kbd> para abrir el grimorio y selecciona un glifo. La tecla rápida por defecto es <kbd>H</kbd>; al
+          Pulsa <kbd>G</kbd> para abrir el grimorio y selecciona un glifo. La tecla rápida por defecto es <kbd>H</kbd>; al
           castear se limpia la selección para evitar dobles lanzamientos. El panel muestra estados bloqueado (<span class="locked-indicator">🔒</span>) y disponible (<span class="available-indicator">⚡</span>).
         </p>
         <ul>
