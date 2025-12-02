@@ -5,6 +5,7 @@ import { RiftVampireBeing } from '../../game-objects/lesser-beings/rift-vampire-
 import { LesserBeingBase } from '../../game-objects/lesser-beings/lesser-being-base';
 import { GameEngine } from '../../GameEngine';
 import { Planet } from '../../game-objects/Planet';
+import { LesserBeing } from '../../types/cosmic-life.types';
 
 type KnownBeing = StellarSeedBeing | TransluminalShoggothBeing | RiftVampireBeing;
 
@@ -13,7 +14,6 @@ enum LesserBeingState {
   SEEKING_PLANET = 'SEEKING_PLANET',
   ORBITING_PLANET = 'ORBITING_PLANET',
   ENGAGING_SHIP = 'ENGAGING_SHIP',
-  FLEEING = 'FLEEING',
   LANDING = 'LANDING',
   DESPAWNING = 'DESPAWNING'
 }
@@ -32,6 +32,7 @@ interface BeingContext {
 
 export class LesserBeingController {
   private contexts: Map<string, BeingContext> = new Map();
+  private planetReservations: Map<string, string> = new Map();
 
   constructor(private readonly engine: GameEngine) {}
 
@@ -48,6 +49,10 @@ export class LesserBeingController {
   }
 
   public unregisterBeing(beingId: string): void {
+    const context = this.contexts.get(beingId);
+    if (context) {
+      this.releasePlanetReservation(context);
+    }
     this.contexts.delete(beingId);
   }
 
@@ -79,9 +84,6 @@ export class LesserBeingController {
       case LesserBeingState.ENGAGING_SHIP:
         this.updateEngaging(context, deltaTime);
         break;
-      case LesserBeingState.FLEEING:
-        this.updateFleeing(context, deltaTime);
-        break;
       case LesserBeingState.LANDING:
         this.updateLanding(context, deltaTime);
         break;
@@ -92,13 +94,22 @@ export class LesserBeingController {
   }
 
   private acquireInitialState(context: BeingContext): void {
-    const target = this.findPlanetTarget(context);
-    if (target) {
-      context.target = target;
+    this.releasePlanetReservation(context);
+    const shipTarget = this.makeShipTarget();
+    if (shipTarget && this.isShipPriorityTarget(context, shipTarget.position)) {
+      this.lockOnShip(context, shipTarget, true);
+      return;
+    }
+
+    const planetTarget = this.findPlanetTarget(context);
+    if (planetTarget) {
+      context.target = planetTarget;
       context.state = LesserBeingState.SEEKING_PLANET;
-    } else if (!this.shouldIgnoreShip(context)) {
-      context.target = this.makeShipTarget();
-      context.state = LesserBeingState.ENGAGING_SHIP;
+      return;
+    }
+
+    if (shipTarget && !this.shouldIgnoreShip(context)) {
+      this.lockOnShip(context, shipTarget, true);
     } else {
       context.state = LesserBeingState.ORBITING_PLANET;
       context.target = this.makeOrbitTarget(context);
@@ -109,6 +120,12 @@ export class LesserBeingController {
     const { being, target } = context;
     if (!target || target.kind !== 'planet') {
       this.acquireInitialState(context);
+      return;
+    }
+
+    const shipTarget = this.makeShipTarget();
+    if (shipTarget && this.isShipPriorityTarget(context, shipTarget.position)) {
+      this.lockOnShip(context, shipTarget, true);
       return;
     }
 
@@ -138,9 +155,8 @@ export class LesserBeingController {
     being.adjustSpeed(Math.min(being.stats.maxSpeed * 0.5, 30), deltaTime);
 
     const shipTarget = this.makeShipTarget();
-    if (shipTarget && this.shouldEngageShip(context, shipTarget.position)) {
-      context.state = LesserBeingState.ENGAGING_SHIP;
-      context.target = shipTarget;
+    if (shipTarget && this.isShipPriorityTarget(context, shipTarget.position)) {
+      this.lockOnShip(context, shipTarget, true);
     }
   }
 
@@ -151,48 +167,32 @@ export class LesserBeingController {
       this.acquireInitialState(context);
       return;
     }
-    context.target = shipTarget;
 
-    const direction = this.directionTo(being, shipTarget.position);
-    being.steerTowards(direction, deltaTime);
-
+    this.lockOnShip(context, shipTarget);
+    const distance = this.distanceTo(being, shipTarget.position);
     const desiredRange = this.computeDesiredRange(context);
-    const distance = this.distanceTo(being, shipTarget.position);
+    const minRange = desiredRange[0] ?? 0;
+    const maxRange = desiredRange[1] ?? Math.max(minRange + 100, 300);
+    const directionToShip = this.directionTo(being, shipTarget.position);
+    const wantsStandOff = being.attackProfile.kind === 'projectile';
 
-    if (distance > desiredRange[1]) {
+    if (distance > maxRange) {
+      being.steerTowards(directionToShip, deltaTime);
+      being.adjustSpeed(Math.min(being.stats.maxSpeed, being.stats.maxSpeed), deltaTime);
+    } else if (distance < minRange && wantsStandOff) {
+      const away = this.directionFrom(being, shipTarget.position);
+      being.steerTowards(away, deltaTime);
       being.adjustSpeed(Math.min(being.stats.maxSpeed, being.stats.maxSpeed * 0.9), deltaTime);
-    } else if (distance < desiredRange[0]) {
-      being.adjustSpeed(Math.max(0, being.stats.maxSpeed * 0.4), deltaTime);
     } else {
-      being.adjustSpeed(being.stats.maxSpeed * 0.6, deltaTime);
+      being.steerTowards(directionToShip, deltaTime);
+      if (distance < minRange) {
+        being.adjustSpeed(Math.max(0, being.stats.maxSpeed * 0.5), deltaTime);
+      } else {
+        being.adjustSpeed(being.stats.maxSpeed * 0.6, deltaTime);
+      }
     }
 
-    if (this.shouldFlee(context, distance)) {
-      context.state = LesserBeingState.FLEEING;
-      return;
-    }
-
-    this.tryAttack(context, direction, distance);
-  }
-
-  private updateFleeing(context: BeingContext, deltaTime: number): void {
-    const { being } = context;
-    const shipTarget = this.makeShipTarget();
-    if (!shipTarget) {
-      this.acquireInitialState(context);
-      return;
-    }
-
-    const awayDirection = this.directionFrom(being, shipTarget.position);
-    being.steerTowards(awayDirection, deltaTime);
-    being.adjustSpeed(being.stats.maxSpeed, deltaTime);
-
-    const distance = this.distanceTo(being, shipTarget.position);
-      const [, disengageRange] = this.computeDesiredRange(context);
-      if (distance > Math.max(disengageRange, 500)) {
-      context.state = LesserBeingState.ORBITING_PLANET;
-      context.target = this.makeOrbitTarget(context);
-    }
+    this.tryAttack(context, directionToShip, distance);
   }
 
   private updateLanding(context: BeingContext, deltaTime: number): void {
@@ -220,6 +220,7 @@ export class LesserBeingController {
   }
 
   private cleanupContext(context: BeingContext): void {
+    this.releasePlanetReservation(context);
     this.contexts.delete(context.being.id);
   }
 
@@ -238,10 +239,11 @@ export class LesserBeingController {
   }
 
   private findPlanetTarget(context: BeingContext): TargetDescriptor | null {
-    const planet = this.engine.findNearestFreePlanet?.(context.being.position);
+    const planet = this.pickAvailablePlanet(context);
     if (!planet) {
       return null;
     }
+    this.planetReservations.set(planet.id, context.being.id);
     return {
       kind: 'planet',
       planetId: planet.id,
@@ -252,20 +254,6 @@ export class LesserBeingController {
 
   private shouldIgnoreShip(context: BeingContext): boolean {
     return context.being.behaviorProfile.ignoresShipWhilePlanetHunting ?? false;
-  }
-
-  private shouldEngageShip(context: BeingContext, shipPos: Vector3): boolean {
-    if (this.shouldIgnoreShip(context)) {
-      return false;
-    }
-    const distance = this.distanceTo(context.being, shipPos);
-    const [, maxRange] = this.computeDesiredRange(context);
-    return distance <= maxRange;
-  }
-
-  private shouldFlee(context: BeingContext, distance: number): boolean {
-    const fleeDistance = context.being.behaviorProfile.fleeDistance;
-    return typeof fleeDistance === 'number' && distance < fleeDistance;
   }
 
   private computeDesiredRange(context: BeingContext): [number, number] {
@@ -356,6 +344,7 @@ export class LesserBeingController {
     being.landedPlanetId = planet.id;
     being.active = false;
     being.visible = false;
+    this.releasePlanetReservation(context);
     context.state = LesserBeingState.DESPAWNING;
     this.engine.unregisterLesserBeing(being.id);
   }
@@ -398,6 +387,79 @@ export class LesserBeingController {
     dir.y /= norm;
     dir.z /= norm;
     return dir;
+  }
+
+  private isShipPriorityTarget(context: BeingContext, shipPos: Vector3): boolean {
+    if (this.shouldIgnoreShip(context)) {
+      return false;
+    }
+    const distance = this.distanceTo(context.being, shipPos);
+    return distance <= this.getShipAggroDistance(context);
+  }
+
+  private getShipAggroDistance(context: BeingContext): number {
+    const preferredMax = context.being.behaviorProfile.preferredEngagementRange?.[1];
+    const base = preferredMax ? preferredMax * 1.5 : 600;
+    return Math.max(150, base);
+  }
+
+  private pickAvailablePlanet(context: BeingContext): Planet | null {
+    const planets = this.engine.gameState?.planets ?? [];
+    let best: Planet | null = null;
+    let bestDistance = Infinity;
+    for (const candidate of planets) {
+      if (!(candidate instanceof Planet)) {
+        continue;
+      }
+      if (this.isPlanetOccupied(candidate)) {
+        continue;
+      }
+      const reservedBy = this.planetReservations.get(candidate.id);
+      if (reservedBy && reservedBy !== context.being.id) {
+        continue;
+      }
+      const dist = this.distanceTo(context.being, candidate.position);
+      if (dist < bestDistance) {
+        bestDistance = dist;
+        best = candidate;
+      }
+    }
+    return best;
+  }
+
+  private isPlanetOccupied(planet: Planet): boolean {
+    const occupant = (planet as any).lesserBeing as LesserBeing | null | undefined;
+    return !!occupant && occupant !== LesserBeing.NONE;
+  }
+
+  private releasePlanetReservation(context: BeingContext): void {
+    if (!context || !context.being) {
+      return;
+    }
+    if (context.target?.kind === 'planet') {
+      const owner = this.planetReservations.get(context.target.planetId);
+      if (owner === context.being.id) {
+        this.planetReservations.delete(context.target.planetId);
+      }
+    } else {
+      for (const [planetId, owner] of this.planetReservations.entries()) {
+        if (owner === context.being.id) {
+          this.planetReservations.delete(planetId);
+        }
+      }
+    }
+  }
+
+  private lockOnShip(context: BeingContext, shipTarget: TargetDescriptor, immediateAttack = false): void {
+    this.releasePlanetReservation(context);
+    context.state = LesserBeingState.ENGAGING_SHIP;
+    context.target = shipTarget;
+    if (immediateAttack) {
+      const readyValue = context.being.attackProfile.cooldownMs ?? 0;
+      if (context.timeSinceLastAttack < readyValue) {
+        context.timeSinceLastAttack = readyValue;
+      }
+    }
   }
 
   private distanceTo(being: LesserBeingBase, target: Vector3): number {
