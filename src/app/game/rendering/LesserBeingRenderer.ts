@@ -39,17 +39,6 @@ interface GlowInstanceBatch {
   needsResize: boolean;
 }
 
-interface DeferredGlowSegment {
-  center: Vector3;
-  right: Vector3;
-  up: Vector3;
-  width: number;
-  height: number;
-  color: [number, number, number, number];
-  additive: boolean;
-  depthWrite: boolean;
-}
-
 /**
  * LesserBeingRenderer: encapsula efectos visuales complementarios (tentáculos, halos, auras)
  * para las entidades Lesser Being sin modificar el pipeline principal lit.
@@ -66,7 +55,7 @@ export class LesserBeingRenderer {
   private projectileGlowBatch: GlowInstanceBatch = this.createGlowBatch();
   private additiveGlowBatch: GlowInstanceBatch = this.createGlowBatch();
   private alphaGlowBatch: GlowInstanceBatch = this.createGlowBatch();
-  private deferredTentacleSegments: DeferredGlowSegment[] = [];
+  private tentacleGlowBatch: GlowInstanceBatch = this.createGlowBatch();
 
   constructor(private readonly webgl: WebGLService, private readonly shaders: ShaderManager) {
     this.gl = this.webgl.getContext() as WebGL2RenderingContext;
@@ -96,7 +85,7 @@ export class LesserBeingRenderer {
     const cameraBasis = this.computeCameraBasis(viewMatrix);
     this.resetGlowBatch(this.alphaGlowBatch);
     this.resetGlowBatch(this.additiveGlowBatch);
-    this.deferredTentacleSegments.length = 0;
+    this.resetGlowBatch(this.tentacleGlowBatch);
 
     for (const being of beings) {
       if (!being || !being.visible || !being.isActive()) {
@@ -152,28 +141,11 @@ export class LesserBeingRenderer {
   }
 
   public hasDeferredTentacles(): boolean {
-    return this.deferredTentacleSegments.length > 0;
+    return this.tentacleGlowBatch.count > 0;
   }
 
   public renderDeferredTentacles(viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
-    if (!this.deferredTentacleSegments.length) {
-      return;
-    }
-    for (const segment of this.deferredTentacleSegments) {
-      this.drawGlowBillboard(
-        segment.center,
-        segment.right,
-        segment.up,
-        segment.width,
-        segment.height,
-        segment.color,
-        viewMatrix,
-        projectionMatrix,
-        segment.additive,
-        segment.depthWrite
-      );
-    }
-    this.deferredTentacleSegments.length = 0;
+    this.flushGlowBatch(this.tentacleGlowBatch, viewMatrix, projectionMatrix, true);
   }
 
   private renderAcidProjectile(
@@ -362,16 +334,9 @@ export class LesserBeingRenderer {
     height: number,
     color: [number, number, number, number]
   ): void {
-    this.deferredTentacleSegments.push({
-      center: { ...center },
-      right: { ...right },
-      up: { ...up },
-      width,
-      height,
-      color: [...color] as [number, number, number, number],
-      additive: true,
-      depthWrite: false
-    });
+    const halfRight = this.scaleVector(right, width * 0.5);
+    const halfUp = this.scaleVector(up, height * 0.5);
+    this.pushGlowInstance(this.tentacleGlowBatch, center, halfRight, halfUp, color);
   }
 
   private renderShoggothVisuals(
