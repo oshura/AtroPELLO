@@ -3427,6 +3427,17 @@ export class GameEngine {
     try { this.gameState.portals.forEach(p => { if (p.isActive && p.isActive()) sources.push(p); }); } catch {}
     // Mega asteroides en planetDebris
     try { for (const arr of this.planetDebris.values()) { for (const d of arr) { if (d.obj.isActive && d.obj.isActive()) sources.push(d.obj); } } } catch {}
+    try {
+      for (const lb of this.lesserBeings) {
+        if (!lb || !lb.active || !lb.visible || !lb.isActive()) {
+          continue;
+        }
+        if (lb.beingType === LesserBeing.VAMPIRO_FUEGO) {
+          continue;
+        }
+        sources.push(lb);
+      }
+    } catch {}
     // Debug: log sources count periodically
     if (this._lastCollisionLogSec && Math.floor(now / 1000) === this._lastCollisionLogSec) {
       this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Collision sources', { count: sources.length });
@@ -3457,6 +3468,13 @@ export class GameEngine {
           else if (name === 'Portal') dmg = 0; // ethereal
           // Proxy cluster object (ClusterObject) treat like small asteroid
           else if (name === 'ClusterObject') dmg = 10;
+          else if (obj instanceof LesserBeingBase) {
+            if (obj.beingType === LesserBeing.SHOGGOTH || obj.beingType === LesserBeing.SEMILLAS_ESTELARES) {
+              dmg = 150;
+            } else if (obj.beingType === LesserBeing.VAMPIRO_FUEGO) {
+              dmg = 0;
+            }
+          }
           if (dmg > 0) {
             // Physics response before applying potential fatal damage
             this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Calling handleCollisionResponse', { name, dmg, audioUnlocked: this.audioUnlocked });
@@ -4769,6 +4787,18 @@ export class GameEngine {
 
   // Renderizar planetas después de asteroides
   this.renderPlanets();
+
+  if (this.lesserBeingRenderer?.hasDeferredTentacles?.()) {
+    try {
+      this.lesserBeingRenderer.renderDeferredTentacles(
+        this.camera.viewMatrix,
+        this.camera.projectionMatrix
+      );
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer tentacles falló post-planetas', e);
+    }
+    restoreLitProgram();
+  }
 
   if (deferredProjectileViews?.length && this.lesserBeingRenderer) {
     try {

@@ -39,6 +39,17 @@ interface GlowInstanceBatch {
   needsResize: boolean;
 }
 
+interface DeferredGlowSegment {
+  center: Vector3;
+  right: Vector3;
+  up: Vector3;
+  width: number;
+  height: number;
+  color: [number, number, number, number];
+  additive: boolean;
+  depthWrite: boolean;
+}
+
 /**
  * LesserBeingRenderer: encapsula efectos visuales complementarios (tentáculos, halos, auras)
  * para las entidades Lesser Being sin modificar el pipeline principal lit.
@@ -55,6 +66,7 @@ export class LesserBeingRenderer {
   private projectileGlowBatch: GlowInstanceBatch = this.createGlowBatch();
   private additiveGlowBatch: GlowInstanceBatch = this.createGlowBatch();
   private alphaGlowBatch: GlowInstanceBatch = this.createGlowBatch();
+  private deferredTentacleSegments: DeferredGlowSegment[] = [];
 
   constructor(private readonly webgl: WebGLService, private readonly shaders: ShaderManager) {
     this.gl = this.webgl.getContext() as WebGL2RenderingContext;
@@ -84,6 +96,7 @@ export class LesserBeingRenderer {
     const cameraBasis = this.computeCameraBasis(viewMatrix);
     this.resetGlowBatch(this.alphaGlowBatch);
     this.resetGlowBatch(this.additiveGlowBatch);
+    this.deferredTentacleSegments.length = 0;
 
     for (const being of beings) {
       if (!being || !being.visible || !being.isActive()) {
@@ -136,6 +149,31 @@ export class LesserBeingRenderer {
       }
     }
     this.flushGlowBatch(this.projectileGlowBatch, viewMatrix, projectionMatrix, true);
+  }
+
+  public hasDeferredTentacles(): boolean {
+    return this.deferredTentacleSegments.length > 0;
+  }
+
+  public renderDeferredTentacles(viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
+    if (!this.deferredTentacleSegments.length) {
+      return;
+    }
+    for (const segment of this.deferredTentacleSegments) {
+      this.drawGlowBillboard(
+        segment.center,
+        segment.right,
+        segment.up,
+        segment.width,
+        segment.height,
+        segment.color,
+        viewMatrix,
+        projectionMatrix,
+        segment.additive,
+        segment.depthWrite
+      );
+    }
+    this.deferredTentacleSegments.length = 0;
   }
 
   private renderAcidProjectile(
@@ -262,7 +300,7 @@ export class LesserBeingRenderer {
   ): void {
     const tentacleConfig = descriptor.tentacles;
     if (tentacleConfig) {
-      this.renderStellarTentacles(being, tentacleConfig, descriptor, camera, viewMatrix, projectionMatrix, timeSec);
+      this.renderStellarTentacles(being, tentacleConfig, descriptor, camera, timeSec);
     }
 
     if (descriptor.halo) {
@@ -279,8 +317,6 @@ export class LesserBeingRenderer {
     config: LesserBeingTentacleConfig,
     descriptor: LesserBeingVisualDescriptor,
     camera: CameraBasis,
-    viewMatrix: Float32Array,
-    projectionMatrix: Float32Array,
     timeSec: number
   ): void {
     const tentacles = this.getTentacleState(being, config);
@@ -313,20 +349,29 @@ export class LesserBeingRenderer {
         const width = Math.max(0.05, baseRadius * config.width * (1 - t * 0.85));
         const color = this.mixColor(config.color, config.tipColor ?? config.color, t);
         const alpha = (color.a ?? 0.85) * (1 - t * 0.6);
-        this.drawGlowBillboard(
-          center,
-          camera.right,
-          camera.up,
-          width,
-          width * 1.35,
-          this.toRgba(color, alpha),
-          viewMatrix,
-          projectionMatrix,
-          true,
-          false
-        );
+        this.queueTentacleSegment(center, camera.right, camera.up, width, width * 1.35, this.toRgba(color, alpha));
       }
     }
+  }
+
+  private queueTentacleSegment(
+    center: Vector3,
+    right: Vector3,
+    up: Vector3,
+    width: number,
+    height: number,
+    color: [number, number, number, number]
+  ): void {
+    this.deferredTentacleSegments.push({
+      center: { ...center },
+      right: { ...right },
+      up: { ...up },
+      width,
+      height,
+      color: [...color] as [number, number, number, number],
+      additive: true,
+      depthWrite: false
+    });
   }
 
   private renderShoggothVisuals(

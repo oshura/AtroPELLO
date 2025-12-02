@@ -191,6 +191,7 @@ export abstract class LesserBeingBase extends GameObject implements ITargetable 
       this.visualDescriptor = { ...config.visualDescriptor };
     }
     this.generateVertexColors();
+    this.assignRandomVoidMass();
 
     this.updateForwardDirection();
   }
@@ -429,6 +430,13 @@ export abstract class LesserBeingBase extends GameObject implements ITargetable 
     const worldZ = local.x * m[2] + local.y * m[6] + local.z * m[10];
     const len = Math.hypot(worldX, worldY, worldZ) || 1;
     return { x: worldX / len, y: worldY / len, z: worldZ / len };
+  }
+
+  private assignRandomVoidMass(): void {
+    const min = 1000;
+    const max = 2500;
+    const value = min + Math.random() * (max - min);
+    this.voidMassUnits = Math.round(value);
   }
 }
 

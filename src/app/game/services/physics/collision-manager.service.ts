@@ -1,9 +1,11 @@
 import { Injectable } from '@angular/core';
 import { CollisionPhysicsService, Vector3D } from './collision-physics.service';
-import { CollisionResponseService, CollisionResponse } from './collision-response.service';
+import { CollisionResponseService } from './collision-response.service';
 import { GameObject } from '../../GameObject';
 import { GameObjectType, GameObjectSize } from '../../types/game-object.types';
 import { LoggingService, LogLevel, LogCategory } from '../../../services/logging.service';
+import { LesserBeingBase } from '../../game-objects/lesser-beings/lesser-being-base';
+import { LesserBeing } from '../../types/cosmic-life.types';
 
 /**
  * Resultado completo de una colisión gestionada
@@ -63,6 +65,13 @@ export class CollisionManagerService {
     isTargetClusterMember: boolean
   ): ManagedCollisionResult {
     
+    if (target instanceof LesserBeingBase) {
+      if (target.beingType === LesserBeing.VAMPIRO_FUEGO) {
+        return this.handleEtherealCollision(ship, target);
+      }
+      return this.handleLargeObjectCollision(ship, target);
+    }
+
     const targetSize = target.getPhysicsSize();
     
     this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🎯 Collision detected', {
