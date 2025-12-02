@@ -98,7 +98,7 @@ export class LesserBeingRenderer {
           this.renderAcidProjectile(projectile, cameraBasis, viewMatrix, projectionMatrix, timeSec);
           break;
         case 'orb':
-          // Future work: render orb volleys once assets estén listos
+          this.renderOrbProjectile(projectile, cameraBasis, viewMatrix, projectionMatrix, timeSec);
           break;
       }
     }
@@ -177,6 +177,52 @@ export class LesserBeingRenderer {
         false
       );
     }
+  }
+
+  private renderOrbProjectile(
+    projectile: LesserBeingProjectileView,
+    camera: CameraBasis,
+    viewMatrix: Float32Array,
+    projectionMatrix: Float32Array,
+    timeSec: number
+  ): void {
+    const baseRadius = Math.max(1.75, projectile.radius * 1.1);
+    const pulse = 0.85 + 0.15 * Math.sin(timeSec * 6 + projectile.remainingLife * 10);
+    const wobbleAxis = this.normalize({
+      x: Math.sin(projectile.remainingLife * 13),
+      y: Math.cos(projectile.remainingLife * 17),
+      z: Math.sin(projectile.remainingLife * 11)
+    });
+    const wobbleOffset = this.scaleVector(wobbleAxis, baseRadius * 0.2 * pulse);
+    const center = this.addVectors(projectile.position, wobbleOffset);
+    const coreColor: [number, number, number, number] = [1.0, 0.92, 0.35, 0.9 * pulse];
+    const shellColor: [number, number, number, number] = [0.99, 0.78, 0.18, 0.55 * pulse];
+
+    this.drawGlowBillboard(
+      center,
+      camera.right,
+      camera.up,
+      baseRadius * 2.6,
+      baseRadius * 2.6,
+      shellColor,
+      viewMatrix,
+      projectionMatrix,
+      true,
+      false
+    );
+
+    this.drawGlowBillboard(
+      center,
+      camera.right,
+      camera.up,
+      baseRadius * 1.8,
+      baseRadius * 1.8,
+      coreColor,
+      viewMatrix,
+      projectionMatrix,
+      true,
+      false
+    );
   }
 
   private renderStellarSeedVisuals(

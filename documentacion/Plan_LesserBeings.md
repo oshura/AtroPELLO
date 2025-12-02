@@ -24,6 +24,7 @@ Guía de referencia sobre la IA, el combate y el estado actual de las Semillas E
 - **Stats**: 1000 HP, 40u/s.
 - **Ataque**: `orb_burst` (36 orbes básicos de 50 de daño) distribuidos con muestreo Fibonacci.
 - **IA**: ignoran la nave salvo que no queden planetas libres; priorizan colonizar y permanecen orbitando a ~80u mientras esperan turno.
+- **Visuales**: cada orbe ahora se dibuja como una esfera amarillo-pus pulsante (dos capas aditivas sin estela) para que el jugador pueda anticipar la nube radial.
 
 ### Vampiros del Fuego (Rift Vampires)
 - **Stats**: 100 HP, 50u/s.
@@ -61,7 +62,7 @@ Guía de referencia sobre la IA, el combate y el estado actual de las Semillas E
 
 ## 7. Próximos pasos sugeridos
 1. Documentar métricas QA pendientes (probabilidades reales de spawn en runs largos, balance de daño).  
-2. Añadir visualización para orbes shoggoth y aura vampírica similar al ácido.  
+2. Añadir visualización para el aura vampírica similar al ácido.  
 3. Ampliar tests unitarios para cubrir reserva/liberación de planetas y la transición de órbita vampírica.
 
 > Última actualización: 2 Dic 2025 (orbita vampírica y proyectiles visuales integrados).
