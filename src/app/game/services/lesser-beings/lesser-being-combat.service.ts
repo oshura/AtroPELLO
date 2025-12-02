@@ -19,6 +19,17 @@ interface ProjectileInstance {
   radius: number;
 }
 
+export interface LesserBeingProjectileView {
+  id: string;
+  kind: ProjectileInstance['kind'];
+  position: Vector3;
+  velocity: Vector3;
+  remainingLife: number;
+  maxLife: number;
+  radius: number;
+  sourceId: string;
+}
+
 interface AuraPulseMetadata {
   auraRadius: number;
   damageNear: number;
@@ -162,6 +173,22 @@ export class LesserBeingCombatService {
 
   public handleBeingRemoved(beingId: string): void {
     this.projectiles = this.projectiles.filter(p => p.sourceId !== beingId);
+  }
+
+  public getActiveProjectiles(): LesserBeingProjectileView[] {
+    if (!this.projectiles.length) {
+      return [];
+    }
+    return this.projectiles.map(projectile => ({
+      id: projectile.id,
+      kind: projectile.kind,
+      position: { ...projectile.position },
+      velocity: { ...projectile.velocity },
+      remainingLife: projectile.remainingLife,
+      maxLife: projectile.maxLife,
+      radius: projectile.radius,
+      sourceId: projectile.sourceId
+    }));
   }
 
   private despawnAllProjectiles(): void {

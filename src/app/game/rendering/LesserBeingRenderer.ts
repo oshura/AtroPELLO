@@ -2,6 +2,7 @@ import { LesserBeingBase, LesserBeingGlowConfig, LesserBeingTentacleConfig, Less
 import { ShaderManager } from '../ShaderManager';
 import { WebGLService } from '../../services/webgl.service';
 import { Vector3, Color } from '../../types/game.types';
+import { LesserBeingProjectileView } from '../services/lesser-beings/lesser-being-combat.service';
 
 interface CameraBasis {
   right: Vector3;
@@ -75,6 +76,106 @@ export class LesserBeingRenderer {
           this.renderRiftVampireVisuals(being, descriptor, cameraBasis, viewMatrix, projectionMatrix, timeSec);
           break;
       }
+    }
+  }
+
+  public renderProjectiles(
+    projectiles: LesserBeingProjectileView[] | null | undefined,
+    viewMatrix: Float32Array,
+    projectionMatrix: Float32Array,
+    timeSec: number
+  ): void {
+    if (!projectiles?.length || !this.gl) {
+      return;
+    }
+    const cameraBasis = this.computeCameraBasis(viewMatrix);
+    for (const projectile of projectiles) {
+      if (!projectile) {
+        continue;
+      }
+      switch (projectile.kind) {
+        case 'acid_spit':
+          this.renderAcidProjectile(projectile, cameraBasis, viewMatrix, projectionMatrix, timeSec);
+          break;
+        case 'orb':
+          // Future work: render orb volleys once assets estén listos
+          break;
+      }
+    }
+  }
+
+  private renderAcidProjectile(
+    projectile: LesserBeingProjectileView,
+    camera: CameraBasis,
+    viewMatrix: Float32Array,
+    projectionMatrix: Float32Array,
+    timeSec: number
+  ): void {
+    const speed = Math.hypot(projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+    const direction = this.normalize(projectile.velocity);
+    const trailLength = Math.min(20, Math.max(6, speed * 0.08));
+    const baseRadius = Math.max(1.25, projectile.radius * 0.85);
+    const lifeRatio = Math.max(0, Math.min(1, projectile.remainingLife / Math.max(0.001, projectile.maxLife)));
+    const swirlPhase = timeSec * 8 + projectile.remainingLife * 3;
+    let swirlAxis = this.cross(direction, camera.forward);
+    const swirlAxisMagnitude = Math.abs(swirlAxis.x) + Math.abs(swirlAxis.y) + Math.abs(swirlAxis.z);
+    if (swirlAxisMagnitude < 0.001) {
+      swirlAxis = { ...camera.up };
+    }
+    swirlAxis = this.normalize(swirlAxis);
+    const wobble = Math.sin(swirlPhase) * baseRadius * 0.4;
+    const wobbleOffset = this.scaleVector(swirlAxis, wobble);
+    const headCenter = this.addVectors(projectile.position, wobbleOffset);
+
+    const headColor: [number, number, number, number] = [0.58, 1.0, 0.46, 0.82 + 0.15 * lifeRatio];
+    const shellColor: [number, number, number, number] = [0.36, 0.95, 0.35, 0.55 * lifeRatio + 0.25];
+
+    this.drawGlowBillboard(
+      headCenter,
+      camera.right,
+      camera.up,
+      baseRadius * 1.9,
+      baseRadius * 1.45,
+      headColor,
+      viewMatrix,
+      projectionMatrix,
+      true,
+      false
+    );
+
+    const bulgeCenter = this.subtractVectors(headCenter, this.scaleVector(direction, baseRadius * 0.9));
+    this.drawGlowBillboard(
+      bulgeCenter,
+      camera.right,
+      camera.up,
+      baseRadius * 2.4,
+      baseRadius * 1.8,
+      shellColor,
+      viewMatrix,
+      projectionMatrix,
+      true,
+      false
+    );
+
+    for (let i = 1; i <= 3; i++) {
+      const t = i / 3;
+      const decay = (1 - t * 0.35) * lifeRatio;
+      const center = this.subtractVectors(headCenter, this.scaleVector(direction, trailLength * t));
+      const width = baseRadius * (2.6 + t * 1.1);
+      const height = width * 0.9;
+      const color: [number, number, number, number] = [0.2 + 0.1 * t, 0.9 + 0.07 * (1 - t), 0.3 + 0.05 * (1 - t), 0.35 * decay + 0.12];
+      this.drawGlowBillboard(
+        center,
+        camera.right,
+        camera.up,
+        width,
+        height,
+        color,
+        viewMatrix,
+        projectionMatrix,
+        true,
+        false
+      );
     }
   }
 

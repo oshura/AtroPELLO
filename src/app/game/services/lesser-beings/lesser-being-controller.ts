@@ -149,7 +149,6 @@ export class LesserBeingController {
       this.acquireInitialState(context);
       return;
     }
-
     const tangential = this.tangentialDirection(being.position, orbitTarget.position);
     being.steerTowards(tangential, deltaTime);
     being.adjustSpeed(Math.min(being.stats.maxSpeed * 0.5, 30), deltaTime);
@@ -170,6 +169,16 @@ export class LesserBeingController {
 
     this.lockOnShip(context, shipTarget);
     const distance = this.distanceTo(being, shipTarget.position);
+    const hasShipPriority = this.isShipPriorityTarget(context, shipTarget.position);
+
+    if (being instanceof RiftVampireBeing) {
+      if (this.maybeRedirectRiftVampireToPlanet(context, shipTarget.position, distance, hasShipPriority)) {
+        return;
+      }
+      this.updateRiftVampireOrbit(context, shipTarget.position, distance, deltaTime);
+      return;
+    }
+
     const desiredRange = this.computeDesiredRange(context);
     const minRange = desiredRange[0] ?? 0;
     const maxRange = desiredRange[1] ?? Math.max(minRange + 100, 300);
@@ -460,6 +469,114 @@ export class LesserBeingController {
         context.timeSinceLastAttack = readyValue;
       }
     }
+  }
+
+  private updateRiftVampireOrbit(
+    context: BeingContext,
+    shipPosition: Vector3,
+    distanceToShip: number,
+    deltaTime: number
+  ): void {
+    const { being } = context;
+    const desiredRange = this.computeDesiredRange(context);
+    const minRange = desiredRange[0] ?? 650;
+    const maxRange = desiredRange[1] ?? Math.max(minRange + 150, 900);
+    const directionToShip = this.directionTo(being, shipPosition);
+    const orbitDirection = this.getShipOrbitDirection(being, shipPosition);
+    const radialOut = this.directionFrom(being, shipPosition);
+
+    let heading: Vector3;
+    if (distanceToShip < minRange) {
+      heading = this.blendDirections(radialOut, orbitDirection, 0.75);
+    } else if (distanceToShip > maxRange) {
+      heading = this.blendDirections(directionToShip, orbitDirection, 0.6);
+    } else {
+      heading = orbitDirection;
+    }
+
+    being.steerTowards(heading, deltaTime);
+
+    let targetSpeed = being.stats.maxSpeed * 0.65;
+    if (distanceToShip < minRange * 0.85) {
+      targetSpeed = being.stats.maxSpeed * 0.85;
+    } else if (distanceToShip > maxRange * 1.1) {
+      targetSpeed = being.stats.maxSpeed;
+    }
+
+    being.adjustSpeed(targetSpeed, deltaTime);
+    this.tryAttack(context, directionToShip, distanceToShip);
+  }
+
+  private maybeRedirectRiftVampireToPlanet(
+    context: BeingContext,
+    shipPosition: Vector3,
+    distanceToShip: number,
+    hasShipPriority: boolean
+  ): boolean {
+    const candidatePlanet = this.pickAvailablePlanet(context);
+    if (!candidatePlanet) {
+      return false;
+    }
+    const distanceToPlanet = this.distanceTo(context.being, candidatePlanet.position);
+    const desiredRange = this.computeDesiredRange(context);
+    const minRange = desiredRange[0] ?? 0;
+    const maxRange = desiredRange[1] ?? Math.max(minRange + 200, 900);
+    const withinSweetSpot = distanceToShip >= minRange && distanceToShip <= maxRange;
+    const planetMuchCloser = distanceToPlanet + 150 < distanceToShip;
+
+    if (!hasShipPriority || (planetMuchCloser && !withinSweetSpot)) {
+      const planetTarget = this.findPlanetTarget(context);
+      if (planetTarget) {
+        context.target = planetTarget;
+        context.state = LesserBeingState.SEEKING_PLANET;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private getShipOrbitDirection(
+    being: LesserBeingBase,
+    shipPosition: Vector3
+  ): Vector3 {
+    const radialFromShip = this.directionFrom(being, shipPosition);
+    let tangent = this.crossVector(radialFromShip, { x: 0, y: 1, z: 0 });
+    if (this.vectorLength(tangent) < 1e-4) {
+      tangent = this.crossVector(radialFromShip, { x: 1, y: 0, z: 0 });
+    }
+    const normalized = this.normalizeVector(tangent);
+    if (this.vectorLength(normalized) < 1e-4) {
+      return this.tangentialDirection(being.position, shipPosition);
+    }
+    return normalized;
+  }
+
+  private blendDirections(primary: Vector3, secondary: Vector3, primaryWeight: number): Vector3 {
+    const alpha = Math.max(0, Math.min(1, primaryWeight));
+    const beta = 1 - alpha;
+    const blended = {
+      x: primary.x * alpha + secondary.x * beta,
+      y: primary.y * alpha + secondary.y * beta,
+      z: primary.z * alpha + secondary.z * beta
+    };
+    return this.normalizeVector(blended);
+  }
+
+  private normalizeVector(vec: Vector3): Vector3 {
+    const len = this.vectorLength(vec) || 1;
+    return { x: vec.x / len, y: vec.y / len, z: vec.z / len };
+  }
+
+  private vectorLength(vec: Vector3): number {
+    return Math.hypot(vec.x, vec.y, vec.z);
+  }
+
+  private crossVector(a: Vector3, b: Vector3): Vector3 {
+    return {
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x
+    };
   }
 
   private distanceTo(being: LesserBeingBase, target: Vector3): number {

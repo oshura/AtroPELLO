@@ -4745,12 +4745,22 @@ export class GameEngine {
       this.shaderManager.setLitOpacity(1.0);
       if (this.lesserBeingRenderer) {
         try {
+          const timeNow = (performance.now() || 0) / 1000;
           this.lesserBeingRenderer.render(
             this.lesserBeings,
             this.camera.viewMatrix,
             this.camera.projectionMatrix,
-            (performance.now() || 0) / 1000
+            timeNow
           );
+          const projectileViews = this.lesserBeingCombat?.getActiveProjectiles();
+          if (projectileViews?.length) {
+            this.lesserBeingRenderer.renderProjectiles(
+              projectileViews,
+              this.camera.viewMatrix,
+              this.camera.projectionMatrix,
+              timeNow
+            );
+          }
         } catch (e) {
           this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer render falló', e);
         }
