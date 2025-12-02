@@ -39,6 +39,16 @@ export class LesserBeingRenderer {
   private readonly identityMatrix = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
   private tentacleCache = new WeakMap<LesserBeingBase, TentacleRuntimeState>();
   private shoggothCache = new WeakMap<LesserBeingBase, ShoggothRuntimeState>();
+  private static readonly ORB_INSTANCE_FLOATS = 9;
+  private orbInstanceData: Float32Array = new Float32Array(0);
+  private orbInstanceCapacity = 0;
+  private orbInstanceCount = 0;
+  private orbInstanceBufferSize = 0;
+  private orbInstanceBufferNeedsResize = false;
+  private orbCornerBuffer: WebGLBuffer | null = null;
+  private orbUvBuffer: WebGLBuffer | null = null;
+  private orbIndexBuffer: WebGLBuffer | null = null;
+  private orbInstanceBuffer: WebGLBuffer | null = null;
 
   constructor(private readonly webgl: WebGLService, private readonly shaders: ShaderManager) {
     this.gl = this.webgl.getContext() as WebGL2RenderingContext;
@@ -89,6 +99,7 @@ export class LesserBeingRenderer {
       return;
     }
     const cameraBasis = this.computeCameraBasis(viewMatrix);
+    this.resetOrbInstances();
     for (const projectile of projectiles) {
       if (!projectile) {
         continue;
@@ -98,10 +109,11 @@ export class LesserBeingRenderer {
           this.renderAcidProjectile(projectile, cameraBasis, viewMatrix, projectionMatrix, timeSec);
           break;
         case 'orb':
-          this.renderOrbProjectile(projectile, cameraBasis, viewMatrix, projectionMatrix, timeSec);
+          this.renderOrbProjectile(projectile, timeSec);
           break;
       }
     }
+    this.flushOrbInstances(cameraBasis, viewMatrix, projectionMatrix);
   }
 
   private renderAcidProjectile(
@@ -179,50 +191,14 @@ export class LesserBeingRenderer {
     }
   }
 
-  private renderOrbProjectile(
-    projectile: LesserBeingProjectileView,
-    camera: CameraBasis,
-    viewMatrix: Float32Array,
-    projectionMatrix: Float32Array,
-    timeSec: number
-  ): void {
+  private renderOrbProjectile(projectile: LesserBeingProjectileView, timeSec: number): void {
     const baseRadius = Math.max(0.55, projectile.radius * 0.42);
     const pulse = 0.8 + 0.2 * Math.sin(timeSec * 6 + projectile.remainingLife * 10);
-    const wobbleAxis = this.normalize({
-      x: Math.sin(projectile.remainingLife * 13),
-      y: Math.cos(projectile.remainingLife * 17),
-      z: Math.sin(projectile.remainingLife * 11)
-    });
-    const wobbleOffset = this.scaleVector(wobbleAxis, baseRadius * 0.005 * pulse);
-    const center = this.addVectors(projectile.position, wobbleOffset);
+    const center = { ...projectile.position };
     const coreColor: [number, number, number, number] = [0.95, 0.86, 0.32, 0.5 * pulse];
     const shellColor: [number, number, number, number] = [0.92, 0.68, 0.15, 0.35 * pulse];
-
-    this.drawGlowBillboard(
-      center,
-      camera.right,
-      camera.up,
-      baseRadius * 1.9,
-      baseRadius * 1.9,
-      shellColor,
-      viewMatrix,
-      projectionMatrix,
-      true,
-      false
-    );
-
-    this.drawGlowBillboard(
-      center,
-      camera.right,
-      camera.up,
-      baseRadius * 1.2,
-      baseRadius * 1.2,
-      coreColor,
-      viewMatrix,
-      projectionMatrix,
-      true,
-      false
-    );
+    this.pushOrbInstance(center, baseRadius * 1.9, baseRadius * 1.9, shellColor);
+    this.pushOrbInstance(center, baseRadius * 1.2, baseRadius * 1.2, coreColor);
   }
 
   private renderStellarSeedVisuals(
@@ -451,6 +427,199 @@ export class LesserBeingRenderer {
         glow.depthWrite ?? false
       );
     }
+  }
+
+  private resetOrbInstances(): void {
+    this.orbInstanceCount = 0;
+  }
+
+  private pushOrbInstance(center: Vector3, width: number, height: number, color: [number, number, number, number]): void {
+    this.ensureOrbInstanceCapacity(this.orbInstanceCount + 1);
+    const offset = this.orbInstanceCount * LesserBeingRenderer.ORB_INSTANCE_FLOATS;
+    const data = this.orbInstanceData;
+    data[offset] = center.x;
+    data[offset + 1] = center.y;
+    data[offset + 2] = center.z;
+    data[offset + 3] = width * 0.5;
+    data[offset + 4] = height * 0.5;
+    data[offset + 5] = color[0];
+    data[offset + 6] = color[1];
+    data[offset + 7] = color[2];
+    data[offset + 8] = color[3];
+    this.orbInstanceCount++;
+  }
+
+  private ensureOrbInstanceCapacity(target: number): void {
+    if (target <= this.orbInstanceCapacity) {
+      return;
+    }
+    let newCapacity = this.orbInstanceCapacity || 32;
+    while (newCapacity < target) {
+      newCapacity *= 2;
+    }
+    this.orbInstanceCapacity = newCapacity;
+    this.orbInstanceData = new Float32Array(newCapacity * LesserBeingRenderer.ORB_INSTANCE_FLOATS);
+    this.orbInstanceBufferSize = this.orbInstanceData.byteLength;
+    this.orbInstanceBufferNeedsResize = true;
+    this.uploadOrbInstanceBufferCapacity();
+  }
+
+  private uploadOrbInstanceBufferCapacity(): void {
+    if (!this.orbInstanceBufferNeedsResize || !this.gl || !this.orbInstanceBuffer || !this.orbInstanceBufferSize) {
+      return;
+    }
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.orbInstanceBuffer);
+    this.gl.bufferData(this.gl.ARRAY_BUFFER, this.orbInstanceBufferSize, this.gl.DYNAMIC_DRAW);
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, null);
+    this.orbInstanceBufferNeedsResize = false;
+  }
+
+  private ensureOrbInstancingResources(): boolean {
+    if (!this.gl || !this.shaders?.glowInstancedProgram) {
+      return false;
+    }
+    const gl = this.gl;
+    if (!this.orbCornerBuffer) {
+      const corners = new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]);
+      this.orbCornerBuffer = gl.createBuffer();
+      if (!this.orbCornerBuffer) {
+        return false;
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbCornerBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, corners, gl.STATIC_DRAW);
+    }
+    if (!this.orbUvBuffer) {
+      const uvs = new Float32Array([-1, -1, 1, -1, 1, 1, -1, 1]);
+      this.orbUvBuffer = gl.createBuffer();
+      if (!this.orbUvBuffer) {
+        return false;
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbUvBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, uvs, gl.STATIC_DRAW);
+    }
+    if (!this.orbIndexBuffer) {
+      const indices = new Uint16Array([0, 1, 2, 0, 2, 3]);
+      this.orbIndexBuffer = gl.createBuffer();
+      if (!this.orbIndexBuffer) {
+        return false;
+      }
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.orbIndexBuffer);
+      gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW);
+    }
+    if (!this.orbInstanceBuffer) {
+      this.orbInstanceBuffer = gl.createBuffer();
+      if (!this.orbInstanceBuffer) {
+        return false;
+      }
+    }
+    this.uploadOrbInstanceBufferCapacity();
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    return true;
+  }
+
+  private flushOrbInstances(camera: CameraBasis, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
+    if (!this.orbInstanceCount) {
+      return;
+    }
+    if (!this.ensureOrbInstancingResources() || !this.gl || !this.shaders.glowInstancedProgram || !this.orbInstanceBuffer) {
+      this.orbInstanceCount = 0;
+      return;
+    }
+    const gl = this.gl;
+    const stride = LesserBeingRenderer.ORB_INSTANCE_FLOATS * 4;
+    const used = this.orbInstanceCount * LesserBeingRenderer.ORB_INSTANCE_FLOATS;
+    const instanceSlice = this.orbInstanceData.subarray(0, used);
+    this.shaders.useGlowInstancedProgram();
+    this.shaders.setGlowInstancedParams(viewMatrix, projectionMatrix, camera.right, camera.up);
+    this.uploadOrbInstanceBufferCapacity();
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.orbInstanceBuffer);
+    gl.bufferSubData(gl.ARRAY_BUFFER, 0, instanceSlice);
+
+    const cornerLoc = this.shaders.glowInstancedAttributes['corner'];
+    const uvLoc = this.shaders.glowInstancedAttributes['uv'];
+    const centerLoc = this.shaders.glowInstancedAttributes['center'];
+    const halfSizeLoc = this.shaders.glowInstancedAttributes['halfSize'];
+    const colorLoc = this.shaders.glowInstancedAttributes['color'];
+
+    if (cornerLoc >= 0 && this.orbCornerBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbCornerBuffer);
+      gl.enableVertexAttribArray(cornerLoc);
+      gl.vertexAttribPointer(cornerLoc, 2, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribDivisor(cornerLoc, 0);
+    }
+    if (uvLoc >= 0 && this.orbUvBuffer) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbUvBuffer);
+      gl.enableVertexAttribArray(uvLoc);
+      gl.vertexAttribPointer(uvLoc, 2, gl.FLOAT, false, 0, 0);
+      gl.vertexAttribDivisor(uvLoc, 0);
+    }
+    if (centerLoc >= 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbInstanceBuffer);
+      gl.enableVertexAttribArray(centerLoc);
+      gl.vertexAttribPointer(centerLoc, 3, gl.FLOAT, false, stride, 0);
+      gl.vertexAttribDivisor(centerLoc, 1);
+    }
+    if (halfSizeLoc >= 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbInstanceBuffer);
+      gl.enableVertexAttribArray(halfSizeLoc);
+      gl.vertexAttribPointer(halfSizeLoc, 2, gl.FLOAT, false, stride, 3 * 4);
+      gl.vertexAttribDivisor(halfSizeLoc, 1);
+    }
+    if (colorLoc >= 0) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this.orbInstanceBuffer);
+      gl.enableVertexAttribArray(colorLoc);
+      gl.vertexAttribPointer(colorLoc, 4, gl.FLOAT, false, stride, 5 * 4);
+      gl.vertexAttribDivisor(colorLoc, 1);
+    }
+
+    if (this.orbIndexBuffer) {
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.orbIndexBuffer);
+    }
+
+    const prevBlend = gl.isEnabled(gl.BLEND);
+    const prevDepthMask = gl.getParameter(gl.DEPTH_WRITEMASK) as boolean;
+    const prevDepthTest = gl.isEnabled(gl.DEPTH_TEST);
+    gl.enable(gl.BLEND);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+    gl.depthMask(false);
+    if (!prevDepthTest) {
+      gl.enable(gl.DEPTH_TEST);
+    }
+
+    gl.drawElementsInstanced(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, 0, this.orbInstanceCount);
+
+    if (!prevDepthTest) {
+      gl.disable(gl.DEPTH_TEST);
+    }
+    gl.depthMask(prevDepthMask);
+    if (!prevBlend) {
+      gl.disable(gl.BLEND);
+    }
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    if (cornerLoc >= 0) {
+      gl.disableVertexAttribArray(cornerLoc);
+    }
+    if (uvLoc >= 0) {
+      gl.disableVertexAttribArray(uvLoc);
+    }
+    if (centerLoc >= 0) {
+      gl.disableVertexAttribArray(centerLoc);
+      gl.vertexAttribDivisor(centerLoc, 0);
+    }
+    if (halfSizeLoc >= 0) {
+      gl.disableVertexAttribArray(halfSizeLoc);
+      gl.vertexAttribDivisor(halfSizeLoc, 0);
+    }
+    if (colorLoc >= 0) {
+      gl.disableVertexAttribArray(colorLoc);
+      gl.vertexAttribDivisor(colorLoc, 0);
+    }
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, null);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    this.orbInstanceCount = 0;
   }
 
   private drawGlowBillboard(

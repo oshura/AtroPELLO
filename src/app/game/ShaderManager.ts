@@ -5,6 +5,7 @@ import { InstancedLitShaderService } from './shaders/InstancedLitShaderService';
 import { HudShaderService } from './shaders/HudShaderService';
 import { ReticleShaderService } from './shaders/ReticleShaderService';
 import { OutlineShaderService } from './shaders/OutlineShaderService';
+import { Vector3 } from '../types/game.types';
 
 /**
  * Shader programs para renderizado 3D
@@ -17,6 +18,7 @@ export class ShaderManager {
   public litProgram: WebGLProgram | null = null;
   public texturedProgram: WebGLProgram | null = null;
   public glowProgram: WebGLProgram | null = null;
+  public glowInstancedProgram: WebGLProgram | null = null;
   public unlitTexProgram: WebGLProgram | null = null;
   public stormShellProgram: WebGLProgram | null = null;
   public portalProgram: WebGLProgram | null = null;
@@ -55,6 +57,7 @@ export class ShaderManager {
   public reticleAttributes: { [key: string]: number } = {};
   public outlineAttributes: { [key: string]: number } = {};
   public glowAttributes: { [key: string]: number } = {};
+  public glowInstancedAttributes: { [key: string]: number } = {};
   public unlitTexAttributes: { [key: string]: number } = {};
   public stormShellAttributes: { [key: string]: number } = {};
   public stormShellUniforms: { [key: string]: WebGLUniformLocation | null } = {};
@@ -64,6 +67,7 @@ export class ShaderManager {
   public eyeUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   public flameAttributes: { [key: string]: number } = {};
   public flameUniforms: { [key: string]: WebGLUniformLocation | null } = {};
+  public glowInstancedUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   // Attributes for instanced-lit are exposed via helper getters
 
   constructor(private webglService: WebGLService) {
@@ -103,6 +107,11 @@ export class ShaderManager {
     // Programa para glows con caída radial (color con alpha)
     this.glowProgram = this.createProgram(
       this.getGlowVertexShader(),
+      this.getGlowFragmentShader()
+    );
+
+    this.glowInstancedProgram = this.createProgram(
+      this.getGlowInstancedVertexShader(),
       this.getGlowFragmentShader()
     );
 
@@ -162,6 +171,7 @@ export class ShaderManager {
     if (this.reticleProgram) this.getReticleProgramLocations();
     if (this.outlineProgram) this.getOutlineProgramLocations();
   if (this.glowProgram) this.getGlowProgramLocations();
+  if (this.glowInstancedProgram) this.getGlowInstancedProgramLocations();
   if (this.unlitTexProgram) this.getUnlitTexProgramLocations();
   if (this.stormShellProgram) this.getStormShellProgramLocations();
   if (this.portalProgram) this.getPortalProgramLocations();
@@ -185,6 +195,30 @@ export class ShaderManager {
     void main(){
       vec4 world = u_modelMatrix * vec4(a_position,1.0);
       vec4 view = u_viewMatrix * world;
+      gl_Position = u_projectionMatrix * view;
+      v_color = a_color;
+      v_uv = a_uv;
+    }`;
+  }
+
+  private getGlowInstancedVertexShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec2 a_corner;
+    in vec2 a_uv;
+    in vec3 a_center;
+    in vec2 a_halfSize;
+    in vec4 a_color;
+    uniform mat4 u_viewMatrix;
+    uniform mat4 u_projectionMatrix;
+    uniform vec3 u_cameraRight;
+    uniform vec3 u_cameraUp;
+    out vec4 v_color;
+    out vec2 v_uv;
+    void main(){
+      vec3 offset = u_cameraRight * (a_corner.x * a_halfSize.x) + u_cameraUp * (a_corner.y * a_halfSize.y);
+      vec3 world = a_center + offset;
+      vec4 view = u_viewMatrix * vec4(world, 1.0);
       gl_Position = u_projectionMatrix * view;
       v_color = a_color;
       v_uv = a_uv;
@@ -215,6 +249,20 @@ export class ShaderManager {
     this.glowAttributes['position'] = gl.getAttribLocation(this.glowProgram, 'a_position');
     this.glowAttributes['uv'] = gl.getAttribLocation(this.glowProgram, 'a_uv');
     this.glowAttributes['color'] = gl.getAttribLocation(this.glowProgram, 'a_color');
+  }
+
+  private getGlowInstancedProgramLocations(): void {
+    if (!this.gl || !this.glowInstancedProgram) return;
+    const gl = this.gl;
+    this.glowInstancedAttributes['corner'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_corner');
+    this.glowInstancedAttributes['uv'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_uv');
+    this.glowInstancedAttributes['center'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_center');
+    this.glowInstancedAttributes['halfSize'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_halfSize');
+    this.glowInstancedAttributes['color'] = gl.getAttribLocation(this.glowInstancedProgram, 'a_color');
+    this.glowInstancedUniforms['viewMatrix'] = gl.getUniformLocation(this.glowInstancedProgram, 'u_viewMatrix');
+    this.glowInstancedUniforms['projectionMatrix'] = gl.getUniformLocation(this.glowInstancedProgram, 'u_projectionMatrix');
+    this.glowInstancedUniforms['cameraRight'] = gl.getUniformLocation(this.glowInstancedProgram, 'u_cameraRight');
+    this.glowInstancedUniforms['cameraUp'] = gl.getUniformLocation(this.glowInstancedProgram, 'u_cameraUp');
   }
 
   // ===== Unlit textured (diffuse-only) for Sun magma =====
@@ -281,6 +329,32 @@ export class ShaderManager {
     if (uModel) gl.uniformMatrix4fv(uModel, false, model);
     if (uView) gl.uniformMatrix4fv(uView, false, view);
     if (uProj) gl.uniformMatrix4fv(uProj, false, proj);
+  }
+
+  public useGlowInstancedProgram(): void {
+    if (this.gl && this.glowInstancedProgram) {
+      this.gl.useProgram(this.glowInstancedProgram);
+    }
+  }
+
+  public setGlowInstancedParams(view: Float32Array, proj: Float32Array, cameraRight: Vector3, cameraUp: Vector3): void {
+    if (!this.gl || !this.glowInstancedProgram) {
+      return;
+    }
+    const gl = this.gl;
+    const uniforms = this.glowInstancedUniforms;
+    if (uniforms['viewMatrix']) {
+      gl.uniformMatrix4fv(uniforms['viewMatrix'], false, view);
+    }
+    if (uniforms['projectionMatrix']) {
+      gl.uniformMatrix4fv(uniforms['projectionMatrix'], false, proj);
+    }
+    if (uniforms['cameraRight']) {
+      gl.uniform3f(uniforms['cameraRight'], cameraRight.x, cameraRight.y, cameraRight.z);
+    }
+    if (uniforms['cameraUp']) {
+      gl.uniform3f(uniforms['cameraUp'], cameraUp.x, cameraUp.y, cameraUp.z);
+    }
   }
 
   // ===== Storm shell program (procedural veins over sphere) =====
