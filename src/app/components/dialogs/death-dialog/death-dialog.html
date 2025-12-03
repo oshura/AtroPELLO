@@ -20,7 +20,14 @@
         class="dialog-button primary" 
         (click)="onRestart()"
         [disabled]="processing">
-        <span>Reiniciar Sistema</span>
+        <span>Start New Game</span>
+      </button>
+
+      <button 
+        class="dialog-button secondary" 
+        (click)="onRespawn()"
+        [disabled]="processing">
+        <span>Respawn</span>
       </button>
       
       <button 

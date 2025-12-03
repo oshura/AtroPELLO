@@ -5,6 +5,7 @@ import { GameLogger } from '../utils/GameLogger';
 import { LogCategory } from '../../services/logging.service';
 import { GameObjectType } from '../types/game-object.types';
 import { OrientationBasis } from '../targeting/compass-direction.util';
+import { OrientationSnapshot } from '../types/respawn.types';
 
 /**
  * Estados del thruster para diferentes efectos visuales
@@ -1126,5 +1127,48 @@ export class Spaceship extends GameObject {
     // Extraer quaternion desde la matriz y sincronizar Euler para compatibilidad
     mat4.getRotation(this.orientationQuaternion, this.orientationMatrix);
     this.extractEulerFromOrientationMatrix();
+    this.updateForwardDirection();
+  }
+
+  /** Apply a serialized orientation snapshot captured from Respawn Sigillum. */
+  public applyOrientationSnapshot(snapshot?: OrientationSnapshot | null): void {
+    if (!snapshot) {
+      return;
+    }
+
+    let applied = false;
+
+    if (Array.isArray(snapshot.matrix) && snapshot.matrix.length >= 16) {
+      for (let i = 0; i < 16; i++) {
+        this.orientationMatrix[i] = snapshot.matrix[i];
+      }
+      mat4.getRotation(this.orientationQuaternion, this.orientationMatrix);
+      applied = true;
+    } else if (Array.isArray(snapshot.quaternion) && snapshot.quaternion.length >= 4) {
+      quat.set(
+        this.orientationQuaternion,
+        snapshot.quaternion[0] ?? 0,
+        snapshot.quaternion[1] ?? 0,
+        snapshot.quaternion[2] ?? 0,
+        snapshot.quaternion[3] ?? 1
+      );
+      quat.normalize(this.orientationQuaternion, this.orientationQuaternion);
+      mat4.fromQuat(this.orientationMatrix, this.orientationQuaternion);
+      applied = true;
+    } else if (snapshot.forward) {
+      const upHint = snapshot.up ?? { x: 0, y: 1, z: 0 };
+      const next = {
+        x: this.position.x + snapshot.forward.x,
+        y: this.position.y + snapshot.forward.y,
+        z: this.position.z + snapshot.forward.z
+      };
+      this.lookAt(next, upHint);
+      applied = true;
+    }
+
+    if (applied) {
+      this.extractEulerFromOrientationMatrix();
+      this.updateForwardDirection();
+    }
   }
 }

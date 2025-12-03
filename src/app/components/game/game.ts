@@ -13,6 +13,7 @@ import { GameInitializer } from '../../services/game/game-initializer.service';
 import { GameUIManager } from '../../services/game/game-ui.service';
 import { LoggingService, LogCategory } from '../../services/logging.service';
 import { LandingApproachContext } from '../../game/types/landing.types';
+import { RespawnService } from '../../game/services/state/respawn.service';
 
 @Component({
   selector: 'app-game',
@@ -44,7 +45,8 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
     private router: Router,
     @Inject(PLATFORM_ID) private platformId: Object,
     private logger: LoggingService,
-    private cdr: ChangeDetectorRef
+    private cdr: ChangeDetectorRef,
+    private respawnService: RespawnService
   ) {
     // Expose this instance globally for GameEngine access
     (globalThis as any).GameComponentInstance = this;
@@ -507,6 +509,21 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
         this.logger.info(LogCategory.GAME_LOOP, 'System respawned after death');
       } catch (e) {
         this.logger.error(LogCategory.GAME_LOOP, 'Failed to respawn game', e);
+      }
+    } else if (action === 'respawn') {
+      try {
+        this.respawnService.respawnFromDeath('UNKNOWN');
+        try { gameEngine.setAudioPausedForGame(false); } catch {}
+        try {
+          const music = (gameEngine as any).music;
+          if (music) music.setScene('exploration', 1000);
+        } catch {}
+        this.logger.info(LogCategory.GAME_LOOP, 'Respawn Sigillum requested from death dialog');
+      } catch (error) {
+        this.logger.error(LogCategory.GAME_LOOP, 'Respawn service failed, falling back to legacy respawn', error);
+        try {
+          (gameEngine as any).respawnGame?.();
+        } catch {}
       }
     } else if (action === 'load') {
       // Load saved game: restore ship near portal with full health and void energy

@@ -37,6 +37,7 @@ import { InventoryPanel } from './hud/InventoryPanel';
 import { PanelCursorOverlay } from './hud/utils/panel-cursor-overlay';
 import { SpellType, getSpellSanityCost } from './types/spell.types';
 import { RespawnAnchorMetadata } from './types/respawn.types';
+import { GameStartContext, PlayerResetState } from './types/universe-state.types';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
@@ -4187,6 +4188,169 @@ export class GameEngine {
   }
 
   /**
+   * Applies a prepared restart context (respawn/save load) without rebuilding everything from scratch.
+   */
+  public restartWithContext(context: GameStartContext): void {
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'RestartWithContext invoked', {
+      reason: context.restartReason,
+      targetSystemId: context.targetSystemId,
+      runtimeSource: context.runtimeState.source,
+      anchorId: context.respawnAnchor?.anchorId ?? null
+    });
+
+    // Ensure loop/audio are paused before mutating state
+    this.stop();
+    this.setAudioPausedForGame(true);
+    this.deathInProgress = false;
+
+    try {
+      this.animationManager?.forceTerminateCurrentAnimation(this);
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to terminate animation before restart', error);
+    }
+
+    try {
+      this.resetLoopStateForRestart();
+
+      const shipApplied = this.applyPlayerResetState(context.playerState);
+      if (!shipApplied) {
+        throw new Error('Spaceship instance unavailable for restart');
+      }
+
+      this.updateCharacterVitalsFromRespawn(context.playerState);
+
+      if (context.restartReason === 'RESPAWN') {
+        try {
+          this.characterProfileService.registerExperienceEvent(ExperienceEventType.PLAYER_DEATH);
+        } catch (error) {
+          this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to apply respawn XP penalty', error);
+        }
+      }
+
+      this.emitRespawnNotifications(context);
+      try { this.clearTargetSelection(); } catch {}
+
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Restart context applied', {
+        systemId: context.targetSystemId,
+        runtimeSource: context.runtimeState.source,
+        anchorId: context.respawnAnchor?.anchorId ?? null,
+        restoredStat: context.playerState.restoredStat
+      });
+
+      this.startLoopAfterRestart();
+    } catch (error) {
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Restart with context failed - falling back to legacy respawn', error);
+      this.respawnGame();
+    }
+  }
+
+  private startLoopAfterRestart(): void {
+    this.gameState.gameRunning = true;
+    this.lastFrameTime = performance.now();
+    this.isRunning = true;
+    requestAnimationFrame(() => this.gameLoop());
+    this.setAudioPausedForGame(false);
+  }
+
+  private applyPlayerResetState(state: PlayerResetState): boolean {
+    const ship = this.spaceship;
+    if (!ship) {
+      return false;
+    }
+
+    const velocity = state.velocity ?? { x: 0, y: 0, z: 0 };
+    ship.position = { ...state.position };
+    ship.velocity = { ...velocity };
+    ship.angularVelocity = { x: 0, y: 0, z: 0 };
+    const speed = Math.min(ship.maxSpeed, this.vectorLength(velocity));
+    ship.currentSpeed = speed;
+    ship.targetSpeed = speed;
+    ship.thrusterState = ThrusterState.IDLE;
+    ship.isThrusting = false;
+    ship.thrusterIntensity = 0;
+    ship.voidEnergyPaused = false;
+    ship.healthMax = state.shipHealth.max ?? ship.healthMax;
+    ship.healthCurrent = Math.max(1, Math.min(ship.healthMax, state.shipHealth.current));
+    ship.voidEnergyCurrent = Math.max(0, Math.min(ship.voidEnergyMax, state.voidEnergy));
+
+    const anyShip = ship as any;
+    if (typeof anyShip.applyOrientationSnapshot === 'function') {
+      anyShip.applyOrientationSnapshot(state.orientation ?? null);
+    } else if (state.orientation?.forward) {
+      const upHint = state.orientation.up ?? { x: 0, y: 1, z: 0 };
+      ship.lookAt({
+        x: ship.position.x + state.orientation.forward.x,
+        y: ship.position.y + state.orientation.forward.y,
+        z: ship.position.z + state.orientation.forward.z
+      }, upHint);
+    }
+
+    ship.updateModelMatrix();
+    this.lastShipPos = { ...ship.position };
+    this.gameState.spaceship = ship;
+    return true;
+  }
+
+  private updateCharacterVitalsFromRespawn(state: PlayerResetState): void {
+    try {
+      this.gameState.updateCharacterVitals({
+        sanity: state.sanity,
+        health: state.vitality
+      });
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to sync character vitals after respawn', { error });
+    }
+  }
+
+  private emitRespawnNotifications(context: GameStartContext): void {
+    const anchorLabel = context.respawnAnchor?.label
+      ?? context.respawnAnchor?.planetName
+      ?? context.targetSystemId;
+    try {
+      if (anchorLabel) {
+        this.hudManager?.addMarqueeMessage?.(`Respawn: ${anchorLabel}`);
+      }
+      if (context.playerState.restoredStat === 'sanity') {
+        this.hudManager?.addMarqueeMessage?.('Cordura estabilizada tras el despertar.');
+      } else if (context.playerState.restoredStat === 'health') {
+        this.hudManager?.addMarqueeMessage?.('Vitalidad restaurada tras el sigilo.');
+      }
+    } catch {}
+  }
+
+  private resetLoopStateForRestart(): void {
+    this.ephemeralAsteroids = [];
+    this.gameState.collisionCooldowns.clear();
+    this.gameState.dopplerCues.clear();
+    this.lastObjPos.clear();
+    this.portalTraversalCooldownSec = 0;
+    this.portalPrevDistances.clear();
+    this.lastShipPos = null;
+    this.collisionDamageCooldown.clear();
+    this.collisionPairCooldown.clear();
+    this.impactVignetteLevel = 0;
+    this.collisionSlide = null;
+    this.pendingMapSelectId = null;
+    this.landingSequenceActive = false;
+    this.takeoffSequenceActive = false;
+    this.landingSequenceContext = null;
+    this.landingTouchdownContext = null;
+    this.landedShipAttachment = null;
+    this.landingStatus = { ready: false, context: null };
+    this.landingThreat = { active: false, reasons: [] };
+    this.panelInputsLocked = false;
+    this.landingDamageSuppressed = false;
+    this.voidJumpActive = false;
+  }
+
+  private vectorLength(vec?: Vector3 | null): number {
+    if (!vec) {
+      return 0;
+    }
+    return Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+  }
+
+  /**
    * Full solar system respawn (called from death dialog "Restart" button)
    */
   public respawnGame(): void {
@@ -4199,6 +4363,12 @@ export class GameEngine {
     
     // Reset death flag
     this.deathInProgress = false;
+
+    try {
+      this.gameState.clearRespawnAnchor('full-respawn');
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to clear respawn anchor during full respawn', { error });
+    }
     
     // Force terminate any active animation before respawning
     try {
@@ -8383,9 +8553,12 @@ export class GameEngine {
     }
     const fallbackSector = `Sector ${Math.round(shipPosition.x)}:${Math.round(shipPosition.y)}:${Math.round(shipPosition.z)}`;
     const label = planetName ?? fallbackSector;
+    const snapshotMeta = this.persistRespawnSnapshot(systemId);
     const metadata: RespawnAnchorMetadata = {
       anchorId,
       systemId,
+      snapshotId: snapshotMeta.snapshotId,
+      snapshotLabel: snapshotMeta.snapshotLabel,
       planetId,
       planetName: planetName ?? null,
       createdAt: timestamp,
@@ -8396,6 +8569,48 @@ export class GameEngine {
       notes: notes.length ? notes.join(' · ') : undefined,
     };
     return metadata;
+  }
+
+  private persistRespawnSnapshot(systemId: string): { snapshotId: string | null; snapshotLabel: string | null } {
+    const snapshot = this.currentSnapshot;
+    const defaultId = snapshot?.id ?? systemId;
+    if (!snapshot || !this.portalPersistenceService) {
+      if (!snapshot) {
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Respawn snapshot skipped: no current snapshot available');
+      }
+      return {
+        snapshotId: defaultId,
+        snapshotLabel: null
+      };
+    }
+
+    try {
+      const clone = this.cloneSolarSystemSnapshot(snapshot);
+      clone.meta = { ...(clone.meta || {}) };
+      clone.meta['proceduralSystemId'] = clone.meta['proceduralSystemId'] ?? systemId;
+      const snapshotId = clone.id ?? clone.meta['proceduralSystemId'] ?? systemId;
+      const label = 'respawn-anchor-latest';
+      this.portalPersistenceService.save(label, clone);
+      this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Respawn anchor snapshot persisted', {
+        label,
+        snapshotId,
+        systemId
+      });
+      return {
+        snapshotId,
+        snapshotLabel: label
+      };
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Respawn snapshot persistence failed', { error });
+      return {
+        snapshotId: defaultId,
+        snapshotLabel: null
+      };
+    }
+  }
+
+  private cloneSolarSystemSnapshot(snapshot: SolarSystemSnapshot): SolarSystemSnapshot {
+    return JSON.parse(JSON.stringify(snapshot)) as SolarSystemSnapshot;
   }
 
   private handleVoidCocoonImpact(source: any, attemptedDamage: number, context?: { reason?: string }): void {

@@ -2,7 +2,7 @@ import { Component, EventEmitter, Input, Output } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { AuthService } from '../../../services/auth.service';
 
-export type DeathDialogAction = 'restart' | 'load';
+export type DeathDialogAction = 'restart' | 'respawn' | 'load';
 
 @Component({
   selector: 'app-death-dialog',
@@ -30,6 +30,12 @@ export class DeathDialogComponent {
     if (this.processing) return;
     this.processing = true;
     this.action.emit('restart');
+  }
+
+  onRespawn(): void {
+    if (this.processing) return;
+    this.processing = true;
+    this.action.emit('respawn');
   }
 
   onLoadSave(): void {
