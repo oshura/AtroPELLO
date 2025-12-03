@@ -36,6 +36,7 @@ import { GrimoirePanel } from './hud/GrimoirePanel';
 import { InventoryPanel } from './hud/InventoryPanel';
 import { PanelCursorOverlay } from './hud/utils/panel-cursor-overlay';
 import { SpellType, getSpellSanityCost } from './types/spell.types';
+import { RespawnAnchorMetadata } from './types/respawn.types';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
 import { BillboardRenderer } from './rendering/BillboardRenderer';
@@ -93,6 +94,25 @@ interface PlanetCollapsePayload {
   position: Vector3;
   radius: number;
   clusterCount?: number;
+}
+
+type LandingDeathSource = 'landing-health' | 'landing-sanity';
+type HardcoreDeathSource = 'aging' | LandingDeathSource;
+type AgeProgressionSource = 'loop' | 'landing' | 'debug-overlay';
+
+type AgeProgressionOutcome = ReturnType<CharacterProfileService['addDaysToAge']> & {
+  source: AgeProgressionSource;
+  deathTriggered: boolean;
+  rollsExecuted: number;
+};
+
+interface HardcoreDeathContext {
+  source: HardcoreDeathSource;
+  roll?: number;
+  survivability?: number;
+  ageYears?: number;
+  metadata?: Record<string, unknown>;
+  message?: string;
 }
 
 /**
@@ -4138,6 +4158,7 @@ export class GameEngine {
   private triggerDeathDialog(): void {
     // Set flag to prevent gameLoop from restarting thruster during fade
     this.deathInProgress = true;
+    this.closeLandingPanelUI('death-dialog');
     
     // Silence everything but ambience during death pause
     try { this.setAudioPausedForGame(true); }
@@ -4289,12 +4310,38 @@ export class GameEngine {
       return;
     }
 
-    const ageResult = this.characterProfileService.addDaysToAge(daysToApply);
-    if (!ageResult.daysApplied) {
+    const outcome = this.applyAgeProgression(daysToApply, 'loop');
+    if (outcome.deathTriggered) {
       return;
     }
+  }
 
-    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Age advanced via timer', {
+  public applyExternalAgeDelta(days: number, source: AgeProgressionSource = 'landing'): AgeProgressionOutcome {
+    return this.applyAgeProgression(days, source);
+  }
+
+  private applyAgeProgression(days: number, source: AgeProgressionSource): AgeProgressionOutcome {
+    const normalizedDays = Math.trunc(days);
+    if (!normalizedDays) {
+      return {
+        daysApplied: 0,
+        yearsBefore: this.gameState.characterProfile.age.years,
+        yearsAfter: this.gameState.characterProfile.age.years,
+        yearsGained: 0,
+        newAge: { ...this.gameState.characterProfile.age },
+        source,
+        deathTriggered: false,
+        rollsExecuted: 0
+      };
+    }
+
+    const ageResult = this.characterProfileService.addDaysToAge(normalizedDays);
+    if (!ageResult.daysApplied) {
+      return { ...ageResult, source, deathTriggered: false, rollsExecuted: 0 };
+    }
+
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Age advanced', {
+      source,
       daysApplied: ageResult.daysApplied,
       yearsBefore: ageResult.yearsBefore,
       yearsAfter: ageResult.yearsAfter,
@@ -4302,24 +4349,32 @@ export class GameEngine {
     });
 
     if (ageResult.yearsGained <= 0) {
-      return;
+      return { ...ageResult, source, deathTriggered: false, rollsExecuted: 0 };
     }
+
+    let deathTriggered = false;
+    let rollsExecuted = 0;
 
     for (let year = ageResult.yearsBefore + 1; year <= ageResult.yearsAfter; year++) {
       if (year > this.SURVIVABILITY_DECAY_START_YEAR) {
+        rollsExecuted++;
         const before = this.gameState.characterProfile.survivability;
         const after = this.characterProfileService.adjustSurvivability(-1);
         this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Survivability decayed due to aging', {
+          source,
           year,
           survivabilityBefore: before,
           survivabilityAfter: after
         });
         const rollOutcome = this.performSurvivabilityDeathRoll('aging', after, year);
         if (rollOutcome.didDie) {
-          return;
+          deathTriggered = true;
+          break;
         }
       }
     }
+
+    return { ...ageResult, source, deathTriggered, rollsExecuted };
   }
 
   private performSurvivabilityDeathRoll(
@@ -4343,20 +4398,38 @@ export class GameEngine {
     return { didDie: true, roll };
   }
 
-  private handleHardcoreDeath(context: { source: 'aging'; roll: number; survivability: number; ageYears: number }): void {
+  private handleHardcoreDeath(context: HardcoreDeathContext): void {
     if (this.deathInProgress || !this.spaceship) {
       return;
     }
 
     this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Hardcore death triggered', context);
+    const message = context.message ?? this.resolveHardcoreDeathMessage(context.source);
     try {
-      this.hudManager?.addMarqueeMessage?.('El piloto sucumbe a la edad: supervivencia agotada.');
+      this.hudManager?.addMarqueeMessage?.(message);
     } catch {}
+
+    this.closeLandingPanelUI('hardcore-death');
 
     try {
       this.spaceship.healthCurrent = 0;
     } catch (error) {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Failed to enforce hardcore death', error);
+    }
+  }
+
+  public triggerLandingFatality(source: LandingDeathSource, metadata?: Record<string, unknown>): void {
+    this.handleHardcoreDeath({ source, metadata });
+  }
+
+  private resolveHardcoreDeathMessage(source: HardcoreDeathSource): string {
+    switch (source) {
+      case 'landing-health':
+        return 'El cuerpo del piloto falla durante la expedición planetaria.';
+      case 'landing-sanity':
+        return 'La mente del piloto se fractura durante la expedición planetaria.';
+      default:
+        return 'El piloto sucumbe a la edad: supervivencia agotada.';
     }
   }
 
@@ -7006,6 +7079,8 @@ export class GameEngine {
         return this.castTempusSigillum(target ?? null);
       case SpellType.QUIMIO_SIGILLUM:
         return this.castQuimioSigillum();
+      case SpellType.RESPAWN_SIGILLUM:
+        return this.castRespawnSigillum();
       case SpellType.SPEED:
         this.triggerSpeedRiteInstantly();
         return true;
@@ -8219,6 +8294,108 @@ export class GameEngine {
       appliedDelta: applied,
     });
     return true;
+  }
+
+  private castRespawnSigillum(): boolean {
+    if (!this.spaceship) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Respawn Sigillum blocked: ship unavailable');
+      return false;
+    }
+    const context = this.landingTouchdownContext ?? null;
+    const anchor = this.buildRespawnAnchorMetadata(context);
+    if (!anchor) {
+      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Respawn Sigillum failed: anchor build returned null');
+      try { this.showPlaceholderText('RESPAWN SIGILLUM\nError al grabar', 2200); } catch {}
+      return false;
+    }
+    this.gameState.setRespawnAnchor(anchor);
+    const displayName = anchor.label || anchor.planetName || 'Ancla en deriva';
+    try { this.hudManager?.addMarqueeMessage?.(`Respawn Sigillum · ${displayName}`); } catch {}
+    try { this.showPlaceholderText(`RESPAWN SIGILLUM\n${displayName}`, 2400); } catch {}
+    try {
+      const started = this.animationManager.startRespawnSigillum(this);
+      if (!started) {
+        this.logger.log(LogLevel.WARN, LogCategory.ANIMATION, 'Respawn Sigillum animation skipped (busy)');
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.ANIMATION, 'Respawn Sigillum animation error', error);
+    }
+    try {
+      if (this.audio) {
+        const clip = this.audio.has('sfx_precast_ritual') ? 'sfx_precast_ritual' : (this.audio.has('sfx_heal') ? 'sfx_heal' : null);
+        if (clip) {
+          this.audio.play(clip, { bus: 'sfx', volume: 0.55 });
+        }
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Respawn Sigillum audio failed', error);
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn Sigillum anchor engraved', {
+      anchorId: anchor.anchorId,
+      systemId: anchor.systemId,
+      planetId: anchor.planetId,
+      planetName: anchor.planetName ?? null,
+    });
+    return true;
+  }
+
+  private buildRespawnAnchorMetadata(context: LandingApproachContext | null): RespawnAnchorMetadata | null {
+    if (!this.spaceship) {
+      return null;
+    }
+    const systemId = this.resolveSystemId() ?? 'system-unknown';
+    const shipPosition: Vector3 = {
+      x: this.spaceship.position.x,
+      y: this.spaceship.position.y,
+      z: this.spaceship.position.z,
+    };
+    const planetId = context?.planetId ?? null;
+    const planet = planetId ? this.gameState.planets.find(p => p.id === planetId) as Planet | undefined : undefined;
+    let planetName = context?.planetName ?? undefined;
+    if (!planetName && planet) {
+      try {
+        planetName = typeof planet.getDisplayName === 'function'
+          ? planet.getDisplayName()
+          : (planet.customName ?? planet.id ?? undefined);
+      } catch {}
+      if (!planetName && planet.id) {
+        planetName = planet.id;
+      }
+    }
+    const landingSite = context?.surfacePoint && context?.surfaceNormal
+      ? {
+          surfacePoint: { ...context.surfacePoint },
+          surfaceNormal: this.normalize(context.surfaceNormal),
+          radius: context.radius ?? (planet ? this.estimatePlanetRadius(planet) : 0),
+        }
+      : undefined;
+    const timestamp = Date.now();
+    const anchorId = `respawn-${timestamp.toString(36)}-${Math.floor(Math.random() * 1e6).toString(36)}`;
+    const notes: string[] = [];
+    if (context?.planetType) {
+      notes.push(`Tipo ${context.planetType}`);
+    }
+    if (typeof context?.probabilityOfLifePct === 'number') {
+      notes.push(`Vida ${context.probabilityOfLifePct}%`);
+    }
+    if (!context) {
+      notes.push('Ancla grabada en deriva espacial');
+    }
+    const fallbackSector = `Sector ${Math.round(shipPosition.x)}:${Math.round(shipPosition.y)}:${Math.round(shipPosition.z)}`;
+    const label = planetName ?? fallbackSector;
+    const metadata: RespawnAnchorMetadata = {
+      anchorId,
+      systemId,
+      planetId,
+      planetName: planetName ?? null,
+      createdAt: timestamp,
+      label,
+      shipPosition,
+      shipForward: this.getShipForwardVector(),
+      landingSite,
+      notes: notes.length ? notes.join(' · ') : undefined,
+    };
+    return metadata;
   }
 
   private handleVoidCocoonImpact(source: any, attemptedDamage: number, context?: { reason?: string }): void {

@@ -81,6 +81,12 @@ export const SPELL_BEHAVIOR_MAP: Record<SpellType, SpellBehavior> = {
     hideOutliners: false,
     muteHoverAudio: false,
   }),
+  [SpellType.RESPAWN_SIGILLUM]: createBehavior(SpellType.RESPAWN_SIGILLUM, {
+    lockShipControls: false,
+    lockPanels: false,
+    hideOutliners: false,
+    muteHoverAudio: false,
+  }),
 };
 
 export function getSpellBehavior(spell?: SpellType | null): SpellBehavior {

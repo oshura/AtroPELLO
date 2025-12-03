@@ -33,7 +33,7 @@ export class ScreenOverlayRenderer {
     const fs = `#version 300 es\n
     precision highp float;\n
     in vec2 v_uv;\n
-    uniform int u_mode; // 0 = solid, 1 = texture, 2 = vignette\n
+    uniform int u_mode; // 0 = solid, 1 = texture, 2 = vignette, 3 = radial pulse\n
     uniform vec4 u_color; // solid rgba or tint rgb + alpha\n
     uniform sampler2D u_tex;\n
     uniform vec2 u_uvScale;\n
@@ -49,7 +49,7 @@ export class ScreenOverlayRenderer {
         vec3 rgb = c.rgb * u_color.rgb;\n
         float a = c.a * u_color.a;\n
         fragColor = vec4(rgb, a);\n
-      } else {\n
+      } else if (u_mode == 2) {\n
         // Vignette: alpha shaped by distance to center using smoothstep\n
         float r = clamp(u_params.x, 0.0, 1.5);\n
         float s = clamp(u_params.y, 0.0001, 1.0);\n
@@ -57,6 +57,17 @@ export class ScreenOverlayRenderer {
         // At center (d=0) alpha ~ 0; grows towards edges; r is inner radius, s is softness\n
         float edge = smoothstep(r, max(r - s, 0.0), d);\n
         float a = clamp(u_color.a, 0.0, 1.0) * edge;\n
+        fragColor = vec4(u_color.rgb, a);\n
+      } else {\n
+        // Radial pulse / shrinking ring
+        float radius = clamp(u_params.x, 0.0, 1.5);\n
+        float thickness = clamp(u_params.y, 0.0001, 1.0);\n
+        float softness = clamp(u_params.z, 0.0001, 1.0);\n
+        float d = distance(v_uv, vec2(0.5));\n
+        float outerEdge = smoothstep(radius + thickness, radius + thickness - softness, d);\n
+        float innerEdge = smoothstep(max(radius - thickness, 0.0), max(radius - thickness - softness, 0.0), d);\n
+        float ring = clamp(outerEdge - innerEdge, 0.0, 1.0);\n
+        float a = clamp(u_color.a, 0.0, 1.0) * ring;\n
         fragColor = vec4(u_color.rgb, a);\n
       }\n
     }`;
@@ -171,6 +182,38 @@ export class ScreenOverlayRenderer {
     const a = Math.max(0, Math.min(1, intensity || 0));
     if (this.uColor) gl.uniform4f(this.uColor, color[0], color[1], color[2], a);
     if (this.uParams) gl.uniform4f(this.uParams, Math.max(0, Math.min(1.2, radius)), Math.max(0.001, Math.min(1, softness)), 0, 0);
+    if (this.uUvScale) gl.uniform2f(this.uUvScale, 1.0, 1.0);
+    if (this.uUvOffset) gl.uniform2f(this.uUvOffset, 0.0, 0.0);
+    gl.drawArrays(gl.TRIANGLES, 0, 3);
+    if (!wasBlend) gl.disable(gl.BLEND);
+    if (wasCull) gl.enable(gl.CULL_FACE);
+    if (wasDepth) gl.enable(gl.DEPTH_TEST);
+  }
+
+  public drawRadialPulse(
+    color: [number, number, number],
+    radius: number,
+    thickness: number,
+    alpha: number,
+    softness: number = 0.12,
+  ): void {
+    if (!this.program) {
+      return;
+    }
+    const gl = this.gl;
+    const wasDepth = gl.isEnabled(gl.DEPTH_TEST); if (wasDepth) gl.disable(gl.DEPTH_TEST);
+    const wasCull = gl.isEnabled(gl.CULL_FACE); if (wasCull) gl.disable(gl.CULL_FACE);
+    const wasBlend = gl.isEnabled(gl.BLEND); gl.enable(gl.BLEND); gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+    gl.useProgram(this.program);
+    if (this.uMode) gl.uniform1i(this.uMode, 3);
+    const safeAlpha = Math.max(0, Math.min(1, alpha));
+    if (this.uColor) gl.uniform4f(this.uColor, color[0], color[1], color[2], safeAlpha);
+    if (this.uParams) {
+      const clampedRadius = Math.max(0, Math.min(1.3, radius));
+      const clampedThickness = Math.max(0.0001, Math.min(1.0, thickness));
+      const clampedSoftness = Math.max(0.0001, Math.min(0.5, softness));
+      gl.uniform4f(this.uParams, clampedRadius, clampedThickness, clampedSoftness, 0);
+    }
     if (this.uUvScale) gl.uniform2f(this.uUvScale, 1.0, 1.0);
     if (this.uUvOffset) gl.uniform2f(this.uUvOffset, 0.0, 0.0);
     gl.drawArrays(gl.TRIANGLES, 0, 3);

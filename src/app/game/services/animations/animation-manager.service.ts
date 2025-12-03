@@ -19,6 +19,7 @@ export class AnimationManagerService {
   private cachedLandingSequenceCtor: ({ new(): GameAnimation }) | null = null;
   private cachedTakeoffSequenceCtor: ({ new(): GameAnimation }) | null = null;
   private cachedQuimioSigillumCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedRespawnSigillumCtor: ({ new(): GameAnimation }) | null = null;
   private flashImages: string[] = [
     '/assets/Athathoth.jpg',
     '/assets/GreatCthulhu.jpg',
@@ -39,6 +40,7 @@ export class AnimationManagerService {
     this.preloadLandingSequence();
     this.preloadTakeoffSequence();
     this.preloadQuimioSigillum();
+    this.preloadRespawnSigillum();
   }
 
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
@@ -367,6 +369,46 @@ export class AnimationManagerService {
         const Anim = (mod as any).QuimioSigillumAnimation as { new(): GameAnimation };
         this.cachedQuimioSigillumCtor = Anim;
       } catch { /* ignore */ }
+    })();
+  }
+
+  public startRespawnSigillum(engine: GameEngine): boolean {
+    if (this.current && this.current.name !== 'blocking-delay') {
+      return false;
+    }
+    const launch = (Ctor: { new(): GameAnimation }) => {
+      const anim = new Ctor();
+      anim.start(engine);
+      this.current = anim;
+    };
+    if (this.cachedRespawnSigillumCtor) {
+      launch(this.cachedRespawnSigillumCtor);
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./respawn-sigillum.animation');
+        const Anim = (mod as any).RespawnSigillumAnimation as { new(): GameAnimation };
+        this.cachedRespawnSigillumCtor = Anim;
+        launch(Anim);
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load RespawnSigillumAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
+  private preloadRespawnSigillum(): void {
+    (async () => {
+      try {
+        const mod = await import('./respawn-sigillum.animation');
+        const Anim = (mod as any).RespawnSigillumAnimation as { new(): GameAnimation };
+        this.cachedRespawnSigillumCtor = Anim;
+      } catch {
+        // best-effort
+      }
     })();
   }
 

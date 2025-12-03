@@ -39,6 +39,12 @@ interface PlanetCollapseNotification {
   clusterCount: number;
 }
 
+interface LandingFatalContext {
+  action: LandingActionKind;
+  planetId: string;
+  detail: string;
+}
+
 const VOID_MASS_PER_ENERGY_UNIT = 10; // units of planetary void mass needed per ship energy
 const PLANET_MIN_VOID_MASS_TO_SURVIVE = 100; // collapse threshold
 const MIN_PLANET_SCALE_RATIO = 0.25; // never shrink below 25% before collapse
@@ -88,7 +94,10 @@ export class LandingActionService {
     effects.healthDelta = healthDelta;
     effects.ageDaysDelta = this.applyAgeDelta(1);
 
-    this.characterProfile.adjustVitals({ sanity: sanityDelta, health: healthDelta });
+    this.applyVitalsDelta(
+      { sanity: sanityDelta, health: healthDelta },
+      { action: request.action, planetId: planet.id, detail: 'rest' }
+    );
 
     if (hasLesserBeing) {
       planet.lesserBeingIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
@@ -335,7 +344,7 @@ export class LandingActionService {
       return this.buildBlockedResult(request, 'No se pudo consumir el material carbonáceo.', 'spend-carbon-failed');
     }
     const healDelta = Math.min(10, missingHealth);
-    this.characterProfile.adjustVitals({ health: healDelta });
+    this.applyVitalsDelta({ health: healDelta }, { action: request.action, planetId: planet.id, detail: 'neutral-heal' });
 
     const narrative: LandingActionLogEntry[] = [
       { tone: 'info', text: 'Los sanadores carbonizan resinas aromáticas para purificar la sangre.' },
@@ -452,7 +461,10 @@ export class LandingActionService {
     const sanityDelta = 100 - profile.sanity;
     const healthDelta = 100 - profile.health;
     if (sanityDelta || healthDelta) {
-      this.characterProfile.adjustVitals({ sanity: sanityDelta, health: healthDelta });
+      this.applyVitalsDelta(
+        { sanity: sanityDelta || undefined, health: healthDelta || undefined },
+        { action: request.action, planetId: planet.id, detail: 'ally-lifespan-restore' }
+      );
     }
     const daysShared = Math.floor(Math.random() * 11) + 20;
     const ageDaysDelta = this.applyAgeDelta(daysShared);
@@ -485,7 +497,10 @@ export class LandingActionService {
     const newHealth = Math.max(1, Math.floor(profile.health / 2));
     const healthDelta = newHealth - profile.health;
     const sanityDelta = 100 - profile.sanity;
-    this.characterProfile.adjustVitals({ health: healthDelta, sanity: sanityDelta });
+    this.applyVitalsDelta(
+      { health: healthDelta, sanity: sanityDelta },
+      { action: request.action, planetId: planet.id, detail: 'enemy-confrontation' }
+    );
     const ageDaysDelta = this.applyAgeDelta(2);
     const experienceDelta = 25;
     this.characterProfile.awardExperience(experienceDelta, 'landing-lesser-confrontation');
@@ -585,7 +600,10 @@ export class LandingActionService {
       return this.buildBlockedResult(request, option.narrativeFailure ?? 'Te falta cordura.', 'insufficient-sanity');
     }
     if (sanityCost) {
-      this.characterProfile.adjustVitals({ sanity: -sanityCost });
+      this.applyVitalsDelta(
+        { sanity: -sanityCost },
+        { action: request.action, planetId: planet.id, detail: 'diplomacy-vision' }
+      );
     }
     const before = this.missionService.getMissionSnapshot(mission.id);
     const updated = this.missionService.addClueToken(
@@ -657,10 +675,13 @@ export class LandingActionService {
         sanityDelta -= config.sanityCostOnFail;
       }
       if (healthDelta || sanityDelta) {
-        this.characterProfile.adjustVitals({
-          health: healthDelta || undefined,
-          sanity: sanityDelta || undefined
-        });
+        this.applyVitalsDelta(
+          {
+            health: healthDelta || undefined,
+            sanity: sanityDelta || undefined
+          },
+          { action: request.action, planetId: planet.id, detail: 'diplomacy-subtask' }
+        );
       }
     }
     const clues = roll.success ? this.extractNewClues(before, updated) : [];
@@ -794,7 +815,7 @@ export class LandingActionService {
       return result;
     }
 
-    this.characterProfile.adjustVitals({ health: -5 });
+    this.applyVitalsDelta({ health: -5 }, { action: request.action, planetId: planet.id, detail: 'artifact-search-fail' });
     effects.healthDelta = -5;
     effects.needsRetry = true;
     const failureText = this.pickNarrativeText(
@@ -892,7 +913,10 @@ export class LandingActionService {
 
       const sanityLoss = -3;
       const healthLoss = -6;
-      this.characterProfile.adjustVitals({ sanity: sanityLoss, health: healthLoss });
+      this.applyVitalsDelta(
+        { sanity: sanityLoss, health: healthLoss },
+        { action: request.action, planetId: planet.id, detail: 'void-mass-fail' }
+      );
       effects.sanityDelta = sanityLoss;
       effects.healthDelta = healthLoss;
       effects.needsRetry = true;
@@ -977,7 +1001,7 @@ export class LandingActionService {
       return result;
     }
 
-    this.characterProfile.adjustVitals({ health: -5 });
+    this.applyVitalsDelta({ health: -5 }, { action: request.action, planetId: planet.id, detail: 'civilization-contact-fail' });
     effects.healthDelta = -5;
     const failureText = this.pickNarrativeText(
       script?.failure,
@@ -1014,7 +1038,7 @@ export class LandingActionService {
       planet.lesserBeingIntelStatus = hasBeing ? PLANET_INTEL_STATUS.CONFIRMED_PRESENT : PLANET_INTEL_STATUS.CONFIRMED_ABSENT;
       effects.intel = { lesserBeing: planet.lesserBeingIntelStatus };
       if (hasBeing) {
-        this.characterProfile.adjustVitals({ sanity: -5 });
+        this.applyVitalsDelta({ sanity: -5 }, { action: request.action, planetId: planet.id, detail: 'lesser-being-scan' });
         effects.sanityDelta = -5;
         const presentText = this.pickNestedNarrativeText(
           script,
@@ -1043,7 +1067,7 @@ export class LandingActionService {
       return result;
     }
 
-    this.characterProfile.adjustVitals({ health: -5 });
+    this.applyVitalsDelta({ health: -5 }, { action: request.action, planetId: planet.id, detail: 'lesser-being-search-fail' });
     effects.healthDelta = -5;
     const failureText = this.pickNarrativeText(
       script?.failure,
@@ -1185,8 +1209,73 @@ export class LandingActionService {
     if (!days) {
       return 0;
     }
+
+    const engine = this.gameInitializer.getGameEngine();
+    if (engine && typeof (engine as any).applyExternalAgeDelta === 'function') {
+      try {
+        const outcome = (engine as any).applyExternalAgeDelta(days, 'landing');
+        return outcome?.daysApplied ?? 0;
+      } catch (error) {
+        this.logger.log(LogLevel.ERROR, LogCategory.LANDING, 'Failed to route age delta through engine', {
+          days,
+          error
+        });
+      }
+    }
+
     const info = this.characterProfile.addDaysToAge(days);
-    return info?.daysApplied ?? days;
+    this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Age delta applied without engine hook', {
+      days,
+      daysApplied: info?.daysApplied ?? 0
+    });
+    return info?.daysApplied ?? 0;
+  }
+
+  private applyVitalsDelta(delta: { sanity?: number; health?: number }, context: LandingFatalContext): void {
+    if (!delta) {
+      return;
+    }
+    this.characterProfile.adjustVitals(delta);
+    this.evaluateLandingFatality(context);
+  }
+
+  private evaluateLandingFatality(context: LandingFatalContext): void {
+    const profile = this.gameState.characterProfile;
+    let source: 'landing-health' | 'landing-sanity' | null = null;
+    if (profile.health <= 0) {
+      source = 'landing-health';
+    } else if (profile.sanity <= 0) {
+      source = 'landing-sanity';
+    }
+
+    if (!source) {
+      return;
+    }
+
+    const engine = this.gameInitializer.getGameEngine();
+    const metadata = {
+      ...context,
+      health: profile.health,
+      sanity: profile.sanity
+    };
+
+    if (engine && typeof (engine as any).triggerLandingFatality === 'function') {
+      try {
+        (engine as any).triggerLandingFatality(source, metadata);
+        return;
+      } catch (error) {
+        this.logger.log(LogLevel.ERROR, LogCategory.LANDING, 'Failed to trigger landing fatality', {
+          source,
+          metadata,
+          error
+        });
+      }
+    }
+
+    this.logger.log(LogLevel.ERROR, LogCategory.LANDING, 'Game engine unavailable for landing fatality', {
+      source,
+      metadata
+    });
   }
 
   private harvestVoidMass(planet: Planet, ship: { voidEnergyCurrent: number; voidEnergyMax: number }): {

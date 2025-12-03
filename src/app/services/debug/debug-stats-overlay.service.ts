@@ -2,6 +2,7 @@ import { Injectable, Inject, PLATFORM_ID } from '@angular/core';
 import { isPlatformBrowser } from '@angular/common';
 import { LoggingService, LogCategory, LogLevel, LogEntry } from '../logging.service';
 import { CharacterProfileService } from '../game/character-profile.service';
+import { GameInitializer } from '../game/game-initializer.service';
 import { LesserBeing, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
 
 @Injectable({ providedIn: 'root' })
@@ -17,7 +18,8 @@ export class DebugStatsOverlayService {
   constructor(
     @Inject(PLATFORM_ID) private platformId: Object,
     private logging: LoggingService,
-    private characterProfile: CharacterProfileService
+    private characterProfile: CharacterProfileService,
+    private gameInitializer: GameInitializer
   ) {}
 
   initialize(engine?: any): void {
@@ -327,9 +329,14 @@ export class DebugStatsOverlayService {
 
   private handleAgeAdvance(days: number): void {
     try {
-      const info = this.characterProfile.addDaysToAge(days);
-      this.showToolStatus(`Edad → ${info.newAge.years} años · ${info.newAge.days} días (+${info.daysApplied}d)`);
-      this.logging.log(LogLevel.INFO, LogCategory.HUD, 'Dev age advance', { days });
+      const engine = this.getEngine();
+      const viaEngine = !!engine && typeof engine.applyExternalAgeDelta === 'function';
+      const info = viaEngine ? engine.applyExternalAgeDelta(days, 'debug-overlay') : this.characterProfile.addDaysToAge(days);
+      const applied = info?.daysApplied ?? Math.trunc(days);
+      const age = info?.newAge ?? this.characterProfile.profile.age;
+      const deathNote = info?.deathTriggered ? ' ☠️' : '';
+      this.showToolStatus(`Edad → ${age.years} años · ${age.days} días (+${applied}d)${deathNote}`);
+      this.logging.log(LogLevel.INFO, LogCategory.HUD, 'Dev age advance', { days, viaEngine, deathTriggered: info?.deathTriggered });
     } catch (error) {
       this.showToolStatus('Error al ajustar edad');
       this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev age advance failed', error);
@@ -337,12 +344,13 @@ export class DebugStatsOverlayService {
   }
 
   private handleSpawnDebugLesser(species: LesserBeing): void {
-    if (!this.gameEngine || typeof this.gameEngine.debugSpawnLesserBeing !== 'function') {
+    const engine = this.getEngine();
+    if (!engine || typeof engine.debugSpawnLesserBeing !== 'function') {
       this.showToolStatus('Engine no disponible para spawn');
       return;
     }
     try {
-      this.gameEngine.debugSpawnLesserBeing(species);
+      engine.debugSpawnLesserBeing(species);
       const label = LESSER_BEING_LABELS[species] ?? species;
       this.showToolStatus(`Spawn ${label} solicitado`);
     } catch (error) {
@@ -369,5 +377,9 @@ export class DebugStatsOverlayService {
       }
       this.toolStatusTimer = null;
     }, 2500);
+  }
+
+  private getEngine(): any {
+    return this.gameEngine ?? this.gameInitializer.getGameEngine();
   }
 }

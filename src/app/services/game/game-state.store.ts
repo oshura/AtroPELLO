@@ -35,6 +35,8 @@ import {
   createEmptyPlanetIntelSnapshot
 } from '../../game/types/planet-intel.types';
 import { LesserBeingInstanceSnapshot } from '../../game/types/cosmic-life.types';
+import { RespawnAnchorMetadata } from '../../game/types/respawn.types';
+import { Vector3 } from '../../types/game.types';
 
 /**
  * Evento de cambio de estado del juego
@@ -251,6 +253,8 @@ export class GameStateStore {
   private readonly proceduralSystemArchive: SolarSystemSnapshot[] = [];
   private readonly PROCEDURAL_ARCHIVE_LIMIT = 8;
   private readonly LANDING_LOG_LIMIT = 10;
+  /** Último ancla de respawn grabada mediante Respawn Sigillum. */
+  private respawnAnchor: RespawnAnchorMetadata | null = null;
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  REACTIVE STATE (Observabilidad)
@@ -321,6 +325,38 @@ export class GameStateStore {
       }
     }
     return snapshot;
+  }
+
+  public getRespawnAnchor(): RespawnAnchorMetadata | null {
+    return this.cloneRespawnAnchor(this.respawnAnchor);
+  }
+
+  public setRespawnAnchor(anchor: RespawnAnchorMetadata | null): void {
+    if (!anchor) {
+      this.clearRespawnAnchor('set-null');
+      return;
+    }
+    this.respawnAnchor = this.cloneRespawnAnchor(anchor);
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn anchor stored', {
+      anchorId: anchor.anchorId,
+      systemId: anchor.systemId,
+      planetId: anchor.planetId,
+      planetName: anchor.planetName ?? null,
+    });
+  }
+
+  public clearRespawnAnchor(reason?: string): void {
+    if (!this.respawnAnchor) {
+      return;
+    }
+    const snapshot = this.respawnAnchor;
+    this.respawnAnchor = null;
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn anchor cleared', {
+      reason,
+      anchorId: snapshot.anchorId,
+      systemId: snapshot.systemId,
+      planetId: snapshot.planetId,
+    });
   }
 
   /** Limpia todo el cache de intel planetario (se usa al regenerar sistemas). */
@@ -489,6 +525,30 @@ export class GameStateStore {
             cost: task.cost ? { ...task.cost } : undefined
           }))
         : undefined
+    };
+  }
+
+  private cloneRespawnAnchor(anchor: RespawnAnchorMetadata | null): RespawnAnchorMetadata | null {
+    if (!anchor) {
+      return null;
+    }
+    const cloneVec = (vec?: Vector3 | null): Vector3 | undefined => {
+      if (!vec) {
+        return undefined;
+      }
+      return { x: vec.x, y: vec.y, z: vec.z };
+    };
+    return {
+      ...anchor,
+      shipPosition: { ...anchor.shipPosition },
+      shipForward: cloneVec(anchor.shipForward) ?? null,
+      landingSite: anchor.landingSite
+        ? {
+            surfacePoint: { ...anchor.landingSite.surfacePoint },
+            surfaceNormal: { ...anchor.landingSite.surfaceNormal },
+            radius: anchor.landingSite.radius,
+          }
+        : undefined,
     };
   }
   

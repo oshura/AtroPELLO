@@ -91,7 +91,8 @@ export class GrimoirePanel {
     [SpellType.QUIMIO_SIGILLUM, SpellState.AVAILABLE],
     [SpellType.SPECIES_SCAN, SpellState.AVAILABLE],
     [SpellType.CREATURE_SCAN, SpellState.AVAILABLE],
-    [SpellType.PORTAL_CONCORD, SpellState.AVAILABLE]
+    [SpellType.PORTAL_CONCORD, SpellState.AVAILABLE],
+    [SpellType.RESPAWN_SIGILLUM, SpellState.AVAILABLE]
   ]);
   private selectedSpell: SpellType | null = null;
   // Reading mode animation (zoom + slight tilt)
@@ -239,7 +240,8 @@ export class GrimoirePanel {
       SpellType.QUIMIO_SIGILLUM,
       SpellType.SPECIES_SCAN,
       SpellType.CREATURE_SCAN,
-      SpellType.PORTAL_CONCORD
+      SpellType.PORTAL_CONCORD,
+      SpellType.RESPAWN_SIGILLUM
     ];
     allSpells.forEach(k => {
       const currentState = this.spellStates.get(k);
@@ -269,7 +271,8 @@ export class GrimoirePanel {
       SpellType.QUIMIO_SIGILLUM,
       SpellType.SPECIES_SCAN,
       SpellType.CREATURE_SCAN,
-      SpellType.PORTAL_CONCORD
+      SpellType.PORTAL_CONCORD,
+      SpellType.RESPAWN_SIGILLUM
     ];
     allSpells.forEach(k => {
       const currentState = this.spellStates.get(k);
@@ -955,6 +958,7 @@ export class GrimoirePanel {
       SpellType.SPECIES_SCAN,
       SpellType.CREATURE_SCAN,
       SpellType.PORTAL_CONCORD,
+      SpellType.RESPAWN_SIGILLUM,
     ];
     rightSpells.forEach((spell, idx) => {
       const slot = rightGrid.positions[idx];
@@ -1392,6 +1396,58 @@ export class GrimoirePanel {
     c.restore();
   }
 
+  private drawRespawnSigillumRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
+    c.save(); c.translate(x,y); c.scale(1, 1.5);
+    const baseColor = color ?? '#1a253d';
+    c.strokeStyle = baseColor;
+    c.lineWidth = 2.2;
+    c.beginPath(); c.arc(0, 0, r, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 0.65;
+    c.beginPath(); c.arc(0, 0, r*0.8, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 0.35;
+    c.beginPath(); c.arc(0, 0, r*0.55, 0, Math.PI*2); c.stroke();
+    c.globalAlpha = 1;
+    c.lineWidth = 1.8;
+    for (let i = 0; i < 4; i++) {
+      const ang = i * (Math.PI / 2) + this.t * 0.08;
+      const inner = r * 0.85;
+      const outer = r * 1.05;
+      c.beginPath();
+      c.moveTo(Math.cos(ang) * inner, Math.sin(ang) * inner);
+      c.lineTo(Math.cos(ang) * outer, Math.sin(ang) * outer);
+      c.stroke();
+    }
+    c.lineWidth = 2.6;
+    c.beginPath();
+    c.moveTo(0, r*0.65);
+    c.lineTo(-r*0.42, -r*0.18);
+    c.lineTo(r*0.42, -r*0.18);
+    c.closePath();
+    c.stroke();
+    const pulse = 0.18 + 0.06 * Math.sin(this.t * 0.8);
+    c.fillStyle = baseColor;
+    c.globalAlpha = 0.85;
+    c.beginPath(); c.arc(0, 0, r * pulse, 0, Math.PI * 2); c.fill();
+    c.globalAlpha = 1;
+    const drift = this.t * 0.4;
+    c.lineWidth = 1.6;
+    for (let i = 0; i < 3; i++) {
+      const ang = drift + i * (2 * Math.PI / 3);
+      const orbitR = r * 0.62;
+      const px = Math.cos(ang) * orbitR;
+      const py = Math.sin(ang) * orbitR;
+      c.save();
+      c.translate(px, py);
+      c.rotate(ang);
+      c.scale(1, 0.6);
+      c.beginPath();
+      c.rect(-r*0.08, -r*0.08, r*0.16, r*0.16);
+      c.stroke();
+      c.restore();
+    }
+    c.restore();
+  }
+
   private drawSpeciesScanRune(c: CanvasRenderingContext2D, x:number,y:number, r:number, color?: string): void {
     c.save(); c.translate(x,y); c.scale(1, 1.5);
     const baseColor = color ?? '#3b2b1f';
@@ -1667,6 +1723,9 @@ export class GrimoirePanel {
         case SpellType.PORTAL_CONCORD:
           this.drawPortalConcordRune(c, x, y, radius, runeColor);
           break;
+        case SpellType.RESPAWN_SIGILLUM:
+          this.drawRespawnSigillumRune(c, x, y, radius, runeColor);
+          break;
         default:
           this.drawVinculum(c, x, y, radius);
           break;
@@ -1824,6 +1883,9 @@ export class GrimoirePanel {
     } else if (type === SpellType.PORTAL_CONCORD) {
       title = 'Concordia Gate';
       desc = 'Cleanse a hostile portal ≤500u, binding it to your cause and sealing lesser incursions.';
+    } else if (type === SpellType.RESPAWN_SIGILLUM) {
+      title = 'Respawn Sigillum';
+      desc = 'While landed, engrave a respawn anchor that preserves your landing metadata (cost 10/4).';
     } else {
       const typeStr = typeof type === 'string' ? type : String(type);
       const cap = typeStr.charAt(0).toUpperCase() + typeStr.slice(1);
@@ -1899,6 +1961,12 @@ export class GrimoirePanel {
     } else if (type === SpellType.CREATURE_SCAN) {
       title = 'Revelación · Creature Scan';
       desc = 'Expose the active minor entity on a scanned planet (<500u). Cost: 1/3 sanity.';
+    } else if (type === SpellType.PORTAL_CONCORD) {
+      title = 'Concordia Gate';
+      desc = 'Cleanse a hostile portal ≤500u, binding it to your cause and sealing lesser incursions.';
+    } else if (type === SpellType.RESPAWN_SIGILLUM) {
+      title = 'Respawn Sigillum';
+      desc = 'Engrave a grounded anchor that captures ship coordinates and landing data.';
     } else {
       const typeStr = typeof type === 'string' ? type : String(type);
       const cap = typeStr.charAt(0).toUpperCase() + typeStr.slice(1);

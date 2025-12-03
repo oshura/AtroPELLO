@@ -21,7 +21,8 @@ export enum SpellType {
   QUIMIO_SIGILLUM = 'QUIMIO_SIGILLUM',
   SPECIES_SCAN = 'SPECIES_SCAN',
   CREATURE_SCAN = 'CREATURE_SCAN',
-  PORTAL_CONCORD = 'PORTAL_CONCORD'
+  PORTAL_CONCORD = 'PORTAL_CONCORD',
+  RESPAWN_SIGILLUM = 'RESPAWN_SIGILLUM'
 }
 
 /**
@@ -69,6 +70,7 @@ export function getSpellLabel(spell: SpellType): string {
     case SpellType.SPECIES_SCAN: return 'Augurio';
     case SpellType.CREATURE_SCAN: return 'Revelación';
     case SpellType.PORTAL_CONCORD: return 'Concordia Gate';
+    case SpellType.RESPAWN_SIGILLUM: return 'Respawn Sigillum';
     default: return 'Unknown Spell';
   }
 }
@@ -104,6 +106,8 @@ export function getSpellDescription(spell: SpellType): string {
       return 'Consume cordura temporal para detectar el ser menor activo en un planeta (<500u)';
     case SpellType.PORTAL_CONCORD:
       return 'Purga el rencor de un portal hostil (<500u), convirtiéndolo en aliado y bloqueando incursiones menores.';
+    case SpellType.RESPAWN_SIGILLUM:
+      return 'Graba un sello de reanimación mientras estás aterrizado para recordar el punto exacto del planeta y sistema.';
     default:
       return '';
   }
@@ -130,6 +134,7 @@ export const SPELL_SANITY_COSTS: Record<SpellType, SpellSanityCost> = {
   [SpellType.SPECIES_SCAN]: { temp: 1, max: 3 },
   [SpellType.CREATURE_SCAN]: { temp: 1, max: 3 },
   [SpellType.PORTAL_CONCORD]: { temp: 2, max: 4 },
+  [SpellType.RESPAWN_SIGILLUM]: { temp: 10, max: 4 },
 };
 
 export function getSpellSanityCost(spell: SpellType): SpellSanityCost {
