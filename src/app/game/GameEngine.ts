@@ -1182,25 +1182,30 @@ export class GameEngine {
       return;
     }
 
-    const previousHealth = this.spaceship.healthCurrent;
-    this.spaceship.healthCurrent = Math.max(0, this.spaceship.healthCurrent - totalDamage);
+    const applied = this.applyShipDamage(totalDamage, 'sun-core', 'sun-radiation', {
+      suppressHud: true,
+      sourceObject: damaging[0]?.sun ?? null
+    });
+
+    if (applied <= 0) {
+      return;
+    }
 
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Sun proximity damage applied', {
-      totalDamage,
+      totalDamage: applied,
       damagingSuns: damaging.length,
       surfaceDistances: damaging.map(d => Math.round(d.surfaceDistance)),
       centerDistances: damaging.map(d => Math.round(d.distanceToCenter)),
-      healthBefore: previousHealth,
-      healthAfter: this.spaceship.healthCurrent,
+      healthAfter: this.spaceship?.healthCurrent ?? 0,
     });
 
     try {
       this.hudManager?.addMarqueeMessage?.(
-        `Radiación solar: -${totalDamage}u (${this.spaceship.healthCurrent}/${this.spaceship.healthMax})`
+        `Radiación solar: -${applied}u (${this.spaceship?.healthCurrent ?? 0}/${this.spaceship?.healthMax ?? 0})`
       );
     } catch {}
 
-    const vignetteBoost = Math.min(0.4, totalDamage / 25);
+    const vignetteBoost = Math.min(0.4, applied / 25);
     this.impactVignetteLevel = Math.min(1, this.impactVignetteLevel + vignetteBoost);
   }
 
@@ -3421,19 +3426,27 @@ export class GameEngine {
       });
     }
     // Helper to apply damage with cooldown per object
-    const applyDamage = (obj: any, amount: number): void => {
+    const applyDamage = (obj: any, amount: number, label: string): void => {
       if (!obj || !obj.id) return;
       const nextAllowed = this.gameState.collisionCooldowns.get(obj.id) || 0;
       if (now < nextAllowed) return; // still in cooldown
       this.gameState.collisionCooldowns.set(obj.id, now + 500); // 0.5s cooldown per source
       // Portal is ethereal: ignore negative/zero damage
       if (amount <= 0) return;
-      const prev = this.spaceship.healthCurrent;
-      this.spaceship.healthCurrent = Math.max(0, this.spaceship.healthCurrent - amount);
-      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Ship damage', { source: obj.id, amount, prev, now: this.spaceship.healthCurrent });
+      const dealt = this.applyShipDamage(amount, obj.id, label, {
+        suppressHud: true,
+        sourceObject: obj
+      });
+      if (dealt <= 0) {
+        return;
+      }
       // Simple HUD feedback: add marquee message
-      try { this.hudManager?.addMarqueeMessage?.(`Impacto: -${amount}u (${this.spaceship.healthCurrent}/${this.spaceship.healthMax})`); } catch {}
-      // Death verification is now handled reactively by healthCurrent setter
+      try {
+        const remaining = this.spaceship
+          ? `${Math.round(this.spaceship.healthCurrent)}/${Math.round(this.spaceship.healthMax)}`
+          : '0/0';
+        this.hudManager?.addMarqueeMessage?.(`Impacto: -${Math.round(dealt)}u (${remaining})`);
+      } catch {}
     };
     // Aggregate potential collision sources (clusters members, super, mega, planets, sun, ephemerals)
     const sources: any[] = [];
@@ -3513,12 +3526,7 @@ export class GameEngine {
             } catch (e) {
               this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'handleCollisionResponse failed', e);
             }
-            const cocoonActive = !!(this.voidCocoonActiveUntilMs && now < this.voidCocoonActiveUntilMs);
-            if (cocoonActive) {
-              this.handleVoidCocoonImpact(obj, resolvedDamage, { reason: name });
-            } else {
-              applyDamage(obj, resolvedDamage);
-            }
+            applyDamage(obj, resolvedDamage, name);
             
             // Apply mutual damage: ship deals 50 damage to the object
             this.applyDamageToObject(obj, 50);
@@ -3693,17 +3701,31 @@ export class GameEngine {
     // No need for manual check here - the callback will fire automatically
   }
 
-  public applyShipDamage(amount: number, sourceId: string, reason: string): number {
+  public applyShipDamage(
+    amount: number,
+    sourceId: string,
+    reason: string,
+    options?: { suppressHud?: boolean; customHudMessage?: string; sourceObject?: any }
+  ): number {
     if (!this.spaceship || !Number.isFinite(amount) || amount <= 0) {
       return 0;
     }
+
+    const now = performance.now();
+    if (this.isVoidCocoonActive(now)) {
+      this.handleVoidCocoonImpact(options?.sourceObject ?? { id: sourceId }, amount, { reason });
+      return 0;
+    }
+
     const previous = this.spaceship.healthCurrent;
     const next = Math.max(0, previous - amount);
     if (next === previous) {
       return 0;
     }
+
     this.spaceship.healthCurrent = next;
     const dealt = previous - next;
+
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Ship damaged by hostile entity', {
       sourceId,
       reason,
@@ -3711,9 +3733,12 @@ export class GameEngine {
       healthBefore: previous,
       healthAfter: next
     });
-    try {
-      this.hudManager?.addMarqueeMessage?.(`Daño (${reason}): -${Math.round(dealt)}u`);
-    } catch {}
+
+    if (!options?.suppressHud) {
+      const message = options?.customHudMessage ?? `Daño (${reason}): -${Math.round(dealt)}u`;
+      try { this.hudManager?.addMarqueeMessage?.(message); } catch {}
+    }
+
     this.impactVignetteLevel = Math.min(1, this.impactVignetteLevel + Math.min(0.25, dealt / 120));
     return dealt;
   }
@@ -8326,6 +8351,14 @@ export class GameEngine {
       this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'Void Kinesis animation failed', e);
       return false;
     }
+  }
+
+  private isVoidCocoonActive(referenceTime?: number): boolean {
+    if (!this.voidCocoonActiveUntilMs) {
+      return false;
+    }
+    const now = referenceTime ?? performance.now();
+    return now < this.voidCocoonActiveUntilMs;
   }
 
   private castVoidCocoon(): boolean {
