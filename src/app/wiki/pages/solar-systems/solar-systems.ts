@@ -68,13 +68,21 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
               </div>
               <div class="param">
                 <span class="param-name">Planet Radius:</span>
-                <span class="param-value">150-1200 units</span>
+                <span class="param-value">150-1200 u (gigantes 1.3k-2.3k, anillados 2.6k-4.2k)</span>
               </div>
               <div class="param">
                 <span class="param-name">Debris Clusters:</span>
                 <span class="param-value">30-120</span>
               </div>
             </div>
+          </div>
+
+          <div class="note latest-note">
+            <strong>Balance reciente:</strong>
+            <ul>
+              <li>Los portales reducen su burbuja interactiva cuando estás dentro, así que tras un Gate Rite puedes seleccionar otros objetivos sin alejarte.</li>
+              <li>Los planetas gigantes y anillados generados se limitan al tamaño de Júpiter/Saturno; siguen viéndose masivos pero ya no tapan todo el mapa.</li>
+            </ul>
           </div>
         </div>
       </div>

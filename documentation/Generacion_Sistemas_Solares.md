@@ -520,6 +520,20 @@ handlePortalTraversal()
   └─> Cooldown 3s anti-rebote
 ```
 
+---
+
+## 10. Ajustes recientes (Gate Rite & Gigantes)
+
+### Portales tras Gate Rite
+- `Portal` expone ahora `getTargetingRadius()` y `getTargetingSuppressionRadius()` (`src/app/game/game-objects/Portal.ts`). El objetivo es desacoplar el radio visual del radio usado por el targeting.
+- `AdaptiveTargetingSystem` detecta si la cámara/nave está dentro del disco del portal. Mientras permanezcas en esa burbuja de supresión, el raycast ignora el portal y deja pasar clicks a otros objetos; si apuntas directo al ojo, el fallback por píxel permite seleccionarlo igualmente.
+- Resultado práctico: después de atravesar un portal Gate Rite ya no es necesario alejarse decenas de kilómetros para volver a seleccionar planetas u objetivos cercanos.
+
+### Escalado de planetas gigantes/anillados
+- El generador (`SystemGeneratorService.radiusForKind`) emite radios base mucho más contenidos: `Giant` ≈ 320‑580 u y `Ringed` ≈ 1300‑2100 u antes de que las clases específicas apliquen sus multiplicadores (x4 y x2 respectivamente).
+- Esto deja los gigantes procedural en un rango final de 1.3k‑2.3k unidades y los anillados en 2.6k‑4.2k, alineados con las proporciones descritas para el sistema humano. Los valores opcionales como `maxGiantRadius` siguen operando sobre el radio base.
+- Documentar cualquier snapshot legado con radios mayores, porque tras esta actualización se verán más contenidos y acordes a Júpiter/Saturno.
+
 ### Datos Preservados Entre Sistemas
 - **Portales persistentes**: Mantenidos en PortalPersistenceService
 - **Enlaces portales**: linkedPortalId bidireccional

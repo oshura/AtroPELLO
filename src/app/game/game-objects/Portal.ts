@@ -11,11 +11,18 @@ import { GameObjectAnimosity } from '../types/animosity.types';
  * Targeteable, con geometría circular de runas y ojo central (placeholder en esta fase).
  */
 export class Portal extends GameObject implements ITargetable {
+  private static readonly TARGETING_RADIUS_MIN = 80;
+  private static readonly TARGETING_RADIUS_MAX = 1500;
+  private static readonly TARGETING_RADIUS_RATIO = 0.4;
+  private static readonly TARGETING_SUPPRESSION_RATIO = 0.6;
+  private static readonly TARGETING_SUPPRESSION_CAP = 2400;
   // Health: portals are magical constructs, very durable but can be destroyed
   // Override with simple setter to initialize backing field
   protected override _healthCurrent: number = 5000;
   public override healthMax: number = 5000;
   public radius: number; // radio visual/base para targeting
+  /** Radio efectivo que usa el sistema de targeting para raycasts */
+  private targetingRadius: number;
   // Blank portal: no custom sub-geometry; keep only core disk for targeting proxy
   public manifestTime = 0; // tiempo de vida para animación
   // Store original planet size reference
@@ -60,6 +67,7 @@ export class Portal extends GameObject implements ITargetable {
     this.color = { r: 0.2, g: 0.8, b: 1.0, a: 1.0 }; // cian arcano
     this.setAnimosity(GameObjectAnimosity.ENEMY);
     this.radius = radius;
+    this.targetingRadius = this.computeTargetingRadius(radius);
     this.planetRadiusRef = radius;
     this.voidMassUnits = 0;
     // Ajustar bounding sphere (compute manually usando escala)
@@ -223,6 +231,26 @@ export class Portal extends GameObject implements ITargetable {
   public getDisplayName(): string { return `Portal ${this.id}`; }
   public getTargetType(): TargetType { return TargetType.PORTAL; }
   public override isActive(): boolean { return this.active && this.visible; }
+
+  /** Radio usado por el targeting adaptativo (clamp anti-mamut). */
+  public getTargetingRadius(): number {
+    return this.targetingRadius;
+  }
+
+  /** Radio máximo donde se suprime el raycast cuando la nave está "dentro" del portal. */
+  public getTargetingSuppressionRadius(): number {
+    const scaled = Math.min(
+      this.radius * Portal.TARGETING_SUPPRESSION_RATIO,
+      Portal.TARGETING_SUPPRESSION_CAP
+    );
+    const base = Math.max(this.targetingRadius * 0.9, Portal.TARGETING_RADIUS_MIN);
+    return Math.max(base, scaled || this.targetingRadius);
+  }
+
+  private computeTargetingRadius(r: number): number {
+    const scaled = Math.max(r * Portal.TARGETING_RADIUS_RATIO, Portal.TARGETING_RADIUS_MIN);
+    return Math.min(Portal.TARGETING_RADIUS_MAX, scaled);
+  }
 
   // ===== Pentáculo =====
   // Eliminado en Portal (se renderiza desde PortalShaderService para grosor/anillo consistentes)

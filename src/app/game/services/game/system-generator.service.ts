@@ -193,8 +193,8 @@ export class SystemGeneratorService {
   const radiusForKind = (kind: string) => {
     let r: number;
     switch (kind) {
-      case 'Giant': r = 2800 + Math.round(rnd()*1800); break; // 2800..4600
-      case 'Ringed': r = 2000 + Math.round(rnd()*1400); break; // 2000..3400
+      case 'Giant': r = 320 + Math.round(rnd()*260); break;   // -> 1280..2320 tras GiantPlanet
+      case 'Ringed': r = 1300 + Math.round(rnd()*800); break; // -> 2600..4200 tras RingedPlanet
       case 'Gaseous': r = 1800 + Math.round(rnd()*1500); break; // 1800..3300
       case 'Dwarf': r = 400 + Math.round(rnd()*600); break; // 400..1000
       case 'Protoplanet': r = 250 + Math.round(rnd()*350); break; // 250..600

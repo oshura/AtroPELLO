@@ -158,6 +158,12 @@ export class AdaptiveTargetingSystem {
   private screenAnchorMinPx: number = 32; // absolute minimum size in pixels to justify alternate anchors
   private forceCenterRadiusFraction: number = 0.28; // when projected radius exceeds this, keep center projected even if off-screen
   private forceCenterMinPx: number = 72;
+  // Portal-specific tuning
+  private portalInteriorSuppressionMin = 180;
+  private portalInteriorSuppressionScale = 1.35;
+  private portalInteriorSuppressionCap = 2600;
+  private portalInteriorSuppressionRatio = 0.65;
+  private portalLegacyRadiusCap = 1500;
   
   constructor(
     private webglService: WebGLService,
@@ -395,6 +401,13 @@ export class AdaptiveTargetingSystem {
 
   private getTargetRadius(target: ITargetable): number {
     const anyTarget = target as any;
+      const targetType = typeof target.getTargetType === 'function' ? target.getTargetType() : undefined;
+      if (targetType === TargetType.PORTAL) {
+        const portalRadius = this.getPortalTargetingRadius(target);
+        if (portalRadius !== null) {
+          return portalRadius;
+        }
+      }
     if (anyTarget?.boundingSphere?.radius !== undefined) {
       const r = Number(anyTarget.boundingSphere.radius);
       if (Number.isFinite(r) && r > 0) {
@@ -408,6 +421,78 @@ export class AdaptiveTargetingSystem {
       return Math.max(1, Number(anyTarget.radius));
     }
     return 10;
+  }
+
+  private getPortalTargetingRadius(target: ITargetable): number | null {
+    const anyTarget = target as any;
+    if (typeof anyTarget?.getTargetingRadius === 'function') {
+      const r = Number(anyTarget.getTargetingRadius());
+      if (Number.isFinite(r) && r > 0) {
+        return r;
+      }
+    }
+    if (typeof anyTarget?.targetingRadius === 'number') {
+      const r = Number(anyTarget.targetingRadius);
+      if (Number.isFinite(r) && r > 0) {
+        return Math.max(1, r);
+      }
+    }
+    const raw = this.getPortalActualRadius(target);
+    if (raw !== null) {
+      return Math.min(this.portalLegacyRadiusCap, Math.max(1, raw));
+    }
+    return null;
+  }
+
+  private getPortalActualRadius(target: ITargetable): number | null {
+    const anyTarget = target as any;
+    if (typeof anyTarget?.radius === 'number' && Number.isFinite(anyTarget.radius)) {
+      return Math.max(1, Number(anyTarget.radius));
+    }
+    if (anyTarget?.boundingSphere?.radius !== undefined) {
+      const r = Number(anyTarget.boundingSphere.radius);
+      if (Number.isFinite(r) && r > 0) {
+        return r;
+      }
+    }
+    return null;
+  }
+
+  private getPortalSuppressionRadius(target: ITargetable, targetingRadius: number, actualRadius?: number | null): number {
+    const anyTarget = target as any;
+    let candidate = 0;
+    if (typeof anyTarget?.getTargetingSuppressionRadius === 'function') {
+      const r = Number(anyTarget.getTargetingSuppressionRadius());
+      if (Number.isFinite(r) && r > 0) {
+        candidate = r;
+      }
+    } else if (typeof anyTarget?.targetingSuppressionRadius === 'number') {
+      const r = Number(anyTarget.targetingSuppressionRadius);
+      if (Number.isFinite(r) && r > 0) {
+        candidate = r;
+      }
+    }
+    if (!candidate && actualRadius && Number.isFinite(actualRadius)) {
+      candidate = actualRadius * this.portalInteriorSuppressionRatio;
+    }
+    const fallback = Math.max(this.portalInteriorSuppressionMin, targetingRadius * this.portalInteriorSuppressionScale);
+    candidate = Math.max(candidate, fallback);
+    return Math.min(candidate, this.portalInteriorSuppressionCap);
+  }
+
+  private shouldSuppressPortalRayHit(
+    center: { x: number; y: number; z: number },
+    rayOrigin: { x: number; y: number; z: number },
+    suppressionRadius: number
+  ): boolean {
+    if (!Number.isFinite(suppressionRadius) || suppressionRadius <= 0) {
+      return false;
+    }
+    const dx = center.x - rayOrigin.x;
+    const dy = center.y - rayOrigin.y;
+    const dz = center.z - rayOrigin.z;
+    const dist = Math.hypot(dx, dy, dz);
+    return dist <= suppressionRadius;
   }
 
   private getWorldDistance(worldPos: { x: number; y: number; z: number }): number {
@@ -479,7 +564,14 @@ export class AdaptiveTargetingSystem {
         if (this.isDominantAndGated(info)) continue; // skip dominant gated
         const center = this.getTargetAnchorPosition(info.target);
         const radius = this.getTargetRadius(info.target);
-        const t = this.raySphere(ray.origin, ray.dir, center, radius);
+        let t = this.raySphere(ray.origin, ray.dir, center, radius);
+        if (info.type === TargetType.PORTAL && t !== null) {
+          const actualRadius = this.getPortalActualRadius(info.target) ?? radius;
+          const suppressionRadius = this.getPortalSuppressionRadius(info.target, radius, actualRadius);
+          if (this.shouldSuppressPortalRayHit(center, ray.origin, suppressionRadius)) {
+            t = null; // evita que el portal bloquee todo cuando estamos dentro
+          }
+        }
         if (t !== null && t > 0) {
           if (!best || t < best.t) best = { info, t };
         } else {
