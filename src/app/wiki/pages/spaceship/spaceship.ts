@@ -169,6 +169,49 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         </div>
       </section>
 
+      <section class="hud-marquee">
+        <h2>🖥️ HUD Marquee Link</h2>
+        <p>The marquee is now fully event-driven. It only scrolls curated alerts (respawn, threats, rituals, portals) and stays visually mounted even when idle—an empty text line simply means there are no pending events.</p>
+        <div class="marquee-columns">
+          <div class="marquee-card">
+            <h3>Mission Flow</h3>
+            <ul>
+              <li><strong>Respawn:</strong> Anchor label plus sanity/health recovery notices.</li>
+              <li><strong>Landing Sequence:</strong> Approach initiation, touchdown confirmations and abort reasons.</li>
+              <li><strong>Takeoff Sequence:</strong> Launch start, completion, or abort outcomes.</li>
+            </ul>
+          </div>
+          <div class="marquee-card">
+            <h3>Hazards & Damage</h3>
+            <ul>
+              <li><strong>Ship Damage:</strong> High-impact collisions that pierce the hull buffer.</li>
+              <li><strong>Hazard:</strong> Solar radiation ticks, environmental DoT and anomaly burns.</li>
+              <li><strong>Warning:</strong> System safeguards (panel locks, soft-lock prevention, etc.).</li>
+            </ul>
+          </div>
+          <div class="marquee-card">
+            <h3>World Events</h3>
+            <ul>
+              <li><strong>Portal:</strong> Concordia traversals plus Gate Rite stabilization results.</li>
+              <li><strong>Lesser Beings:</strong> Rewards, discoveries and ritual boons granted by allies.</li>
+              <li><strong>Void Ritual:</strong> Anchoring Pulse, Material Disruption and other rites.</li>
+            </ul>
+          </div>
+          <div class="marquee-card boot-sequence">
+            <h3>Boot Sequence Alerts</h3>
+            <ol>
+              <li>Explosion detectada.</li>
+              <li>Integridad comprometida.</li>
+              <li>Piloto dañado.</li>
+              <li>Sugerencia: contactar nave nodriza.</li>
+            </ol>
+            <p class="note">Se emiten automáticamente al iniciar sesión o tras reconstruir el HUD para dejar claro el estado de emergencia inicial.</p>
+          </div>
+        </div>
+        <p class="note marquee-note">Queue is throttled, deduped per event type and capped to keep the scroll readable. Expect a ~1.2s grace period after respawn before void energy starts draining again.</p>
+        <p class="note marquee-note">Cada alerta completa una única vuelta en el panel antes de caducar y el scroll aplica compensación de FPS bajos para que los textos no avancen a golpes incluso cuando el juego corre a 32&nbsp;FPS.</p>
+      </section>
+
       <section class="customization tbd-section">
         <h2>🔧 Customization (TBD)</h2>
         <p>The ship is designed with modularity in mind. Future updates will allow:</p>
@@ -364,6 +407,62 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
 
     .control-item span {
       color: #ccc;
+    }
+
+    .hud-marquee {
+      margin-top: 2.5rem;
+      padding: 2rem;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 255, 65, 0.3);
+      background: rgba(0, 255, 65, 0.04);
+    }
+
+    .hud-marquee h2 {
+      color: #00ff41;
+      margin-top: 0;
+    }
+
+    .marquee-columns {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+      gap: 1.5rem;
+      margin-top: 1.5rem;
+    }
+
+    .marquee-card {
+      padding: 1.25rem;
+      border-radius: 6px;
+      border: 1px solid rgba(0, 255, 65, 0.2);
+      background: rgba(0, 255, 65, 0.06);
+    }
+
+    .marquee-card h3 {
+      margin: 0 0 0.75rem 0;
+      color: #00ff41;
+      font-size: 1.2rem;
+    }
+
+    .marquee-card ul {
+      margin: 0;
+      padding-left: 1.25rem;
+      color: #c8f5d9;
+      line-height: 1.6;
+    }
+
+    .marquee-card ol {
+      margin: 0;
+      padding-left: 1.25rem;
+      color: #c8f5d9;
+      line-height: 1.6;
+    }
+
+    .marquee-card li {
+      margin-bottom: 0.5rem;
+    }
+
+    .marquee-note {
+      margin-top: 1.5rem;
+      display: inline-block;
     }
 
     .customization {

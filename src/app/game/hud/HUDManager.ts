@@ -13,7 +13,46 @@ import { TargetingSystem, TargetInfo } from '../types/targeting.types';
 import { OrientationBasis } from '../targeting/compass-direction.util';
 import { TargetPanel, TargetPanelState, Relation } from './elements/TargetPanel';
 import { LandingIndicatorsSnapshot } from '../types/landing.types';
-import { CompassCountdownPayload } from '../types/hud.types';
+import { CompassCountdownPayload, HudMarqueeEventOptions, HudMarqueeEventType } from '../types/hud.types';
+
+interface QueuedMarqueeEntry {
+  id: string;
+  type: HudMarqueeEventType;
+  message: string;
+  createdAt: number;
+  priority: number;
+  dedupeKey: string;
+  loopsRemaining: number;
+  totalLoops: number;
+}
+
+interface HudMarqueeEventConfig {
+  throttleMs: number;
+  priority: number;
+  allowDuplicates?: boolean;
+  loops?: number;
+}
+
+const HUD_MARQUEE_DEFAULT_CONFIG: HudMarqueeEventConfig = {
+  throttleMs: 1200,
+  priority: 5,
+  loops: 1,
+};
+
+const HUD_MARQUEE_EVENT_CONFIG: Record<HudMarqueeEventType, HudMarqueeEventConfig> = {
+  [HudMarqueeEventType.RESPAWN]: { throttleMs: 2000, priority: 1 },
+  [HudMarqueeEventType.SYSTEM]: { throttleMs: 1500, priority: 2 },
+  [HudMarqueeEventType.LANDING_SEQUENCE]: { throttleMs: 1500, priority: 2 },
+  [HudMarqueeEventType.TAKEOFF_SEQUENCE]: { throttleMs: 1500, priority: 2 },
+  [HudMarqueeEventType.SHIP_DAMAGE]: { throttleMs: 350, priority: 3, allowDuplicates: true },
+  [HudMarqueeEventType.HAZARD]: { throttleMs: 1000, priority: 3 },
+  [HudMarqueeEventType.PORTAL]: { throttleMs: 2500, priority: 2 },
+  [HudMarqueeEventType.LESSER_BEING]: { throttleMs: 1200, priority: 3 },
+  [HudMarqueeEventType.VOID_RITUAL]: { throttleMs: 1200, priority: 4 },
+  [HudMarqueeEventType.WARNING]: { throttleMs: 2000, priority: 1 },
+};
+
+const HUD_MARQUEE_MAX_ENTRIES = 6;
 
 /**
  * Administrador principal del sistema HUD
@@ -36,6 +75,9 @@ export class HUDManager {
   private marqueePanel: MarqueePanel;
   private targetPanel: TargetPanel;
   private landingIndicators = { landingReady: false, threatActive: false };
+  private marqueeEntries: QueuedMarqueeEntry[] = [];
+  private marqueeLastEmit = new Map<HudMarqueeEventType, number>();
+  private lastMarqueeUpdateMs: number | null = null;
   
   // Geometría del plano HUD
   private hudGeometry: { vertices: Float32Array; indices: Uint16Array } | null = null;
@@ -148,7 +190,13 @@ export class HUDManager {
   const riteActive = !!(gameData.speedRiteRemainingSec && gameData.speedRiteRemainingSec > 0 && gameData.speed > 100);
   this.speedometer.setRiteActive(riteActive);
   this.speedometer.update(gameData.speed);
-  this.marqueePanel.update(); // Sin parámetros, usa su lógica interna
+  const marqueeDelta = this.captureMarqueeDeltaMs();
+  const completedLoops = this.marqueePanel.update(marqueeDelta);
+  if (completedLoops.length) {
+    for (const messageId of completedLoops) {
+      this.handleMarqueeLoopComplete(messageId);
+    }
+  }
   this.healthGauge.update(gameData.shipHealth ?? null);
   this.cargoGauge.update(gameData.shipCargo ?? null);
     
@@ -265,20 +313,76 @@ export class HUDManager {
    * Establecer mensajes del panel de marquesina
    */
   public setMarqueeMessages(messages: string[]): void {
-    this.marqueePanel.setMessages(messages);
+    this.marqueeEntries = [];
+    this.marqueeLastEmit.clear();
+    for (const message of messages) {
+      this.emitMarqueeEvent(HudMarqueeEventType.SYSTEM, message, {
+        force: true,
+        allowDuplicate: true,
+      });
+    }
   }
 
   /**
-   * Agregar un mensaje al panel de marquesina
+   * Emite un evento de marquee con metadatos para throttling y prioridad.
    */
-  public addMarqueeMessage(message: string): void {
-    this.marqueePanel.addMessage(message);
+  public emitMarqueeEvent(
+    type: HudMarqueeEventType,
+    message: string,
+    options?: HudMarqueeEventOptions
+  ): void {
+    const text = (message ?? '').trim();
+    if (!text) {
+      return;
+    }
+
+    const now = this.nowMs();
+    const config = HUD_MARQUEE_EVENT_CONFIG[type] ?? HUD_MARQUEE_DEFAULT_CONFIG;
+    const dedupeKey = options?.dedupeKey ?? `${type}-${text}`;
+
+    if (!options?.force && config.throttleMs > 0) {
+      const last = this.marqueeLastEmit.get(type) ?? 0;
+      if (now - last < config.throttleMs) {
+        return;
+      }
+    }
+
+    if (!options?.allowDuplicate && !config.allowDuplicates) {
+      const existing = this.marqueeEntries.find(entry => entry.dedupeKey === dedupeKey);
+      if (existing) {
+        existing.createdAt = now;
+        existing.priority = Math.min(existing.priority, options?.priorityOverride ?? config.priority);
+        existing.loopsRemaining = existing.totalLoops;
+        this.sortMarqueeEntries();
+        this.syncMarqueePanel();
+        return;
+      }
+    }
+
+    this.marqueeLastEmit.set(type, now);
+    const loops = this.resolveLoopBudget(type, options);
+    const entry: QueuedMarqueeEntry = {
+      id: `${type}-${now.toFixed(3)}`,
+      type,
+      message: text,
+      createdAt: now,
+      priority: options?.priorityOverride ?? config.priority,
+      dedupeKey,
+      loopsRemaining: loops,
+      totalLoops: loops,
+    };
+
+    this.marqueeEntries.push(entry);
+    this.sortMarqueeEntries();
+    this.trimMarqueeEntries();
+    this.syncMarqueePanel();
   }
 
   /**
    * Limpiar mensajes del panel de marquesina
    */
   public clearMarqueeMessages(): void {
+    this.marqueeEntries = [];
     this.marqueePanel.clearMessages();
   }
 
@@ -287,6 +391,65 @@ export class HUDManager {
    */
   public getCurrentMarqueeMessage(): string {
     return this.marqueePanel.getCurrentMessage();
+  }
+
+  private handleMarqueeLoopComplete(messageId: string): void {
+    const entryIndex = this.marqueeEntries.findIndex(entry => entry.id === messageId);
+    if (entryIndex === -1) {
+      return;
+    }
+    const entry = this.marqueeEntries[entryIndex];
+    entry.loopsRemaining = Math.max(0, entry.loopsRemaining - 1);
+    if (entry.loopsRemaining > 0) {
+      return;
+    }
+    this.marqueeEntries.splice(entryIndex, 1);
+    this.syncMarqueePanel();
+  }
+
+  private captureMarqueeDeltaMs(): number {
+    const now = this.nowMs();
+    if (this.lastMarqueeUpdateMs === null) {
+      this.lastMarqueeUpdateMs = now;
+      return 16.67;
+    }
+    const delta = now - this.lastMarqueeUpdateMs;
+    this.lastMarqueeUpdateMs = now;
+    return Math.max(4, Math.min(200, delta));
+  }
+
+  private sortMarqueeEntries(): void {
+    this.marqueeEntries.sort((a, b) => {
+      if (a.priority !== b.priority) {
+        return a.priority - b.priority;
+      }
+      return a.createdAt - b.createdAt;
+    });
+  }
+
+  private trimMarqueeEntries(): void {
+    while (this.marqueeEntries.length > HUD_MARQUEE_MAX_ENTRIES) {
+      this.marqueeEntries.pop();
+    }
+  }
+
+  private resolveLoopBudget(type: HudMarqueeEventType, options?: HudMarqueeEventOptions): number {
+    const config = HUD_MARQUEE_EVENT_CONFIG[type] ?? HUD_MARQUEE_DEFAULT_CONFIG;
+    const raw = options?.loops ?? config.loops ?? HUD_MARQUEE_DEFAULT_CONFIG.loops ?? 1;
+    return Math.max(1, Math.floor(raw));
+  }
+
+  private syncMarqueePanel(): void {
+    if (!this.marqueeEntries.length) {
+      this.marqueePanel.clearMessages();
+      return;
+    }
+    const messages = this.marqueeEntries.map(entry => ({ id: entry.id, text: entry.message }));
+    this.marqueePanel.setMessages(messages, true);
+  }
+
+  private nowMs(): number {
+    return typeof performance !== 'undefined' ? performance.now() : Date.now();
   }
 
   /**

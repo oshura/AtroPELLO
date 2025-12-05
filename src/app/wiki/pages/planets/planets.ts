@@ -113,16 +113,22 @@ interface Planet {
 
       <section class="landing">
         <h2>🛬 Landing Mechanics</h2>
-        <p>Landing on planets is a precision maneuver:</p>
+        <p>Landing sigue un checklist muy específico antes de ceder el control al panel:</p>
         <ul>
-          <li><strong>Approach Speed:</strong> Bleed velocity down to 5 units/sec or lower while you sit in the landing window.</li>
-          <li><strong>Distance:</strong> Slip inside the planet's collision sphere and get within 50 units of the surface.</li>
-          <li><strong>Orientation:</strong> Keep the nose roughly tangent to the surface (within ~60° of perpendicular) so you are not spearing the crust.</li>
-          <li><strong>Stability Hold:</strong> Maintain those conditions for at least 0.25 seconds to arm the green <em>Land</em> pilot light.</li>
-          <li><strong>Threat Pilot:</strong> The red pilot stays lit if hull integrity is below 25%, void energy is under 10 units, or an enemy sits within 500 units—clear it before attempting a touch-down.</li>
-          <li><strong>Initiation:</strong> Once Land is ready (and threats are cleared), pressing Enter will trigger the scripted docking sequence (in progress).</li>
+          <li><strong>Velocidad:</strong> reduce a &le; <strong>5u/s</strong>; el HUD central muestra el valor en tiempo real.</li>
+          <li><strong>Distancia:</strong> ingresa en la esfera de colisión y mantente a &le; <strong>50u</strong> de la superficie.</li>
+          <li><strong>Orientación:</strong> mantén la nariz prácticamente tangente (±60°) para no clavar la nave.</li>
+          <li><strong>Hold:</strong> conserva estas condiciones durante <strong>3000&nbsp;ms</strong> (<code>LANDING_READY_HOLD_MS</code>) hasta que el piloto verde «Landing» se encienda.</li>
+          <li><strong>Threat:</strong> el piloto rojo se prende si existe un hostil &le;500u (<code>computeLandingThreat</code>). No podrás iniciar la secuencia hasta que quede apagado.</li>
+          <li><strong>Secuencia:</strong> con verde encendido y rojo apagado, pulsa <kbd>Enter</kbd> para ejecutar <code>startLandingSequence</code> (approach &rarr; glide &rarr; fade). El despegue usa <code>startTakeoffSequence</code> para revertir los pasos.</li>
         </ul>
-        <p class="tbd"><strong>TBD:</strong> Landing cinematic, surface exploration, resource harvesting, and planet-specific mission hooks.</p>
+        <p>Mientras estás en estado <em>landed</em> el HUD abre el Landing Panel:</p>
+        <ul>
+          <li><strong>Descanso / Intel:</strong> botones que ejecutan acciones como Rest o Registrar anomalías; los efectos (cordura, salud, logs) se reflejan en <code>LandingEventResult</code>.</li>
+          <li><strong>Exploración:</strong> Búsqueda de artefactos, void mass, civilizaciones o lesser beings. Cada acción consume narrativa desde los JSON de <code>LandingNarrativeService</code>.</li>
+          <li><strong>Diplomacia:</strong> Desbloquea misiones raciales, sobornos, submisiones y rituales de visión que generan <em>Clue Tokens</em> (tiers minor/major/final) antes de entregar el objetivo.</li>
+          <li><strong>Memoria:</strong> Completar la misión racial otorga el porcentaje indicado en la tabla (≈80% total) y cambia el planeta a estado Ally.</li>
+        </ul>
       </section>
     </div>
   `,

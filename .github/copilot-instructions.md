@@ -1,29 +1,21 @@
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
-- [x] Verify that the copilot-instructions.md file in the .github directory is created.
 
-- [x] Clarify Project Requirements
-	<!-- Angular 20 SPA with header, footer, and main content area for OpenGL web game -->
+- Clarify Project Requirements
+	This is an Angular 20 SPA with header, footer, and main content area for OpenGL web game.
+  Angular 20 project created with routing, SCSS, SSR, and zoneless configuration.
 
-- [x] Scaffold the Project
-	<!-- Angular 20 project created with routing, SCSS, SSR, and zoneless configuration -->
+- En la carpera /documentation existe la documentacion técnica del proyecto, escrita en español. Utiliza esta documentación para conocer el proyecto cuando se analiza codigo relacionado con una de las funcionalidades documentadas.
 
-- [x] Customize the Project
-	<!-- Creados componentes header, footer, game con estilos optimizados para juego OpenGL -->
+- Manten la documentación si es necesario al generar código nuevo o modificar el existente.
 
-- [x] Install Required Extensions
-	<!-- No hay extensiones adicionales requeridas -->
+- Existe un desarrollo en la aplicacion SPA de una wiki para el usuario. La wiki se encuentra en la ruta /wiki y el código relacionado con la wiki se encuentra en la carpeta /src/app/wiki. /documentation Wiki_System.md documenta el sistema de la wiki.
 
-- [x] Compile the Project
-	<!-- Proyecto compilado exitosamente, dependencias instaladas -->
+- La wiki, debe ser actualizada con el comportamiento (funcionalidades) que se implementan nuevas o se modifican. Debe tenerse en cuenta para completar cada desarrollo.
 
-- [x] Create and Run Task
-	<!-- Tareas npm pre-existentes disponibles para desarrollo -->
+- Los desarrollos complejos, deben siempre partir con un analisis previo del código existente, analisis de la documentación técnica relacionada, y un plan de desarrollo que debe ser aprobado antes de comenzar a escribir código. El plan debe detallarse en /documentation/plans/ para poder retomar el desarrollo en cualquier momento con una lista con checks para marcar el progreso.
 
-- [x] Launch the Project
-	<!--
-	Verify that all previous steps have been completed.
-	Prompt user for debug mode, launch only if confirmed.
-	 -->
+- Siempre ten en cuenta sobretodo /documentation/CleanCode_Arquitectura.md y /documentation/Resumen_Proyecto_y_Progreso.md.
 
-- [x] Ensure Documentation is Complete
-	<!-- Repositorio Git inicializado en rama main con commit inicial completo -->
+- Por último, cada fase completada del desarrollo debe ser compilada con 'npm run build' para asegurar que el proyecto compila correctamente tras los cambios.
+
+- Completado el plan y la documentación al respecto, puedes eliminar el plan.

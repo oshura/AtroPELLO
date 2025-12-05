@@ -15,7 +15,7 @@
 | `/wiki` | `pages/wiki-index/wiki-index.ts` | Portada con buscador y mosaico de entradas. | `wiki`, `buscador`, `indice` |
 | `/wiki/glyphs` | `pages/glyphs/glyphs.ts` | Descripción de hechizos/glifos y sus costes. | `hechizos`, `glifos`, `rituales` |
 | `/wiki/game-objects` | `pages/game-objects/game-objects.ts` | Catálogo de objetos físicos del juego. | `asteroides`, `planetas` |
-| `/wiki/spaceship` | `pages/spaceship/spaceship.ts` | Información del fuselaje y módulos de la nave. | `nave`, `thrusters` |
+| `/wiki/spaceship` | `pages/spaceship/spaceship.ts` | Información del fuselaje, módulos y ahora la Marquesina del HUD (eventos visibles). | `nave`, `thrusters`, `hud` |
 | `/wiki/solar-systems` | `pages/solar-systems/solar-systems.ts` | Generación de sistemas solares. | `procedural`, `orbita` |
 | `/wiki/planets` | `pages/planets/planets.ts` | Tipos de planeta y trasfondo. | `planetas`, `habitabilidad` |
 | `/wiki/game-rules` | `pages/game-rules/game-rules.ts` | Reglas básicas, aterrizaje y supervivencia. | `controles`, `aterrizaje` |

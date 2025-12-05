@@ -455,7 +455,7 @@ export class CockpitInternalCamera extends BaseCamera {
  * Manager de cámaras que maneja múltiples modos
  */
 export class Camera {
-  private currentMode: CameraMode = CameraMode.INMOVILE_EXTERNAL;
+  private currentMode: CameraMode = CameraMode.COCKPIT;
   private rearViewCamera: RearViewCamera;
   private rearExternalCamera: RearExternalCamera;
   private cockpitCamera: CockpitCamera;
@@ -477,7 +477,7 @@ export class Camera {
     this.cockpitCamera = new CockpitCamera(aspect);
     this.cockpitInternalCamera = new CockpitInternalCamera(aspect);
     this.manualCamera = new ManualCamera(aspect);
-    this.activeCamera = this.cockpitCamera; // INMOVILE_EXTERNAL como modo por defecto
+    this.activeCamera = this.cockpitInternalCamera; // Cockpit (modo 8) como modo por defecto
   }
 
   /**

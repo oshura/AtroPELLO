@@ -73,7 +73,7 @@ import {
 } from './types/cosmic-life.types';
 import { PLANET_INTEL_STATUS } from './types/planet-intel.types';
 import { GameObjectAnimosity } from './types/animosity.types';
-import { CompassCountdownPayload } from './types/hud.types';
+import { CompassCountdownPayload, HudMarqueeEventType } from './types/hud.types';
 import { OrientationBasis, computeHeadingFromForward } from './targeting/compass-direction.util';
 import { Vector3 } from '../types/game.types';
 import { LesserBeingController } from './services/lesser-beings/lesser-being-controller';
@@ -199,8 +199,16 @@ export class GameEngine {
   private readonly LANDING_ALIGNMENT_MAX_DOT = 0.5; // cos(60°) tolerance from perfect parallel
   private readonly LANDING_READY_HOLD_MS = 3000; // require 3s of stability before enabling landing
   private readonly LANDING_THREAT_RADIUS = 500;
+  private readonly LANDING_APPROACH_ALERT_DISTANCE = 300;
+  private readonly LANDING_APPROACH_RESET_DISTANCE = 380;
+  private landingApproachAnnouncements: Map<string, number> = new Map();
   private readonly GLYPH_SCAN_RANGE = 500;
   private readonly PORTAL_CONCORD_RANGE = 500;
+  private readonly RESPAWN_VOID_ENERGY_PAUSE_MS = 1200; // give void energy a brief grace period after respawn
+  private readonly HAZARD_EXIT_GAP_MS = 4500;
+  private hazardLastDamageMs: Map<string, number> = new Map();
+  private readonly hazardEntryReasons = new Set<string>(['sun-radiation', 'aura']);
+  private bootMarqueePrimed = false;
   // Central logger
   public readonly logger: LoggingService;
   public _targetDetailsCache: Record<string, any> = {};
@@ -636,30 +644,63 @@ export class GameEngine {
       return { active: false, reasons: [] };
     }
 
-    let enemyNearby = false;
     try {
       const shipPos = this.spaceship.position;
-      enemyNearby = availableTargets.some(target => {
+      let nearestThreat: { label: string; distance: number } | null = null;
+
+      for (const target of availableTargets) {
         if (!target || !target.position) {
-          return false;
+          continue;
         }
         const animosity = (target as any)?.animosity as GameObjectAnimosity | undefined;
         if (animosity !== GameObjectAnimosity.ENEMY) {
-          return false;
+          continue;
         }
         const dx = target.position.x - shipPos.x;
         const dy = target.position.y - shipPos.y;
         const dz = target.position.z - shipPos.z;
-        const dist = Math.hypot(dx, dy, dz);
-        return dist <= this.LANDING_THREAT_RADIUS;
-      });
+        const distance = Math.hypot(dx, dy, dz);
+        if (distance > this.LANDING_THREAT_RADIUS) {
+          continue;
+        }
+        if (!nearestThreat || distance < nearestThreat.distance) {
+          nearestThreat = {
+            label: this.resolveThreatLabel(target),
+            distance
+          };
+        }
+      }
+
+      if (!nearestThreat) {
+        return { active: false, reasons: [] };
+      }
+
+      const roundedDistance = Math.max(1, Math.round(nearestThreat.distance));
+      return {
+        active: true,
+        reasons: [`${nearestThreat.label} a ${roundedDistance}u`]
+      };
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.TARGETING, 'Landing threat proximity check failed', e);
+      return { active: false, reasons: [] };
     }
+  }
 
-    return enemyNearby
-      ? { active: true, reasons: ['Enemy nearby'] }
-      : { active: false, reasons: [] };
+  private resolveThreatLabel(target: ITargetable): string {
+    try {
+      const displayNameFn = (target as any)?.getDisplayName;
+      if (typeof displayNameFn === 'function') {
+        const value = displayNameFn.call(target);
+        if (value) {
+          return String(value);
+        }
+      }
+      const explicitName = (target as any)?.name ?? (target as any)?.id;
+      if (explicitName) {
+        return String(explicitName);
+      }
+    } catch {}
+    return 'Hostil detectado';
   }
 
   private tryStartLandingSequence(): boolean {
@@ -673,7 +714,6 @@ export class GameEngine {
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing blocked by threat', {
         reasons: [...this.landingThreat.reasons]
       });
-      try { this.showPlaceholderText('AMENAZA DETECTADA - ESTABILIZA ANTES DE ATERRIZAR', 2200); } catch {}
       return true;
     }
     if (!this.animationManager.startLandingSequence(this, this.landingStatus.context)) {
@@ -694,7 +734,7 @@ export class GameEngine {
     });
     try {
       const label = context.planetName ? `LANDING: ${context.planetName}` : 'LANDING SEQUENCE';
-      this.hudManager?.addMarqueeMessage(label);
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.LANDING_SEQUENCE, label);
     } catch {}
   }
 
@@ -727,7 +767,7 @@ export class GameEngine {
     });
     try {
       const label = context.planetName ? `TAKEOFF: ${context.planetName}` : 'TAKEOFF SEQUENCE';
-      this.hudManager?.addMarqueeMessage(label);
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.TAKEOFF_SEQUENCE, label);
     } catch {}
   }
 
@@ -1200,7 +1240,8 @@ export class GameEngine {
     });
 
     try {
-      this.hudManager?.addMarqueeMessage?.(
+      this.hudManager?.emitMarqueeEvent?.(
+        HudMarqueeEventType.HAZARD,
         `Radiación solar: -${applied}u (${this.spaceship?.healthCurrent ?? 0}/${this.spaceship?.healthMax ?? 0})`
       );
     } catch {}
@@ -1259,6 +1300,7 @@ export class GameEngine {
       // Inicializar sistema HUD con texturas dinámicas (FASE 3)
       this.hudManager = new HUDManager(this.gl);
   this.logger.log(LogLevel.INFO, LogCategory.HUD, 'HUDManager inicializado con Canvas 2D → WebGL');
+        this.queueStartupMarqueeSequence();
 
       // Inicializar renderer 2D de outline/placa de target (STEP 5)
       try {
@@ -2071,6 +2113,7 @@ export class GameEngine {
         };
         this.spaceship.lookAt(perpTarget);
         this.spaceship.updateModelMatrix();
+        this.bootstrapDefaultRespawnAnchor();
       } catch {}
     } else {
       this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Earth not found; skipping cluster trail');
@@ -3445,7 +3488,10 @@ export class GameEngine {
         const remaining = this.spaceship
           ? `${Math.round(this.spaceship.healthCurrent)}/${Math.round(this.spaceship.healthMax)}`
           : '0/0';
-        this.hudManager?.addMarqueeMessage?.(`Impacto: -${Math.round(dealt)}u (${remaining})`);
+        this.hudManager?.emitMarqueeEvent?.(
+          HudMarqueeEventType.SHIP_DAMAGE,
+          `Impacto: -${Math.round(dealt)}u (${remaining})`
+        );
       } catch {}
     };
     // Aggregate potential collision sources (clusters members, super, mega, planets, sun, ephemerals)
@@ -3668,8 +3714,6 @@ export class GameEngine {
       }
     } catch {}
 
-    // Debug marquee for collision (throttled by damage cooldown outside)
-    try { this.hudManager?.addMarqueeMessage?.(`Colisión: ${name} dmg=${dmg}`); } catch {}
   }
 
   /**
@@ -3736,7 +3780,9 @@ export class GameEngine {
 
     if (!options?.suppressHud) {
       const message = options?.customHudMessage ?? `Daño (${reason}): -${Math.round(dealt)}u`;
-      try { this.hudManager?.addMarqueeMessage?.(message); } catch {}
+      try {
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SHIP_DAMAGE, message);
+      } catch {}
     }
 
     this.impactVignetteLevel = Math.min(1, this.impactVignetteLevel + Math.min(0.25, dealt / 120));
@@ -3926,9 +3972,6 @@ export class GameEngine {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to clear from targeting system', e);
     }
     
-    // Visual feedback
-    try { this.hudManager?.addMarqueeMessage?.(`${typeName} destruido`); } catch {}
-    
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object removed from world', { id: objId, type: typeName, objectType, removed });
   }
 
@@ -3956,7 +3999,10 @@ export class GameEngine {
     const sanityAwarded = this.grantTemporarySanity(20);
     try {
       const corChunk = sanityAwarded > 0 ? `, +${sanityAwarded} COR` : '';
-      this.hudManager?.addMarqueeMessage?.(`${being.getDisplayName()} destruido: +${rewardXp} XP${corChunk}`);
+      this.hudManager?.emitMarqueeEvent?.(
+        HudMarqueeEventType.LESSER_BEING,
+        `${being.getDisplayName()} destruido: +${rewardXp} XP${corChunk}`
+      );
     } catch {}
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Lesser being destroyed before landing', {
       beingId: being.id,
@@ -4293,10 +4339,21 @@ export class GameEngine {
     ship.thrusterState = ThrusterState.IDLE;
     ship.isThrusting = false;
     ship.thrusterIntensity = 0;
-    ship.voidEnergyPaused = false;
     ship.healthMax = state.shipHealth.max ?? ship.healthMax;
     ship.healthCurrent = Math.max(1, Math.min(ship.healthMax, state.shipHealth.current));
-    ship.voidEnergyCurrent = Math.max(0, Math.min(ship.voidEnergyMax, state.voidEnergy));
+    const resetVoidEnergy = Math.max(0, Math.min(ship.voidEnergyMax, state.voidEnergy));
+    if (typeof ship.applyRespawnVoidEnergy === 'function') {
+      ship.applyRespawnVoidEnergy(resetVoidEnergy, this.RESPAWN_VOID_ENERGY_PAUSE_MS);
+    } else {
+      ship.voidEnergyCurrent = resetVoidEnergy;
+      ship.voidEnergyPaused = false;
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn void energy restored', {
+      applied: resetVoidEnergy,
+      max: ship.voidEnergyMax,
+      pauseMs: this.RESPAWN_VOID_ENERGY_PAUSE_MS,
+      restoredStat: state.restoredStat ?? 'none'
+    });
 
     const anyShip = ship as any;
     if (typeof anyShip.applyOrientationSnapshot === 'function') {
@@ -4333,14 +4390,35 @@ export class GameEngine {
       ?? context.targetSystemId;
     try {
       if (anchorLabel) {
-        this.hudManager?.addMarqueeMessage?.(`Respawn: ${anchorLabel}`);
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.RESPAWN, `Respawn: ${anchorLabel}`);
       }
       if (context.playerState.restoredStat === 'sanity') {
-        this.hudManager?.addMarqueeMessage?.('Cordura estabilizada tras el despertar.');
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.RESPAWN, 'Cordura estabilizada tras el despertar.');
       } else if (context.playerState.restoredStat === 'health') {
-        this.hudManager?.addMarqueeMessage?.('Vitalidad restaurada tras el sigilo.');
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.RESPAWN, 'Vitalidad restaurada tras el sigilo.');
       }
     } catch {}
+  }
+
+  private queueStartupMarqueeSequence(): void {
+    if (this.bootMarqueePrimed) {
+      return;
+    }
+    this.bootMarqueePrimed = true;
+    const introMessages = [
+      'Explosion detectada.',
+      'Integridad comprometida.',
+      'Piloto dañado',
+      'Sugerencia: contactar nave nodriza.'
+    ];
+    for (const message of introMessages) {
+      try {
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, message, {
+          force: true,
+          allowDuplicate: true,
+        });
+      } catch {}
+    }
   }
 
   private resetLoopStateForRestart(): void {
@@ -4468,7 +4546,9 @@ export class GameEngine {
       try { this.clearTargetSelection(); } catch {}
       
       // Display marquee
-      try { this.hudManager?.addMarqueeMessage?.('Sistema solar regenerado'); } catch {}
+      try {
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, 'Sistema solar regenerado');
+      } catch {}
       
       // Restart game loop
       this.isRunning = true;
@@ -4601,7 +4681,7 @@ export class GameEngine {
     this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Hardcore death triggered', context);
     const message = context.message ?? this.resolveHardcoreDeathMessage(context.source);
     try {
-      this.hudManager?.addMarqueeMessage?.(message);
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.WARNING, message);
     } catch {}
 
     this.closeLandingPanelUI('hardcore-death');
@@ -4707,7 +4787,9 @@ export class GameEngine {
         try { this.clearTargetSelection(); } catch {}
         
         // Display marquee
-        try { this.hudManager?.addMarqueeMessage?.('Partida cargada - Sistema restaurado'); } catch {}
+        try {
+          this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, 'Partida cargada - Sistema restaurado');
+        } catch {}
         
         // Restart game loop
         this.isRunning = true;
@@ -4776,7 +4858,9 @@ export class GameEngine {
       // Camera will automatically follow spaceship (target is set in camera update logic)
       
       // Display marquee
-      try { this.hudManager?.addMarqueeMessage?.('Sistema solar regenerado'); } catch {}
+      try {
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, 'Sistema solar regenerado');
+      } catch {}
       
       // Restart game loop
       if (wasRunning) {
@@ -7646,7 +7730,6 @@ export class GameEngine {
         remaining: this.spaceship.cargoCapacityRemaining,
       });
       this.showPlaceholderText('BODEGA SIN ESPACIO', 1800);
-      try { this.hudManager?.addMarqueeMessage?.('Libera carga para anclar'); } catch {}
       return false;
     }
     const stored = this.spaceship.addCargo(yieldUnits);
@@ -7655,7 +7738,6 @@ export class GameEngine {
         targetId: target.id,
         yieldUnits,
       });
-      try { this.hudManager?.addMarqueeMessage?.('Carga completa - libera espacio'); } catch {}
       return false;
     }
     try {
@@ -7671,7 +7753,6 @@ export class GameEngine {
       storedUnits: stored,
       composition: (target as any).composition ?? 'unknown'
     });
-    try { this.hudManager?.addMarqueeMessage?.(`Carga +${stored}u`); } catch {}
     this.destroyObject(target);
     return true;
   }
@@ -7942,9 +8023,9 @@ export class GameEngine {
     const gained = this.addVoidEnergyFromAsteroid(target, gainInfo);
     try {
       if (gained > 0) {
-        this.hudManager?.addMarqueeMessage?.(`Energía del vacío +${gained}`);
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.VOID_RITUAL, `Energía del vacío +${gained}`);
       } else {
-        this.hudManager?.addMarqueeMessage?.('Energía del vacío al máximo');
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.VOID_RITUAL, 'Energía del vacío al máximo');
       }
     } catch {}
     this.voidKinesisBeam = null;
@@ -8212,7 +8293,9 @@ export class GameEngine {
     portal.preventsLesserIncursions = true;
     this.persistPortalSnapshotState(portal);
     const label = typeof portal.getDisplayName === 'function' ? portal.getDisplayName() : portal.id;
-    try { this.hudManager?.addMarqueeMessage?.(`Concordia Gate · ${label}`); } catch {}
+    try {
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.PORTAL, `Concordia Gate · ${label}`);
+    } catch {}
     try { this.showPlaceholderText(`CONCORDIA GATE\n${label} pacificado`, 2400); } catch {}    
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Concordia Gate seal applied', {
       portalId: portal.id,
@@ -8372,7 +8455,7 @@ export class GameEngine {
     this.voidCocoonShieldStartMs = now;
     this.ensureVoidCocoonShieldGeometry();
     try {
-      this.hudManager?.addMarqueeMessage?.('Void Cocoon: capullo protector desplegado');
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.VOID_RITUAL, 'Void Cocoon: capullo protector desplegado');
     } catch {}
     try {
       if (this.audio && this.audio.has('sfx_precast_ritual')) {
@@ -8437,7 +8520,10 @@ export class GameEngine {
     }
 
     try {
-      this.hudManager?.addMarqueeMessage?.(`Tempus Sigillum · ${planetName} rejuvenecido`);
+      this.hudManager?.emitMarqueeEvent?.(
+        HudMarqueeEventType.VOID_RITUAL,
+        `Tempus Sigillum · ${planetName} rejuvenecido`
+      );
     } catch {}
     
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Tempus Sigillum seal applied', {
@@ -8472,7 +8558,10 @@ export class GameEngine {
       this.showPlaceholderText(`QUIMIO SIGILLUM\n${deltaLabel} supervivencia`, 2400);
     } catch {}
     try {
-      this.hudManager?.addMarqueeMessage?.(`Quimio Sigillum restauró ${deltaLabel}`);
+      this.hudManager?.emitMarqueeEvent?.(
+        HudMarqueeEventType.VOID_RITUAL,
+        `Quimio Sigillum restauró ${deltaLabel}`
+      );
     } catch {}
     try {
       this.animationManager?.startQuimioSigillum(this);
@@ -8513,7 +8602,12 @@ export class GameEngine {
     }
     this.gameState.setRespawnAnchor(anchor);
     const displayName = anchor.label || anchor.planetName || 'Ancla en deriva';
-    try { this.hudManager?.addMarqueeMessage?.(`Respawn Sigillum · ${displayName}`); } catch {}
+    try {
+      this.hudManager?.emitMarqueeEvent?.(
+        HudMarqueeEventType.VOID_RITUAL,
+        `Respawn Sigillum · ${displayName}`
+      );
+    } catch {}
     try { this.showPlaceholderText(`RESPAWN SIGILLUM\n${displayName}`, 2400); } catch {}
     try {
       const started = this.animationManager.startRespawnSigillum(this);
@@ -8604,6 +8698,34 @@ export class GameEngine {
     return metadata;
   }
 
+  private bootstrapDefaultRespawnAnchor(): void {
+    try {
+      const existingDefault = this.gameState.getDefaultRespawnAnchor();
+      if (existingDefault) {
+        if (!this.gameState.getRespawnAnchor()) {
+          this.gameState.setRespawnAnchor(existingDefault);
+        }
+        return;
+      }
+      const anchor = this.buildRespawnAnchorMetadata(null);
+      if (!anchor) {
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Bootstrap respawn anchor skipped: metadata unavailable');
+        return;
+      }
+      anchor.label = anchor.label ?? 'Trail Entry';
+      anchor.notes = anchor.notes
+        ? `${anchor.notes} · Ancla inicial del trail humano`
+        : 'Ancla inicial del trail humano';
+      this.gameState.setDefaultRespawnAnchor(anchor, { activateWhenMissing: true });
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Default respawn anchor seeded', {
+        anchorId: anchor.anchorId,
+        systemId: anchor.systemId
+      });
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to seed default respawn anchor', { error });
+    }
+  }
+
   private persistRespawnSnapshot(systemId: string): { snapshotId: string | null; snapshotLabel: string | null } {
     const snapshot = this.currentSnapshot;
     const defaultId = snapshot?.id ?? systemId;
@@ -8660,7 +8782,7 @@ export class GameEngine {
       });
     } catch {}
     try {
-      this.hudManager?.addMarqueeMessage?.('Void Cocoon absorbió un impacto');
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.VOID_RITUAL, 'Void Cocoon absorbió un impacto');
     } catch {}
     try {
       if (this.audio) {

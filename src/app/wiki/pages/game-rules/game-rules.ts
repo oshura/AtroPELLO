@@ -48,18 +48,15 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           </ul>
 
           <h3>Piloto rojo “Threat”</h3>
-          <p>La luz roja se enciende cuando <code>computeLandingThreat()</code> detecta cualquiera de estos casos:</p>
+          <p><code>computeLandingThreat()</code> solo activa la luz si un objetivo hostil (<code>RelationService = enemy</code>) entra en el radio de ≤ <code>500u</code>. El motivo que genera se corresponde con ese game object e incluye la distancia.</p>
           <ul>
-            <li><strong>Enemigos a ≤ 500u:</strong> cualquier objetivo cuyo <code>RelationService</code> marque como enemy.</li>
-            <li><strong>Casco crítico:</strong> <code>healthCurrent / healthMax &lt; 0.25</code>.</li>
-            <li><strong>Energía del Vacío &lt; 10u:</strong> sin reservas suficientes para maniobrar durante la secuencia.</li>
+            <li><strong>Hostil a ≤ 500u:</strong> cuando aparece, el reason luce como “Garra Umbral a 184u”.</li>
           </ul>
-          <p>Mientras el piloto rojo esté activo, <code>tryStartLandingSequence</code> bloquea el aterrizaje y muestra el mensaje “AMENAZA DETECTADA - ESTABILIZA ANTES DE ATERRIZAR”.</p>
+          <p>Mientras el piloto rojo esté activo, <code>tryStartLandingSequence</code> devuelve temprano sin mensajes adicionales: el propio indicador es el bloqueo.</p>
           <h4>Cómo despejar la amenaza</h4>
           <ul>
-            <li>Elimina o aleja los enemigos más allá de 500u (Void Jump/Speed Rite ayudan a reposicionarte).</li>
-            <li>Repara el casco (próximos sistemas) o evita más colisiones hasta volver a ≥25%.</li>
-            <li>Genera Energía del Vacío con Void Kinesis o recoge cápsulas hasta superar las 10u.</li>
+            <li>Destruye o empuja al enemigo fuera del radio (Void Jump/Speed Rite sirven para abrir hueco).</li>
+            <li>Si no quieres combatir, traza una órbita amplia hasta que todos los hostiles queden a &gt;500u.</li>
           </ul>
         </div>
       </section>
@@ -155,6 +152,29 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <li><strong>Speed Rite Trade-off:</strong> Speed kills - literally if you hit something</li>
             <li><strong>Eternal Rite Usage:</strong> Save for dense debris fields</li>
           </ul>
+        </div>
+      </section>
+
+      <section class="rule-section">
+        <h2>🌀 Respawn & Sigillum</h2>
+        <div class="rule-content">
+          <p>
+            Cuando mueres, <code>RespawnService</code> prepara un nuevo contexto para el motor. Existen dos rutas:
+          </p>
+          <ul>
+            <li>
+              <strong>Sin Respawn Sigillum:</strong> el juego usa el <em>ancla por defecto</em> sembrado al arrancar la partida
+              (label «Trail Entry»). Ese anchor se guarda en <code>GameStateStore.defaultRespawnAnchor</code> y siempre apunta al
+              inicio del trail terrestre dentro de <code>human-system</code>; ya no existe el respawn improvisado cerca del sol.
+            </li>
+            <li>
+              <strong>Con Sigillum grabado:</strong> se reutiliza tu ancla actual (posición, planeta, snapshot) y
+              <code>UniverseStateSnapshotService.ensureSystemState()</code> carga ese sistema antes de llamar a <code>restartWithContext()</code>.
+            </li>
+          </ul>
+          <p class="warning">
+            Recordatorio: los sellos se limpian cuando inicias un «Full Respawn», así que vuelve a grabar uno si quieres reaparecer en un planeta concreto.
+          </p>
         </div>
       </section>
 

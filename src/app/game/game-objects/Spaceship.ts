@@ -62,6 +62,7 @@ export class Spaceship extends GameObject {
   // Estado de deriva por falta de energía
   private outOfVoidEnergy: boolean = false; // sin energía: no acelera; deriva
   private driftVelocity: Vector3 = { x: 0, y: 0, z: 0 }; // velocidad constante en mundo (10% de la anterior)
+  private voidEnergyResumeTimeout: ReturnType<typeof setTimeout> | null = null;
   
   // Capacidad de carga (HUD de cargamento)
   public cargoCapacityMax: number = 10;
@@ -534,6 +535,35 @@ export class Spaceship extends GameObject {
       // Mantener la velocidad actual como base; el jugador deberá acelerar manualmente
       this.driftVelocity = { x: 0, y: 0, z: 0 };
     }
+  }
+
+  /**
+   * Restaura la energía del vacío tras respawn y evita drenarla por teletransporte
+   */
+  public applyRespawnVoidEnergy(targetEnergy: number, pauseMs: number = 1200): void {
+    const clamped = Math.max(0, Math.min(this.voidEnergyMax, targetEnergy));
+    this.voidEnergyCurrent = clamped;
+    this.outOfVoidEnergy = clamped <= 0;
+    if (!this.outOfVoidEnergy) {
+      this.driftVelocity = { x: 0, y: 0, z: 0 };
+    }
+    this.lastPositionForEnergy = { ...this.position };
+    this.voidEnergyPaused = true;
+    if (this.voidEnergyResumeTimeout !== null) {
+      clearTimeout(this.voidEnergyResumeTimeout);
+      this.voidEnergyResumeTimeout = null;
+    }
+    const delay = Math.max(0, pauseMs);
+    if (delay === 0) {
+      this.lastPositionForEnergy = { ...this.position };
+      this.voidEnergyPaused = false;
+      return;
+    }
+    this.voidEnergyResumeTimeout = setTimeout(() => {
+      this.lastPositionForEnergy = { ...this.position };
+      this.voidEnergyPaused = false;
+      this.voidEnergyResumeTimeout = null;
+    }, delay);
   }
 
   /**

@@ -35,7 +35,7 @@ import {
   createEmptyPlanetIntelSnapshot
 } from '../../game/types/planet-intel.types';
 import { LesserBeingInstanceSnapshot } from '../../game/types/cosmic-life.types';
-import { RespawnAnchorMetadata } from '../../game/types/respawn.types';
+import { OrientationSnapshot, RespawnAnchorMetadata } from '../../game/types/respawn.types';
 import { Vector3 } from '../../types/game.types';
 
 /**
@@ -255,6 +255,8 @@ export class GameStateStore {
   private readonly LANDING_LOG_LIMIT = 10;
   /** Último ancla de respawn grabada mediante Respawn Sigillum. */
   private respawnAnchor: RespawnAnchorMetadata | null = null;
+  /** Ancla por defecto generada al iniciar el sistema humano (trail terrestre). */
+  private defaultRespawnAnchor: RespawnAnchorMetadata | null = null;
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  REACTIVE STATE (Observabilidad)
@@ -331,6 +333,15 @@ export class GameStateStore {
     return this.cloneRespawnAnchor(this.respawnAnchor);
   }
 
+  public getDefaultRespawnAnchor(): RespawnAnchorMetadata | null {
+    return this.cloneRespawnAnchor(this.defaultRespawnAnchor);
+  }
+
+  /** Devuelve la mejor ancla disponible (sigillum activo o fallback por defecto). */
+  public getEffectiveRespawnAnchor(): RespawnAnchorMetadata | null {
+    return this.cloneRespawnAnchor(this.respawnAnchor ?? this.defaultRespawnAnchor);
+  }
+
   public setRespawnAnchor(anchor: RespawnAnchorMetadata | null): void {
     if (!anchor) {
       this.clearRespawnAnchor('set-null');
@@ -343,6 +354,24 @@ export class GameStateStore {
       planetId: anchor.planetId,
       planetName: anchor.planetName ?? null,
     });
+  }
+
+  public setDefaultRespawnAnchor(anchor: RespawnAnchorMetadata | null, options?: { activateWhenMissing?: boolean }): void {
+    if (!anchor) {
+      this.defaultRespawnAnchor = null;
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Default respawn anchor cleared');
+      return;
+    }
+    this.defaultRespawnAnchor = this.cloneRespawnAnchor(anchor);
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Default respawn anchor stored', {
+      anchorId: anchor.anchorId,
+      systemId: anchor.systemId,
+    });
+    const shouldActivate = (options?.activateWhenMissing ?? false) && !this.respawnAnchor;
+    if (shouldActivate) {
+      this.respawnAnchor = this.cloneRespawnAnchor(anchor);
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Active respawn anchor seeded from default');
+    }
   }
 
   public clearRespawnAnchor(reason?: string): void {
@@ -538,10 +567,23 @@ export class GameStateStore {
       }
       return { x: vec.x, y: vec.y, z: vec.z };
     };
+    const cloneOrientation = (orientation?: OrientationSnapshot | null): OrientationSnapshot | undefined => {
+      if (!orientation) {
+        return undefined;
+      }
+      return {
+        quaternion: orientation.quaternion ? [...orientation.quaternion] as [number, number, number, number] : undefined,
+        matrix: orientation.matrix ? [...orientation.matrix] : undefined,
+        forward: cloneVec(orientation.forward) ?? null,
+        up: cloneVec(orientation.up) ?? null,
+      };
+    };
     return {
       ...anchor,
       shipPosition: { ...anchor.shipPosition },
       shipForward: cloneVec(anchor.shipForward) ?? null,
+      shipVelocity: cloneVec(anchor.shipVelocity) ?? null,
+      shipOrientation: cloneOrientation(anchor.shipOrientation) ?? null,
       landingSite: anchor.landingSite
         ? {
             surfacePoint: { ...anchor.landingSite.surfacePoint },

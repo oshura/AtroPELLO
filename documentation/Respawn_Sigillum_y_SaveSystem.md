@@ -18,7 +18,8 @@ Este documento consolida el estado del sistema de respawn/sello y describe el pl
   - Al ejecutar un respawn completo (botón "Start New Game"), `GameEngine.respawnGame()` limpia el anchor (`clearRespawnAnchor('full-respawn')`) para evitar heredar sellos de sesiones anteriores.
 
 - **Flujo de respawn sigillum**
-  1. `RespawnService.respawnFromDeath()` pausa loop/audio y busca el ancla vigente. Si no existe, crea un fallback seguro orbitando el sol activo.
+  1. `RespawnService.respawnFromDeath()` pausa loop/audio y busca el ancla vigente. Si no existe, crea un fallback seguro orbitando el sol del sistema humano.
+  - Desde enero 2026 el fallback fuerza `systemId = human-system`, genera el snapshot del sistema humano vía `HumanSolarSystemService` y lo pasa como `snapshotOptions.snapshot`, garantizando que sin sigillum siempre regresarás al sistema humano.
   2. Se construye un `GameStartContext` vía `UniverseStateSnapshotService.buildRestartContext()`, indicando `targetSystemId` + `snapshotOptions` (id y label del sello).
   3. `GameEngine.restartWithContext()` detiene animaciones activas, aplica el estado del jugador (`applyPlayerResetState`), sincroniza vitals, emite HUD toast y relanza el loop con audio de exploración.
   4. Si la API moderna falla, se cae al `respawnGame()` legacy para garantizar continuidad.

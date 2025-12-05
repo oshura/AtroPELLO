@@ -40,19 +40,10 @@ export class RespawnService {
   private performRespawn(options: RespawnOptions): void {
     try {
       this.pauseLoop();
-      const anchor = options.forceAnchor ?? this.gameState.getRespawnAnchor();
-      const effectiveAnchor = anchor ?? this.createFallbackAnchor();
-
-      if (!effectiveAnchor) {
-        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Respawn aborted: no anchor available');
-        if (!this.startLegacyRespawn('missing-anchor')) {
-          this.resumeLoop();
-        }
-        return;
-      }
+      const effectiveAnchor = this.resolveEffectiveAnchor(options.forceAnchor);
 
       const playerState = this.buildPlayerResetState(effectiveAnchor, options.cause ?? 'UNKNOWN');
-      const targetSystemId = effectiveAnchor.systemId ?? 'human-start';
+      const targetSystemId = effectiveAnchor.systemId ?? 'human-system';
       const context: GameStartContext = this.universeState.buildRestartContext({
         targetSystemId,
         playerState,
@@ -77,15 +68,10 @@ export class RespawnService {
         return;
       }
 
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'GameEngine.restartWithContext missing, falling back to legacy respawn');
-      if (!this.startLegacyRespawn('restartWithContext-missing')) {
-        this.resumeLoop();
-      }
+      throw new Error('GameEngine.restartWithContext is not available');
     } catch (error) {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Respawn failed', { error });
-      if (!this.startLegacyRespawn('respawn-error')) {
-        this.resumeLoop();
-      }
+      this.resumeLoop();
     }
   }
 
@@ -133,8 +119,19 @@ export class RespawnService {
   }
 
   private resolveVoidEnergy(): number {
-    const ship = this.gameState.spaceship;
-    return (ship as any)?.voidEnergyMax ?? 100;
+    const ship = this.gameState.spaceship as any;
+    const maxCandidate = Number(ship?.voidEnergyMax);
+    if (Number.isFinite(maxCandidate) && maxCandidate > 0) {
+      return maxCandidate;
+    }
+    const fallback = Number.isFinite(ship?.voidEnergyCurrent)
+      ? Math.max(1, ship.voidEnergyCurrent)
+      : 100;
+    this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Void energy max missing during respawn state build. Using fallback value.', {
+      fallback,
+      hasShip: Boolean(ship)
+    });
+    return fallback;
   }
 
   private resolveCharacterStats(cause: DeathCause): { sanity: number; vitality: number; restoredStat: 'health' | 'sanity' | 'void' | null } {
@@ -152,102 +149,22 @@ export class RespawnService {
     return { sanity, vitality, restoredStat };
   }
 
-  private createFallbackAnchor(): RespawnAnchorMetadata | null {
-    const now = Date.now();
-    const sun = this.gameState.sun as any;
-    const referencePosition = sun?.position ?? { x: 0, y: 0, z: 0 };
-    const scale = Number(sun?.scale?.x ?? 3000);
-    const safeDistance = Math.max(8000, scale * 3);
-    const approachVector = this.normalize({ x: 0.65, y: 0.15, z: 1 });
-    const shipPosition = {
-      x: referencePosition.x + approachVector.x * safeDistance,
-      y: referencePosition.y + approachVector.y * safeDistance,
-      z: referencePosition.z + approachVector.z * safeDistance
-    };
-
-    const forward = this.normalize({
-      x: referencePosition.x - shipPosition.x,
-      y: referencePosition.y - shipPosition.y,
-      z: referencePosition.z - shipPosition.z
-    });
-
-    const shipOrientation: OrientationSnapshot = {
-      quaternion: [0, 0, 0, 1],
-      forward,
-      up: { x: 0, y: 1, z: 0 }
-    };
-
-    return {
-      anchorId: `fallback-${now}`,
-      systemId: this.universeState.getActiveSystemId() ?? 'human-start',
-      snapshotId: this.universeState.getActiveSnapshotId(),
-      snapshotLabel: null,
-      createdAt: now,
-      shipPosition,
-      shipVelocity: this.zeroVec(),
-      shipOrientation,
-      planetName: sun?.customName ?? 'Solar Beacon',
-      label: 'Trail Entry'
-    };
-  }
-
-  private captureShipOrientation(ship: any): OrientationSnapshot | null {
-    try {
-      if (!ship || typeof ship.getOrientationQuaternion !== 'function') {
-        return null;
-      }
-
-      const quatValue = ship.getOrientationQuaternion();
-      const quaternion: [number, number, number, number] = [
-        Number(quatValue[0] ?? 0),
-        Number(quatValue[1] ?? 0),
-        Number(quatValue[2] ?? 0),
-        Number(quatValue[3] ?? 1)
-      ];
-      const basis = typeof ship.getOrientationBasis === 'function' ? ship.getOrientationBasis() : null;
-      return {
-        quaternion,
-        forward: basis?.forward ? { ...basis.forward } : null,
-        up: basis?.up ? { ...basis.up } : null
-      };
-    } catch (error) {
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to capture fallback orientation', { error });
-      return null;
-    }
-  }
-
   private resolveAnchorById(anchorId?: string | null): RespawnAnchorMetadata | null {
     if (!anchorId) {
-      return this.gameState.getRespawnAnchor();
+      return this.gameState.getEffectiveRespawnAnchor();
     }
     const anchor = this.gameState.getRespawnAnchor();
     if (anchor && anchor.anchorId === anchorId) {
       return anchor;
     }
+    const fallback = this.gameState.getDefaultRespawnAnchor();
+    if (fallback && fallback.anchorId === anchorId) {
+      return fallback;
+    }
     return null;
   }
 
   private zeroVec(): Vector3 { return { x: 0, y: 0, z: 0 }; }
-
-  private normalize(vec: Vector3): Vector3 {
-    const length = Math.hypot(vec.x, vec.y, vec.z) || 1;
-    return { x: vec.x / length, y: vec.y / length, z: vec.z / length };
-  }
-
-  private startLegacyRespawn(reason: string): boolean {
-    try {
-      const engine = this.gameInitializer.getGameEngine();
-      if (engine && typeof (engine as any).respawnGame === 'function') {
-        this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Falling back to legacy respawn', { reason });
-        (engine as any).respawnGame();
-        return true;
-      }
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Legacy respawn unavailable', { reason });
-    } catch (error) {
-      this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Legacy respawn fallback failed', { error, reason });
-    }
-    return false;
-  }
 
   private requireEngine(): GameEngine {
     const engine = this.gameInitializer.getGameEngine();
@@ -255,5 +172,16 @@ export class RespawnService {
       throw new Error('GameEngine instance is not initialized');
     }
     return engine;
+  }
+
+  private resolveEffectiveAnchor(forceAnchor?: RespawnAnchorMetadata | null): RespawnAnchorMetadata {
+    if (forceAnchor) {
+      return forceAnchor;
+    }
+    const anchor = this.gameState.getEffectiveRespawnAnchor();
+    if (!anchor) {
+      throw new Error('No respawn anchors available');
+    }
+    return anchor;
   }
 }
