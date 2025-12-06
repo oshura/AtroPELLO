@@ -56,6 +56,19 @@ export class LesserBeingController {
     this.contexts.delete(beingId);
   }
 
+  public forceShipEngagement(beingId: string, options?: { immediateAttack?: boolean }): boolean {
+    const context = this.contexts.get(beingId);
+    if (!context) {
+      return false;
+    }
+    const shipTarget = this.makeShipTarget();
+    if (!shipTarget) {
+      return false;
+    }
+    this.lockOnShip(context, shipTarget, options?.immediateAttack ?? false);
+    return true;
+  }
+
   public update(deltaTime: number): void {
     for (const context of this.contexts.values()) {
       this.advanceContext(context, deltaTime);
@@ -176,6 +189,12 @@ export class LesserBeingController {
     this.lockOnShip(context, shipTarget);
     const distance = this.distanceTo(being, shipTarget.position);
     const hasShipPriority = this.isShipPriorityTarget(context, shipTarget.position);
+
+    if (being instanceof StellarSeedBeing) {
+      if (this.maybeRedirectSeedToPlanet(context, shipTarget.position, distance, hasShipPriority)) {
+        return;
+      }
+    }
 
     if (being instanceof RiftVampireBeing) {
       if (this.maybeRedirectRiftVampireToPlanet(context, shipTarget.position, distance, hasShipPriority)) {
@@ -575,6 +594,30 @@ export class LesserBeingController {
     const planetMuchCloser = distanceToPlanet + 150 < distanceToShip;
 
     if (!hasShipPriority || (planetMuchCloser && !withinSweetSpot)) {
+      const planetTarget = this.findPlanetTarget(context);
+      if (planetTarget) {
+        context.target = planetTarget;
+        context.state = LesserBeingState.SEEKING_PLANET;
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private maybeRedirectSeedToPlanet(
+    context: BeingContext,
+    shipPosition: Vector3,
+    distanceToShip: number,
+    hasShipPriority: boolean
+  ): boolean {
+    const candidatePlanet = this.pickAvailablePlanet(context);
+    if (!candidatePlanet) {
+      return false;
+    }
+    const distanceToPlanet = this.distanceTo(context.being, candidatePlanet.position);
+    const planetClearlyCloser = distanceToPlanet + 40 < distanceToShip;
+
+    if (!hasShipPriority || planetClearlyCloser) {
       const planetTarget = this.findPlanetTarget(context);
       if (planetTarget) {
         context.target = planetTarget;

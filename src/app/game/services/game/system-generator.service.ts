@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { RNGSeed, SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, ClusterSnapshot, GenerationOptions } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
 import { PLANET_INTEL_STATUS, createEmptyResourceStock } from '../../types/planet-intel.types';
+import { ElderGod, ELDER_GOD_SUMMONS } from '../../types/cosmic-life.types';
 
 function hashSeed(seed: number | string): number {
   const s = String(seed);
@@ -27,6 +28,19 @@ function randIn(rng: () => number, min: number, max: number): number {
 }
 
 function vec(x: number, y: number, z: number): Vector3 { return { x, y, z }; }
+
+const SUMMONABLE_ELDER_GODS: ElderGod[] = (Object.values(ElderGod) as ElderGod[]).filter(
+  god => (ELDER_GOD_SUMMONS[god] ?? []).length > 0
+);
+
+function pickElderGod(rng: () => number): ElderGod {
+  const pool = SUMMONABLE_ELDER_GODS.length ? SUMMONABLE_ELDER_GODS : (Object.values(ElderGod) as ElderGod[]);
+  if (!pool.length) {
+    return ElderGod.CTHULHU;
+  }
+  const idx = Math.floor(rng() * pool.length);
+  return pool[idx] ?? ElderGod.CTHULHU;
+}
 
 @Injectable({ providedIn: 'root' })
 export class SystemGeneratorService {
@@ -82,6 +96,7 @@ export class SystemGeneratorService {
    */
   generate(seed: RNGSeed = Date.now(), options?: GenerationOptions): SolarSystemSnapshot {
     const rnd = mulberry32(hashSeed(seed));
+    const elderGod = pickElderGod(rnd);
 
     // Sun(s): random chance of binary if allowed
     const allowBinary = options?.sunCount === 2 || (options?.sunCount === undefined && rnd() < 0.25);
@@ -437,7 +452,8 @@ export class SystemGeneratorService {
         sunCount,
         trailDisabled: !!options?.disableTrail,
         cloudGroupsGenerated: cloudGroupCount,
-        cloudGroupBreakdown: cloudGroupSummaries
+        cloudGroupBreakdown: cloudGroupSummaries,
+        elderGod
       },
       // Configuración de debris efímero con varianza sobre valores base
       // Base (sistema humano): checkInterval=10000ms, probability=0.05, count=1-3

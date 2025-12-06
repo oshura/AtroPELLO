@@ -383,7 +383,7 @@ export class GlyphsWikiComponent implements OnInit {
       voidEnergy: '50u',
       requirements: ['Energía del Vacío ≥ 50u.', 'Objetivo válido y a > 4000u.', 'Animaciones libres.'],
       description: 'Herramienta de escape fiable. Si falta energía o el objetivo no es válido, verás un placeholder y conservarás tus recursos.',
-      notes: 'Consume energía justo antes de arrancar la animación.'
+      notes: 'El flash muestra al Elder God dueño del sistema (Cthulhu/Azathoth/Yog-Sothoth/Cthugha) y consume energía justo antes de arrancar.'
     },
     {
       name: 'Gate Rite',

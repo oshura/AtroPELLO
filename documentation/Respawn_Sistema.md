@@ -20,7 +20,7 @@ Este documento describe el comportamiento actual del sistema de respawn, desde e
 | `UniverseStateSnapshotService` | Abstrae la aplicación de snapshots de sistemas solares (reuse/live vs snapshot restore) y construye el contexto de reinicio.
 | `GameRestartService` (implícito en `GameEngine.restartWithContext`) | Aplica `PlayerResetState`, limpia efectos efímeros y reanuda el loop/audio.
 | `HumanSolarSystemService` | Genera el snapshot canónico del sistema humano y los clusters del trail; sus datos se usan para seedear el ancla por defecto.
-| `PortalPersistenceService` | Guarda snapshots etiquetados (p. ej. `respawn-anchor-latest`) que permiten rehidratar cualquier sistema enlazado a un Sigillum.
+| `PortalPersistenceService` | Guarda snapshots etiquetados (p. ej. `respawn-anchor-latest` y `human-default-system`) que permiten rehidratar cualquier sistema enlazado a un Sigillum; los anchors solo almacenan la etiqueta y jamás una copia inline del snapshot.
 
 ## 3. Modelos de Datos
 ### 3.1 `RespawnAnchorMetadata`
@@ -71,26 +71,38 @@ interface GameStartContext {
 4. `GameStateStore.setRespawnAnchor()` almacena una copia inmutable y se emiten mensajes HUD/audio (`Respawn Sigillum · <label>`).
 
 ### 4.2 Seed del ancla por defecto
-- Durante la generación del sistema humano (`bootstrapDefaultRespawnAnchor()`), el motor construye un anchor sin contexto de aterrizaje y lo guarda mediante `GameStateStore.setDefaultRespawnAnchor(anchor, { activateWhenMissing: true })`.
-- Este anchor representa la entrada del trail terrestre (posición segura, orientación perpendicular a la Tierra) y queda disponible incluso después de limpiar un Sigillum.
+- Durante la generación del sistema humano (`bootstrapDefaultRespawnAnchor()`), el motor serializa explícitamente el sistema activo bajo la etiqueta `human-default-system` y, a continuación, construye un anchor sin contexto de aterrizaje. El anchor referencia únicamente esa etiqueta y se guarda mediante `GameStateStore.setDefaultRespawnAnchor(anchor, { activateWhenMissing: true })`.
+- Este anchor representa la entrada del trail terrestre (posición segura, orientación perpendicular a la Tierra) y queda disponible incluso después de limpiar un Sigillum. Cuando el jugador abandona el sistema humano, `handlePortalTraversal()` vuelve a capturar ese mismo label para reflejar daños o portales sellados.
 
 ### 4.3 Respawn estándar (con Sigillum)
 1. `RespawnService.respawnFromDeath(cause)` pausa loop/audio.
-2. `resolveEffectiveAnchor()` obtiene el ancla forzada (debug) o la activa (`GameStateStore.getEffectiveRespawnAnchor()`), nunca `null`.
-3. Se construye `PlayerResetState` con stats ajustadas según la causa de muerte.
-4. `UniverseStateSnapshotService.buildRestartContext()` recibe:
-   - `targetSystemId = anchor.systemId`.
-   - `snapshotOptions` con `snapshotId`/`snapshotLabel` para rehidratar el sistema correcto.
-5. `GameEngine.restartWithContext(context)` detiene animaciones, llama a `applyPlayerResetState()`, sincroniza vitals y reanuda el loop con `startLoopAfterRestart()`.
-6. HUD muestra mensajes (`Respawn: <label>`, `Cordura estabilizada...`) y sensores quedan limpios.
+2. Antes de mirar el ancla, el servicio llama a `GameEngine.persistActiveSystemState({ reason: 'respawn-transition' })`, lo que serializa el sistema activo con su label actual y guarda los lesser beings en tránsito. Esto ocurre aunque vayas a reaparecer en el mismo sistema, asegurando que la etiqueta almacenada siempre refleje el último runtime.
+3. `resolveEffectiveAnchor()` obtiene el ancla forzada (debug) o la activa (`GameStateStore.getEffectiveRespawnAnchor()`), nunca `null`.
+4. Se construye `PlayerResetState` con stats ajustadas según la causa de muerte.
+5. `UniverseStateSnapshotService.buildRestartContext()` recibe:
+  - `targetSystemId = anchor.systemId`.
+  - `snapshotOptions` únicamente con `snapshotLabel` para rehidratar el sistema correcto. Si el label existe en `PortalPersistenceService`, el servicio aplica ese snapshot incluso cuando el sistema ya está activo en memoria (no reutiliza el estado LIVE en este caso).
+6. `GameEngine.restartWithContext(context)` detiene animaciones, llama a `applyPlayerResetState()`, sincroniza vitals y reanuda el loop con `startLoopAfterRestart()`.
+7. HUD muestra mensajes (`Respawn: <label>`, `Cordura estabilizada...`) y sensores quedan limpios.
+
+Cada captura realizada por `GameEngine.persistActiveSystemState()` no solo refresca el label en `<code>PortalPersistenceService</code>`, sino que, únicamente cuando existe un Sigillum activo, clona ese snapshot dentro de `respawn-anchor-latest` y llama a `GameStateStore.syncAnchorSnapshotMeta()`. Así, el Sigillum activo siempre apunta al último estado del sistema (portales creados por Gate Rite, debris posteriores a la muerte, lesser beings reubicados) sin necesidad de grabar un sello nuevo tras cada cambio.
 
 ### 4.4 Respawn sin Sigillum
 - Si el jugador no tiene anclas personalizadas, `GameStateStore.getEffectiveRespawnAnchor()` devuelve el `defaultRespawnAnchor` seedeado en el trail humano.
-- El respawn ocurre siempre en `systemId = human-system`, con snapshot generado por `HumanSolarSystemService`. Ya no existe el fallback que reposicionaba cerca del sol.
+- El respawn ocurre siempre en `systemId = human-system`, con snapshot etiquetado como `human-default-system`. Ya no existe el fallback que reposicionaba cerca del sol.
 - El `respawnAnchor` activo puede seguir `null`; el default se usa únicamente como fuente para la reaparición.
 
 ### 4.5 Debug / comandos
 - `RespawnService.respawnAtAnchor(anchorId)` permite forzar anclas existentes (activas o default). Si el ID no coincide, el método devuelve `null` y no se intenta respawn.
+
+### 4.6 Gate Rite y sincronización del sistema humano
+- Cuando `GateRiteAnimation` termina de colapsar el planeta y está a punto de aplicar el snapshot de destino, invoca `GameEngine.persistActiveSystemState({ reason: 'gate-rite-transition' })`. Eso serializa el sistema actual (incluyendo el portal recién creado) y actualiza automáticamente la etiqueta `human-default-system` si el motor estaba en el trail humano.
+- El helper también guarda los lesser beings en tránsito y añade metadatos del portal origen/destino al log; si la persistencia falla se emite un `WARN` para trazar el salto.
+- Además del label `human-default-system`, la captura se refleja en `respawn-anchor-latest` únicamente cuando existe un Sigillum activo mediante `GameStateStore.syncAnchorSnapshotMeta()`, por lo que el ancla personal conserva el portal arcano incluso si mueres lejos y reapareces más tarde.
+
+### 4.7 Persistencia de lesser beings y energía del vacío durante portales
+- Cada snapshot persistido incluye ahora un `persistentSystemId` estable (meta `proceduralSystemId` / `sourceSystemId`) que se usa como clave para serializar la memoria de lesser beings (`lesserBeingMemory`). `GameEngine.restorePersistedLesserBeings()` consume primero el caché de `GameStateStore` y, si está vacío (p. ej. tras reiniciar el juego), toma los datos embebidos en el snapshot antes de reactivar el sistema. Con esto, un lesser being invocado por un portal permanece rondando el borde del sistema aunque viajes fuera y regreses más tarde.
+- `handlePortalTraversal()` captura el sistema activo, rehidrata el snapshot de destino y, tras reposicionar la nave en el portal enlazado, reinicia el muestreo de energía del vacío mediante `Spaceship.resetVoidEnergyBaseline()`. Esto evita que un salto instantáneo drene toda la reserva por la distancia recorrida entre frames. El consumo normal se reanuda automáticamente tras salir del portal.
 
 ## 5. Observabilidad y Logs
 - Cada operación relevante se registra con `LogCategory.GAME_LOOP`:

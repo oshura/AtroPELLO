@@ -61,6 +61,21 @@ export class UniverseStateSnapshotService {
 
   /** Ensure that the requested systemId is loaded; reuse live state when already active. */
   public ensureSystemState(systemId: string, options?: EnsureSystemStateOptions): RuntimeSolarSystemState {
+    const requestedSnapshot = this.resolveSnapshotFromOptions(options);
+    if (requestedSnapshot) {
+      const appliedState = this.applySnapshot(requestedSnapshot, options?.reason ?? 'ensureSystemState');
+      if (appliedState) {
+        return appliedState;
+      }
+      return {
+        systemId,
+        snapshotId: requestedSnapshot.id ?? requestedSnapshot.meta?.['proceduralSystemId'] ?? null,
+        source: RuntimeStateSource.SNAPSHOT,
+        capturedAt: Date.now(),
+        payload: null
+      };
+    }
+
     const currentId = this.getCurrentSystemId();
     if (currentId && currentId === systemId) {
       this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Universe state reused live store', { systemId });
@@ -73,32 +88,16 @@ export class UniverseStateSnapshotService {
       };
     }
 
-    const snapshot = options?.snapshot
-      ?? this.resolveSnapshotByLabel(options?.snapshotLabel)
-      ?? this.resolveSnapshotById(options?.snapshotId)
-      ?? null;
-
-    if (!snapshot) {
-      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Unable to resolve snapshot for system', {
-        requestedSystemId: systemId,
-        snapshotId: options?.snapshotId,
-        label: options?.snapshotLabel,
-        reason: options?.reason
-      });
-      return {
-        systemId,
-        snapshotId: null,
-        source: RuntimeStateSource.LIVE,
-        capturedAt: Date.now(),
-        payload: null
-      };
-    }
-
-    const appliedState = this.applySnapshot(snapshot, options?.reason ?? 'ensureSystemState');
-    return appliedState ?? {
+    this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Unable to resolve snapshot for system', {
+      requestedSystemId: systemId,
+      snapshotId: options?.snapshotId,
+      label: options?.snapshotLabel,
+      reason: options?.reason
+    });
+    return {
       systemId,
-      snapshotId: snapshot.id ?? snapshot.meta?.['proceduralSystemId'] ?? null,
-      source: RuntimeStateSource.SNAPSHOT,
+      snapshotId: null,
+      source: RuntimeStateSource.LIVE,
       capturedAt: Date.now(),
       payload: null
     };
@@ -307,6 +306,44 @@ export class UniverseStateSnapshotService {
 
   private cloneSnapshot(snapshot: SolarSystemSnapshot): SolarSystemSnapshot {
     return JSON.parse(JSON.stringify(snapshot)) as SolarSystemSnapshot;
+  }
+
+  private resolveSnapshotFromOptions(options?: EnsureSystemStateOptions): SolarSystemSnapshot | null {
+    if (!options) {
+      return null;
+    }
+    if (options.snapshot) {
+      return this.cloneSnapshot(options.snapshot);
+    }
+    if (options.snapshotLabel) {
+      const snapshot = this.resolveSnapshotByLabel(options.snapshotLabel);
+      if (snapshot) {
+        return snapshot;
+      }
+      // If we're currently inside the requested system, refresh the label before giving up
+      const engineSnapshot = this.getCurrentSnapshot();
+      if (engineSnapshot && (engineSnapshot.meta?.['snapshotLabel'] === options.snapshotLabel)) {
+        try {
+          const refreshed = this.gameInitializer.getGameEngine()?.runtimeSerializer?.saveWithLabel(options.snapshotLabel, this.gameInitializer.getGameEngine());
+          if (refreshed) {
+            return JSON.parse(JSON.stringify(refreshed)) as SolarSystemSnapshot;
+          }
+        } catch (error) {
+          this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Failed to refresh missing snapshot label', {
+            label: options.snapshotLabel,
+            error
+          });
+        }
+      }
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Snapshot label not found in persistence', {
+        label: options.snapshotLabel,
+        reason: options.reason
+      });
+    }
+    if (options.snapshotId) {
+      return this.resolveSnapshotById(options.snapshotId);
+    }
+    return null;
   }
 
   private cloneVec(vec?: Vector3 | null): Vector3 | null {

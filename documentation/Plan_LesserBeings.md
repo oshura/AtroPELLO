@@ -53,6 +53,9 @@ Guía de referencia sobre la IA, el combate y el estado actual de las Semillas E
 
 ## 6. Spawning, recompensas y depuración
 - Hook principal tras Void Jump + scheduler de portales; ambos usan `LesserBeingSpawner` desde `GameEngine`.
+- Los Void Jump ahora precalculan la especie mediante `prepareVoidJumpEncounter()`: se bloquea el resultado antes de disparar la animación para mostrar el dios exterior correcto y, si la tirada falla, no se vuelve a intentar al aterrizar.
+- La imagen que aparece durante el salto depende del patron definido en `LESSER_BEING_PATRONS` (Semillas→Cthulhu, Shoggoth→Azathoth, Vampiro→Cthugha), por lo que la visión y la criatura que emerge siempre cuentan la misma historia.
+- Los spawns de portal ya no imponen aggro inmediato: Semillas y Vampiros comparan en cada `update` la distancia al ship y al planeta libre más cercano, migrando a planeta cuando éste quede más a mano.
 - Límite de tres criaturas "en espera" sin planeta evita saturar IA lejos del jugador.
 - Recompensas al destruirlas antes de aterrizar: +20 COR temporal y +100 XP (ver `CharacterProfileService`).
 - Depuración:

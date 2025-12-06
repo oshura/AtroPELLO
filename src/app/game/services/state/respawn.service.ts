@@ -41,6 +41,18 @@ export class RespawnService {
     try {
       this.pauseLoop();
       const effectiveAnchor = this.resolveEffectiveAnchor(options.forceAnchor);
+      const engine = this.requireEngine();
+      const previousSystemId = this.universeState.getActiveSystemId();
+
+      try {
+        engine.persistActiveSystemState({ reason: 'respawn-transition' });
+      } catch (persistError) {
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to persist active system before respawn', {
+          error: persistError,
+          previousSystemId,
+          targetSystemId: effectiveAnchor.systemId ?? 'human-system'
+        });
+      }
 
       const playerState = this.buildPlayerResetState(effectiveAnchor, options.cause ?? 'UNKNOWN');
       const targetSystemId = effectiveAnchor.systemId ?? 'human-system';
@@ -50,7 +62,6 @@ export class RespawnService {
         respawnAnchor: effectiveAnchor,
         reason: options.reason ?? 'RESPAWN',
         snapshotOptions: {
-          snapshotId: effectiveAnchor.snapshotId ?? null,
           snapshotLabel: effectiveAnchor.snapshotLabel ?? null,
           reason: 'respawn-anchor'
         }
@@ -60,8 +71,6 @@ export class RespawnService {
         reason: context.restartReason,
         anchorId: effectiveAnchor.anchorId
       });
-
-      const engine = this.requireEngine();
 
       if (typeof engine.restartWithContext === 'function') {
         engine.restartWithContext(context);

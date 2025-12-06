@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, ClusterSnapshot } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
 import { PLANET_INTEL_STATUS, createEmptyResourceStock } from '../../types/planet-intel.types';
-import { PlanetInhabitants, PLANET_INHABITANT_POOL } from '../../types/cosmic-life.types';
+import { PlanetInhabitants, PLANET_INHABITANT_POOL, ElderGod } from '../../types/cosmic-life.types';
 
 /**
  * HumanSolarSystemService
@@ -123,7 +123,7 @@ export class HumanSolarSystemService {
       else if (i === venusIdx) { kind = 'Rocky'; radius = 360; name = 'Venus'; baseColorName = 'marron'; }
       else if (i === earthIdx) { kind = 'Terrestrial'; radius = 400; name = 'Earth'; baseColorName = 'azul_marino'; }
       else if (i === marsIdx) { kind = 'Rocky'; radius = 300; name = 'Marte'; baseColorName = 'marron'; }
-      else if (i === jupiterIdx) { kind = 'Giant'; radius = 400; name = 'Júpiter'; baseColorName = 'marron'; }
+      else if (i === jupiterIdx) { kind = 'Giant'; radius = 1600; name = 'Júpiter'; baseColorName = 'marron'; }
       else if (i === saturnIdx) { kind = 'Ringed'; radius = 1800; name = 'Saturn'; baseColorName = 'gris'; }
       else if (i === uranusIdx) { kind = 'Gaseous'; radius = 1200; name = 'Urano'; baseColorName = 'azul_hielo'; }
       else if (i === neptuneIdx) { kind = 'Rocky'; radius = 1000; name = 'Neptuno'; baseColorName = 'azul_marino'; }
@@ -169,7 +169,7 @@ export class HumanSolarSystemService {
       sun,
       planets,
       clusters: [],
-      meta: { handcrafted: true },
+      meta: { handcrafted: true, elderGod: ElderGod.CTHULHU },
       // Configuración de debris efímero (valores actuales por defecto)
       ephemeralDebris: {
         checkIntervalMs: 10000,   // Evaluar cada 10 segundos

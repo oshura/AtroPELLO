@@ -6,6 +6,7 @@ import { GameLogger } from '../../utils/GameLogger';
 import { LogCategory } from '../../../services/logging.service';
 import { SpellType } from '../../types/spell.types';
 import { LandingApproachContext } from '../../types/landing.types';
+import { ElderGod } from '../../types/cosmic-life.types';
 
 @Injectable({ providedIn: 'root' })
 export class AnimationManagerService {
@@ -20,11 +21,13 @@ export class AnimationManagerService {
   private cachedTakeoffSequenceCtor: ({ new(): GameAnimation }) | null = null;
   private cachedQuimioSigillumCtor: ({ new(): GameAnimation }) | null = null;
   private cachedRespawnSigillumCtor: ({ new(): GameAnimation }) | null = null;
-  private flashImages: string[] = [
-    '/assets/Athathoth.jpg',
-    '/assets/GreatCthulhu.jpg',
-    '/assets/Nodens.webp'
-  ];
+  private elderGodFlashImages: Record<ElderGod, string> = {
+    [ElderGod.CTHULHU]: '/assets/GreatCthulhu.webp',
+    [ElderGod.AZATHOTH]: '/assets/Azathoth.webp',
+    [ElderGod.YOG_SOTHOTH]: '/assets/YogSothoth.jpg',
+    [ElderGod.CTHUGHA]: '/assets/Cthugha.webp'
+  };
+  private fallbackFlashImages: string[] = ['/assets/Nodens.webp'];
   private flashIndex = 0;
 
   constructor() {
@@ -50,7 +53,7 @@ export class AnimationManagerService {
     if (this.cachedVoidJumpCtor) {
       const anim = new this.cachedVoidJumpCtor();
       // Configure one image per jump (cycle)
-      const pick = this.flashImages[(this.flashIndex++) % this.flashImages.length];
+      const pick = this.pickVoidJumpImage(engine);
       try { (anim as any).setFlashConfig?.({ images: [pick] }); } catch {}
       anim.start(engine, target);
       this.current = anim;
@@ -63,7 +66,7 @@ export class AnimationManagerService {
         const AnimClass = (mod2 as any).VoidJumpAnimation as { new(): GameAnimation };
         this.cachedVoidJumpCtor = AnimClass;
         const anim = new AnimClass();
-        const pick = this.flashImages[(this.flashIndex++) % this.flashImages.length];
+        const pick = this.pickVoidJumpImage(engine);
         try { (anim as any).setFlashConfig?.({ images: [pick] }); } catch {}
         anim.start(engine, target);
         this.current = anim;
@@ -107,6 +110,7 @@ export class AnimationManagerService {
     } catch (e) {
       try { GameLogger.error(LogCategory.ANIMATION, 'Animation cleanup failed', e); } catch {}
     }
+    try { engine.clearPendingVoidJumpEncounter?.(); } catch {}
     this.current = null;
   }
 
@@ -143,6 +147,24 @@ export class AnimationManagerService {
       render: () => {},
       isBlockingInputs: () => true,
     };
+  }
+
+  private pickVoidJumpImage(engine: GameEngine): string {
+    const pending = typeof engine.peekPendingVoidJumpEncounter === 'function'
+      ? engine.peekPendingVoidJumpEncounter()
+      : null;
+    const elder = pending?.elderGod ?? (typeof engine.getCurrentSystemElderGod === 'function'
+      ? engine.getCurrentSystemElderGod()
+      : ElderGod.CTHULHU);
+    const mapped = this.elderGodFlashImages[elder];
+    if (mapped) {
+      return mapped;
+    }
+    if (!this.fallbackFlashImages.length) {
+      return '/assets/GreatCthulhu.webp';
+    }
+    const pick = this.fallbackFlashImages[(this.flashIndex++) % this.fallbackFlashImages.length];
+    return pick;
   }
 
   private preloadVoidJump(): void {

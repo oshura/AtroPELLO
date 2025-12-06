@@ -20,6 +20,8 @@ import { SolarSystemService } from './services/game/solar-system.service';
 import { HumanSolarSystemService } from './services/game/human-solar-system.service';
 import { PortalPersistenceService } from './services/game/portal-persistence.service';
 import { PortalRegistryService } from './services/game/portal-registry.service';
+import { SolarSystemRuntimeSerializerService } from './services/game/solar-system-runtime-serializer.service';
+import { PORTAL_SNAPSHOT_LABELS } from './constants/portal-snapshot-labels';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
 import { ReticleManager } from './targeting';
@@ -70,6 +72,7 @@ import {
   PlanetInhabitants,
   ElderGod,
   LesserBeingInstanceSnapshot,
+  LesserBeingEncounterPlan,
 } from './types/cosmic-life.types';
 import { PLANET_INTEL_STATUS } from './types/planet-intel.types';
 import { GameObjectAnimosity } from './types/animosity.types';
@@ -258,6 +261,7 @@ export class GameEngine {
   private lastAppliedSnapshotId: string | null = null;
   // Current active solar system snapshot (para acceder a configuración de debris efímero)
   private currentSnapshot: SolarSystemSnapshot | null = null;
+  private currentSnapshotLabel: string | null = null;
   // Runtime portal traversal state
   private portalTraversalCooldownSec: number = 0; // prevents rapid re-entry
   private portalPrevDistances: Map<string, number> = new Map();
@@ -279,6 +283,8 @@ export class GameEngine {
   public lesserBeingController: LesserBeingController | null = null;
   private lesserBeingSpawner: LesserBeingSpawner | null = null;
   private lesserBeingCombat: LesserBeingCombatService | null = null;
+  private pendingVoidJumpEncounter: LesserBeingEncounterPlan | null = null;
+  private pendingVoidJumpEncounterEvaluated = false;
 
   // Landing minigame removed
   
@@ -399,6 +405,7 @@ export class GameEngine {
   public humanSolarSystemService?: HumanSolarSystemService,
   public portalPersistenceService?: PortalPersistenceService,
   public portalRegistry?: PortalRegistryService,
+  public runtimeSerializer?: SolarSystemRuntimeSerializerService,
     audioEngine?: AudioEngineService,
     musicDirector?: MusicDirectorService
   ) {
@@ -473,28 +480,45 @@ export class GameEngine {
         // Must have a link
         const destId = portal.linkedPortalId;
         if (!destId || !this.portalPersistenceService) continue;
-        const destSnap = this.portalPersistenceService.findByPortalId(destId);
-        if (!destSnap) {
+        const destEntry = this.portalPersistenceService.findByPortalId(destId);
+        if (!destEntry) {
           this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'Traversal attempted but destination snapshot not found', { from: portal.id, to: destId });
           // Soft cooldown to avoid instant re-entry loop
           this.portalTraversalCooldownSec = 2.0;
           continue;
         }
+        const { snapshot: destSnap, label: destinationLabel } = destEntry;
         // Fade out quickly (solid black opaque)
         try { this.overlayRenderer?.drawSolid([0,0,0], 1.0); } catch {}
         
-        // Pausar consumo de void energy durante el traversal
-        const wasEnergyPaused = this.spaceship.voidEnergyPaused;
-        this.spaceship.voidEnergyPaused = true;
+        // Pausar consumo de void energy durante el traversal y restaurar al final
+        const wasEnergyPaused = this.spaceship?.voidEnergyPaused ?? false;
+        if (this.spaceship) {
+          this.spaceship.voidEnergyPaused = true;
+        }
         
-          // Persist current system lesser beings before leaving
-          try { this.persistCurrentSystemLesserBeings(); } catch {}
+          try {
+            this.persistActiveSystemState({
+              reason: 'portal-traversal',
+              portalId: portal.id,
+              destinationPortalId: destId
+            });
+          } catch (err) {
+            this.logger.log(LogLevel.WARN, LogCategory.PORTAL, 'Failed to persist origin snapshot prior to traversal', {
+              portalId: portal.id,
+              destinationPortalId: destId,
+              err
+            });
+          }
 
           // Apply destination system
           this.applySolarSystemSnapshot(destSnap);
+          if (destinationLabel) {
+            try { this.setCurrentSnapshotLabel(destinationLabel); } catch {}
+          }
         // Find the destination portal in the new scene
         const destPortal = this.gameState.findPortalById(destId);
-        if (destPortal) {
+        if (destPortal && this.spaceship) {
           // Runtime traversal behavior: preserve ship velocity and orientation.
           // Reposition the ship at the center of the destination portal (emerging from it)
           this.spaceship.position.x = destPortal.position.x;
@@ -509,10 +533,13 @@ export class GameEngine {
             this.spaceship.position.y += fwd.y * eps;
             this.spaceship.position.z += fwd.z * eps;
           } catch {}
+          try { this.spaceship.resetVoidEnergyBaseline(); } catch {}
         }
         
         // Reactivar consumo de void energy tras el traversal
-        this.spaceship.voidEnergyPaused = wasEnergyPaused;
+        if (this.spaceship) {
+          this.spaceship.voidEnergyPaused = wasEnergyPaused;
+        }
         
         // Quick fade-in to clear
         try { this.overlayRenderer?.drawSolid([0,0,0], 0.0); } catch {}
@@ -1521,7 +1548,7 @@ export class GameEngine {
     this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Applying snapshot', { id: snapshot.id, planets: snapshot.planets.length, clusters: snapshot.clusters?.length || 0 });
     
     // Guardar snapshot actual para acceder a su configuración
-    this.currentSnapshot = snapshot;
+    this.setCurrentSnapshotReference(snapshot);
     // Remove any active roaming lesser beings from previous system context
     this.clearActiveLesserBeings();
     // IMPORTANT: Do NOT carry over existing portals when applying a new system snapshot.
@@ -1532,6 +1559,14 @@ export class GameEngine {
     this.gameState.planets.length = 0;
     this.gameState.sun = null;
     this.planetDebris.clear();
+    const persistedDebrisPlanets = new Set<string>();
+    if (Array.isArray(snapshot.planetDebris)) {
+      for (const entry of snapshot.planetDebris) {
+        if (entry?.planetId) {
+          persistedDebrisPlanets.add(entry.planetId);
+        }
+      }
+    }
     // Clear clusters
     try { this.asteroidClusterService.clearAll?.(); } catch {}
     // Reset target catalog buckets (keep portal bucket)
@@ -1577,12 +1612,14 @@ export class GameEngine {
         const snapshotColor = (p as any).baseColorName as any;
         const color: any = snapshotColor || pickColor(kind);
         const pos = { ...p.position };
+        const snapshotRadius = Number.isFinite(p.radius) ? Math.max(1, p.radius || 1) : 1000;
         let planetObj: Planet;
         // Special cases for handcrafted system
         if (p.id === 'planet-earth') {
           // Force canonical Earth base color 'azul_marino' to keep split hemisphere tint/texture
           const earthColor: any = (snapshotColor || 'azul_marino');
-          const created = EarthSplitPlanet.createWithDebris('planet-earth', earthColor, p.radius || 400, pos, 150, 320);
+          const earthDebrisCount = persistedDebrisPlanets.has(p.id) ? 0 : 320;
+          const created = EarthSplitPlanet.createWithDebris('planet-earth', earthColor, p.radius || 400, pos, 150, earthDebrisCount);
           planetObj = created.planet as Planet;
           // Register debris locals to follow Earth spin in update loop
           const arr: Array<{ obj: any; local: { x: number; y: number; z: number } }> = [];
@@ -1596,14 +1633,14 @@ export class GameEngine {
           (planetObj as any).angularVelocity.y = (2 * Math.PI) / 300; // ~1 rev / 5 min
         } else {
           switch (kind) {
-            case 'ringed': planetObj = new RingedPlanet(p.id, color, p.radius, pos); break;
-            case 'gaseous': planetObj = new GaseousPlanet(p.id, color, p.radius, pos); break;
-            case 'giant': planetObj = new GiantPlanet(p.id, color, p.radius, pos); break;
-            case 'dwarf': planetObj = new DwarfPlanet(p.id, color, p.radius, pos); break;
-            case 'protoplanet': planetObj = new Protoplanet(p.id, color, p.radius, pos); break;
-            case 'terrestrial': planetObj = new Planet(p.id, color, p.radius, pos); break;
-            case 'rocky': planetObj = new Planet(p.id, color, p.radius, pos); break;
-            default: planetObj = new Planet(p.id, color, p.radius, pos); break;
+            case 'ringed': planetObj = new RingedPlanet(p.id, color, snapshotRadius, pos, { radiusIsAbsolute: true }); break;
+            case 'gaseous': planetObj = new GaseousPlanet(p.id, color, snapshotRadius, pos); break;
+            case 'giant': planetObj = new GiantPlanet(p.id, color, snapshotRadius, pos, { radiusIsAbsolute: true }); break;
+            case 'dwarf': planetObj = new DwarfPlanet(p.id, color, snapshotRadius, pos); break;
+            case 'protoplanet': planetObj = new Protoplanet(p.id, color, snapshotRadius, pos); break;
+            case 'terrestrial': planetObj = new Planet(p.id, color, snapshotRadius, pos); break;
+            case 'rocky': planetObj = new Planet(p.id, color, snapshotRadius, pos); break;
+            default: planetObj = new Planet(p.id, color, snapshotRadius, pos); break;
           }
         }
         if (p.name) planetObj.customName = p.name;
@@ -1691,7 +1728,7 @@ export class GameEngine {
         // Register reactive destruction callback
         this.registerDestructionCallback(planetObj);
         // Saturn debris belt similar to legacy if available
-        if (p.id === 'planet-saturn') {
+        if (p.id === 'planet-saturn' && !persistedDebrisPlanets.has(planetObj.id)) {
           try {
             const belt = this.createDebrisBeltForPlanet(planetObj, 280, { spreadScale: 0.45, yScale: 0.7 });
             this.planetDebris.set(planetObj.id, belt as any);
@@ -1777,8 +1814,11 @@ export class GameEngine {
             y: parent.position.y + d.localOffset.y,
             z: parent.position.z + d.localOffset.z
           };
-          const size = d.size || 1;
-          const obj = new MegaAsteroid(d.id, pos, size);
+          const size = d.size && Number.isFinite(d.size) ? Math.max(0.01, d.size) : 1;
+          const debrisType = String(d.type || 'mega').toLowerCase();
+          const obj = debrisType === 'mega'
+            ? new MegaAsteroid(d.id, pos, size, undefined, { sizeIsAbsolute: true })
+            : new MegaAsteroid(d.id, pos, size);
           obj.updateModelMatrix();
           const existing = this.planetDebris.get(d.planetId) || [];
             existing.push({ obj, local: { ...d.localOffset } });
@@ -8083,8 +8123,17 @@ export class GameEngine {
       return false;
     }
     this.spaceship.voidEnergyCurrent = Math.max(0, this.spaceship.voidEnergyCurrent - 50);
+    if (this.lesserBeingSpawner?.prepareVoidJumpEncounter) {
+      const plan = this.lesserBeingSpawner.prepareVoidJumpEncounter();
+      this.setPendingVoidJumpEncounter(plan, true);
+    } else {
+      this.clearPendingVoidJumpEncounter();
+    }
     try {
-      this.animationManager.startVoidJump(this, target);
+      const started = this.animationManager.startVoidJump(this, target);
+      if (!started) {
+        this.clearPendingVoidJumpEncounter();
+      }
       return true;
     } catch (e) {
       this.logger.log(LogLevel.ERROR, LogCategory.ANIMATION, 'Void Jump start error', e);
@@ -8636,7 +8685,10 @@ export class GameEngine {
     return true;
   }
 
-  private buildRespawnAnchorMetadata(context: LandingApproachContext | null): RespawnAnchorMetadata | null {
+  private buildRespawnAnchorMetadata(
+    context: LandingApproachContext | null,
+    options?: { snapshotLabel?: string; reuseExistingSnapshot?: boolean }
+  ): RespawnAnchorMetadata | null {
     if (!this.spaceship) {
       return null;
     }
@@ -8680,7 +8732,9 @@ export class GameEngine {
     }
     const fallbackSector = `Sector ${Math.round(shipPosition.x)}:${Math.round(shipPosition.y)}:${Math.round(shipPosition.z)}`;
     const label = planetName ?? fallbackSector;
-    const snapshotMeta = this.persistRespawnSnapshot(systemId);
+    const snapshotMeta = options?.reuseExistingSnapshot
+      ? this.resolveSnapshotMetaFromLabel(systemId, options?.snapshotLabel)
+      : this.persistRespawnSnapshot(systemId, options?.snapshotLabel);
     const metadata: RespawnAnchorMetadata = {
       anchorId,
       systemId,
@@ -8707,7 +8761,14 @@ export class GameEngine {
         }
         return;
       }
-      const anchor = this.buildRespawnAnchorMetadata(null);
+      const ensuredLabel = this.persistActiveSystemSnapshot(
+        { reason: 'bootstrap-default-respawn-anchor' },
+        PORTAL_SNAPSHOT_LABELS.HUMAN_DEFAULT
+      ) ?? PORTAL_SNAPSHOT_LABELS.HUMAN_DEFAULT;
+      const anchor = this.buildRespawnAnchorMetadata(null, {
+        snapshotLabel: ensuredLabel,
+        reuseExistingSnapshot: true
+      });
       if (!anchor) {
         this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Bootstrap respawn anchor skipped: metadata unavailable');
         return;
@@ -8726,41 +8787,99 @@ export class GameEngine {
     }
   }
 
-  private persistRespawnSnapshot(systemId: string): { snapshotId: string | null; snapshotLabel: string | null } {
-    const snapshot = this.currentSnapshot;
-    const defaultId = snapshot?.id ?? systemId;
-    if (!snapshot || !this.portalPersistenceService) {
-      if (!snapshot) {
-        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Respawn snapshot skipped: no current snapshot available');
+  private resolveSnapshotMetaFromLabel(
+    systemId: string,
+    label: string | null | undefined
+  ): { snapshotId: string | null; snapshotLabel: string | null } {
+    if (!label) {
+      return { snapshotId: null, snapshotLabel: null };
+    }
+    if (!this.portalPersistenceService) {
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Snapshot meta resolution skipped: PortalPersistenceService unavailable', {
+        label,
+        systemId
+      });
+      return { snapshotId: null, snapshotLabel: null };
+    }
+    const snapshot = this.portalPersistenceService.get(label);
+    if (!snapshot) {
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Snapshot meta resolution failed: label missing', {
+        label,
+        systemId
+      });
+      return this.persistRespawnSnapshot(systemId, label);
+    }
+    const snapshotId = snapshot.id ?? snapshot.meta?.['proceduralSystemId'] ?? systemId;
+    return { snapshotId, snapshotLabel: label };
+  }
+
+  private persistRespawnSnapshot(
+    systemId: string,
+    labelOverride?: string
+  ): { snapshotId: string | null; snapshotLabel: string | null } {
+    const normalizedOverride = labelOverride?.trim() || null;
+    const adoptOverrideLabel = normalizedOverride === PORTAL_SNAPSHOT_LABELS.HUMAN_DEFAULT;
+    let label = normalizedOverride || PORTAL_SNAPSHOT_LABELS.RESPAWN_ANCHOR_LATEST;
+    const liveSnapshot = this.currentSnapshot;
+    const fallbackId = liveSnapshot?.id ?? liveSnapshot?.meta?.['proceduralSystemId'] ?? systemId;
+
+    if (!normalizedOverride) {
+      try { this.ensureCurrentSnapshotLabel(); } catch {}
+    }
+
+    if (label && adoptOverrideLabel) {
+      try { this.setCurrentSnapshotLabel(label); } catch {}
+    }
+
+    if (!label) {
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Respawn snapshot skipped: missing label reference', {
+        systemId,
+        labelOverride
+      });
+      return { snapshotId: fallbackId, snapshotLabel: null };
+    }
+
+    if (!this.portalPersistenceService) {
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Respawn snapshot skipped: PortalPersistenceService unavailable');
+      return { snapshotId: fallbackId, snapshotLabel: null };
+    }
+
+    const serializer = this.runtimeSerializer;
+    if (serializer) {
+      const snapshot = serializer.saveWithLabel(label, this);
+      if (snapshot) {
+        const snapshotId = snapshot.id ?? snapshot.meta?.['proceduralSystemId'] ?? systemId;
+        return { snapshotId, snapshotLabel: label };
       }
-      return {
-        snapshotId: defaultId,
-        snapshotLabel: null
-      };
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Runtime snapshot serializer returned null during respawn persistence', { label, systemId });
+    }
+
+    const existingSnapshot = this.portalPersistenceService.get(label);
+    if (existingSnapshot) {
+      const snapshotId = existingSnapshot.id ?? existingSnapshot.meta?.['proceduralSystemId'] ?? systemId;
+      return { snapshotId, snapshotLabel: label };
+    }
+
+    if (!liveSnapshot) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Respawn snapshot skipped: no current snapshot available');
+      return { snapshotId: fallbackId, snapshotLabel: null };
     }
 
     try {
-      const clone = this.cloneSolarSystemSnapshot(snapshot);
-      clone.meta = { ...(clone.meta || {}) };
+      const clone = this.cloneSolarSystemSnapshot(liveSnapshot);
+      clone.meta = { ...(clone.meta || {}), snapshotLabel: label };
       clone.meta['proceduralSystemId'] = clone.meta['proceduralSystemId'] ?? systemId;
       const snapshotId = clone.id ?? clone.meta['proceduralSystemId'] ?? systemId;
-      const label = 'respawn-anchor-latest';
       this.portalPersistenceService.save(label, clone);
-      this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Respawn anchor snapshot persisted', {
+      this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Respawn anchor snapshot persisted (fallback mode)', {
         label,
         snapshotId,
         systemId
       });
-      return {
-        snapshotId,
-        snapshotLabel: label
-      };
+      return { snapshotId, snapshotLabel: label };
     } catch (error) {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Respawn snapshot persistence failed', { error });
-      return {
-        snapshotId: defaultId,
-        snapshotLabel: null
-      };
+      return { snapshotId: fallbackId, snapshotLabel: null };
     }
   }
 
@@ -10335,6 +10454,21 @@ export class GameEngine {
     this.gameState.mapIdToTarget.delete(beingId);
   }
 
+  public directLesserBeingToShip(beingId: string, options?: { immediateAttack?: boolean }): boolean {
+    if (!beingId) {
+      return false;
+    }
+    try {
+      return this.lesserBeingController?.forceShipEngagement(beingId, options) ?? false;
+    } catch (error) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Failed to force ship engagement', {
+        beingId,
+        error: error instanceof Error ? error.message : error
+      });
+      return false;
+    }
+  }
+
   public addGameObject(obj: GameObject): void {
     if (obj instanceof LesserBeingBase) {
       this.registerLesserBeing(obj);
@@ -10358,6 +10492,233 @@ export class GameEngine {
       return `sun:${snap.sun.id}`;
     }
     return null;
+  }
+
+  private resolvePersistentSystemKey(snapshot?: SolarSystemSnapshot | null): string | null {
+    const snap = snapshot ?? this.currentSnapshot;
+    if (!snap) {
+      return null;
+    }
+    const meta = snap.meta || {};
+    const candidates: Array<unknown> = [
+      meta['persistentSystemId'],
+      meta['proceduralSystemId'],
+      meta['sourceSystemId'],
+      meta['snapshotLabel'],
+      this.currentSnapshotLabel,
+      snap.id,
+      snap.sun?.id ? `sun:${snap.sun.id}` : null
+    ];
+    for (const value of candidates) {
+      if (typeof value === 'string' && value.trim().length) {
+        return value.trim();
+      }
+    }
+    return null;
+  }
+
+  public getPersistentSystemKey(snapshot?: SolarSystemSnapshot | null): string | null {
+    return this.resolvePersistentSystemKey(snapshot);
+  }
+
+  private setCurrentSnapshotReference(snapshot: SolarSystemSnapshot, label?: string | null): void {
+    this.currentSnapshot = snapshot;
+    this.setCurrentSnapshotLabel(label ?? snapshot.meta?.['snapshotLabel'] ?? null, { mutateSnapshot: false });
+    if (this.currentSnapshotLabel) {
+      snapshot.meta = { ...(snapshot.meta || {}), snapshotLabel: this.currentSnapshotLabel };
+    }
+  }
+
+  public setCurrentSnapshotLabel(
+    label: string | null,
+    options?: { mutateSnapshot?: boolean }
+  ): void {
+    const normalized = label && label.trim().length ? label : null;
+    this.currentSnapshotLabel = normalized;
+    const mutateSnapshot = options?.mutateSnapshot !== false;
+    if (!mutateSnapshot) {
+      if (normalized && this.currentSnapshot) {
+        this.currentSnapshot.meta = { ...(this.currentSnapshot.meta || {}), snapshotLabel: normalized };
+      }
+      return;
+    }
+    if (this.currentSnapshot) {
+      this.currentSnapshot.meta = { ...(this.currentSnapshot.meta || {}) };
+      if (normalized) {
+        this.currentSnapshot.meta['snapshotLabel'] = normalized;
+      } else {
+        delete (this.currentSnapshot.meta as Record<string, any>)['snapshotLabel'];
+      }
+    }
+  }
+
+  public getCurrentSnapshotLabel(): string | null {
+    return this.currentSnapshotLabel ?? this.currentSnapshot?.meta?.['snapshotLabel'] ?? null;
+  }
+
+  public ensureCurrentSnapshotLabel(): string | null {
+    const existing = this.getCurrentSnapshotLabel();
+    if (existing) {
+      return existing;
+    }
+    const derived = this.buildDerivedSystemLabel();
+    if (!derived) {
+      return null;
+    }
+    return this.refreshCurrentSystemSnapshot(derived);
+  }
+
+  public refreshCurrentSystemSnapshot(label?: string | null): string | null {
+    const resolvedLabel = (label && label.trim().length) ? label : this.getCurrentSnapshotLabel();
+    if (!resolvedLabel || !this.runtimeSerializer) {
+      return resolvedLabel ?? null;
+    }
+    const snapshot = this.runtimeSerializer.saveWithLabel(resolvedLabel, this);
+    if (snapshot) {
+      this.setCurrentSnapshotReference(snapshot, resolvedLabel);
+      return resolvedLabel;
+    }
+    return resolvedLabel;
+  }
+
+  private buildDerivedSystemLabel(): string | null {
+    const systemId = this.resolveSystemId() ?? 'system-unknown';
+    return `system-${systemId}`;
+  }
+
+  private syncHumanDefaultSnapshotIfNeeded(effectiveLabel?: string | null): void {
+    if (!this.runtimeSerializer) {
+      return;
+    }
+    const systemId = this.resolveSystemId();
+    if (systemId !== 'human-system') {
+      return;
+    }
+    if (effectiveLabel === PORTAL_SNAPSHOT_LABELS.HUMAN_DEFAULT) {
+      return;
+    }
+    try {
+      this.runtimeSerializer.saveWithLabel(PORTAL_SNAPSHOT_LABELS.HUMAN_DEFAULT, this);
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Failed to sync HUMAN_DEFAULT snapshot label', {
+        systemId,
+        effectiveLabel,
+        error
+      });
+    }
+  }
+
+  private refreshRespawnAnchorSnapshot(sourceLabel?: string | null): void {
+    const anchor = this.gameState.getRespawnAnchor();
+    const targetLabel = anchor?.snapshotLabel?.trim();
+    if (!targetLabel) {
+      return;
+    }
+    if (targetLabel === PORTAL_SNAPSHOT_LABELS.HUMAN_DEFAULT) {
+      // The default fallback anchor is managed by syncHumanDefaultSnapshotIfNeeded; avoid overwriting it with
+      // procedural systems when the player has no custom Sigillum.
+      return;
+    }
+    if (!this.portalPersistenceService) {
+      return;
+    }
+
+    let snapshot: SolarSystemSnapshot | null = null;
+
+    if (sourceLabel && sourceLabel === targetLabel) {
+      snapshot = this.portalPersistenceService.get(targetLabel) ?? null;
+    } else if (sourceLabel) {
+      const sourceSnapshot = this.portalPersistenceService.get(sourceLabel);
+      if (sourceSnapshot) {
+        const mirrored: SolarSystemSnapshot = {
+          ...sourceSnapshot,
+          meta: { ...(sourceSnapshot.meta || {}), snapshotLabel: targetLabel }
+        };
+        this.portalPersistenceService.save(targetLabel, mirrored);
+        snapshot = mirrored;
+      }
+    } else if (this.runtimeSerializer) {
+      const captured = this.runtimeSerializer.captureCurrentSnapshot(this);
+      if (captured) {
+        this.portalPersistenceService.save(targetLabel, captured);
+        snapshot = captured;
+      }
+    }
+
+    if (!snapshot) {
+      snapshot = this.portalPersistenceService.get(targetLabel) ?? null;
+    }
+
+    if (!snapshot) {
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Respawn anchor snapshot refresh skipped', {
+        targetLabel,
+        sourceLabel
+      });
+      return;
+    }
+
+    const snapshotId = snapshot.id ?? snapshot.meta?.['proceduralSystemId'] ?? null;
+    this.gameState.syncAnchorSnapshotMeta(targetLabel, { snapshotId });
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn anchor snapshot mirrored', {
+      targetLabel,
+      snapshotId,
+      sourceLabel
+    });
+  }
+
+  public persistActiveSystemState(
+    context?: { reason?: string; portalId?: string; destinationPortalId?: string },
+    labelOverride?: string | null
+  ): string | null {
+    try {
+      this.persistCurrentSystemLesserBeings();
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.LESSER_BEINGS, 'Failed to persist roaming lesser beings before state capture', {
+        ...(context || {}),
+        error
+      });
+    }
+    return this.persistActiveSystemSnapshot(context, labelOverride);
+  }
+
+  private persistActiveSystemSnapshot(
+    context?: { reason?: string; portalId?: string; destinationPortalId?: string },
+    labelOverride?: string | null
+  ): string | null {
+    const normalizedOverride = labelOverride?.trim() || null;
+    let effectiveLabel: string | null = null;
+
+    if (normalizedOverride) {
+      this.setCurrentSnapshotLabel(normalizedOverride);
+      effectiveLabel = normalizedOverride;
+    } else {
+      effectiveLabel = this.ensureCurrentSnapshotLabel();
+    }
+
+    if (!effectiveLabel) {
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Active system snapshot skipped: label unavailable', {
+        ...(context || {}),
+        labelOverride
+      });
+      return null;
+    }
+
+    const refreshedLabel = this.refreshCurrentSystemSnapshot(effectiveLabel);
+    if (!this.runtimeSerializer) {
+      this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Runtime serializer unavailable during active system snapshot persist', {
+        ...(context || {}),
+        label: effectiveLabel
+      });
+      return refreshedLabel;
+    }
+
+    this.logger.log(LogLevel.DEBUG, LogCategory.SOLAR_SYSTEM_GENERATION, 'Active system snapshot refreshed', {
+      ...(context || {}),
+      label: effectiveLabel
+    });
+    this.syncHumanDefaultSnapshotIfNeeded(effectiveLabel);
+    this.refreshRespawnAnchorSnapshot(refreshedLabel ?? effectiveLabel);
+    return refreshedLabel;
   }
 
   private snapshotActiveLesserBeings(): LesserBeingInstanceSnapshot[] {
@@ -10391,15 +10752,15 @@ export class GameEngine {
   }
 
   private persistCurrentSystemLesserBeings(): void {
-    const systemId = this.resolveSystemId();
-    if (!systemId) {
+    const systemKey = this.resolvePersistentSystemKey();
+    if (!systemKey) {
       return;
     }
     const snapshots = this.snapshotActiveLesserBeings().filter(snap => !snap.hasLanded && !snap.landedPlanetId);
-    this.gameState.saveLesserBeingSnapshots(systemId, snapshots);
+    this.gameState.saveLesserBeingSnapshots(systemKey, snapshots);
     if (snapshots.length) {
       this.logger.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Persisted roaming lesser beings for system', {
-        systemId,
+        systemId: systemKey,
         count: snapshots.length
       });
     }
@@ -10407,11 +10768,23 @@ export class GameEngine {
   }
 
   private restorePersistedLesserBeings(snapshot: SolarSystemSnapshot): void {
-    const systemId = this.resolveSystemId(snapshot);
-    if (!systemId) {
+    const systemKey = this.resolvePersistentSystemKey(snapshot);
+    if (!systemKey) {
       return;
     }
-    const stored = this.gameState.getLesserBeingSnapshots(systemId);
+    let stored = this.gameState.getLesserBeingSnapshots(systemKey);
+    if (!stored.length) {
+      const metaPayload = snapshot.meta?.['lesserBeingMemory'];
+      if (Array.isArray(metaPayload) && metaPayload.length) {
+        stored = metaPayload.map(raw => ({
+          ...raw,
+          position: { ...raw.position },
+          velocity: raw.velocity ? { ...raw.velocity } : undefined,
+          forward: raw.forward ? { ...raw.forward } : undefined,
+          health: raw.health ? { ...raw.health } : undefined
+        })) as LesserBeingInstanceSnapshot[];
+      }
+    }
     if (!stored.length) {
       return;
     }
@@ -10424,10 +10797,10 @@ export class GameEngine {
       this.registerLesserBeing(being);
       revived.push(being.id);
     }
-    this.gameState.clearLesserBeingSnapshots(systemId);
+    this.gameState.clearLesserBeingSnapshots(systemKey);
     if (revived.length) {
       this.logger.log(LogLevel.INFO, LogCategory.LESSER_BEINGS, 'Restored persistent lesser beings for system', {
-        systemId,
+        systemId: systemKey,
         count: revived.length
       });
     }
@@ -10492,7 +10865,36 @@ export class GameEngine {
     return ElderGod.CTHULHU;
   }
 
+  public peekPendingVoidJumpEncounter(): LesserBeingEncounterPlan | null {
+    return this.pendingVoidJumpEncounter;
+  }
+
+  private setPendingVoidJumpEncounter(plan: LesserBeingEncounterPlan | null, evaluated: boolean): void {
+    this.pendingVoidJumpEncounter = plan;
+    this.pendingVoidJumpEncounterEvaluated = evaluated;
+  }
+
+  private consumePendingVoidJumpEncounter(): { plan: LesserBeingEncounterPlan | null; evaluated: boolean } {
+    const snapshot = {
+      plan: this.pendingVoidJumpEncounter,
+      evaluated: this.pendingVoidJumpEncounterEvaluated,
+    };
+    this.pendingVoidJumpEncounter = null;
+    this.pendingVoidJumpEncounterEvaluated = false;
+    return snapshot;
+  }
+
+  public clearPendingVoidJumpEncounter(): void {
+    this.pendingVoidJumpEncounter = null;
+    this.pendingVoidJumpEncounterEvaluated = false;
+  }
+
   public handleVoidJumpCompleted(): void {
+    const { plan, evaluated } = this.consumePendingVoidJumpEncounter();
+    if (evaluated) {
+      this.lesserBeingSpawner?.onVoidJumpCompleted(plan ?? null);
+      return;
+    }
     this.lesserBeingSpawner?.onVoidJumpCompleted();
   }
   

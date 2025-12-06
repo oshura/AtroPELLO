@@ -1,5 +1,5 @@
 import { LesserBeingSpawner } from './lesser-being-spawner';
-import { ElderGod, LesserBeing } from '../../types/cosmic-life.types';
+import { ElderGod, LesserBeing, LesserBeingEncounterPlan } from '../../types/cosmic-life.types';
 import { LogCategory, LogLevel } from '../../../services/logging.service';
 import { GameEngine } from '../../GameEngine';
 import { LesserBeingBase } from '../../game-objects/lesser-beings/lesser-being-base';
@@ -164,6 +164,45 @@ describe('LesserBeingSpawner', () => {
     expect(trySpawnSpy).toHaveBeenCalledWith(
       jasmine.objectContaining({ reason: 'void-jump', elderGod: ElderGod.CTHULHU })
     );
+  });
+
+  it('prepares a void jump encounter using the elder god pool', () => {
+    const { engine } = createEngineStub();
+    const spawner = new LesserBeingSpawner(engine);
+    (Math.random as jasmine.Spy).and.returnValues(0.2, 0.6);
+
+    const plan = spawner.prepareVoidJumpEncounter();
+
+    expect(plan).toEqual({ elderGod: ElderGod.AZATHOTH, species: LesserBeing.SHOGGOTH });
+    (Math.random as jasmine.Spy).and.returnValue(0.25);
+  });
+
+  it('skips prepared encounters when the preview roll fails', () => {
+    const { engine } = createEngineStub();
+    const spawner = new LesserBeingSpawner(engine);
+    (Math.random as jasmine.Spy).and.returnValue(1);
+
+    const plan = spawner.prepareVoidJumpEncounter();
+
+    expect(plan).toBeNull();
+    (Math.random as jasmine.Spy).and.returnValue(0.25);
+  });
+
+  it('executes a prepared encounter without reselecting species', () => {
+    const { engine, stub } = createEngineStub();
+    const spawner = new LesserBeingSpawner(engine);
+    const fakeBeing = { id: 'forced-being' } as unknown as LesserBeingBase;
+    spyOn<any>(spawner as any, 'instantiateBeing').and.returnValue(fakeBeing);
+    const pickerSpy = spyOn<any>(spawner as any, 'pickSpeciesFromPool').and.callThrough();
+    const plan: LesserBeingEncounterPlan = {
+      elderGod: ElderGod.CTHULHU,
+      species: LesserBeing.SEMILLAS_ESTELARES
+    };
+
+    spawner.onVoidJumpCompleted(plan);
+
+    expect(pickerSpy).not.toHaveBeenCalled();
+    expect(stub.registerLesserBeing).toHaveBeenCalledWith(fakeBeing);
   });
 
   it('restores beings from snapshots and tracks them as active', () => {

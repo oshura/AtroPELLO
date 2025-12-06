@@ -388,6 +388,50 @@ export class GameStateStore {
     });
   }
 
+  /**
+   * Synchronizes the stored snapshot metadata for any anchor that references the provided label.
+   * Used when the engine refreshes an existing portal snapshot so respawn anchors keep pointing
+   * to the latest runtime capture (portals, debris, lesser beings, etc.).
+   */
+  public syncAnchorSnapshotMeta(label: string | null | undefined, meta?: { snapshotId?: string | null }): void {
+    const normalized = label?.trim();
+    if (!normalized) {
+      return;
+    }
+    const apply = (anchor: RespawnAnchorMetadata | null): { updated: boolean; value: RespawnAnchorMetadata | null } => {
+      if (!anchor || anchor.snapshotLabel !== normalized) {
+        return { updated: false, value: anchor };
+      }
+      const nextSnapshotId = (meta && 'snapshotId' in meta)
+        ? (meta.snapshotId ?? null)
+        : (anchor.snapshotId ?? null);
+      const nextAnchor = this.cloneRespawnAnchor({
+        ...anchor,
+        snapshotLabel: normalized,
+        snapshotId: nextSnapshotId,
+      });
+      return { updated: true, value: nextAnchor };
+    };
+
+    const active = apply(this.respawnAnchor);
+    if (active.updated) {
+      this.respawnAnchor = active.value;
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn anchor snapshot metadata synced', {
+        label: normalized,
+        snapshotId: active.value?.snapshotId ?? null,
+      });
+    }
+
+    const fallback = apply(this.defaultRespawnAnchor);
+    if (fallback.updated) {
+      this.defaultRespawnAnchor = fallback.value;
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Default respawn anchor snapshot metadata synced', {
+        label: normalized,
+        snapshotId: fallback.value?.snapshotId ?? null,
+      });
+    }
+  }
+
   /** Limpia todo el cache de intel planetario (se usa al regenerar sistemas). */
   public clearPlanetIntelCache(): void {
     this.planetIntelById.clear();

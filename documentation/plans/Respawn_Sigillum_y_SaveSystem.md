@@ -148,3 +148,22 @@ Este documento consolida el estado del sistema de respawn/sello y describe el pl
 ---
 
 Con este plan, el trabajo de respawn deja explícitos los hooks necesarios (pausa/resume, snapshots, metadata) y establece las bases para serializar/deserializar el estado completo del juego sin reescribir el motor. El siguiente paso es materializar los adapters y acordar el contrato JSON (`SaveGamePayload`).
+
+## 9. Fase activa — diciembre 2025
+
+Objetivo inmediato: garantizar que los snapshots runtime reflejen el estado real de los portales y sus amenazas (lesser beings) sin penalizar al jugador durante los saltos encadenados.
+
+- [ ] **Diagnóstico persistencia lesser beings**
+  - [ ] Revisar `persistCurrentSystemLesserBeings` / `restorePersistedLesserBeings` y documentar el identificador estable que debe usarse (meta `proceduralSystemId` / `sourceSystemId`).
+  - [ ] Confirmar que `SolarSystemRuntimeSerializerService.buildMeta()` adjunta la memoria de lesser beings y describir cómo se consumirá al rehidratar un snapshot.
+- [ ] **Corrección de snapshot + restauración**
+  - [ ] Implementar helper de “system key” para almacenar los snapshots de lesser beings usando el ID estable y reutilizarlo al restaurar.
+  - [ ] Permitir que `applySolarSystemSnapshot()` consuma `snapshot.meta.lesserBeingMemory` cuando no haya memoria en `GameStateStore` (para soportar cargas frías / portales tras reinicio).
+- [ ] **Portals sin drenaje de void energy**
+  - [ ] Congelar el consumo durante `handlePortalTraversal()` y reiniciar el muestreo (`lastPositionForEnergy`) justo después de reubicar la nave para evitar spikes.
+  - [ ] Añadir helper público en `Spaceship` para resetear el tracking de energía sin depender de propiedades privadas.
+- [ ] **Documentación y wiki**
+  - [ ] Actualizar `Respawn_Sistema.md` y la wiki (`/src/app/wiki/pages/game-rules`) describiendo la persistencia de lesser beings entre portales/respawn.
+  - [ ] Documentar que los portales no consumen energía del vacío al viajar (solo el Gate Rite / void jump explícito lo hace).
+- [ ] **Verificación**
+  - [ ] Ejecutar `npm run build` tras completar los cambios y anotar resultados.

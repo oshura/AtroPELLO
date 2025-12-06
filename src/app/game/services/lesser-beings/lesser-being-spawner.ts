@@ -1,4 +1,4 @@
-import { LesserBeing, ELDER_GOD_SUMMONS, ElderGod, LesserBeingInstanceSnapshot } from '../../types/cosmic-life.types';
+import { LesserBeing, ELDER_GOD_SUMMONS, ElderGod, LesserBeingInstanceSnapshot, LESSER_BEING_LABELS, LesserBeingEncounterPlan, LESSER_BEING_PATRONS } from '../../types/cosmic-life.types';
 import { GameEngine } from '../../GameEngine';
 import { StellarSeedBeing } from '../../game-objects/lesser-beings/stellar-seed-being';
 import { TransluminalShoggothBeing } from '../../game-objects/lesser-beings/transluminal-shoggoth-being';
@@ -7,17 +7,20 @@ import { LesserBeingBase, LesserBeingSpawnOverrides } from '../../game-objects/l
 import { Vector3 } from '../../../types/game.types';
 import { Portal } from '../../game-objects/Portal';
 import { LogCategory, LogLevel } from '../../../services/logging.service';
+import { HudMarqueeEventType } from '../../types/hud.types';
 
 interface SpawnOptions {
   reason: 'void-jump' | 'portal-tick';
   elderGod: ElderGod;
   portal?: Portal;
+  forcedSpecies?: LesserBeing | null;
 }
 
 const MAX_WAITING_BEINGS = 3;
 const PORTAL_CHECK_INTERVAL_MS = 60_000;
 const VOID_JUMP_SPAWN_PROB = 1;
 const PORTAL_SPAWN_PROB = 0.12;
+const SUMMONABLE_SPECIES: LesserBeing[] = (Object.values(LesserBeing).filter(value => value !== LesserBeing.NONE) as LesserBeing[]);
 
 export class LesserBeingSpawner {
   private activeBeings: Set<string> = new Set();
@@ -33,7 +36,46 @@ export class LesserBeingSpawner {
     }
   }
 
-  public onVoidJumpCompleted(): void {
+  public prepareVoidJumpEncounter(): LesserBeingEncounterPlan | null {
+    const elderGod = this.getCurrentElderGod();
+    const roll = Math.random();
+    this.engine.logger?.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Void jump spawn roll (preview)', {
+      elderGod,
+      roll,
+      threshold: VOID_JUMP_SPAWN_PROB
+    });
+    if (roll >= VOID_JUMP_SPAWN_PROB) {
+      this.engine.logger?.log(LogLevel.TRACE, LogCategory.LESSER_BEINGS, 'Void jump spawn skipped (preview)', {
+        elderGod,
+        roll
+      });
+      return null;
+    }
+    const species = this.pickSpeciesFromPool(elderGod, 'void-jump');
+    if (!species) {
+      return null;
+    }
+    const patron = this.resolvePatronElderGod(species, elderGod);
+    this.engine.logger?.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Prepared lesser being encounter', {
+      elderGod: patron,
+      species
+    });
+    return { elderGod: patron, species };
+  }
+
+  public onVoidJumpCompleted(prepared?: LesserBeingEncounterPlan | null): void {
+    if (prepared === null) {
+      this.engine.logger?.log(LogLevel.TRACE, LogCategory.LESSER_BEINGS, 'Void jump spawn skipped (planned)', {});
+      return;
+    }
+    if (prepared) {
+      this.engine.logger?.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Executing prepared lesser being encounter', {
+        elderGod: prepared.elderGod,
+        species: prepared.species
+      });
+      this.trySpawn({ reason: 'void-jump', elderGod: prepared.elderGod, forcedSpecies: prepared.species });
+      return;
+    }
     const elderGod = this.getCurrentElderGod();
     const roll = Math.random();
     this.engine.logger?.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Void jump spawn roll', {
@@ -65,20 +107,17 @@ export class LesserBeingSpawner {
       });
       return;
     }
-    const speciesPool = ELDER_GOD_SUMMONS[options.elderGod] ?? [];
-    this.engine.logger?.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Resolved species pool for spawn', {
-      reason: options.reason,
-      elderGod: options.elderGod,
-      poolSize: speciesPool.length
-    });
-    if (!speciesPool.length) {
-      this.engine.logger?.log(LogLevel.WARN, LogCategory.LESSER_BEINGS, 'Elder god has no summonable species', {
-        elderGod: options.elderGod,
-        reason: options.reason
+    const species = options.forcedSpecies ?? this.pickSpeciesFromPool(options.elderGod, options.reason);
+    if (options.forcedSpecies) {
+      this.engine.logger?.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Using predetermined lesser being species', {
+        species: options.forcedSpecies,
+        reason: options.reason,
+        elderGod: options.elderGod
       });
+    }
+    if (!species) {
       return;
     }
-    const species = speciesPool[Math.floor(Math.random() * speciesPool.length)];
     const spawnPosition = options.portal
       ? this.computePortalSpawnPosition(options.portal)
       : this.computeSystemEdgePosition();
@@ -122,6 +161,7 @@ export class LesserBeingSpawner {
       beingId: being.id,
       active: this.activeBeings.size
     });
+    this.emitSpawnHudMessage(species, options);
     this.engine.logger?.log(LogLevel.INFO, LogCategory.LESSER_BEINGS, 'Lesser being spawned', {
       reason: options.reason,
       species,
@@ -221,6 +261,49 @@ export class LesserBeingSpawner {
 
   private getCurrentElderGod(): ElderGod {
     return this.engine.getCurrentSystemElderGod?.() ?? ElderGod.CTHULHU;
+  }
+
+  private emitSpawnHudMessage(species: LesserBeing, options: SpawnOptions): void {
+    const label = LESSER_BEING_LABELS[species] ?? 'Entidad menor';
+    const message = options.reason === 'portal-tick'
+      ? `${label} emerge del portal y fija la nave`
+      : `${label} detectado tras salto en el Vacío`;
+    try {
+      this.engine.hudManager?.emitMarqueeEvent?.(
+        HudMarqueeEventType.LESSER_BEING,
+        message,
+        { allowDuplicate: true, force: true }
+      );
+    } catch {}
+  }
+
+  private resolvePatronElderGod(species: LesserBeing, fallback: ElderGod): ElderGod {
+    return LESSER_BEING_PATRONS[species] ?? fallback;
+  }
+
+  private pickSpeciesFromPool(elderGod: ElderGod, reason: SpawnOptions['reason']): LesserBeing | null {
+    let speciesPool = ELDER_GOD_SUMMONS[elderGod] ?? [];
+    this.engine.logger?.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Resolved species pool for spawn', {
+      reason,
+      elderGod,
+      poolSize: speciesPool.length
+    });
+    if (!speciesPool.length) {
+      this.engine.logger?.log(LogLevel.WARN, LogCategory.LESSER_BEINGS, 'Elder god has no summonable species, using fallback pool', {
+        elderGod,
+        reason
+      });
+      speciesPool = SUMMONABLE_SPECIES;
+    }
+    if (!speciesPool.length) {
+      this.engine.logger?.log(LogLevel.ERROR, LogCategory.LESSER_BEINGS, 'No lesser being species available for spawning', {
+        elderGod,
+        reason
+      });
+      return null;
+    }
+    const species = speciesPool[Math.floor(Math.random() * speciesPool.length)];
+    return species;
   }
 
   private evaluatePortalSpawns(): void {

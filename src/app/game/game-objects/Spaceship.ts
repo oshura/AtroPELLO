@@ -567,6 +567,15 @@ export class Spaceship extends GameObject {
   }
 
   /**
+   * Reinicia el muestreo de energía del vacío tomando como referencia la posición actual
+   * (o una posición opcional proporcionada).
+   */
+  public resetVoidEnergyBaseline(anchor?: Vector3 | null): void {
+    const source = anchor ?? this.position;
+    this.lastPositionForEnergy = { x: source.x, y: source.y, z: source.z };
+  }
+
+  /**
    * Actualiza la dirección hacia adelante usando la matriz de orientación
    */
   private updateForwardDirection(): void {

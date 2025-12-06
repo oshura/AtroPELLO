@@ -40,10 +40,15 @@ Incluye los enviados conocidos:
 
 ### 1.4 Mapeo dios → invocaciones
 `ELDER_GOD_SUMMONS: Record<ElderGod, LesserBeing[]>`.
-- `CTHULHU` → `[SEMINILLAS_ESTELARES]`
-- `AZATHOTH` → `[]` (de momento no invoca)
-- `YOG_SOTHOTH` → `[SHOGGOTH]`
-- `CTHUGHA` → `[VAMPIRO_FUEGO]`
+- `CTHULHU` → `[SEMINILLAS_ESTELARES, SHOGGOTH]`
+- `AZATHOTH` → `[SHOGGOTH, VAMPIRO_FUEGO]`
+- `YOG_SOTHOTH` → `[SHOGGOTH, VAMPIRO_FUEGO]`
+- `CTHUGHA` → `[VAMPIRO_FUEGO, SEMINILLAS_ESTELARES]`
+  
+Cada especie conserva además un “patrón” visual fijo utilizado por la animación de Void Jump:
+- `SEMINILLAS_ESTELARES` → iconografía de `CTHULHU`.
+- `SHOGGOTH` → iconografía de `AZATHOTH`.
+- `VAMPIRO_FUEGO` → iconografía de `CTHUGHA`.
 
 ## 2. Nuevas propiedades en `Planet`
 | Propiedad | Tipo | Descripción |

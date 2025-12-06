@@ -31,10 +31,10 @@ export enum LesserBeing {
 }
 
 export const ELDER_GOD_SUMMONS: Record<ElderGod, ReadonlyArray<LesserBeing>> = {
-  [ElderGod.CTHULHU]: [LesserBeing.SEMILLAS_ESTELARES],
-  [ElderGod.AZATHOTH]: [],
-  [ElderGod.YOG_SOTHOTH]: [LesserBeing.SHOGGOTH],
-  [ElderGod.CTHUGHA]: [LesserBeing.VAMPIRO_FUEGO]
+  [ElderGod.CTHULHU]: [LesserBeing.SEMILLAS_ESTELARES, LesserBeing.SHOGGOTH],
+  [ElderGod.AZATHOTH]: [LesserBeing.SHOGGOTH, LesserBeing.VAMPIRO_FUEGO],
+  [ElderGod.YOG_SOTHOTH]: [LesserBeing.SHOGGOTH, LesserBeing.VAMPIRO_FUEGO],
+  [ElderGod.CTHUGHA]: [LesserBeing.VAMPIRO_FUEGO, LesserBeing.SEMILLAS_ESTELARES]
 };
 
 export const PLANET_INHABITANT_POOL: ReadonlyArray<PlanetInhabitants> = Object.values(PlanetInhabitants).filter(
@@ -64,6 +64,18 @@ export const LESSER_BEING_LABELS: Record<LesserBeing, string> = {
   [LesserBeing.SHOGGOTH]: 'Shoggoth',
   [LesserBeing.VAMPIRO_FUEGO]: 'Vampiro de fuego'
 };
+
+export const LESSER_BEING_PATRONS: Record<LesserBeing, ElderGod> = {
+  [LesserBeing.NONE]: ElderGod.CTHULHU,
+  [LesserBeing.SEMILLAS_ESTELARES]: ElderGod.CTHULHU,
+  [LesserBeing.SHOGGOTH]: ElderGod.AZATHOTH,
+  [LesserBeing.VAMPIRO_FUEGO]: ElderGod.CTHUGHA
+};
+
+export interface LesserBeingEncounterPlan {
+  elderGod: ElderGod;
+  species: LesserBeing;
+}
 
 export interface LesserBeingInstanceSnapshot {
   id: string;

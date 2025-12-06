@@ -2,7 +2,6 @@ import { GameAnimation } from './types';
 import { ITargetable, TargetType } from '../../types/targeting.types';
 import { GameEngine } from '../../GameEngine';
 import { CameraMode } from '../../Camera';
-import { SolarSystemSerializer } from '../game/solar-system-serializer';
 import { SystemGeneratorService } from '../game/system-generator.service';
 import { SolarSystemService } from '../game/solar-system.service';
 import { Portal } from '../../game-objects/Portal';
@@ -102,67 +101,19 @@ export class GateRiteAnimation implements GameAnimation {
     this.enterCameraZoomOut(engine);
     // Capture snapshot NOW (including debris + portals) for later persistence/reference
     try {
-      this.originalSnapshot = SolarSystemSerializer.fromState({
-        sun: engine.gameState.sun ? { id: engine.gameState.sun.id, name: engine.gameState.sun.customName, position: { ...engine.gameState.sun.position }, scale: { ...engine.gameState.sun.scale } } : null,
-        planets: engine.gameState.planets?.map((p: any) => ({
-          id: p.id,
-          customName: p.customName,
-          position: { ...p.position },
-          scale: { ...p.scale },
-          planetType: p.planetType,
-          baseColorName: p.baseColorName,
-          probabilityOfLifePct: p.probabilityOfLifePct,
-          orbitCenter: p.orbitCenter,
-          semiMajor: p.semiMajor,
-          semiMinor: p.semiMinor,
-          orbitOrientation: p.orbitOrientation,
-          orbitAngle: p.orbitAngle,
-          orbitAngularSpeed: p.orbitAngularSpeed,
-          orbitNormal: p.orbitNormal,
-          orbitU: p.orbitU,
-        })) || [],
-        clusters: engine['asteroidClusterService']?.getClusters?.()?.map((c: any) => ({
-          id: c.id,
-          center: { ...c.center },
-          direction: { ...c.direction },
-          speed: c.speed,
-          count: c.objects?.length || 0,
-          includeSuper: true,
-          radius: c.radius || 12,
-          centerSpeedFactor: c.centerSpeedFactor || 0.5,
-        })) || [],
-        portals: engine.gameState.portals?.map((portal: any) => ({
-          id: portal.id,
-          position: { ...portal.position },
-          radius: portal.radius || 100,
-          linkedPortalId: portal.linkedPortalId,
-          eyeState: portal.eyeState || { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 },
-          animosity: portal.animosity,
-          concordSealActive: portal.concordSealActive,
-          concordSealActivatedAt: portal.concordSealActivatedAt,
-          preventsLesserIncursions: portal.preventsLesserIncursions
-        })) || [],
-        planetDebris: (() => {
-          const out: any[] = [];
-          try {
-            const debrisMap: Map<string, Array<{ obj: any; local: { x:number;y:number;z:number } }>> = engine['planetDebris'];
-            if (debrisMap) {
-              for (const [planetId, items] of debrisMap.entries()) {
-                for (const d of items) {
-                  out.push({ id: d.obj.id, planetId, localOffset: { ...d.local }, size: d.obj.scale?.x, type: 'mega' });
-                }
-              }
-            }
-          } catch {}
-          return out;
-        })()
-      });
+      const serializer = engine.runtimeSerializer;
+      if (!serializer) {
+        GameLogger.warn(LogCategory.ANIMATION, 'GateRite runtime serializer missing; snapshot capture skipped');
+        this.originalSnapshot = null;
+      } else {
+        this.originalSnapshot = serializer.captureCurrentSnapshot(engine);
+      }
       // Persist original snapshot if portal persistence is available (only once per rite start)
       try {
         const engineAny: any = engine as any;
         const currentSnapshotRef: any = engineAny?.currentSnapshot || null;
         const isProcedural = currentSnapshotRef ? currentSnapshotRef.meta?.handcrafted !== true : false;
-        if (isProcedural && typeof engine.gameState?.archiveProceduralSystemSnapshot === 'function') {
+        if (isProcedural && this.originalSnapshot && typeof engine.gameState?.archiveProceduralSystemSnapshot === 'function') {
           const archiveSnapshot = {
             ...this.originalSnapshot,
             meta: {
@@ -730,8 +681,9 @@ export class GateRiteAnimation implements GameAnimation {
           const archivedCount = typeof archiveApi?.getArchivedProceduralSystemCount === 'function'
             ? archiveApi.getArchivedProceduralSystemCount()
             : 0;
-          const prevPalette = Array.isArray(this.originalSnapshot?.planets)
-            ? Array.from(new Set(this.originalSnapshot.planets.map((p: any) => p?.baseColorName).filter((c: any) => !!c)))
+          const capturedPlanets = this.originalSnapshot?.planets;
+          const prevPalette = Array.isArray(capturedPlanets)
+            ? Array.from(new Set(capturedPlanets.map((p: any) => p?.baseColorName).filter((c: any) => !!c)))
             : [];
           const genOptions: any = {
             disableTrail: true,
@@ -831,16 +783,31 @@ export class GateRiteAnimation implements GameAnimation {
                 eyeState: { gazeTarget: 'ship' as const, eyelidOpen: 1, intensity: 1 }
               };
               const collapsedId: string | undefined = (this.targetPlanet as any)?.id;
-              const filteredPlanets = Array.isArray(this.originalSnapshot.planets)
-                ? this.originalSnapshot.planets.filter((pl: any) => pl?.id !== collapsedId)
+              const filteredPlanets = Array.isArray(this.originalSnapshot?.planets)
+                ? this.originalSnapshot!.planets.filter((pl: any) => pl?.id !== collapsedId)
                 : [];
               // Mantener TODOS los portales existentes (capturados en originalSnapshot) más el nuevo
-              const existingPortals = Array.isArray(this.originalSnapshot.portals) ? this.originalSnapshot.portals : [];
+              const existingPortals = Array.isArray(this.originalSnapshot?.portals) ? this.originalSnapshot!.portals : [];
               const allPortals = [...existingPortals, originPortalSnap];
               const originWithPortal = { ...this.originalSnapshot, planets: filteredPlanets, portals: allPortals };
               persistence.autoLabelAndSave?.('gate-origin-linked', originWithPortal);
             }
           } catch {}
+          try {
+            engine.persistActiveSystemState?.({
+              reason: 'gate-rite-transition',
+              portalId: this.portalInstance?.id,
+              destinationPortalId: dest?.id
+            });
+          } catch (persistError) {
+            try {
+              GameLogger.warn(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite failed to persist origin before transition', {
+                portalId: this.portalInstance?.id,
+                destinationPortalId: dest?.id,
+                persistError
+              });
+            } catch {}
+          }
           // Aplicar nuevo sistema
           engine.applySolarSystemSnapshot(snapshot);
           // Colocar nave a 1000u del portal de destino, encarada en dirección contraria al portal y frenando a 0

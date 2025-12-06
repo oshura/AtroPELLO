@@ -40,6 +40,10 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <div class="note">
             <strong>Special Feature:</strong> Earth has been split into two halves, exposing the molten core. 
             The debris field between the halves is extremely dense and dangerous.
+            <p>
+              Runtime snapshots now preserve those debris belts exactly: when you respawn or re-enter the system through a portal we skip spawning new mega asteroids for Earth or Saturn if the snapshot already includes their debris, so rings never double in density.
+              Giant/gaseous worlds (Jupiter, Uranus, Neptune) also keep the exact radius stored in the snapshot instead of reapplying their massive multipliers, so they stop inflating after multiple respawns. Jupiter now loads at its full 1.6k radius again, matching the pre-cataclysm reference scale.
+            </p>
           </div>
         </div>
 
@@ -82,6 +86,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <ul>
               <li>Los portales reducen su burbuja interactiva cuando estás dentro, así que tras un Gate Rite puedes seleccionar otros objetivos sin alejarte.</li>
               <li>Los planetas gigantes y anillados generados se limitan al tamaño de Júpiter/Saturno; siguen viéndose masivos pero ya no tapan todo el mapa.</li>
+              <li>Cada snapshot procedural se etiqueta ahora con un Elder God aleatorio (Cthulhu queda reservado para el sistema humano). Ese dueño arcano define qué criaturas pueden colarse por los portales y qué alertas verás en el HUD.</li>
             </ul>
           </div>
         </div>

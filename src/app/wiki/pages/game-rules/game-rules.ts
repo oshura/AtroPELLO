@@ -172,6 +172,48 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
               <code>UniverseStateSnapshotService.ensureSystemState()</code> carga ese sistema antes de llamar a <code>restartWithContext()</code>.
             </li>
           </ul>
+          <p>
+            Cada sistema queda etiquetado dentro de <code>PortalPersistenceService</code>. Cuando atraviesas un portal,
+            el motor refresca el snapshot del sistema origen con ese mismo label antes de aplicar el destino, de modo que
+            cualquier planeta destruido, sello de portal o rastro de lesser beings se conserva para el siguiente retorno.
+          </p>
+          <p>
+            Desde la build actual, cada muerte dispara el mismo ritual: antes de reconstruir el contexto de respawn,
+            <code>GameEngine.persistActiveSystemState('respawn-transition')</code> captura el sistema activo, guarda los lesser
+            beings en memoria y sobrescribe su etiqueta. Así, incluso si reapareces en el mismo sistema, verás exactamente el
+            estado en el que caíste (portales sellados, planetas demolidos, debris flotando, etc.).
+          </p>
+          <p>
+            Esas capturas incluyen ahora un identificador persistente del sistema y el bloque <code>lesserBeingMemory</code>. Si
+            abandonas un sistema con un lesser en pleno salto y vuelves horas después (o tras reiniciar el juego), el snapshot
+            rehidrata los datos desde el propio portal, por lo que el intruso sigue acechando en el mismo borde del sistema.
+          </p>
+          <p>
+            Durante un Void Jump ya no se improvisa el invasor: el motor planifica el encuentro antes de mostrar la animación,
+            fija la especie que va a manifestarse y reutiliza ese dato para seleccionar la imagen del dios exterior (Semillas →
+            Cthulhu, Shoggoth → Azathoth, Vampiro de fuego → Cthugha). Si la tirada
+            descarta la irrupción, la animación vuelve al icono del sistema y el salto no reintentará la invocación al aterrizar.
+          </p>
+          <p>
+            Las Semillas y los Vampiros invocados desde portales vuelven a evaluar cada pocos frames si les conviene más la nave
+            o el planeta libre más cercano; sólo permanecen en ENGAGING si la nave sigue siendo el objetivo más próximo.
+          </p>
+          <p>
+            Además, <code>handlePortalTraversal()</code> pausa el consumo de energía del vacío y reinicia el muestreo justo después de
+            colocarte frente al portal de destino. Así evitas perder 100u de void energy por recorrer medio sistema en un único frame.
+          </p>
+          <p>
+            Gate Rite ejecuta la misma captura justo antes de saltar: la animación llama a <code>persistActiveSystemState('gate-rite-transition')</code>
+            antes de aplicar el snapshot remoto, de modo que el sistema humano conserva el portal arcano recién abierto aunque mueras lejos de él.
+          </p>
+          <p>
+            Los respawns siempre reutilizan un label existente: <code>human-default-system</code> se sobreescribe automáticamente
+            cuando abandonas el trail humano sin Sigillum, y <code>respawn-anchor-latest</code> ahora se reescribe (solo cuando
+            existe un Sigillum activo) cada vez que <code>GameEngine.persistActiveSystemState()</code> captura el sistema (muerte,
+            Gate Rite o cruce de portal). Antes de reaparecer, el motor rehidrata esa etiqueta desde
+            <code>PortalPersistenceService</code> incluso si ya estabas en el mismo sistema, así tu Sigillum conserva portales,
+            debris y lesser beings recientes sin volver a grabarlo mientras el fallback humano permanece intacto.
+          </p>
           <p class="warning">
             Recordatorio: los sellos se limpian cuando inicias un «Full Respawn», así que vuelve a grabar uno si quieres reaparecer en un planeta concreto.
           </p>

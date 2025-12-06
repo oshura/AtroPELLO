@@ -232,6 +232,11 @@ applySolarSystemSnapshot(snapshot: SolarSystemSnapshot) {
 }
 ```
 
+**Notas recientes**:
+- Cuando el snapshot contiene entradas en `planetDebris` para `planet-earth`, `applySolarSystemSnapshot()` crea igualmente el `EarthSplitPlanet` pero omite la generación automática del anillo de 320 MegaAsteroides. De esta forma solo se restauran los debris persistidos en el snapshot y no se duplican tras un respawn o un viaje por portal.
+- El mismo criterio aplica para `planet-saturn`: si ya hay datos de anillo en `planetDebris`, se salta la creación del cinturón procedural y se reutiliza exclusivamente lo serializado.
+- Los planetas `Ringed` y `Giant` ahora interpretan el `radius` serializado como tamaño final cuando se rehidrata un snapshot, evitando que sus multiplicadores internos (x2 y x4) se apliquen nuevamente en cada respawn. Los `Gaseous` compartían el camino sin multiplicador, así que todos los gigantes gaseosos mantienen su escala exacta al volver del sello.
+
 #### Gestión de Portales Persistentes
 - Portales sobreviven transiciones entre sistemas
 - Mantenidos en `PortalPersistenceService`
@@ -533,6 +538,11 @@ handlePortalTraversal()
 - El generador (`SystemGeneratorService.radiusForKind`) emite radios base mucho más contenidos: `Giant` ≈ 320‑580 u y `Ringed` ≈ 1300‑2100 u antes de que las clases específicas apliquen sus multiplicadores (x4 y x2 respectivamente).
 - Esto deja los gigantes procedural en un rango final de 1.3k‑2.3k unidades y los anillados en 2.6k‑4.2k, alineados con las proporciones descritas para el sistema humano. Los valores opcionales como `maxGiantRadius` siguen operando sobre el radio base.
 - Documentar cualquier snapshot legado con radios mayores, porque tras esta actualización se verán más contenidos y acordes a Júpiter/Saturno.
+
+### Asignación de Elder Gods e incursiones
+- El snapshot humano define explícitamente `meta.elderGod = CTHULHU`, evitando reasignaciones accidentales cada vez que se regenera.
+- `SystemGeneratorService` ahora persiste un `elderGod` aleatorio para cada sistema procedural utilizando únicamente divinidades con criaturas asociadas en `ELDER_GOD_SUMMONS`, así la diversidad de lesser beings deriva del propio snapshot.
+- `LesserBeingSpawner` consume ese metadato para elegir especies mixtas y, cuando la incursión proviene de un portal, fuerza al controlador a fijar la nave y emite un evento `HudMarqueeEventType.LESSER_BEING` notificando al jugador.
 
 ### Datos Preservados Entre Sistemas
 - **Portales persistentes**: Mantenidos en PortalPersistenceService

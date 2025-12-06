@@ -29,6 +29,14 @@ Este documento consolida el estado del sistema de respawn/sello y describe el pl
   - `UniverseStateSnapshotService.ensureSystemState()` puede cargar un snapshot por `snapshotId` o `snapshotLabel`, exactamente lo que necesita el lector de partidas.
   - `RespawnService` y `GameEngine` ya tienen rutas explícitas para pausar/reanudar el loop y notificar HUD/audio, lo que facilita intercalar un flujo de guardado/carga consistente.
 
+- **Actualizaciones diciembre 2025**
+  - `GameEngine.handlePortalTraversal()` vuelve a serializar el sistema origen con `SolarSystemRuntimeSerializerService.saveWithLabel(labelActual)` antes de aplicar el destino, de modo que cada label almacenado en `PortalPersistenceService` se mantiene al día (planetas destruidos, portales sellados, etc.).
+  - `persistRespawnSnapshot()` reutiliza labels ya registrados: `PORTAL_SNAPSHOT_LABELS.HUMAN_DEFAULT` para el ancla sin Sigillum y `PORTAL_SNAPSHOT_LABELS.RESPAWN_ANCHOR_LATEST` para el sello activo. Si el sistema en runtime aún no tiene label, `ensureCurrentSnapshotLabel()` deriva uno (`system-<id>`) y lo persiste automáticamente antes de guardar el sello.
+  - `persistActiveSystemSnapshot()` detecta cuando el sistema activo es `human-system` y, además de refrescar el label en uso, vuelve a guardar el snapshot bajo `PORTAL_SNAPSHOT_LABELS.HUMAN_DEFAULT`. Así el ancla inicial siempre apunta al estado más reciente del sistema humano aunque actualmente estemos en otro sistema.
+  - `PortalPersistenceService` guarda y entrega clones profundos de cada snapshot, eliminando referencias compartidas que podían “resucitar” planetas o portales destruidos tras respawn.
+  - `UniverseStateSnapshotService.ensureSystemState()` intenta refrescar el label solicitado via runtime serializer si la etiqueta coincide con el sistema activo pero la persistencia aún no la tenía.
+  - `UniverseStateSnapshotService.ensureSystemState()` ahora da prioridad a cualquier `snapshotLabel` recibido: busca ese label en `PortalPersistenceService` y aplica el snapshot incluso cuando el sistema solicitado ya está cargado en memoria, garantizando que los respawns nunca reutilicen el estado LIVE si existe una etiqueta persistida.
+
 ## 2. Objetivo del sistema de guardado/carga
 
 - **Serialización completa** del estado de juego en un único JSON (tamaño irrelevante, consistencia prioritaria).

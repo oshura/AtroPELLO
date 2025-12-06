@@ -193,7 +193,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <h3>World Events</h3>
             <ul>
               <li><strong>Portal:</strong> Concordia traversals plus Gate Rite stabilization results.</li>
-              <li><strong>Lesser Beings:</strong> Rewards, discoveries and ritual boons granted by allies.</li>
+              <li><strong>Lesser Beings:</strong> Rewards, discoveries and now incursion warnings—cada portal que abre una brecha anuncia la criatura por su nombre y confirma que viene directo a la nave.</li>
               <li><strong>Void Ritual:</strong> Anchoring Pulse, Material Disruption and other rites.</li>
             </ul>
           </div>

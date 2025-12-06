@@ -17,6 +17,7 @@ import { SolarSystemService } from '../../game/services/game/solar-system.servic
 import { HumanSolarSystemService } from '../../game/services/game/human-solar-system.service';
 import { PortalPersistenceService } from '../../game/services/game/portal-persistence.service';
 import { PortalRegistryService } from '../../game/services/game/portal-registry.service';
+import { SolarSystemRuntimeSerializerService } from '../../game/services/game/solar-system-runtime-serializer.service';
 import { CollisionManagerService } from '../../game/services/physics/collision-manager.service';
 import { PanelEventCoordinator } from '../../game/services/ui/panel-event-coordinator.service';
 import { GameStateStore } from './game-state.store';
@@ -114,6 +115,7 @@ export class GameInitializer {
   const humanSolarSystemService = this.injector.get(HumanSolarSystemService);
   const portalPersistenceService = this.injector.get(PortalPersistenceService);
   const portalRegistry = this.injector.get(PortalRegistryService);
+  const runtimeSerializer = this.injector.get(SolarSystemRuntimeSerializerService);
     const panelEventCoordinator = this.injector.get(PanelEventCoordinator);
     const spellIOCoordinator = this.injector.get(SpellIOCoordinator);
     const gameStateStore = this.injector.get(GameStateStore);
@@ -142,6 +144,7 @@ export class GameInitializer {
       humanSolarSystemService,
       portalPersistenceService,
       portalRegistry,
+      runtimeSerializer,
       audioEngine,
       musicDirector
     );
