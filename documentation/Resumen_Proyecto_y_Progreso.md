@@ -39,6 +39,8 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
     2. **Cargar Partida**: `loadSaveAfterDeath()` posiciona nave cerca de portal más cercano, restaura salud/energía completas, limpia targets, reinicia game loop.
   - Autenticación: "Cargar Partida" solo visible si usuario autenticado (AuthService con sessionStorage).
   - Limpieza de targets: Ambos métodos llaman `clearTargetSelection()` para limpiar HUD, outliner, adaptive targeting y reticle.
+  - PortalPersistenceService ahora mantiene índices de portales y sistemas: cada snapshot guarda su `persistentSystemId` y, si se vuelve a capturar el mismo sistema, la versión anterior se elimina automáticamente. Así ningún portal puede apuntar a snapshots obsoletos tras Gate Rite, respawn o traversal.
+  - El dios primigenio asignado a cada sistema deja de re-rollearse: `SolarSystemRuntimeSerializer` inyecta `meta.elderGod` en cada captura y PortalPersistenceService preserva ese dato en los snapshots, de modo que cualquier respawn, Sigillum o Gate Rite rehidrata la misma deidad que estaba presente cuando se capturó el sistema.
 
 - HUD y UI
   - `HUDManager`: genera el HUD en un canvas 2D y lo sube a una textura WebGL; incluye elementos como brújula, velocímetro, barras y panel de target.

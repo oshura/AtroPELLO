@@ -189,6 +189,17 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             rehidrata los datos desde el propio portal, por lo que el intruso sigue acechando en el mismo borde del sistema.
           </p>
           <p>
+            También se conserva el dios primigenio que regenta cada sistema: el serializer añade <code>meta.elderGod</code> antes
+            de persistirlo y <code>PortalPersistenceService</code> nunca vuelve a sortearlo. Así, cuando reapareces mediante Sigillum,
+            Gate Rite o un respawn completo, verás a la misma deidad dominando el cielo en lugar del fallback genérico.
+          </p>
+          <p>
+            Para evitar portales "fantasma" se añadió un índice dentro de <code>PortalPersistenceService</code>: cada vez que se
+            guarda un sistema, se sobreescribe cualquier snapshot previo con el mismo <em>persistentSystemId</em> y se reasigna cada
+            <code>portalId</code> al label más reciente. Ya no existen versiones antiguas de un mismo sistema; al cruzar un portal o
+            reaparecer tras una muerte siempre recuperas la última captura válida, con los dos extremos del portal enlazados.
+          </p>
+          <p>
             Durante un Void Jump ya no se improvisa el invasor: el motor planifica el encuentro antes de mostrar la animación,
             fija la especie que va a manifestarse y reutiliza ese dato para seleccionar la imagen del dios exterior (Semillas →
             Cthulhu, Shoggoth → Azathoth, Vampiro de fuego → Cthugha). Si la tirada

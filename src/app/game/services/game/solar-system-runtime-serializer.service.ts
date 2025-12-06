@@ -302,6 +302,10 @@ export class SolarSystemRuntimeSerializerService {
       }
     }
 
+    if (typeof engine.getCurrentSystemElderGod === 'function') {
+      meta['elderGod'] = engine.getCurrentSystemElderGod();
+    }
+
     return Object.keys(meta).length ? meta : undefined;
   }
 
