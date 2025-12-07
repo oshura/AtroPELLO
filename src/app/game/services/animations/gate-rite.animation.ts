@@ -8,6 +8,7 @@ import { Portal } from '../../game-objects/Portal';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
 import { GameLogger } from '../../utils/GameLogger';
 import { SpellType } from '../../types/spell.types';
+import { ThrusterState } from '../../game-objects/Spaceship';
 
 enum GateRitePhase {
   PreFocus = 0,
@@ -60,6 +61,8 @@ export class GateRiteAnimation implements GameAnimation {
   private accelActive = false; // start acceleration only after travelling completes
   private lockedHeading = false; // fijar orientación durante el tránsito para evitar micro-oscilaciones
   private camTransitSmoothing = true; // activar suavizado de cámara durante Transit
+  private gateFocusPosition: { x: number; y: number; z: number } | null = null;
+  private preTransitBrakingActive = true;
 
   // Camera zoom state
   private zoomDuration = 2.5; // seconds (base before scaling)
@@ -76,9 +79,11 @@ export class GateRiteAnimation implements GameAnimation {
   start(engine: GameEngine, target: ITargetable): void {
     if (target.getTargetType() !== TargetType.PLANET) { this.finished = true; return; }
     this.targetPlanet = target;
+    this.gateFocusPosition = (target as any)?.position ? { ...(target as any).position } : null;
     this.phase = GateRitePhase.PreFocus;
     this.t = 0;
     this.finished = false;
+    this.preTransitBrakingActive = true;
     try { engine.showPlaceholderText?.('GATE RITE: INIT', 900); } catch {}
     // Pausar consumo de energía del vacío durante toda la animación
     try {
@@ -148,6 +153,72 @@ export class GateRiteAnimation implements GameAnimation {
   try { engine.showPlaceholderText?.('GATE RITE: CAMERA ZOOM', 800); } catch {}
   }
 
+  private getGateFocusPosition(): { x: number; y: number; z: number } | null {
+    if (this.portalInstance?.position) {
+      return { x: this.portalInstance.position.x, y: this.portalInstance.position.y, z: this.portalInstance.position.z };
+    }
+    if (this.gateFocusPosition) {
+      return { ...this.gateFocusPosition };
+    }
+    const planetPos = (this.targetPlanet as any)?.position;
+    return planetPos ? { ...planetPos } : null;
+  }
+
+  private applyPreTransitBraking(engine: GameEngine, dt: number): void {
+    if (!this.preTransitBrakingActive) {
+      return;
+    }
+    const ship: any = engine.spaceship;
+    if (!ship) {
+      return;
+    }
+    const focus = this.getGateFocusPosition();
+    if (focus && ship.position) {
+      try {
+        if (typeof ship.lookAt === 'function') {
+          ship.lookAt(focus);
+        } else if (ship.rotation) {
+          const dx = focus.x - ship.position.x;
+          const dy = focus.y - ship.position.y;
+          const dz = focus.z - ship.position.z;
+          const yaw = Math.atan2(dx, dz);
+          const flat = Math.hypot(dx, dz) || 1;
+          const pitch = Math.atan2(dy, flat);
+          ship.rotation.y = yaw;
+          if (typeof ship.rotation.x === 'number') {
+            ship.rotation.x = pitch;
+          }
+          ship.updateModelMatrix?.();
+        }
+      } catch {}
+    }
+    const decel = Math.max(0, Number(ship.deceleration) || 0);
+    if (decel <= 0) {
+      ship.currentSpeed = 0;
+      ship.targetSpeed = 0;
+      return;
+    }
+    const before = Number(ship.currentSpeed) || 0;
+    if (before <= 0) {
+      ship.currentSpeed = 0;
+      ship.targetSpeed = 0;
+      ship.isThrusting = false;
+      return;
+    }
+    const newSpeed = Math.max(0, before - decel * dt);
+    if (newSpeed === before) {
+      return;
+    }
+    ship.currentSpeed = newSpeed;
+    if (typeof ship.targetSpeed === 'number' && Number.isFinite(ship.targetSpeed)) {
+      ship.targetSpeed = Math.min(ship.targetSpeed, newSpeed);
+    } else {
+      ship.targetSpeed = newSpeed;
+    }
+    ship.isThrusting = newSpeed > 0.05;
+    try { ship.thrusterState = ThrusterState.BRAKING; } catch {}
+  }
+
   update(engine: GameEngine, dt: number): boolean {
     if (this.finished) return true;
     switch (this.phase) {
@@ -185,6 +256,7 @@ export class GateRiteAnimation implements GameAnimation {
     if (!this.targetPlanet) { this.finishEarly(engine, 'NO TARGET'); return; }
     const cam = engine.camera;
     if (!cam || !this.initialCamPos) { this.finishEarly(engine, 'NO CAM'); return; }
+    this.applyPreTransitBraking(engine, dt);
 
   this.zoomElapsed += dt;
   const tNorm = Math.min(1, this.zoomElapsed / this.zoomDuration);
@@ -242,6 +314,7 @@ export class GateRiteAnimation implements GameAnimation {
   }
 
   private updatePlanetWrapper(engine: GameEngine, dt: number) {
+    this.applyPreTransitBraking(engine, dt);
     this.wrapperElapsed += dt;
     const k = Math.min(1, this.wrapperElapsed / this.wrapperDuration);
     // Show a temporary overlay text only once at start (not every frame)
@@ -310,6 +383,7 @@ export class GateRiteAnimation implements GameAnimation {
   }
 
   private updatePlanetCollapse(engine: GameEngine, dt: number) {
+    this.applyPreTransitBraking(engine, dt);
     this.collapseElapsed += dt;
     this.collapseStormTime += dt;
     const p = this.targetPlanet as any;
@@ -410,6 +484,7 @@ export class GateRiteAnimation implements GameAnimation {
       const portalsArr = engine.gameState.portals;
       if (Array.isArray(portalsArr)) portalsArr.push(portal);
       engine.targetCatalog?.add?.(TargetType.PORTAL, portal);
+      this.gateFocusPosition = { ...portal.position };
       try { logger?.log(LogLevel.INFO, LogCategory.PORTAL, 'Portal manifest created', { id: portal.id, radius: portal.radius, pos }); } catch {}
     } catch (e) {
       try { (engine.logger as LoggingService | undefined)?.log(LogLevel.ERROR, LogCategory.PORTAL, 'Portal manifest failed', e); } catch {}
@@ -418,6 +493,7 @@ export class GateRiteAnimation implements GameAnimation {
   }
 
   private updatePortalManifest(engine: GameEngine, dt: number) {
+    this.applyPreTransitBraking(engine, dt);
     this.manifestElapsed += dt;
     const k = Math.min(1, this.manifestElapsed / this.manifestDuration);
     if (this.portalInstance) {
@@ -486,6 +562,7 @@ export class GateRiteAnimation implements GameAnimation {
   }
 
   private updateCameraReframe(engine: GameEngine, dt: number) {
+    this.applyPreTransitBraking(engine, dt);
     this.reframeElapsed += dt;
     const k = Math.min(1, this.reframeElapsed / Math.max(0.0001, this.reframeDuration));
     const ease = (x:number) => 1 - Math.pow(1 - x, 3); // ease-out
@@ -508,6 +585,7 @@ export class GateRiteAnimation implements GameAnimation {
   private enterTransit(engine: GameEngine) {
     this.phase = GateRitePhase.Transit;
     this.transitElapsed = 0;
+    this.preTransitBrakingActive = false;
     try { engine.showPlaceholderText?.('Gate Rite: Transit', 800); } catch {}
     // Use non-smoothed transit camera to avoid flicker and lag
     this.camTransitSmoothing = false;
