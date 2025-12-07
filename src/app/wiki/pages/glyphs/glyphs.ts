@@ -380,10 +380,10 @@ export class GlyphsWikiComponent implements OnInit {
       effect: 'Inicia la animación de salto y desplaza la nave tras completarla.',
       sanityTemp: 2,
       sanityReserve: 4,
-      voidEnergy: '50u',
-      requirements: ['Energía del Vacío ≥ 50u.', 'Objetivo válido y a > 4000u.', 'Animaciones libres.'],
-      description: 'Herramienta de escape fiable. Si falta energía o el objetivo no es válido, verás un placeholder y conservarás tus recursos.',
-      notes: 'El flash muestra al Elder God dueño del sistema (Cthulhu/Azathoth/Yog-Sothoth/Cthugha) y consume energía justo antes de arrancar.'
+      voidEnergy: '0u',
+      requirements: ['Objetivo válido y a > 4000u.', 'Animaciones libres.'],
+      description: 'Herramienta de escape fiable. Si el objetivo no es válido, verás un placeholder y conservarás tus recursos.',
+      notes: 'El flash muestra al Elder God dueño del sistema (Cthulhu/Azathoth/Yog-Sothoth/Cthugha) sin coste de energía: solo bloquea el input antes de saltar.'
     },
     {
       name: 'Gate Rite',

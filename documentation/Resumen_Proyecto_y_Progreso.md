@@ -41,6 +41,8 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - Limpieza de targets: Ambos métodos llaman `clearTargetSelection()` para limpiar HUD, outliner, adaptive targeting y reticle.
   - PortalPersistenceService ahora mantiene índices de portales y sistemas: cada snapshot guarda su `persistentSystemId` y, si se vuelve a capturar el mismo sistema, la versión anterior se elimina automáticamente. Así ningún portal puede apuntar a snapshots obsoletos tras Gate Rite, respawn o traversal.
   - El dios primigenio asignado a cada sistema deja de re-rollearse: `SolarSystemRuntimeSerializer` inyecta `meta.elderGod` en cada captura y PortalPersistenceService preserva ese dato en los snapshots, de modo que cualquier respawn, Sigillum o Gate Rite rehidrata la misma deidad que estaba presente cuando se capturó el sistema.
+  - El snapshot del Sigillum sólo se refresca cuando sigues en el mismo sistema que el sello: `persistActiveSystemState()` pasa la captura recién clonada a `refreshRespawnAnchorSnapshot()`, que ahora valida `systemId/persistentSystemId` antes de sobrescribir `respawn-anchor-latest`. Así evitas que un Gate Rite o una muerte en otro sistema borren los portales que dejaste grabados en el Sigillum.
+  - `LesserBeingController` compara cada frame la distancia real a la nave con la distancia a la superficie del planeta libre más cercano; Semillas Estelares y Vampiros de Fuego permanecen en `ENGAGING_SHIP` mientras la nave sea el objetivo más cercano y sólo se desvían a colonizar un planeta si éste está claramente más cerca y disponible.
 
 - HUD y UI
   - `HUDManager`: genera el HUD en un canvas 2D y lo sube a una textura WebGL; incluye elementos como brújula, velocímetro, barras y panel de target.
@@ -96,7 +98,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - Flujo de casteo estandarizado para tecla rápida "h": cámara 0 → pre‑cast 2s con bloqueo de controles → placeholder → efecto.
   - Hechizos disponibles:
     - **Rito Doble de Tiempo**: duplica `maxSpeed`/aceleración/freno durante 120s; contador MM:SS carmesí centrado en brújula; restauración y clamp al expirar; recasteo refresca.
-    - **Salto al Vacío**: requiere objetivo válido y consume 50u de energía del vacío; aborta con placeholder si no hay recursos o condiciones.
+    - **Salto al Vacío**: requiere objetivo válido (> 4000u) y ya no consume energía del vacío; aborta con placeholder si la distancia o el objetivo no cumplen las condiciones.
     - **Gate Rite**: Requiere planeta seleccionado y distancia ≤50u a superficie; crea portal arcano bidireccional para viajar entre sistemas solares.
     - **Eternal Rite**: Ritual de suicidio. Reduce salud de nave a 0, disparando sistema de muerte reactivo. Útil para testing y narrativa.
     - **Quimio Sigillum**: Rito de rejuvenecimiento que devuelve +5% de supervivencia (cap 100%) con feedback instantáneo en HUD; no gasta recursos si ya estás al máximo.

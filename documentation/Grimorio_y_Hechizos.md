@@ -103,9 +103,9 @@ Notas:
 ### Salto al Vacío (Long Jump / Void Jump)
 
 - Efecto principal: ejecuta la animación de salto hacia el objetivo seleccionado y teleporta la nave tras completar la secuencia.
-- Costes: 2 de cordura temporal, 4 reservados y 50u de Energía del Vacío consumidas al validar el objetivo.
+- Costes: 2 de cordura temporal y 4 reservados; ya no consume Energía del Vacío.
 - Requisitos: objetivo válido (planeta/portal/waypoint) situado a más de 4000u de distancia; con menos distancia aparece placeholder “ANIMATION NUMBER 2”.
-- Flujo: si hay energía suficiente, `AnimationManager.startVoidJump` bloquea inputs hasta finalizar. El gasto energético sucede justo antes de disparar la animación.
+- Flujo: tras validar el objetivo, `AnimationManager.startVoidJump` bloquea inputs hasta finalizar. No hay chequeo de energía: el salto depende únicamente del rango y de que las animaciones estén libres.
 
 ### Gate Rite
 
@@ -202,7 +202,7 @@ Notas:
   - Pasado ese tiempo, el contador MM:SS aparece en la Brújula y la nave acelera con el nuevo límite.
 - Volver a pulsar `h` antes de expirar para refrescar la duración.
 - Dejar expirar: comprobar que se oculta el contador y se restauran límites/curvas.
-- Probar Salto al Vacío con energía suficiente (≥ 50) y con energía insuficiente (< 50) para validar ambos caminos.
+- Probar Salto al Vacío con objetivos válidos (> 4000u) e inválidos (< 4000u) para confirmar los placeholders y la ausencia de coste energético.
 - Seleccionar los glifos de Augurio/Revelación y probar:
   - Target cercano (≤ 500u) vs. fuera de rango para confirmar los placeholders.
   - Consumo de 50u por lanzamiento exitoso y actualización de intel (habitantes/ser menor) en HUD y documentación del planeta.

@@ -184,6 +184,12 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             estado en el que caíste (portales sellados, planetas demolidos, debris flotando, etc.).
           </p>
           <p>
+            Ese refresco sólo ocurre si sigues en el mismo sistema que tu Sigillum. El motor compara el <code>systemId</code> del
+            ancla con el snapshot activo antes de clonar nada, de modo que un Gate Rite o una muerte lejana ya no pueden
+            sobrescribir la etiqueta <code>respawn-anchor-latest</code>; únicamente cuando estás en casa se vuelca el nuevo portal en
+            el sello.
+          </p>
+          <p>
             Esas capturas incluyen ahora un identificador persistente del sistema y el bloque <code>lesserBeingMemory</code>. Si
             abandonas un sistema con un lesser en pleno salto y vuelves horas después (o tras reiniciar el juego), el snapshot
             rehidrata los datos desde el propio portal, por lo que el intruso sigue acechando en el mismo borde del sistema.
@@ -206,8 +212,9 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             descarta la irrupción, la animación vuelve al icono del sistema y el salto no reintentará la invocación al aterrizar.
           </p>
           <p>
-            Las Semillas y los Vampiros invocados desde portales vuelven a evaluar cada pocos frames si les conviene más la nave
-            o el planeta libre más cercano; sólo permanecen en ENGAGING si la nave sigue siendo el objetivo más próximo.
+            Las Semillas y los Vampiros invocados desde portales comparan constantemente la distancia a la nave con la distancia a
+            la superficie del planeta libre más cercano; si la nave gana aunque sea por unos metros, la persecución es obligatoria
+            y sólo se desvían a colonizar cuando existe un planeta desocupado mucho más cercano.
           </p>
           <p>
             Además, <code>handlePortalTraversal()</code> pausa el consumo de energía del vacío y reinicia el muestreo justo después de

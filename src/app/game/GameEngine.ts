@@ -8100,29 +8100,23 @@ export class GameEngine {
 
   private performLongJump(target: ITargetable | null): boolean {
     if (!this.spaceship) {
-      try { this.showPlaceholderText('ANIMATION NUMBER 2.', 2000); } catch {}
-      return false;
-    }
-    if (this.spaceship.voidEnergyCurrent < 50) {
-      try { this.showPlaceholderText('ENERGÍA DEL VACÍO INSUFICIENTE (50u)', 2000); } catch {}
+      try { this.showPlaceholderText('NO SPACESHIP.', 2000); } catch {}
       return false;
     }
     if (!target) {
-      try { this.showPlaceholderText('ANIMATION NUMBER 2.', 2000); } catch {}
+      try { this.showPlaceholderText('TARGET SELECTION REQUIRED.', 2000); } catch {}
       return false;
     }
     const targetPos = this.getTargetPosition(target);
     if (!targetPos) {
-      try { this.showPlaceholderText('ANIMATION NUMBER 2.', 2000); } catch {}
+      try { this.showPlaceholderText('TARGET POSITION UNKNOWN.', 2000); } catch {}
       return false;
     }
     const dist = this.getDistanceFromShip(targetPos);
     if (dist <= 4000) {
-      this.logger.log(LogLevel.INFO, LogCategory.TARGETING, '[VoidJump] Target demasiado cerca (<4000u)', { distance: Math.round(dist) });
-      try { this.showPlaceholderText('ANIMATION NUMBER 2.', 2000); } catch {}
+      try { this.showPlaceholderText('TARGET TOO CLOSE (<4000u)', 2000); } catch {}
       return false;
     }
-    this.spaceship.voidEnergyCurrent = Math.max(0, this.spaceship.voidEnergyCurrent - 50);
     if (this.lesserBeingSpawner?.prepareVoidJumpEncounter) {
       const plan = this.lesserBeingSpawner.prepareVoidJumpEncounter();
       this.setPendingVoidJumpEncounter(plan, true);
@@ -10565,20 +10559,21 @@ export class GameEngine {
     if (!derived) {
       return null;
     }
-    return this.refreshCurrentSystemSnapshot(derived);
+    const result = this.refreshCurrentSystemSnapshot(derived);
+    return result.label;
   }
 
-  public refreshCurrentSystemSnapshot(label?: string | null): string | null {
+  public refreshCurrentSystemSnapshot(label?: string | null): { label: string | null; snapshot: SolarSystemSnapshot | null } {
     const resolvedLabel = (label && label.trim().length) ? label : this.getCurrentSnapshotLabel();
     if (!resolvedLabel || !this.runtimeSerializer) {
-      return resolvedLabel ?? null;
+      return { label: resolvedLabel ?? null, snapshot: this.currentSnapshot ?? null };
     }
     const snapshot = this.runtimeSerializer.saveWithLabel(resolvedLabel, this);
     if (snapshot) {
       this.setCurrentSnapshotReference(snapshot, resolvedLabel);
-      return resolvedLabel;
+      return { label: resolvedLabel, snapshot };
     }
-    return resolvedLabel;
+    return { label: resolvedLabel, snapshot: this.currentSnapshot ?? null };
   }
 
   private buildDerivedSystemLabel(): string | null {
@@ -10608,7 +10603,10 @@ export class GameEngine {
     }
   }
 
-  private refreshRespawnAnchorSnapshot(sourceLabel?: string | null): void {
+  private refreshRespawnAnchorSnapshot(
+    sourceLabel?: string | null,
+    sourceSnapshot?: SolarSystemSnapshot | null
+  ): void {
     const anchor = this.gameState.getRespawnAnchor();
     const targetLabel = anchor?.snapshotLabel?.trim();
     if (!targetLabel) {
@@ -10623,26 +10621,36 @@ export class GameEngine {
       return;
     }
 
-    let snapshot: SolarSystemSnapshot | null = null;
+    const representativeSnapshot = sourceSnapshot ?? this.currentSnapshot ?? null;
+    if (!this.shouldMirrorRespawnAnchor(anchor, representativeSnapshot)) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Respawn anchor snapshot mirror skipped (system mismatch)', {
+        targetLabel,
+        anchorSystemId: anchor?.systemId ?? null,
+        anchorSnapshotId: anchor?.snapshotId ?? null,
+        currentSystemId: this.resolveSystemId(representativeSnapshot),
+        currentPersistentKey: this.resolvePersistentSystemKey(representativeSnapshot)
+      });
+      return;
+    }
 
-    if (sourceLabel && sourceLabel === targetLabel) {
-      snapshot = this.portalPersistenceService.get(targetLabel) ?? null;
-    } else if (sourceLabel) {
-      const sourceSnapshot = this.portalPersistenceService.get(sourceLabel);
-      if (sourceSnapshot) {
-        const mirrored: SolarSystemSnapshot = {
-          ...sourceSnapshot,
-          meta: { ...(sourceSnapshot.meta || {}), snapshotLabel: targetLabel }
-        };
-        this.portalPersistenceService.save(targetLabel, mirrored);
-        snapshot = mirrored;
-      }
-    } else if (this.runtimeSerializer) {
-      const captured = this.runtimeSerializer.captureCurrentSnapshot(this);
-      if (captured) {
-        this.portalPersistenceService.save(targetLabel, captured);
-        snapshot = captured;
-      }
+    const labelsMatch = Boolean(sourceLabel && sourceLabel === targetLabel);
+    let snapshot: SolarSystemSnapshot | null = sourceSnapshot ?? null;
+
+    if (!snapshot && sourceLabel) {
+      snapshot = this.portalPersistenceService.get(sourceLabel) ?? null;
+    }
+
+    if (!snapshot && this.runtimeSerializer) {
+      snapshot = this.runtimeSerializer.captureCurrentSnapshot(this);
+    }
+
+    if (snapshot && (!labelsMatch || !sourceLabel)) {
+      const mirrored: SolarSystemSnapshot = {
+        ...snapshot,
+        meta: { ...(snapshot.meta || {}), snapshotLabel: targetLabel }
+      };
+      this.portalPersistenceService.save(targetLabel, mirrored);
+      snapshot = mirrored;
     }
 
     if (!snapshot) {
@@ -10664,6 +10672,41 @@ export class GameEngine {
       snapshotId,
       sourceLabel
     });
+  }
+
+  private shouldMirrorRespawnAnchor(anchor: RespawnAnchorMetadata | null, snapshot?: SolarSystemSnapshot | null): boolean {
+    if (!anchor) {
+      return false;
+    }
+    const anchorKeys: string[] = [];
+    if (anchor.systemId && anchor.systemId.trim().length) {
+      anchorKeys.push(anchor.systemId.trim());
+    }
+    if (anchor.snapshotId && anchor.snapshotId.trim().length) {
+      anchorKeys.push(anchor.snapshotId.trim());
+    }
+    if (!anchorKeys.length) {
+      return true;
+    }
+    const reference = snapshot ?? this.currentSnapshot ?? null;
+    const candidateKeys: string[] = [];
+    const persistentKey = this.resolvePersistentSystemKey(reference);
+    if (persistentKey && persistentKey.trim().length) {
+      candidateKeys.push(persistentKey.trim());
+    }
+    const systemId = this.resolveSystemId(reference);
+    if (systemId && systemId.trim().length) {
+      candidateKeys.push(systemId.trim());
+    }
+    if (!candidateKeys.length) {
+      return false;
+    }
+    for (const key of anchorKeys) {
+      if (candidateKeys.includes(key)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public persistActiveSystemState(
@@ -10703,7 +10746,7 @@ export class GameEngine {
       return null;
     }
 
-    const refreshedLabel = this.refreshCurrentSystemSnapshot(effectiveLabel);
+    const { label: refreshedLabel, snapshot: refreshedSnapshot } = this.refreshCurrentSystemSnapshot(effectiveLabel);
     if (!this.runtimeSerializer) {
       this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Runtime serializer unavailable during active system snapshot persist', {
         ...(context || {}),
@@ -10717,7 +10760,7 @@ export class GameEngine {
       label: effectiveLabel
     });
     this.syncHumanDefaultSnapshotIfNeeded(effectiveLabel);
-    this.refreshRespawnAnchorSnapshot(refreshedLabel ?? effectiveLabel);
+    this.refreshRespawnAnchorSnapshot(refreshedLabel ?? effectiveLabel, refreshedSnapshot ?? this.currentSnapshot ?? null);
     return refreshedLabel;
   }
 

@@ -18,6 +18,9 @@ enum LesserBeingState {
   DESPAWNING = 'DESPAWNING'
 }
 
+const SHIP_OVER_PLANET_MARGIN = 0;
+const PLANET_REDIRECT_MARGIN = 40;
+
 type TargetDescriptor =
   | { kind: 'planet'; planetId: string; position: Vector3; radius: number }
   | { kind: 'ship'; position: Vector3 }
@@ -28,6 +31,13 @@ interface BeingContext {
   state: LesserBeingState;
   target: TargetDescriptor | null;
   timeSinceLastAttack: number;
+}
+
+interface PlanetDistanceInfo {
+  planet: Planet;
+  centerDistance: number;
+  surfaceDistance: number;
+  radius: number;
 }
 
 export class LesserBeingController {
@@ -278,17 +288,11 @@ export class LesserBeingController {
   }
 
   private findPlanetTarget(context: BeingContext): TargetDescriptor | null {
-    const planet = this.pickAvailablePlanet(context);
-    if (!planet) {
+    const planetInfo = this.findNearestAvailablePlanetInfo(context);
+    if (!planetInfo) {
       return null;
     }
-    this.planetReservations.set(planet.id, context.being.id);
-    return {
-      kind: 'planet',
-      planetId: planet.id,
-      position: { ...planet.position },
-      radius: planet.boundingSphere?.radius ?? 20
-    };
+    return this.assignPlanetTarget(context, planetInfo);
   }
 
   private shouldIgnoreShip(context: BeingContext): boolean {
@@ -440,8 +444,15 @@ export class LesserBeingController {
     if (this.shouldIgnoreShip(context)) {
       return false;
     }
-    const distance = this.distanceTo(context.being, shipPos);
-    return distance <= this.getShipAggroDistance(context);
+    const shipDistance = this.distanceTo(context.being, shipPos);
+    if (shipDistance > this.getShipAggroDistance(context)) {
+      return false;
+    }
+    const nearestPlanet = this.findNearestAvailablePlanetInfo(context);
+    if (!nearestPlanet) {
+      return true;
+    }
+    return shipDistance + SHIP_OVER_PLANET_MARGIN <= nearestPlanet.surfaceDistance;
   }
 
   private getShipAggroDistance(context: BeingContext): number {
@@ -451,9 +462,23 @@ export class LesserBeingController {
   }
 
   private pickAvailablePlanet(context: BeingContext): Planet | null {
+    const info = this.findNearestAvailablePlanetInfo(context);
+    return info?.planet ?? null;
+  }
+
+  private assignPlanetTarget(context: BeingContext, info: PlanetDistanceInfo): TargetDescriptor {
+    this.planetReservations.set(info.planet.id, context.being.id);
+    return {
+      kind: 'planet',
+      planetId: info.planet.id,
+      position: { ...info.planet.position },
+      radius: info.radius
+    };
+  }
+
+  private findNearestAvailablePlanetInfo(context: BeingContext): PlanetDistanceInfo | null {
     const planets = this.engine.gameState?.planets ?? [];
-    let best: Planet | null = null;
-    let bestDistance = Infinity;
+    let best: PlanetDistanceInfo | null = null;
     for (const candidate of planets) {
       if (!(candidate instanceof Planet)) {
         continue;
@@ -465,10 +490,11 @@ export class LesserBeingController {
       if (reservedBy && reservedBy !== context.being.id) {
         continue;
       }
-      const dist = this.distanceTo(context.being, candidate.position);
-      if (dist < bestDistance) {
-        bestDistance = dist;
-        best = candidate;
+      const radius = candidate.boundingSphere?.radius ?? 20;
+      const centerDistance = this.distanceTo(context.being, candidate.position);
+      const surfaceDistance = Math.max(0, centerDistance - radius);
+      if (!best || surfaceDistance < best.surfaceDistance) {
+        best = { planet: candidate, centerDistance, surfaceDistance, radius };
       }
     }
     return best;
@@ -511,21 +537,7 @@ export class LesserBeingController {
   }
 
   private hasAvailablePlanet(context: BeingContext): boolean {
-    const planets = this.engine.gameState?.planets ?? [];
-    for (const candidate of planets) {
-      if (!(candidate instanceof Planet)) {
-        continue;
-      }
-      if (this.isPlanetOccupied(candidate)) {
-        continue;
-      }
-      const reservedBy = this.planetReservations.get(candidate.id);
-      if (reservedBy && reservedBy !== context.being.id) {
-        continue;
-      }
-      return true;
-    }
-    return false;
+    return this.findNearestAvailablePlanetInfo(context) !== null;
   }
 
   private lockOnShip(context: BeingContext, shipTarget: TargetDescriptor, immediateAttack = false): void {
@@ -582,24 +594,20 @@ export class LesserBeingController {
     distanceToShip: number,
     hasShipPriority: boolean
   ): boolean {
-    const candidatePlanet = this.pickAvailablePlanet(context);
-    if (!candidatePlanet) {
+    const planetInfo = this.findNearestAvailablePlanetInfo(context);
+    if (!planetInfo || hasShipPriority) {
       return false;
     }
-    const distanceToPlanet = this.distanceTo(context.being, candidatePlanet.position);
     const desiredRange = this.computeDesiredRange(context);
     const minRange = desiredRange[0] ?? 0;
     const maxRange = desiredRange[1] ?? Math.max(minRange + 200, 900);
     const withinSweetSpot = distanceToShip >= minRange && distanceToShip <= maxRange;
-    const planetMuchCloser = distanceToPlanet + 150 < distanceToShip;
+    const planetClearlyCloser = planetInfo.surfaceDistance + PLANET_REDIRECT_MARGIN < distanceToShip;
 
-    if (!hasShipPriority || (planetMuchCloser && !withinSweetSpot)) {
-      const planetTarget = this.findPlanetTarget(context);
-      if (planetTarget) {
-        context.target = planetTarget;
-        context.state = LesserBeingState.SEEKING_PLANET;
-        return true;
-      }
+    if (planetClearlyCloser && (!withinSweetSpot || distanceToShip > maxRange)) {
+      context.target = this.assignPlanetTarget(context, planetInfo);
+      context.state = LesserBeingState.SEEKING_PLANET;
+      return true;
     }
     return false;
   }
@@ -610,22 +618,17 @@ export class LesserBeingController {
     distanceToShip: number,
     hasShipPriority: boolean
   ): boolean {
-    const candidatePlanet = this.pickAvailablePlanet(context);
-    if (!candidatePlanet) {
+    const planetInfo = this.findNearestAvailablePlanetInfo(context);
+    if (!planetInfo || hasShipPriority) {
       return false;
     }
-    const distanceToPlanet = this.distanceTo(context.being, candidatePlanet.position);
-    const planetClearlyCloser = distanceToPlanet + 40 < distanceToShip;
-
-    if (!hasShipPriority || planetClearlyCloser) {
-      const planetTarget = this.findPlanetTarget(context);
-      if (planetTarget) {
-        context.target = planetTarget;
-        context.state = LesserBeingState.SEEKING_PLANET;
-        return true;
-      }
+    const planetClearlyCloser = planetInfo.surfaceDistance + PLANET_REDIRECT_MARGIN < distanceToShip;
+    if (!planetClearlyCloser) {
+      return false;
     }
-    return false;
+    context.target = this.assignPlanetTarget(context, planetInfo);
+    context.state = LesserBeingState.SEEKING_PLANET;
+    return true;
   }
 
   private getShipOrbitDirection(
