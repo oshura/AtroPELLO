@@ -221,6 +221,7 @@ Opcionalmente se incluyen `shipStats` y otras derivadas ya resueltas por `GameEn
 - [ ] `Spaceship.cargoCapacityCurrent = 0`.
 - [ ] `setCargoManifest([])`.
 - [ ] `inventoryPanel.setEnabled(false)` para evitar texturas obsoletas.
+- [ ] `resetPanelInteractionState()` (GameEngine) cierra mapa/grimorio/inventario, limpia overlays/cursor y llama a `panelEventCoordinator.setInputsBlocked(false)` antes de reanudar el loop.
 
 ### Expulsión manual
 - [ ] Seleccionar fila o slot en el panel.

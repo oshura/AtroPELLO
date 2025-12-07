@@ -85,6 +85,8 @@ interface GameStartContext {
 6. `GameEngine.restartWithContext(context)` detiene animaciones, llama a `applyPlayerResetState()`, sincroniza vitals y reanuda el loop con `startLoopAfterRestart()`.
 7. HUD muestra mensajes (`Respawn: <label>`, `Cordura estabilizada...`) y sensores quedan limpios.
 
+> **Actualización ene-2026:** antes de aplicar el contexto, `resetLoopStateForRestart()` llama a `resetPanelInteractionState()`. Ese helper cierra mapa, grimorio e inventario, restablece los flags de `PanelEventCoordinator` (incluido `setInputsBlocked(false)`), limpia el cursor overlay y reexpone el cursor del canvas. Con ello ningún respawn deja los listeners de mouse bloqueados por animaciones anteriores.
+
 Cada captura realizada por `GameEngine.persistActiveSystemState()` no solo refresca el label en `<code>PortalPersistenceService</code>`, sino que, únicamente cuando existe un Sigillum activo, clona ese snapshot dentro de `respawn-anchor-latest` y llama a `GameStateStore.syncAnchorSnapshotMeta()`. Así, el Sigillum activo siempre apunta al último estado del sistema (portales creados por Gate Rite, debris posteriores a la muerte, lesser beings reubicados) sin necesidad de grabar un sello nuevo tras cada cambio.
 
 ### 4.4 Respawn sin Sigillum

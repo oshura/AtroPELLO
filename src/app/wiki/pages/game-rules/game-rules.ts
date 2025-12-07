@@ -178,6 +178,11 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             cualquier planeta destruido, sello de portal o rastro de lesser beings se conserva para el siguiente retorno.
           </p>
           <p>
+            Antes de reanudar el loop tras un respawn, <code>resetPanelInteractionState()</code> limpia mapa, grimorio e inventario,
+            desbloquea el <em>PanelEventCoordinator</em> y restaura el cursor del canvas. Así ningún Sigillum deja el mouse
+            congelado tras una muerte: puedes volver a abrir paneles o atacar inmediatamente sin reiniciar el juego.
+          </p>
+          <p>
             Desde la build actual, cada muerte dispara el mismo ritual: antes de reconstruir el contexto de respawn,
             <code>GameEngine.persistActiveSystemState('respawn-transition')</code> captura el sistema activo, guarda los lesser
             beings en memoria y sobrescribe su etiqueta. Así, incluso si reapareces en el mismo sistema, verás exactamente el

@@ -4481,9 +4481,54 @@ export class GameEngine {
     this.landedShipAttachment = null;
     this.landingStatus = { ready: false, context: null };
     this.landingThreat = { active: false, reasons: [] };
-    this.panelInputsLocked = false;
     this.landingDamageSuppressed = false;
     this.voidJumpActive = false;
+    this.resetPanelInteractionState('restart-loop');
+  }
+
+  private resetPanelInteractionState(origin: string = 'reset-panel-state'): void {
+    const now = typeof performance !== 'undefined' && typeof performance.now === 'function'
+      ? performance.now()
+      : Date.now();
+
+    try {
+      if (this.systemPanel) {
+        try { this.systemPanel.setEnabled(false); } catch {}
+        try { this.systemPanel.setHoveredId?.(null); } catch {}
+      }
+      this.panelEventCoordinator?.setMapEnabled(false);
+      try { this.updateMapClickBinding(); } catch {}
+      this.gameState.mapReopenAllowedAtMs = now;
+    } catch {}
+
+    try {
+      if (this.grimoirePanel) {
+        this.grimoirePanel.setEnabled(false);
+        this.gameState.grimoireReopenAllowedAtMs = now;
+      }
+      this.panelEventCoordinator?.setGrimoireEnabled(false);
+      try { this.updateGrimoirePointerBinding(); } catch {}
+    } catch {}
+
+    try {
+      if (this.inventoryPanel) {
+        this.inventoryPanel.setEnabled(false);
+        this.inventoryPanel.resetScroll();
+      }
+      this.clearInventorySelection();
+      this.inventoryHoverKey = null;
+      this.panelEventCoordinator?.setInventoryEnabled(false);
+      try { this.updateInventoryPointerBinding(); } catch {}
+      this.gameState.inventoryReopenAllowedAtMs = now;
+    } catch {}
+
+    this.clearPanelCursorOverlay();
+    this.syncPanelCursorOverlay();
+    this.updateCanvasCursor();
+    this.panelInputsLocked = false;
+    try { this.panelEventCoordinator?.setInputsBlocked(false); } catch {}
+
+    this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'Panel interaction state reset', { origin });
   }
 
   private vectorLength(vec?: Vector3 | null): number {
@@ -4506,6 +4551,7 @@ export class GameEngine {
     
     // Reset death flag
     this.deathInProgress = false;
+    this.resetPanelInteractionState('full-respawn');
 
     try {
       this.gameState.clearRespawnAnchor('full-respawn');
@@ -4757,6 +4803,7 @@ export class GameEngine {
     
     // Reset death flag
     this.deathInProgress = false;
+    this.resetPanelInteractionState('load-save-after-death');
     
     if (!this.spaceship) {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Cannot load save: spaceship not available');
@@ -4858,6 +4905,7 @@ export class GameEngine {
 
   private oldRespawnGame(): void {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn initiated - regenerating solar system');
+    this.resetPanelInteractionState('legacy-respawn');
     
     // Stop game loop temporarily
     const wasRunning = this.isRunning;
