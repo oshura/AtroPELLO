@@ -1,0 +1,75 @@
+<section class="cloud-panel">
+  <header>
+    <p class="cloud-panel__eyebrow">{{ copy.eyebrow }}</p>
+    <h1>{{ copy.title }}</h1>
+    <p class="cloud-panel__subtitle">
+      {{ saves.hasSession() ? copy.subtitleAuth : copy.subtitleAnon }}
+    </p>
+    <p *ngIf="saves.hasSession() && username" class="cloud-panel__user">
+      {{ copy.loggedAsLabel }} <strong>{{ username }}</strong>
+    </p>
+  </header>
+
+  <div *ngIf="!saves.hasSession()" class="cloud-panel__empty">
+    <p>{{ copy.requirements }}</p>
+  </div>
+
+  <div *ngIf="saves.hasSession()" class="cloud-panel__actions">
+    <button type="button" (click)="sync()" [disabled]="saves.loading()">
+      {{ copy.actionSync }}
+    </button>
+    <button type="button" (click)="loadLatest()" [disabled]="saves.loading()">
+      {{ copy.actionLoadLatest }}
+    </button>
+    <button type="button" class="cloud-panel__action--primary" (click)="saveDemo()" [disabled]="saves.loading()">
+      {{ copy.actionSaveStub }}
+    </button>
+    <button type="button" disabled>
+      {{ copy.actionManage }}
+    </button>
+  </div>
+
+  <div *ngIf="lastLoadedSlot" class="cloud-panel__feedback">
+    <span>{{ copy.loadedFeedback }} #{{ lastLoadedSlot.index }}</span>
+    <code>{{ lastLoadedSlot | json }}</code>
+  </div>
+
+  <ng-container *ngIf="saves.hasSession()">
+    <div *ngIf="saves.slots().length; else emptySlots" class="cloud-panel__list">
+      <div class="cloud-panel__list-head">
+        <span>{{ copy.listHeaderSlot }}</span>
+        <span>{{ copy.listHeaderSavedAt }}</span>
+        <span>{{ copy.listHeaderActions }}</span>
+      </div>
+
+      <div
+        *ngFor="let slot of saves.slots(); trackBy: trackSlot"
+        class="cloud-panel__row"
+        [class.cloud-panel__row--active]="slot.index === lastLoadedIndex"
+      >
+        <div class="cloud-panel__slot-label">
+          <span>#{{ slot.index }}</span>
+          <small>{{ slot.key }}</small>
+        </div>
+        <time>{{ slot.savedAt | date: 'medium' }}</time>
+        <div class="cloud-panel__row-actions">
+          <button type="button" (click)="loadSlot(slot.index)" [disabled]="saves.loading()">
+            {{ copy.actionLoadSlot }}
+          </button>
+          <button type="button" class="cloud-panel__action--danger" (click)="deleteSlot(slot.index)" [disabled]="saves.loading()">
+            {{ copy.actionDelete }}
+          </button>
+        </div>
+      </div>
+    </div>
+    <ng-template #emptySlots>
+      <p class="cloud-panel__list-empty">
+        {{ copy.listEmpty }}
+      </p>
+    </ng-template>
+  </ng-container>
+
+  <p class="cloud-panel__note">
+    {{ saves.error() || copy.note }}
+  </p>
+</section>

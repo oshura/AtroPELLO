@@ -85,3 +85,13 @@ Efectos de slots auxiliares:
 
 aws s3 sync . s3://inverter-ia --acl public-read --delete --exclude "node_modules/*" --exclude ".git/*" --exclude "*.md"      
 aws cloudfront create-invalidation --distribution-id E8G73EYE943D2 --paths "/*"
+
+aws s3 sync . s3://to3-pre-alpha --acl public-read --delete --exclude "node_modules/*" --exclude ".git/*" --exclude "*.md"  
+aws cloudfront create-invalidation --distribution-id E2ZSJEHDE5STC --paths "/*"
+
+aws s3 sync . s3://atropello-games-landing --acl public-read --delete --exclude "node_modules/*" --exclude ".git/*" --exclude "*.md"  
+aws cloudfront create-invalidation --distribution-id E3A8FKCLUO30EI --paths "/*"
+
+pip install -r requirements.txt -t build/
+cp .\cloud_saves_handler\handler.py build/
+cd build && zip -r ../cloud-saves.zip .
