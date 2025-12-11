@@ -13,6 +13,7 @@ export interface CloudSettings {
   sessionCookieName: string;
   bridgeUrl: string;
   bridgeOrigin: string;
+  sessionCookieDomain: string;
 }
 
 declare global {
@@ -33,7 +34,8 @@ const FALLBACK_SETTINGS: CloudSettings = {
   returnAllowlist: ['https://www.atropello-games.es', 'https://www.atropello-games.es/auth/callback'],
   sessionCookieName: 'atropello-session',
   bridgeUrl: 'https://www.atropello-games.es/bridge.html',
-  bridgeOrigin: 'https://www.atropello-games.es'  
+  bridgeOrigin: 'https://www.atropello-games.es',
+  sessionCookieDomain: '.atropello-games.es'  
 };
 
 export const CLOUD_SETTINGS = new InjectionToken<CloudSettings>('CLOUD_SETTINGS', {
@@ -54,7 +56,8 @@ export function resolveCloudSettings(): CloudSettings {
     hostedUiDomain,
     authLauncherUrl,
     scopes: overrides.scopes ?? FALLBACK_SETTINGS.scopes,
-    returnAllowlist: overrides.returnAllowlist ?? FALLBACK_SETTINGS.returnAllowlist
+    returnAllowlist: overrides.returnAllowlist ?? FALLBACK_SETTINGS.returnAllowlist,
+    sessionCookieDomain: overrides.sessionCookieDomain ?? FALLBACK_SETTINGS.sessionCookieDomain
   };
 }
 

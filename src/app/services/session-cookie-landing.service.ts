@@ -37,7 +37,7 @@ export class SessionCookieLandingService {
       const serialized = JSON.stringify(payload);
       const encrypted = await this.encrypt(serialized);
       const cookieValue = btoa(String.fromCharCode(...new Uint8Array(encrypted)));
-      const domain = this.settings.hostedUiDomain ? this.normalizeDomain(this.settings.hostedUiDomain) : '.atropello-games.es';
+      const domain = this.getCookieDomain();
       const cookie = `${SessionCookieLandingService.COOKIE_NAME}=${cookieValue}; Path=/; Domain=${domain}; Secure; SameSite=None; Max-Age=${Math.floor(SessionCookieLandingService.COOKIE_TTL_MS / 1000)}`;
       document.cookie = cookie;
       this.logger.info(LogCategory.CONFIGURATION, 'Shared session cookie updated');
@@ -69,7 +69,7 @@ export class SessionCookieLandingService {
     if (typeof document === 'undefined') {
       return;
     }
-    const domain = this.settings.hostedUiDomain ? this.normalizeDomain(this.settings.hostedUiDomain) : '.atropello-games.es';
+    const domain = this.getCookieDomain();
     document.cookie = `${SessionCookieLandingService.COOKIE_NAME}=; Path=/; Domain=${domain}; Max-Age=0; Secure; SameSite=None`;
   }
 
@@ -122,6 +122,23 @@ export class SessionCookieLandingService {
   private normalizeDomain(hostedUiDomain: string): string {
     const domain = hostedUiDomain.replace(/^https?:\/\//i, '');
     return domain.startsWith('.') ? domain : `.${domain}`;
+  }
+
+  private getCookieDomain(): string {
+    const override = this.settings.sessionCookieDomain?.trim();
+    if (override) {
+      return override.startsWith('.') ? override : `.${override}`;
+    }
+    if (this.settings.hostedUiDomain) {
+      const root = this.settings.hostedUiDomain.replace(/^https?:\/\//i, '');
+      const segments = root.split('.');
+      if (segments.length >= 2) {
+        const base = segments.slice(-2).join('.');
+        return `.${base}`;
+      }
+      return this.normalizeDomain(root);
+    }
+    return '.atropello-games.es';
   }
 
   private getStorage(): Storage | null {

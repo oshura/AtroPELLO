@@ -144,7 +144,15 @@ export class SessionCookieService {
     if (typeof window === 'undefined') {
       return undefined;
     }
+    const configured = this.settings.sessionCookieDomain?.trim();
     const host = window.location.hostname;
+    if (configured) {
+      if (host === 'localhost' || host === '127.0.0.1') {
+        return undefined;
+      }
+      const normalized = configured.startsWith('.') ? configured : `.${configured}`;
+      return normalized;
+    }
     if (host.endsWith('atropello-games.es')) {
       return '.atropello-games.es';
     }

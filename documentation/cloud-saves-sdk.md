@@ -18,6 +18,8 @@ Este documento describe cómo reutilizar la carpeta `src/app/libs/cloud-saves/` 
 4. **Implementar un session bridge** que cumpla `CloudSavesSessionBridge` (`getToken()` + `onSessionChange`). Reutiliza `CloudSavesSessionBridgeService` para leer la cookie compartida y, si el dominio remoto no ejecuta Angular, embebe el iframe `/bridge.html` hospedado en `www` para obtener los tokens vía `postMessage`.
 5. **Inyectar `CloudSavesService`** en los componentes que necesiten operar slots o emplear el `SavedGamesPanelComponent` standalone si sólo deseas el panel por defecto.
 
+> Nota: `CloudSettings` incluye `sessionCookieDomain` (por defecto `.atropello-games.es`). Asegúrate de que la landing escriba la cookie `atropello-session` usando ese dominio para que `www`, TO³ y el iframe `/bridge.html` la compartan.
+
 ## Kit "from-landing"
 
 Para acelerar la integración en otros juegos, la carpeta [`src/app/libs/cloud-saves/from-landing`](../src/app/libs/cloud-saves/from-landing) contiene copias de referencia 1:1 de los artefactos usados por la landing. Están excluidos del build (`tsconfig.app.json > exclude`) y no participan en SSR; su único propósito es permitir copiar/pegar en otro repositorio manteniendo los mismos contratos.
