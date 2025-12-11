@@ -45,6 +45,17 @@
     overflow-y: auto;
     padding-right: 0.25rem; /* space for scrollbar */
   }
+  .tab-content--saves {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+
+    .embedded-cloud-panel {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+    }
+  }
   .hint {
     font-size: 0.8rem;
     opacity: 0.7;

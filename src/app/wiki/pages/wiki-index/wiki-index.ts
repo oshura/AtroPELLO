@@ -262,6 +262,13 @@ export class WikiIndexComponent implements OnInit {
       route: 'game-rules',
       description: 'How to play: landing on planets, navigation, spell casting, collision mechanics, and survival.',
       keywords: ['rules', 'landing', 'controls', 'gameplay', 'mechanics']
+    },
+    {
+      id: 'cloud-saves',
+      title: '☁️ Cloud Saves',
+      route: 'cloud-saves',
+      description: 'Login con Cognito, panel flotante y flujo para sincronizar, guardar, cargar o borrar slots QA.',
+      keywords: ['cloud', 'saves', 'cognito', 'login', 'slots', 'api']
     }
   ];
 

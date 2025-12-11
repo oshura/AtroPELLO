@@ -20,6 +20,7 @@
 | `/wiki/planets` | `pages/planets/planets.ts` | Tipos de planeta y trasfondo. | `planetas`, `habitabilidad` |
 | `/wiki/game-rules` | `pages/game-rules/game-rules.ts` | Reglas básicas, aterrizaje y supervivencia. | `controles`, `aterrizaje` |
 | (nuevo) `/wiki/inventory` | `pages/inventory/inventory.ts` | Panel de inventario, estadísticas y slots. | `inventario`, `equipo`, `cordura` |
+| `/wiki/cloud-saves` | `pages/cloud-saves/cloud-saves.ts` | Bridge Cognito + tab “Partidas” del diálogo de opciones para sincronizar guardados. | `cloud`, `saves`, `cognito` |
 
 ## Reglas para añadir páginas
 1. **Registrar la ruta** en `wiki.routes.ts` usando `loadComponent` para mantener lazy loading.

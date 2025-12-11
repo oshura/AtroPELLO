@@ -61,6 +61,12 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - `MusicDirectorService`: escenas musicales con crossfades y ducking temporal.
   - Integración: `GameEngine.enableAudio()` desbloquea audio en el primer gesto y arranca música; por frame se actualiza el oyente a partir de la cámara y el thruster se modula con el estado de la nave.
 
+- Autenticación y Cloud Saves (nuevo en TO³)
+  - `AuthService`, `AuthIntegrationService`, `AuthReturnService` y `SessionCookieService` fueron portados desde la landing. El header muestra el botón “Iniciar Sesión” real, badge con `displayName()` y opción de logout (`src/app/components/header`).
+  - `CloudSettings` centraliza dominios, IDs de Cognito y URLs de retorno; ahora incluye `authLauncherUrl` (por defecto `https://www.atropello-games.es/auth/launch`) para delegar el login en la landing.
+  - `CloudSavesSessionBridgeService` expone `getToken()`/`onSessionChange()` leyendo la cookie compartida + iframe `/bridge.html`, permitiendo firmar peticiones REST desde cualquier subdominio.
+  - El componente `app-cloud-saves-panel` ahora vive dentro del diálogo de opciones (tab “Partidas”) y solo se renderiza cuando hay sesión Cognito. Desde ahí se exponen las acciones de QA (sync, load latest, save demo, delete) sobre `CloudSavesService`. Ruta rápida en la wiki: `/wiki/cloud-saves`.
+
 ## Próximos pasos inmediatos
 
 - **FASE 6 COMPLETADA** ✅: Event handling extraído a `PanelEventCoordinator` service (ver `documentacion/FASE_6_PanelEventCoordinator.md`)

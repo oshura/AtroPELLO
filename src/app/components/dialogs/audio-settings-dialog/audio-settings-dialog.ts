@@ -5,11 +5,13 @@ import { Modal } from '../../modal/modal';
 import { AudioEngineService } from '../../../services/audio/audio-engine.service';
 import { MusicDirectorService } from '../../../services/audio/music-director.service';
 import { KeyBindingsService } from '../../../services/key-bindings.service';
+import { AuthService } from '../../../services/auth.service';
+import { CloudSavesPanelComponent } from '../../../libs/cloud-saves/cloud-saves-panel.component';
 
 @Component({
   selector: 'app-audio-settings-dialog',
   standalone: true,
-  imports: [CommonModule, Modal, FormsModule],
+  imports: [CommonModule, Modal, FormsModule, CloudSavesPanelComponent],
   templateUrl: './audio-settings-dialog.html',
   styleUrls: ['./audio-settings-dialog.scss']
 })
@@ -23,7 +25,7 @@ export class AudioSettingsDialogComponent implements OnChanges {
   thruster = 50;
   ambience = 50;
   master = 100;
-  activeTab: 'audio' | 'controls' = 'audio';
+  activeTab: 'audio' | 'controls' | 'saves' = 'audio';
   bindings: Array<{ action: string; key: string }> = [];
   bindingColumns: Array<{ base: number; items: Array<{ action: string; key: string }> }> = [];
   rebindingAction: string | null = null; // which action is being rebound
@@ -31,7 +33,12 @@ export class AudioSettingsDialogComponent implements OnChanges {
   private pausedMusic = false;
   private pausedAmbience = false;
 
-  constructor(private audio: AudioEngineService, private keyBindings: KeyBindingsService, private musicDirector: MusicDirectorService) {}
+  constructor(
+    private audio: AudioEngineService,
+    private keyBindings: KeyBindingsService,
+    private musicDirector: MusicDirectorService,
+    protected auth: AuthService
+  ) {}
 
   ngOnInit() {
     // Initialize from engine mix if present
@@ -54,6 +61,9 @@ export class AudioSettingsDialogComponent implements OnChanges {
     if (changes['isVisible']) {
       const now = changes['isVisible'].currentValue as boolean;
       if (now) {
+        if (this.activeTab === 'saves' && !this.auth.authenticated()) {
+          this.activeTab = 'audio';
+        }
         // Dialog opened: pause ambient loop and music to allow accurate previews
   try { this.musicDirector.stop(300); this.pausedMusic = true; } catch {}
         try { this.audio.stopAmbientLoop(200); this.pausedAmbience = true; } catch {}
@@ -200,6 +210,13 @@ export class AudioSettingsDialogComponent implements OnChanges {
       this.bindings = this.keyBindings.getAll();
       this.rebuildBindingColumns();
     }
+  }
+
+  protected selectTab(tab: 'audio' | 'controls' | 'saves') {
+    if (tab === 'saves' && !this.auth.authenticated()) {
+      return;
+    }
+    this.activeTab = tab;
   }
 
   private rebuildBindingColumns() {

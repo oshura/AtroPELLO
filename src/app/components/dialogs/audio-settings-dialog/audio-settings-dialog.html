@@ -7,8 +7,9 @@
 
   <div class="audio-settings">
     <div class="tabs">
-      <button class="tab" [class.active]="activeTab==='audio'" (click)="activeTab='audio'">Audio</button>
-      <button class="tab" [class.active]="activeTab==='controls'" (click)="activeTab='controls'">Controles</button>
+      <button class="tab" [class.active]="activeTab==='audio'" (click)="selectTab('audio')">Audio</button>
+      <button class="tab" [class.active]="activeTab==='controls'" (click)="selectTab('controls')">Controles</button>
+      <button *ngIf="auth.authenticated()" class="tab" [class.active]="activeTab==='saves'" (click)="selectTab('saves')">Partidas</button>
     </div>
 
     <div class="tab-content" *ngIf="activeTab==='audio'">
@@ -84,6 +85,11 @@
       </div>
       <p class="rebinding-hint" *ngIf="rebindingAction!==null">Presiona una tecla… (Esc para cancelar)</p>
       <!-- <p class="hint-sub">Conflictos se resuelven automáticamente limpiando la acción anterior.</p> -->
+    </div>
+
+    <div class="tab-content tab-content--saves" *ngIf="activeTab==='saves' && auth.authenticated()">
+      <p class="hint">Sincroniza, carga o borra slots en la nube. Estas acciones requieren tu sesión actual.</p>
+      <app-cloud-saves-panel class="embedded-cloud-panel" [username]="auth.displayName()"></app-cloud-saves-panel>
     </div>
   </div>
 

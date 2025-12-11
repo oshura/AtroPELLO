@@ -66,7 +66,15 @@
           <img src="assets/Wiki.png" alt="Abrir wiki" class="wiki-icon" loading="lazy" />
         </a>
         <button class="nav-button" (click)="onOptionsClick()">Opciones</button>
-        <button class="nav-button primary">Iniciar Sesión</button>
+        <ng-container *ngIf="auth.authenticated(); else loginButton">
+          <span class="user-badge">
+            {{ auth.displayName() || 'Sesión iniciada' }}
+          </span>
+          <button class="nav-button" type="button" (click)="onLogoutClick()">Cerrar sesión</button>
+        </ng-container>
+        <ng-template #loginButton>
+          <button class="nav-button primary" type="button" (click)="onLoginClick()">Iniciar Sesión</button>
+        </ng-template>
       </nav>
     </div>
   </div>

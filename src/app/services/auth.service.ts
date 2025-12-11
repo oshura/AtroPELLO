@@ -1,89 +1,95 @@
-import { Injectable } from '@angular/core';
-
-export interface AuthSession {
-  token: string;
-  username: string;
-  loginTime: number;
-}
+import { computed, Injectable, signal } from '@angular/core';
+import { AuthIntegrationService } from './auth-integration.service';
+import { AuthReturnService, AuthCallbackPayload } from './auth-return.service';
+import { PersistedAuthSession, SessionCookieService } from './session-cookie.service';
+import { UserIdentity } from '../types/identity';
 
 @Injectable({ providedIn: 'root' })
 export class AuthService {
-  private static readonly SESSION_KEY = 'game.auth.session';
-  private session: AuthSession | null = null;
+  private readonly tokenState = signal<string | null>(null);
+  private readonly identityState = signal<UserIdentity | null>(null);
 
-  constructor() {
-    this.loadSession();
+  readonly token = this.tokenState.asReadonly();
+  readonly identity = this.identityState.asReadonly();
+  readonly authenticated = computed(() => !!this.tokenState());
+  readonly displayName = computed(() => {
+    const identity = this.identityState();
+    if (!identity) {
+      return null;
+    }
+    return identity.displayName
+      ?? identity.nickname
+      ?? identity.preferredUsername
+      ?? null;
+  });
+
+  constructor(
+    private readonly integration: AuthIntegrationService,
+    private readonly returnService: AuthReturnService,
+    private readonly sessionCookie: SessionCookieService
+  ) {
+    this.bootstrap();
   }
 
-  /**
-   * Verifica si el usuario está autenticado
-   */
-  public isAuthenticated(): boolean {
-    return this.session !== null && !!this.session.token;
+  loginWithRedirect(returnTo?: string): void {
+    this.integration.loginWithRedirect(returnTo ?? this.currentUrl());
   }
 
-  /**
-   * Obtiene la sesión actual
-   */
-  public getSession(): AuthSession | null {
-    return this.session ? { ...this.session } : null;
+  logoutWithRedirect(returnTo?: string): void {
+    this.sessionCookie.clear();
+    this.tokenState.set(null);
+    this.identityState.set(null);
+    this.integration.logoutWithRedirect(returnTo ?? this.currentUrl());
   }
 
-  /**
-   * Obtiene el username del usuario autenticado
-   */
-  public getUsername(): string | null {
-    return this.session?.username || null;
+  getTokenSnapshot(): string | null {
+    return this.tokenState();
   }
 
-  /**
-   * Establece una nueva sesión después de login exitoso
-   */
-  public setSession(token: string, username: string): void {
-    this.session = {
-      token,
-      username,
-      loginTime: Date.now()
+  getIdentitySnapshot(): UserIdentity | null {
+    return this.identityState();
+  }
+
+  isAuthenticated(): boolean {
+    return this.authenticated();
+  }
+
+  private bootstrap(): void {
+    const callback = this.returnService.consumeCallback();
+    if (callback) {
+      this.applySession(callback);
+      if (callback.redirectTo && callback.redirectTo !== this.currentUrl()) {
+        window.location.replace(callback.redirectTo);
+      }
+      return;
+    }
+    const persisted = this.sessionCookie.read();
+    if (persisted && persisted.expiresAt > Date.now()) {
+      this.hydrate(persisted);
+    } else {
+      this.sessionCookie.clear();
+    }
+  }
+
+  private applySession(payload: AuthCallbackPayload): void {
+    const session: PersistedAuthSession = {
+      token: payload.token,
+      identity: payload.identity,
+      expiresAt: payload.expiresAt
     };
-    this.saveSession();
+    this.hydrate(session);
+    this.sessionCookie.write(session);
   }
 
-  /**
-   * Cierra la sesión actual
-   */
-  public logout(): void {
-    this.session = null;
-    sessionStorage.removeItem(AuthService.SESSION_KEY);
+  private hydrate(session: PersistedAuthSession): void {
+    this.tokenState.set(session.token);
+    this.identityState.set(session.identity);
   }
 
-  /**
-   * Carga la sesión desde sessionStorage
-   */
-  private loadSession(): void {
-    try {
-      const raw = sessionStorage.getItem(AuthService.SESSION_KEY);
-      if (raw) {
-        const parsed = JSON.parse(raw);
-        if (parsed.token && parsed.username) {
-          this.session = parsed;
-        }
-      }
-    } catch {
-      // Ignorar errores de parseo
-      this.session = null;
+  private currentUrl(): string {
+    if (typeof window === 'undefined') {
+      return '';
     }
-  }
-
-  /**
-   * Guarda la sesión en sessionStorage
-   */
-  private saveSession(): void {
-    try {
-      if (this.session) {
-        sessionStorage.setItem(AuthService.SESSION_KEY, JSON.stringify(this.session));
-      }
-    } catch {
-      // Ignorar errores de storage
-    }
+    return window.location.href;
   }
 }

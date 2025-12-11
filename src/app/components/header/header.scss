@@ -83,6 +83,11 @@
   pointer-events: none; // purely decorative
 }
 
+.header-right {
+  display: flex;
+  align-items: center;
+}
+
 .pearl-title {
   max-width: 100%;
   height: auto;
@@ -112,5 +117,16 @@
       background: linear-gradient(90deg, #5a6fd8 0%, #694a8f 100%);
     }
   }
+}
+
+.user-badge {
+  padding: 6px 14px;
+  border-radius: 999px;
+  background: rgba(15, 26, 44, 0.75);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #9be5c1;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 
