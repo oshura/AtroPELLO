@@ -54,6 +54,17 @@ export class AuthService {
     return this.authenticated();
   }
 
+  syncExternalSession(session: PersistedAuthSession | null): void {
+    if (!session || session.expiresAt <= Date.now()) {
+      this.sessionCookie.clear();
+      this.tokenState.set(null);
+      this.identityState.set(null);
+      return;
+    }
+    this.hydrate(session);
+    this.sessionCookie.write(session);
+  }
+
   private bootstrap(): void {
     const callback = this.returnService.consumeCallback();
     if (callback) {

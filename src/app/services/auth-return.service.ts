@@ -32,7 +32,7 @@ export class AuthReturnService {
     return {
       token,
       expiresAt: Date.now() + Math.max(0, expiresIn) * 1000,
-      identity: this.decodeIdentity(token),
+      identity: decodeIdentityFromToken(token),
       redirectTo
     };
   }
@@ -46,30 +46,6 @@ export class AuthReturnService {
     window.history.replaceState({}, title, `${pathname}${search}`);
   }
 
-  private decodeIdentity(idToken: string): UserIdentity {
-    try {
-      const payload = idToken.split('.')[1] ?? '';
-      const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
-      const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
-      const decoded = JSON.parse(atob(padded));
-      return {
-        userId: decoded['sub'] ?? 'unknown',
-        displayName: decoded['name'] ?? decoded['preferred_username'] ?? decoded['nickname'] ?? null,
-        nickname: decoded['nickname'] ?? null,
-        preferredUsername: decoded['preferred_username'] ?? null,
-        email: decoded['email'] ?? null
-      };
-    } catch {
-      return {
-        userId: 'unknown',
-        displayName: null,
-        nickname: null,
-        preferredUsername: null,
-        email: null
-      };
-    }
-  }
-
   private sanitizeReturn(candidate: string | null): string | null {
     if (!candidate) {
       return null;
@@ -79,5 +55,29 @@ export class AuthReturnService {
     }
     const allowed = this.settings.returnAllowlist.find(origin => candidate.startsWith(origin));
     return allowed ? candidate : null;
+  }
+}
+
+export function decodeIdentityFromToken(idToken: string): UserIdentity {
+  try {
+    const payload = idToken.split('.')[1] ?? '';
+    const normalized = payload.replace(/-/g, '+').replace(/_/g, '/');
+    const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, '=');
+    const decoded = JSON.parse(atob(padded));
+    return {
+      userId: decoded['sub'] ?? 'unknown',
+      displayName: decoded['name'] ?? decoded['preferred_username'] ?? decoded['nickname'] ?? null,
+      nickname: decoded['nickname'] ?? null,
+      preferredUsername: decoded['preferred_username'] ?? null,
+      email: decoded['email'] ?? null
+    };
+  } catch {
+    return {
+      userId: 'unknown',
+      displayName: null,
+      nickname: null,
+      preferredUsername: null,
+      email: null
+    };
   }
 }

@@ -327,11 +327,11 @@ export class CloudSavesWikiComponent implements OnInit {
       ]
     },
     {
-      title: 'CloudSavesSessionBridgeService',
-      summary: 'Traduce la cookie compartida a un token utilizable dentro de TO³.',
+      title: 'SessionBridgeService + CloudSavesSessionBridgeService',
+      summary: 'Tramo que sincroniza la sesión desde la landing hacia las señales internas.',
       links: [
-        'Escucha eventos del iframe `/bridge.html` y expone `getToken()` / `onSessionChange()`.',
-        'Responde con identidad básica (`displayName`, `nickname`, `email`) para depurar quién firmó la petición.'
+        'El nuevo `SessionBridgeService` monta un iframe oculto, envía `session:ping/session:get` y filtra `postMessage` por `bridgeOrigin` antes de llamar a `AuthService.syncExternalSession()`.',
+        '`CloudSavesSessionBridgeService` simplemente refleja `auth.token()`/`auth.identity()` hacia el SDK (`getToken()`, `onSessionChange()`, `getIdentity()`), así que el panel siempre firma las peticiones con los datos del bridge.'
       ]
     },
     {

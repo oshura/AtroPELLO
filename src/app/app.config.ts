@@ -9,6 +9,7 @@ import { CloudSavesService } from './libs/cloud-saves/cloud-saves.service';
 import { CLOUD_SAVES_GAME_CONTEXT, CLOUD_SAVES_SESSION_BRIDGE, CLOUD_SAVES_SETTINGS } from './libs/cloud-saves/cloud-saves.tokens';
 import { CloudSavesSessionBridgeService } from './libs/cloud-saves/cloud-saves-session-bridge.service';
 import { CloudSettings, CLOUD_SETTINGS, resolveCloudSettings } from './settings/cloud-settings';
+import { SessionBridgeService } from './services/session-bridge.service';
 
 function initAudioManifest(manifest: AudioManifestService) {
   return () => manifest.init();
@@ -39,6 +40,7 @@ export const appConfig: ApplicationConfig = {
     { provide: APP_INITIALIZER, useFactory: initAudioManifest, deps: [AudioManifestService], multi: true },
     CloudSavesService,
     CloudSavesSessionBridgeService,
+    SessionBridgeService,
     { provide: CLOUD_SETTINGS, useValue: cloudSettings },
     {
       provide: CLOUD_SAVES_SETTINGS,

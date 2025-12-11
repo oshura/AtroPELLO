@@ -64,7 +64,8 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 - Autenticación y Cloud Saves (nuevo en TO³)
   - `AuthService`, `AuthIntegrationService`, `AuthReturnService` y `SessionCookieService` fueron portados desde la landing. El header muestra el botón “Iniciar Sesión” real, badge con `displayName()` y opción de logout (`src/app/components/header`).
   - `CloudSettings` centraliza dominios, IDs de Cognito y URLs de retorno; ahora incluye `authLauncherUrl` (por defecto `https://www.atropello-games.es/auth/launch`) para delegar el login en la landing.
-  - `CloudSavesSessionBridgeService` expone `getToken()`/`onSessionChange()` leyendo la cookie compartida + iframe `/bridge.html`, permitiendo firmar peticiones REST desde cualquier subdominio.
+  - `SessionBridgeService` monta un iframe oculto a `https://www.atropello-games.es/bridge.html`, envía `session:ping/session:get`, valida el `postMessage` por `bridgeOrigin` y utiliza `AuthService.syncExternalSession()` para rehidratar el token cuando la landing devuelve el control. Refresca la sesión al recuperar el foco/visibilidad.
+  - `CloudSavesSessionBridgeService` ya no toca cookies directamente: escucha las señales de `AuthService` (alimentadas por el bridge) y expone `getToken()`/`onSessionChange()` para el SDK, permitiendo firmar peticiones REST desde cualquier subdominio.
   - El componente `app-cloud-saves-panel` ahora vive dentro del diálogo de opciones (tab “Partidas”) y solo se renderiza cuando hay sesión Cognito. Desde ahí se exponen las acciones de QA (sync, load latest, save demo, delete) sobre `CloudSavesService`. Ruta rápida en la wiki: `/wiki/cloud-saves`.
 
 ## Próximos pasos inmediatos

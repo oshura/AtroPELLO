@@ -18,6 +18,48 @@ Este documento describe cómo reutilizar la carpeta `src/app/libs/cloud-saves/` 
 4. **Implementar un session bridge** que cumpla `CloudSavesSessionBridge` (`getToken()` + `onSessionChange`). Reutiliza `CloudSavesSessionBridgeService` para leer la cookie compartida y, si el dominio remoto no ejecuta Angular, embebe el iframe `/bridge.html` hospedado en `www` para obtener los tokens vía `postMessage`.
 5. **Inyectar `CloudSavesService`** en los componentes que necesiten operar slots o emplear el `SavedGamesPanelComponent` standalone si sólo deseas el panel por defecto.
 
+## Kit "from-landing"
+
+Para acelerar la integración en otros juegos, la carpeta [`src/app/libs/cloud-saves/from-landing`](../src/app/libs/cloud-saves/from-landing) contiene copias de referencia 1:1 de los artefactos usados por la landing. Están excluidos del build (`tsconfig.app.json > exclude`) y no participan en SSR; su único propósito es permitir copiar/pegar en otro repositorio manteniendo los mismos contratos.
+
+### session-bridge-worker.component.ts (referencia)
+
+- Replica el `SessionBridgeWorkerComponent` que responde a los mensajes `session:get`, `session:clear` y `session:ping` utilizados por el iframe `/bridge.html`.
+- Incluye `addEventListener('message', ...)`, delega en `SessionCookieService` y emite `postMessage` con `session:data`.
+- Ajusta el namespace del servicio/cookies según el dominio de tu juego si cambias el `hostedUiDomain`.
+
+### session-cookie.service.ts (referencia)
+
+- Servicio standalone con `@Injectable({ providedIn: 'root' })` que serializa el ID Token + perfil en la cookie `atropello-session` usando `AES-GCM` + `localStorage` para cachear la llave.
+- Expone `writeTokens`, `readTokens` y `clearCookie` para que cualquier SPA comparta la sesión Cognito entre subdominios.
+- Asegúrate de conservar `SameSite=None; Secure` cuando copies el archivo para no perder compatibilidad cross-site.
+
+### cloud-settings.ts (referencia)
+
+El archivo copia exactamente los valores productivos empleados por la landing. Usa la tabla como checklist antes de publicarlo en otro dominio:
+
+| Campo | Valor referencia |
+| --- | --- |
+| `region` | `us-east-1` |
+| `userPoolId` | `us-east-1_LUb5DU8t5` |
+| `userPoolWebClientId` | `6rokvnv3eveofdjb1vlmsrqhkp` |
+| `identityPoolId` | _vacío_ (no requerido por TO³) |
+| `hostedUiDomain` | `auth.atropello-games.es` |
+| `loginRedirectUri` | `https://www.atropello-games.es/auth/callback` |
+| `logoutRedirectUri` | `https://www.atropello-games.es/` |
+| `savesApiBaseUrl` | `https://api.atropello-games.es/cloud-saves` |
+| `returnAllowlist` | `["https://www.atropello-games.es", "https://to3.atropello-games.es"]` |
+| `enableSavedGamesCta` | `true` |
+| `hostedUiScopes` | `["openid", "email", "profile"]` |
+
+### Cómo usar el kit en otro juego
+
+1. Copia los tres archivos de `from-landing` hacia la carpeta equivalente de tu proyecto (respeta la ruta para evitar problemas de resolución).
+2. Registra `SessionCookieService` y `SessionBridgeWorkerComponent` en tu árbol DI exactamente igual que en la landing; de esta forma, cualquier iframe/worker podrá propagar la sesión.
+3. Ajusta los valores de `cloud-settings.ts` sólo si tu juego vive en un dominio distinto; en tal caso agrega ese dominio a `returnAllowlist` y recalcula los `redirectUri`.
+4. Importa el worker en la aplicación host vía `bootstrapApplication` o la configuración de `main.server.ts` cuando necesites exponer `/bridge.html`.
+5. Verifica la cookie `atropello-session` desde el juego objetivo y usa `CloudSavesSessionBridgeService` (ya documentado en la sección anterior) para reenviar los tokens al SDK.
+
 ### Checklist para exponer el botón "Login" en TO³
 
 1. **Reutiliza los servicios de autenticación** de la landing (`AuthService`, `AuthIntegrationService`, `AuthReturnService`, `SessionCookieService`). Si el proyecto TO³ es otra SPA Angular, importa la carpeta `src/app/services/auth*` junto con `settings/cloud-settings.ts`.
