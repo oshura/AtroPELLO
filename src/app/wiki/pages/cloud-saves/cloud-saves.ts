@@ -331,6 +331,7 @@ export class CloudSavesWikiComponent implements OnInit {
       summary: 'Tramo que sincroniza la sesión desde la landing hacia las señales internas.',
       links: [
         'El nuevo `SessionBridgeService` monta un iframe oculto, envía `session:ping/session:get` y filtra `postMessage` por `bridgeOrigin` antes de llamar a `AuthService.syncExternalSession()`.',
+        'Se inicializa vía `APP_INITIALIZER` para instanciar el servicio al arrancar TO³ y garantizar que el iframe del bridge se monte incluso si ningún componente lo inyecta directamente.',
         '`CloudSavesSessionBridgeService` simplemente refleja `auth.token()`/`auth.identity()` hacia el SDK (`getToken()`, `onSessionChange()`, `getIdentity()`), así que el panel siempre firma las peticiones con los datos del bridge.'
       ]
     },

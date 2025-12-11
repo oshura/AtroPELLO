@@ -15,6 +15,10 @@ function initAudioManifest(manifest: AudioManifestService) {
   return () => manifest.init();
 }
 
+function initSessionBridge(bridge: SessionBridgeService) {
+  return () => void bridge;
+}
+
 const baseCloudSettings = resolveCloudSettings();
 const env = typeof import.meta !== 'undefined' && import.meta ? import.meta.env ?? {} : {};
 
@@ -38,6 +42,7 @@ export const appConfig: ApplicationConfig = {
     provideClientHydration(withEventReplay()),
     provideHttpClient(),
     { provide: APP_INITIALIZER, useFactory: initAudioManifest, deps: [AudioManifestService], multi: true },
+    { provide: APP_INITIALIZER, useFactory: initSessionBridge, deps: [SessionBridgeService], multi: true },
     CloudSavesService,
     CloudSavesSessionBridgeService,
     SessionBridgeService,
