@@ -19,9 +19,14 @@
 ## Fases
 
 ### Fase 1 · Contrato y configuración
-- [ ] Validar con la landing el endpoint (`/auth/refresh` o equivalente), métodos permitidos, cabeceras de autorización y códigos de estado (200 = cookie renovada, 204 = no-op, 401 = sesión inválida, etc.).
+- [ ] Incorporar el contrato confirmado con la landing:
+  - Ruta: `GET /auth/refresh` (con `OPTIONS /auth/refresh` para preflight). Futuro `POST` opcional.
+  - CORS headers: `Access-Control-Allow-Origin` con allowlist (`https://to3.atropello-games.es`, `https://www.atropello-games.es` para QA), `Access-Control-Allow-Credentials: true`, `Access-Control-Allow-Headers: Content-Type, X-CSRF-Token`, `Access-Control-Allow-Methods: GET, OPTIONS`.
+  - CSRF: validar `Origin` contra la allowlist y loggear `X-CSRF-Token` (rechazar vacío si así se define).
+  - Respuestas: `200 { status: 'refreshed', expiresAt }`, `204 No Content`, `401/440` sin sesión, `429` con `Retry-After`.
+  - Logging/Métricas: registrar `origin`, estado devuelto y errores (`LogCategory.SECURITY/CONFIGURATION`) y dejar hooks para contadores.
 - [ ] Definir variables de entorno/CloudSettings: `sessionRefreshUrl`, intervalo por defecto (p.ej. 10 min) y timeout máximo.
-- [ ] Documentar requisitos de CORS (Allow-Origin `https://to3.atropello-games.es`, `credentials: include`, anti-CSRF header). Guardar el acuerdo en `/documentation/landing-requests/`.
+- [ ] Documentar los requisitos de CORS/CSRF y el contrato HTTP completo en `/documentation/landing-requests/`.
 
 ### Fase 2 · Implementación en TO³
 - [ ] Crear `SessionRefreshService` (standalone, providedIn root) que:
