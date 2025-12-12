@@ -30,12 +30,12 @@ interface TechnicalBlock {
       <header class="page-hero">
         <a routerLink="/wiki" class="back-link">← Back to Wiki</a>
         <p class="eyebrow">Infraestructura compartida</p>
-        <h1>☁️ Cloud Saves & Auth Bridge</h1>
+        <h1>☁️ Cloud Saves & Cookie Compartida</h1>
         <p class="lead">
-          TO³ ahora reutiliza el stack de autenticación Cognito de la landing: el botón “Iniciar Sesión” redirige primero a
-          <code>https://www.atropello-games.es/auth/launch</code>, la landing gestiona Cognito y luego devuelve al juego. El tab “Partidas”
-          dentro del diálogo de Opciones queda disponible tras completar ese flujo y permite probar la API REST de guardados.
-          para probar la API REST de guardados. Esta entrada resume el flujo para QA y explica la arquitectura que lo hace posible.
+          Ahora TO³ depende únicamente del redirect clásico: al pulsar “Iniciar Sesión” se abre
+          <code>https://www.atropello-games.es/auth/launch?return=...</code>, la landing escribe la cookie
+          <code>atropello-session</code> en <em>.atropello-games.es</em> y, al volver al juego, la UI se hidrata leyendo esa cookie.
+          Con sesión activa, el tab “Partidas” dentro del diálogo de Opciones permite ejercitar la API REST.
         </p>
       </header>
 
@@ -84,7 +84,7 @@ interface TechnicalBlock {
       <section class="technical">
         <div class="section-heading">
           <h2>🛠️ Integración técnica</h2>
-          <p>La misma cookie compartida alimenta al juego, al iframe y al SDK.</p>
+          <p>El Hosted UI redirige de vuelta con cookie compartida; no hay iframe ni handshake.</p>
         </div>
         <div class="technical-grid">
           @for (block of technicalBlocks; track block.title) {
@@ -267,10 +267,10 @@ export class CloudSavesWikiComponent implements OnInit {
       ]
     },
     {
-      title: 'Cookies y dominio',
+      title: 'Return URL permitido',
       bullets: [
-        'La cookie `atropello-session` se escribe en `.atropello-games.es` para que el iframe bridge pueda leerla.',
-        'Desactiva extensiones que bloqueen cookies con `SameSite=None` durante las pruebas.'
+        'El parámetro `return` siempre apunta a `https://to3.atropello-games.es` para que Cognito regrese al juego.',
+        'Al volver, la cookie `atropello-session` ya está disponible y el header se hidrata automáticamente.'
       ]
     },
     {
@@ -327,12 +327,12 @@ export class CloudSavesWikiComponent implements OnInit {
       ]
     },
     {
-      title: 'SessionBridgeService + CloudSavesSessionBridgeService',
-      summary: 'Tramo que sincroniza la sesión desde la landing hacia las señales internas.',
+      title: 'AuthService + SessionCookieService',
+      summary: 'Procesan el callback del Hosted UI y rehidratan la app leyendo la cookie `atropello-session`.',
       links: [
-        'El nuevo `SessionBridgeService` monta un iframe oculto, envía `session:ping/session:get` y filtra `postMessage` por `bridgeOrigin` antes de llamar a `AuthService.syncExternalSession()`.',
-        'Se inicializa vía `APP_INITIALIZER` para instanciar el servicio al arrancar TO³ y garantizar que el iframe del bridge se monte incluso si ningún componente lo inyecta directamente.',
-        '`CloudSavesSessionBridgeService` simplemente refleja `auth.token()`/`auth.identity()` hacia el SDK (`getToken()`, `onSessionChange()`, `getIdentity()`), así que el panel siempre firma las peticiones con los datos del bridge.'
+        '`loginWithRedirect` abre `https://www.atropello-games.es/auth/launch?return=...` (el componente de la landing que arma la solicitud OAuth) y `logoutWithRedirect` ahora usa `https://www.atropello-games.es/auth/logout?return=...`, pantalla que muestra el progreso de cierre y luego llama al Hosted UI desde la landing.',
+        '`SessionCookieService` lee el formato `payload.signature`, decodifica el primer segmento base64 y mapea `profile → identity` incluso si la firma HMAC no está presente.',
+        '`CloudSavesSessionBridgeService` retransmite las señales de `AuthService` al panel para firmar peticiones.'
       ]
     },
     {

@@ -1,5 +1,7 @@
 # Plan: Reemplazar bridge iframe por handshake Landing → TO³
 
+> ⚠️ **Estado**: Cancelado. La landing retiró el handshake `session:payload` el 11-Dic-2025; ver `plans/session-cookie-sync.md` para el plan vigente basado en la cookie `atropello-session`.
+
 ## Contexto
 - Los navegadores han endurecido el acceso a cookies de terceros; Firefox 146 bloquea `atropello-session` al cargar `bridge.html` dentro de TO³. Ver análisis en [logs/to3.atropello-games.es_Archive [25-12-11 14-51-17].har](../logs/to3.atropello-games.es_Archive%20%5B25-12-11%2014-51-17%5D.har).
 - `Resumen_Proyecto_y_Progreso.md` describe el flujo vigente: la landing escribe la cookie y TO³ la consume vía iframe + `SessionBridgeService`.
@@ -28,14 +30,18 @@
 - [ ] Decidir canal primario (`postMessage` via `window.open`) y fallback (`BroadcastChannel`).
 
 ### Fase 2 · Cambios en TO³ (este repo)
-- [ ] Crear `SessionHandshakeService` que:
+- [x] Crear `SessionHandshakeService` que:
   - Genere `handshakeId`, abra la landing (`window.open`) con parámetros `handshakeId` y `returnTo`.
   - Escuche `message` del `window` global, filtre por `origin` y `handshakeId`.
   - Convierta el payload en `PersistedAuthSession` y llame a `AuthService.syncExternalSession()`.
   - Emita `session:ack` para que la landing pueda cerrar la ventana.
-- [ ] Actualizar `HeaderComponent` / `AuthService.loginWithRedirect()` para usar el nuevo flujo cuando el navegador bloquea la cookie bridge (detectar mediante `SessionBridgeService` fallback flag).
-- [ ] Mantener compatibilidad con el iframe actual como fallback temporal (flag en `CloudSettings`).
-- [ ] Ajustar `SessionBridgeService` para dejar de montar iframe si `handshake` está habilitado.
+  - **Estado**: implementado en `src/app/services/session-handshake.service.ts` con validaciones de origin, timeout configurable y `session:ack`.
+- [x] Actualizar `HeaderComponent` / `AuthService.loginWithRedirect()` para usar el nuevo flujo cuando el navegador bloquea la cookie bridge (detectar mediante `SessionBridgeService` fallback flag).
+  - **Decisión**: el handshake se intentará siempre como flujo primario; si el popup falla o expira se cae al redirect clásico (`AuthIntegrationService.login`).
+- [x] Mantener compatibilidad con el iframe actual como fallback temporal (flag en `CloudSettings`).
+  - **Estado**: compat desactivada; decidimos retirar el flag y apostar todo al handshake luego de validar QA en Firefox/Chrome.
+- [x] Ajustar `SessionBridgeService` para dejar de montar iframe si `handshake` está habilitado.
+  - **Estado**: servicio eliminado y `app.config.ts` ya no lo registra; el popup es el único camino soportado.
 
 ### Fase 3 · Cambios en la landing (otro repo)
 *(Solicitar a equipo landing via prompt indicado más abajo)*
@@ -54,7 +60,8 @@
 ### Fase 5 · QA, documentación y decomm del iframe
 - [ ] Actualizar `documentation/Wiki_System.md` y página `/wiki/cloud-saves` con el nuevo flujo.
 - [ ] Ejecutar pruebas en: Firefox (ETP), Chrome (3PC restricted), Safari.
-- [ ] Cuando el handshake sea estable, retirar `SessionBridgeService` y `bridge.html` del roadmap (plan separado).
+- [x] Cuando el handshake sea estable, retirar `SessionBridgeService` y `bridge.html` del roadmap (plan separado).
+  - **Estado**: `SessionBridgeService` eliminado de TO³; bridge.html deja de ser requisito para el cliente. Documentar al equipo landing para limpiar su hosting.
 
 ## Prompt sugerido para el equipo de la landing
 > “Necesitamos que la landing escriba la sesión de Cognito directamente en TO³ después del login, sin depender de cookies third‑party. TO³ abrirá `https://www.atropello-games.es/auth/launch?handshakeId=XYZ` en un popup. Cuando Cognito devuelva los tokens, la landing debe llamar `window.opener.postMessage({ type: 'session:payload', handshakeId: 'XYZ', token, accessToken, profile, issuedAt, expiresAt }, 'https://to3.atropello-games.es')`, esperar un `session:ack` y cerrar la ventana. ¿Puedes implementar este handshake verificando el origin del opener y asegurando que los tokens nunca aparezcan en la URL? Documenta la secuencia y expón cualquier restricción que debamos considerar.”

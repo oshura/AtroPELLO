@@ -11,6 +11,15 @@ export interface PersistedAuthSession {
 
 const STORAGE_KEY = 'to3.auth.session';
 
+interface SharedCookiePayload {
+  token: string;
+  expiresAt: number;
+  issuedAt?: number;
+  accessToken?: string;
+  identity?: UserIdentity | null;
+  profile?: UserIdentity | null;
+}
+
 @Injectable({ providedIn: 'root' })
 export class SessionCookieService {
   private readonly document = inject(DOCUMENT);
@@ -47,12 +56,7 @@ export class SessionCookieService {
     if (!value) {
       return null;
     }
-    try {
-      const decoded = atob(value);
-      return JSON.parse(decoded) as PersistedAuthSession;
-    } catch {
-      return null;
-    }
+    return this.decodeSharedCookie(value);
   }
 
   private readStorage(): PersistedAuthSession | null {
@@ -72,7 +76,7 @@ export class SessionCookieService {
       return;
     }
     try {
-      const encoded = btoa(JSON.stringify(session));
+      const encoded = this.encodeSessionPayload(session);
       const maxAge = Math.max(0, Math.floor((session.expiresAt - Date.now()) / 1000));
       const domain = this.resolveCookieDomain();
       const cookieParts = [
@@ -157,5 +161,57 @@ export class SessionCookieService {
       return '.atropello-games.es';
     }
     return undefined;
+  }
+
+  private decodeSharedCookie(rawValue: string): PersistedAuthSession | null {
+    const payloadSegment = this.extractPayloadSegment(rawValue);
+    if (!payloadSegment) {
+      return null;
+    }
+    try {
+      const decoded = atob(payloadSegment);
+      const parsed = JSON.parse(decoded) as SharedCookiePayload;
+      return this.normalizeSharedPayload(parsed);
+    } catch {
+      return null;
+    }
+  }
+
+  private extractPayloadSegment(value: string): string | null {
+    if (!value) {
+      return null;
+    }
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+    const separatorIndex = trimmed.indexOf('.');
+    if (separatorIndex === -1) {
+      return trimmed;
+    }
+    return trimmed.slice(0, separatorIndex);
+  }
+
+  private normalizeSharedPayload(payload: SharedCookiePayload | null): PersistedAuthSession | null {
+    if (!payload || !payload.token || !payload.expiresAt) {
+      return null;
+    }
+    const identity = payload.identity ?? payload.profile ?? null;
+    return {
+      token: payload.token,
+      identity,
+      expiresAt: payload.expiresAt
+    };
+  }
+
+  private encodeSessionPayload(session: PersistedAuthSession): string {
+    const payload: SharedCookiePayload = {
+      token: session.token,
+      expiresAt: session.expiresAt,
+      issuedAt: Date.now(),
+      identity: session.identity,
+      profile: session.identity
+    };
+    return btoa(JSON.stringify(payload));
   }
 }

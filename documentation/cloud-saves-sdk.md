@@ -2,40 +2,67 @@
 
 Este documento describe cómo reutilizar la carpeta `src/app/libs/cloud-saves/` en cualquier SPA Angular (>= v17, zoneless compatible). El objetivo es exponer una API neutra para consumir la nueva capa REST de guardados sin arrastrar dependencias de S3/Lambda en el frontend.
 
+> ⚠️ **Handshake retirado**: el flujo `session:payload` ya no está disponible. Todos los consumidores deben leer la cookie `atropello-session` (dominio `.atropello-games.es`) y rehidratar su puente de sesión usando el formato descrito abajo. La firma HMAC sólo es obligatoria si copias `SessionCookieService`; de lo contrario, basta con decodificar el `payload` base64.
+
 ## Componentes incluidos
 
 - **Modelos (`cloud-saves.models.ts`)**: describe `CloudSaveMasterFile`, `CloudSaveSlotRef` y los payloads esperados por el servicio REST.
 - **Cliente (`cloud-saves.client.ts`)**: implementación que ejecuta `listSlots`, `putSave` y `deleteSave` contra el endpoint REST real usando `fetch` (con latencia opcional simulada para pruebas).
 - **Servicio Angular (`cloud-saves.service.ts`)**: envoltorio reactivo (signals) que usa el cliente, gestiona sesión, errores y slots sincronizados.
 - **Panel standalone (`components/saved-games-panel`)**: UI opcional con copy personalizable para gatillar `sync`, `loadLatest` y `manage`.
-- **Tokens (`cloud-saves.tokens.ts`)**: InjectionTokens para settings, contexto del juego y bridge de sesión (también expone identidad del usuario vía `CloudSavesSessionBridge`).
+- **Tokens (`cloud-saves.tokens.ts`)**: InjectionTokens para settings, contexto del juego y adaptador de sesión (también expone identidad del usuario vía `CloudSavesSessionBridge`).
 
 ## Pasos para integrarlo en otro repositorio
 
 1. **Copiar la carpeta** `src/app/libs/cloud-saves/` al nuevo proyecto (conserva la misma ruta para evitar cambios relativos).
 2. **Declarar settings compartidos** inyectando `CLOUD_SAVES_SETTINGS` con `{ apiBaseUrl, mockLatencyMs }`. El cliente ya consume la API real, así que apunta `apiBaseUrl` al dominio publicado (`https://api.atropello-games.es/cloud-saves`) y deja `mockLatencyMs = 0` salvo que necesites simular latencia en entornos de QA.
 3. **Definir el contexto del juego** con `CLOUD_SAVES_GAME_CONTEXT`, indicando únicamente `gameId`.
-4. **Implementar un session bridge** que cumpla `CloudSavesSessionBridge` (`getToken()` + `onSessionChange`). Reutiliza `CloudSavesSessionBridgeService` para leer la cookie compartida y, si el dominio remoto no ejecuta Angular, embebe el iframe `/bridge.html` hospedado en `www` para obtener los tokens vía `postMessage`.
+4. **Implementar un adaptador de sesión** que cumpla `CloudSavesSessionBridge` (`getToken()` + `onSessionChange`). Reutiliza `CloudSavesSessionBridgeService` si tu app es la landing; en juegos externos, lee la cookie `atropello-session` (dominio `.atropello-games.es`), decodifica el primer segmento base64 para obtener `{ token, accessToken, profile, issuedAt, expiresAt }` y propaga esos valores al adaptador. La segunda parte del valor contiene una firma HMAC opcional que puedes validar reutilizando `SessionCookieService`.
 5. **Inyectar `CloudSavesService`** en los componentes que necesiten operar slots o emplear el `SavedGamesPanelComponent` standalone si sólo deseas el panel por defecto.
 
-> Nota: `CloudSettings` incluye `sessionCookieDomain` (por defecto `.atropello-games.es`). Asegúrate de que la landing escriba la cookie `atropello-session` usando ese dominio para que `www`, TO³ y el iframe `/bridge.html` la compartan.
+> Consulta [`documentation/to3-login-prompt.md`](to3-login-prompt.md) para un resumen express de `loginWithRedirect`, `logoutWithRedirect` y lectura de la cookie compartida.
 
 ## Kit "from-landing"
 
 Para acelerar la integración en otros juegos, la carpeta [`src/app/libs/cloud-saves/from-landing`](../src/app/libs/cloud-saves/from-landing) contiene copias de referencia 1:1 de los artefactos usados por la landing. Están excluidos del build (`tsconfig.app.json > exclude`) y no participan en SSR; su único propósito es permitir copiar/pegar en otro repositorio manteniendo los mismos contratos.
 
-### session-bridge-worker.component.ts (referencia)
-
-- Replica el `SessionBridgeWorkerComponent` que responde a los mensajes `session:get`, `session:clear` y `session:ping` utilizados por el iframe `/bridge.html`.
-- Incluye `addEventListener('message', ...)`, delega en `SessionCookieService` y emite `postMessage` con `session:data`.
-- Ajusta el namespace del servicio/cookies según el dominio de tu juego si cambias el `hostedUiDomain`.
-
 ### session-cookie.service.ts (referencia)
-
-- Servicio standalone con `@Injectable({ providedIn: 'root' })` que serializa el ID Token + perfil en la cookie `atropello-session` usando `AES-GCM` + `localStorage` para cachear la llave.
-- Expone `writeTokens`, `readTokens` y `clearCookie` para que cualquier SPA comparta la sesión Cognito entre subdominios.
+ 
+- Servicio standalone con `@Injectable({ providedIn: 'root' })` que serializa el ID Token + perfil como JSON, lo codifica en base64 y lo firma con HMAC-SHA256 antes de escribir la cookie `atropello-session`.
+- `writeTokens` produce valores `payload.signature`, donde el `payload` es `{ token, accessToken, issuedAt, expiresAt, profile }` y `signature` se basa en una llave derivada y persistida en `localStorage`.
+- `readTokens` valida la firma y devuelve el objeto original para que cualquier SPA consuma el token sin abrir popups adicionales. Si tu juego sólo necesita leer la cookie, basta con decodificar el primer segmento base64.
 - Asegúrate de conservar `SameSite=None; Secure` cuando copies el archivo para no perder compatibilidad cross-site.
 
+### Formato de la cookie compartida
+
+El valor completo sigue el patrón `<payload>.<firma>`:
+
+1. `payload` es un JSON serializado y codificado en base64 con la forma:
+   ```json
+   {
+     "token": "<ID Token Cognito>",
+     "accessToken": "<Access Token opcional>",
+     "issuedAt": 1700000000000,
+     "expiresAt": 1700003600000,
+     "profile": { "displayName": "Player", ... }
+   }
+   ```
+2. `firma` es el resultado de aplicar HMAC-SHA256 al `payload` usando la llave derivada por `SessionCookieService`. Sirve como detección de manipulación, pero leer el `payload` no requiere esta llave.
+
+Ejemplo minimalista para un juego que sólo necesita el token:
+
+```ts
+function readSharedSession() {
+  const value = document.cookie.split(';').map((entry) => entry.trim()).find((entry) => entry.startsWith('atropello-session='));
+  if (!value) { return null; }
+  const raw = value.split('=')[1];
+  const [encoded] = raw.split('.'); // la firma es opcional
+  const payload = JSON.parse(atob(encoded));
+  return payload; // { token, accessToken, profile, issuedAt, expiresAt }
+}
+```
+
+> Si quieres validar la firma desde otro repositorio, copia `SessionCookieService` tal cual y asegúrate de inicializarlo antes de leer la cookie. La llave HMAC se guarda en `localStorage` bajo `session.cookie.hmac.v1`.
 ### cloud-settings.ts (referencia)
 
 El archivo copia exactamente los valores productivos empleados por la landing. Usa la tabla como checklist antes de publicarlo en otro dominio:
@@ -47,8 +74,11 @@ El archivo copia exactamente los valores productivos empleados por la landing. U
 | `userPoolWebClientId` | `6rokvnv3eveofdjb1vlmsrqhkp` |
 | `identityPoolId` | _vacío_ (no requerido por TO³) |
 | `hostedUiDomain` | `auth.atropello-games.es` |
+| `sharedCookieDomain` | `.atropello-games.es` |
 | `loginRedirectUri` | `https://www.atropello-games.es/auth/callback` |
+| `logoutLauncherUrl` | `https://www.atropello-games.es/auth/logout` |
 | `logoutRedirectUri` | `https://www.atropello-games.es/` |
+| `logoutReturnAllowlist` | `["https://www.atropello-games.es/"]` |
 | `savesApiBaseUrl` | `https://api.atropello-games.es/cloud-saves` |
 | `returnAllowlist` | `["https://www.atropello-games.es", "https://to3.atropello-games.es"]` |
 | `enableSavedGamesCta` | `true` |
@@ -56,11 +86,11 @@ El archivo copia exactamente los valores productivos empleados por la landing. U
 
 ### Cómo usar el kit en otro juego
 
-1. Copia los tres archivos de `from-landing` hacia la carpeta equivalente de tu proyecto (respeta la ruta para evitar problemas de resolución).
-2. Registra `SessionCookieService` y `SessionBridgeWorkerComponent` en tu árbol DI exactamente igual que en la landing; de esta forma, cualquier iframe/worker podrá propagar la sesión.
+1. Copia los dos archivos de `from-landing` (`cloud-settings.ts`, `session-cookie.service.ts`) hacia la carpeta equivalente de tu proyecto (respeta la ruta para evitar problemas de resolución).
+2. Registra `SessionCookieService` y `CloudSavesSessionBridgeService` en tu árbol DI exactamente igual que en la landing; este último ya escucha los cambios de `AuthService` sin depender de iframes.
 3. Ajusta los valores de `cloud-settings.ts` sólo si tu juego vive en un dominio distinto; en tal caso agrega ese dominio a `returnAllowlist` y recalcula los `redirectUri`.
-4. Importa el worker en la aplicación host vía `bootstrapApplication` o la configuración de `main.server.ts` cuando necesites exponer `/bridge.html`.
-5. Verifica la cookie `atropello-session` desde el juego objetivo y usa `CloudSavesSessionBridgeService` (ya documentado en la sección anterior) para reenviar los tokens al SDK.
+4. Expón un pequeño adaptador alrededor de `SessionCookieService.readTokens()` para leer la cookie `atropello-session`, publicar el ID Token a través de `CloudSavesSessionBridgeService` y reaccionar a futuros cambios (la landing y cualquier subdominio reescriben la cookie después de cada login/logout).
+5. Antes de llamar al SDK, comprueba que `payload.expiresAt` no haya caducado; si está vencido, llama a `AuthService.loginWithRedirect(window.location.href)` para forzar un nuevo login y refrescar la cookie.
 
 ### Checklist para exponer el botón "Login" en TO³
 
@@ -74,9 +104,36 @@ El archivo copia exactamente los valores productivos empleados por la landing. U
   logout() { void this.auth.logoutWithRedirect(); }
   ```
   El `returnTo` asegura que, tras el login, Cognito redirija de vuelta a TO³.
+  `logoutWithRedirect()` limpia la cookie local y abre `https://www.atropello-games.es/auth/logout?return=...`. Ese path ahora renderiza `AuthLogoutComponent`, el cual muestra el estado de cierre, guarda el `return` saneado y delega en `AuthService.logoutWithRedirect()` (landing). Una vez Cognito confirma el sign-out, la landing limpia sus propios tokens/cookies y redirige al `return`. Si el launcher no estuviera disponible, TO³ caerá automáticamente al Hosted UI directo.
 4. **Escucha la identidad** con `auth.identity()` o `auth.displayName()` para mostrar al usuario activo.
-5. **Propaga la sesión al bridge**: si TO³ se sirve desde un subdominio, incluye el iframe `/bridge.html` hospedado en `www.atropello-games.es` (ya lo hace `CloudSavesSessionBridgeService`) para compartir los tokens con otras propiedades.
+5. **Lee la cookie compartida**: cada vez que TO³ cargue, busca `atropello-session`, decodifica el primer segmento base64 y rehidrata `AuthService` con `{ token, accessToken, profile }`. Si la firma es importante para tu caso, reutiliza `SessionCookieService` para validarla antes de aceptarla.
 6. **Verifica cookies**: asegúrate de que la cookie `atropello-session` (dominio `.atropello-games.es`) sea accesible desde el subdominio del juego; si no, revisa HTTPS + SameSite=None.
+
+### Ejemplo: hidratar TO³ con la cookie
+
+```ts
+import { inject, Injectable } from '@angular/core';
+import { SessionCookieService } from '../services/session-cookie.service';
+
+@Injectable({ providedIn: 'root' })
+export class To3SessionAdapter {
+  private readonly cookies = inject(SessionCookieService);
+
+  async bootstrap(): Promise<void> {
+    const payload = await this.cookies.readTokens();
+    if (!payload) {
+      return;
+    }
+    this.patchAuthState(payload);
+  }
+
+  private patchAuthState(payload: { token: string; profile?: unknown | null }) {
+    // Implementa aquí la lógica para informar a AuthService / CloudSavesSessionBridge.
+  }
+}
+```
+
+Este adaptador se puede llamar al iniciar TO³ y nuevamente tras cada `visibilitychange` si quieres refrescar la sesión cuando el jugador cambia de pestaña.
 
 ### Checklist para Saved Games en TO³
 
@@ -97,8 +154,8 @@ El archivo copia exactamente los valores productivos empleados por la landing. U
 ### Identidad del jugador para headers remotos
 
 - `CloudSavesSessionBridge` expone los métodos opcionales `getIdentity()` y `onIdentityChange()` que devuelven un objeto `UserIdentity` con los campos `displayName`, `nickname`, `preferredUsername`, `email` y `userId`.
-- El bridge integrado (`CloudSavesSessionBridgeService`) propaga la identidad usando el claim `nickname` del ID Token y la replica en la cookie compartida/iframe, por lo que los juegos en subdominios pueden mostrar el mismo nombre que la landing.
-- Si consumes el SDK fuera de Angular, replica el contrato leyendo la cookie `atropello-session` o escuchando `session:data` del iframe `/bridge.html`; la respuesta incluye `{ token, profile }`.
+- El adaptador integrado (`CloudSavesSessionBridgeService`) propaga la identidad usando el claim `nickname` del ID Token y la replica en la cookie compartida, por lo que los juegos que lean `atropello-session` mostrarán el mismo nombre que la landing.
+- Si consumes el SDK fuera de Angular, replica el contrato leyendo la cookie `atropello-session` y exponiendo `getIdentity()`/`onIdentityChange()` desde tu implementación de `CloudSavesSessionBridge`.
 
 ## Ejemplo mínimo de providers (standalone component)
 

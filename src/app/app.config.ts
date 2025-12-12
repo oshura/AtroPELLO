@@ -9,18 +9,26 @@ import { CloudSavesService } from './libs/cloud-saves/cloud-saves.service';
 import { CLOUD_SAVES_GAME_CONTEXT, CLOUD_SAVES_SESSION_BRIDGE, CLOUD_SAVES_SETTINGS } from './libs/cloud-saves/cloud-saves.tokens';
 import { CloudSavesSessionBridgeService } from './libs/cloud-saves/cloud-saves-session-bridge.service';
 import { CloudSettings, CLOUD_SETTINGS, resolveCloudSettings } from './settings/cloud-settings';
-import { SessionBridgeService } from './services/session-bridge.service';
 
 function initAudioManifest(manifest: AudioManifestService) {
   return () => manifest.init();
 }
 
-function initSessionBridge(bridge: SessionBridgeService) {
-  return () => void bridge;
-}
-
 const baseCloudSettings = resolveCloudSettings();
 const env = typeof import.meta !== 'undefined' && import.meta ? import.meta.env ?? {} : {};
+
+function parseAllowlist(value: unknown): string[] | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  const entries = value
+    .split(',')
+    .map(entry => entry.trim())
+    .filter(entry => entry.length > 0);
+  return entries.length ? entries : undefined;
+}
+
+const logoutAllowlistOverride = parseAllowlist(env['NG_APP_LOGOUT_ALLOWLIST']);
 
 const cloudSettings: CloudSettings = {
   ...baseCloudSettings,
@@ -29,7 +37,10 @@ const cloudSettings: CloudSettings = {
   userPoolClientId: env['NG_APP_COGNITO_CLIENT_ID'] ?? baseCloudSettings.userPoolClientId,
   hostedUiDomain: env['NG_APP_COGNITO_DOMAIN'] ?? baseCloudSettings.hostedUiDomain,
   defaultRedirectUri: env['NG_APP_COGNITO_REDIRECT_URI'] ?? baseCloudSettings.defaultRedirectUri,
-  defaultLogoutUri: env['NG_APP_COGNITO_LOGOUT_URI'] ?? baseCloudSettings.defaultLogoutUri
+  defaultLogoutUri: env['NG_APP_COGNITO_LOGOUT_URI'] ?? baseCloudSettings.defaultLogoutUri,
+  authLauncherUrl: env['NG_APP_AUTH_LAUNCH_URL'] ?? baseCloudSettings.authLauncherUrl,
+  logoutLauncherUrl: env['NG_APP_AUTH_LOGOUT_URL'] ?? baseCloudSettings.logoutLauncherUrl,
+  logoutReturnAllowlist: logoutAllowlistOverride ?? baseCloudSettings.logoutReturnAllowlist
 };
 
 const cloudSavesApiBase = env['NG_APP_CLOUD_SAVES_API'] ?? 'https://api.atropello-games.es/cloud-saves';
@@ -42,10 +53,8 @@ export const appConfig: ApplicationConfig = {
     provideClientHydration(withEventReplay()),
     provideHttpClient(),
     { provide: APP_INITIALIZER, useFactory: initAudioManifest, deps: [AudioManifestService], multi: true },
-    { provide: APP_INITIALIZER, useFactory: initSessionBridge, deps: [SessionBridgeService], multi: true },
     CloudSavesService,
     CloudSavesSessionBridgeService,
-    SessionBridgeService,
     { provide: CLOUD_SETTINGS, useValue: cloudSettings },
     {
       provide: CLOUD_SAVES_SETTINGS,
