@@ -69,6 +69,11 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - `AuthService.logoutWithRedirect()` limpia el estado local y hoy redirige a `/auth/logout?return=...`, pantalla recientemente añadida en la landing que muestra el estado del sign-out y delega en su propio `AuthService.logoutWithRedirect()` (Hosted UI). Si el launcher fallara, el servicio cae automáticamente al Hosted UI directo.
   - `CloudSavesSessionBridgeService` sigue reflejando `auth.token()`/`auth.identity()` al panel, pero ahora se alimenta exclusivamente de la cookie compartida (o del callback clásico) — no existe handshake.
   - El componente `app-cloud-saves-panel` ahora vive dentro del diálogo de opciones (tab “Partidas”) y solo se renderiza cuando hay sesión Cognito. Desde ahí se exponen las acciones de QA (sync, load latest, save demo, delete) sobre `CloudSavesService`. Ruta rápida en la wiki: `/wiki/cloud-saves`.
+  - `GamePersistenceService.saveGame()` ya produce el `SaveGamePayload` v1 real: pausa el loop, serializa jugador, `GameStateStore` y universo, añade metadata (`schemaVersion`, `savedAt`, `elapsedPlayTimeMs`, `systemId`, label del ancla y `userId` vía `CloudSavesSessionBridgeService`) y registra en `LogCategory.SAVE_SYSTEM` el tamaño exacto del JSON para monitorear regresiones.
+  - `GamePersistenceService.loadGame()` quedó simétrico: normaliza el payload con `SaveGameMigrationService.ensureLatestSchema()`, crea snapshots completos, hidrata jugador (`PlayerStateSerializer.apply()`), `GameStateStore` (`GameStateSnapshotAdapter.restore()`) y universo (`UniverseStateSnapshotAdapter.ensureRuntimeState()`), y reinicia el engine con `GameEngine.restartWithContext()`. Todos los pasos emiten trazas `LogCategory.SAVE_SYSTEM` con IDs de sistema/ancla para facilitar QA. La verificación manual in-game está pendiente hasta contar con capturas reales.
+  - `CloudSavesService.saveCurrentGame()`/`loadGameFromSlot()` ahora delegan en `GamePersistenceService` para serializar el payload v1 real, agregan metadata específica del slot (sistema, anchor, build label, `playTimeMs`) antes de invocar la API REST y usan una capa común de `describeError()` para mapear expiraciones de token, esquemas inválidos o fallos de red a mensajes en castellano que consumen tanto el panel como el nuevo CTA del header.
+  - El tab “Partidas” ya interactúa con slots reales: `CloudSavesPanelComponent` muestra metadata formateada, confirma cargas antes de llamar a `loadGameFromSlot()` y mantiene un log del último resultado; el header ofrece el botón “Guardar partida” que dispara `saveCurrentGame(0)` y refleja feedback inline sin abrir el diálogo. Ambos puntos de entrada comparten el flag `saving()` para evitar capturas concurrentes y restauran automáticamente el estado del loop si ocurre un error.
+  - Documentación ampliada en `documentacion/SaveGame_Serializacion_Cloud.md`, que traza de extremo a extremo cómo se captura, envía, migra y rehidrata un payload guardado en la nube (incluye pausa del loop, tokens Cognito y reinicio del engine).
 
 ## Próximos pasos inmediatos
 
@@ -146,4 +151,13 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 - **Spaceship tiene doble callback**: uno para cambios de salud (logging, efectos) y otro para muerte (death dialog). Ambos se disparan desde el setter override.
 - **Independización de asteroides**: Cuando un asteroide en cluster recibe daño, se independiza con velocidad propia y se registra callback de destrucción.
 
-Actualizado: Noviembre 2025.
+Nota: las pruebas manuales de carga desde la UI se programaron para la próxima sesión con payloads reales, una vez concluida la actualización de documentación y wiki.
+
+Actualizado: Febrero 2025.
+
+## Bitácora QA global (pendiente)
+
+- [ ] **Fase 2** — reproducir órbita prolongada, aterrizaje completo y Gate Rite después de cargar un payload migrado para validar que `GamePersistenceService.loadGame()` deja el runtime consistente.
+- [ ] **CTA del header** — iniciar sesión, guardar mediante el botón "Guardar partida", comprobar en la API que el slot 0 contiene metadata completa y que los logs `Cloud save uploaded` muestran `systemId/anchorLabel` reales.
+- [ ] **Panel “Partidas”** — ejecutar `Sync slots → Save slot 0 → Load latest`, confirmar que el bloque “Last load” muestra sistema/ancla/build y que `durationMs` coincide con los logs.
+- [ ] **Errores resilientes** — forzar expiración de token y corte de red; validar que el CTA y el panel muestran el mismo mensaje mapeado por `describeError()` y que el loop queda reanudado tras cada fallo.

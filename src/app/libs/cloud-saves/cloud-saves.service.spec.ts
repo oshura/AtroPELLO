@@ -4,9 +4,11 @@ import { CloudSavesService } from './cloud-saves.service';
 import { CLOUD_SAVES_GAME_CONTEXT, CLOUD_SAVES_SESSION_BRIDGE, CLOUD_SAVES_SETTINGS, CloudSavesGameContext, CloudSavesSessionBridge, CloudSavesSettings } from './cloud-saves.tokens';
 import { CloudSaveMasterFile } from './cloud-saves.models';
 import { CloudSavesClient } from './cloud-saves.client';
+import { GamePersistenceService } from '../../services/game/game-persistence.service';
+import { LoggingService } from '../../services/logging.service';
 
 class StubClient implements Pick<CloudSavesClient, 'listSlots' | 'putSave' | 'deleteSave'> {
-  public lastPut: { index: number; payload: unknown } | null = null;
+  public lastPut: { index: number; payload: unknown; metadata?: unknown } | null = null;
   public lastDelete: number | null = null;
   public slots: CloudSaveMasterFile = {
     gameId: 'cloud-test',
@@ -20,8 +22,8 @@ class StubClient implements Pick<CloudSavesClient, 'listSlots' | 'putSave' | 'de
     return this.slots;
   }
 
-  async putSave(_token: string, _gameId: string, index: number, payload: unknown): Promise<void> {
-    this.lastPut = { index, payload };
+  async putSave(_token: string, _gameId: string, index: number, payload: unknown, metadata?: unknown): Promise<void> {
+    this.lastPut = { index, payload, metadata };
   }
 
   async deleteSave(_token: string, _gameId: string, index: number): Promise<void> {
@@ -32,6 +34,16 @@ class StubClient implements Pick<CloudSavesClient, 'listSlots' | 'putSave' | 'de
 describe('CloudSavesService (integration)', () => {
   let service: CloudSavesService;
   let client: StubClient;
+  const persistence = {
+    saveGame: jasmine.createSpy('saveGame'),
+    loadGame: jasmine.createSpy('loadGame')
+  } as Partial<GamePersistenceService> as GamePersistenceService;
+  const logger = {
+    info: jasmine.createSpy('info'),
+    warn: jasmine.createSpy('warn'),
+    error: jasmine.createSpy('error'),
+    debug: jasmine.createSpy('debug')
+  } as Partial<LoggingService> as LoggingService;
 
   const settings: CloudSavesSettings = {
     apiBaseUrl: 'https://api.example.com/saves',
@@ -48,13 +60,21 @@ describe('CloudSavesService (integration)', () => {
   };
 
   beforeEach(() => {
+    (persistence.saveGame as jasmine.Spy).calls.reset();
+    (persistence.loadGame as jasmine.Spy).calls.reset();
+    (logger.info as jasmine.Spy).calls.reset();
+    (logger.warn as jasmine.Spy).calls.reset();
+    (logger.error as jasmine.Spy).calls.reset();
+    (logger.debug as jasmine.Spy).calls.reset();
     TestBed.configureTestingModule({
       providers: [
         provideZonelessChangeDetection(),
         CloudSavesService,
         { provide: CLOUD_SAVES_SETTINGS, useValue: settings },
         { provide: CLOUD_SAVES_GAME_CONTEXT, useValue: context },
-        { provide: CLOUD_SAVES_SESSION_BRIDGE, useValue: sessionBridge }
+        { provide: CLOUD_SAVES_SESSION_BRIDGE, useValue: sessionBridge },
+        { provide: GamePersistenceService, useValue: persistence },
+        { provide: LoggingService, useValue: logger }
       ]
     });
 
@@ -81,7 +101,7 @@ describe('CloudSavesService (integration)', () => {
 
     await service.putSave(2, { hull: 99 });
 
-    expect(client.lastPut).toEqual({ index: 2, payload: { hull: 99 } });
+    expect(client.lastPut).toEqual({ index: 2, payload: { hull: 99 }, metadata: undefined });
     expect(service.slots()).toEqual(client.slots.saves);
   });
 });

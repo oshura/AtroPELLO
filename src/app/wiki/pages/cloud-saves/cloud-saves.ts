@@ -35,7 +35,9 @@ interface TechnicalBlock {
           Ahora TO³ depende únicamente del redirect clásico: al pulsar “Iniciar Sesión” se abre
           <code>https://www.atropello-games.es/auth/launch?return=...</code>, la landing escribe la cookie
           <code>atropello-session</code> en <em>.atropello-games.es</em> y, al volver al juego, la UI se hidrata leyendo esa cookie.
-          Con sesión activa, el tab “Partidas” dentro del diálogo de Opciones permite ejercitar la API REST.
+          Con sesión activa, el tab “Partidas” y el botón “Guardar partida” del header disparan exactamente el mismo pipeline:
+          capturamos el <code>SaveGamePayload</code> real, lo subimos con metadata completa, mostramos feedback en vivo y, si algo falla,
+          ambos puntos de entrada reutilizan <code>CloudSavesService.describeError()</code> para comunicar qué ocurrió.
         </p>
       </header>
 
@@ -78,7 +80,7 @@ interface TechnicalBlock {
             </article>
           }
         </div>
-        <p class="tip">⚠️ Todas las peticiones viajan firmadas con el ID Token actual. Si el token expira, el tab mostrará el error y pedirá volver a iniciar sesión.</p>
+        <p class="tip">⚠️ Todas las peticiones viajan firmadas con el ID Token actual. Si el token expira o falla la red, <code>describeError()</code> muestra el mismo mensaje en el panel y en el CTA.</p>
       </section>
 
       <section class="technical">
@@ -104,13 +106,15 @@ interface TechnicalBlock {
       <section class="troubleshooting">
         <h2>🧪 Checklist de QA</h2>
         <ol>
-          <li>Inicia sesión desde el header (se abrirá la landing, completará Cognito y te regresará) y confirma que el badge muestra tu alias.</li>
-          <li>Abre Opciones → tab <strong>Partidas</strong> y pulsa <strong>Sync slots</strong>; deberían aparecer los slots creados desde la landing.</li>
-          <li>Usa <strong>Save demo slot</strong> para crear <code>slot 0</code> y verifica desde la landing que aparece como "Demo save".</li>
-          <li>Ejecuta <strong>Load latest</strong> y revisa el JSON de la consola inferior del panel.</li>
-          <li>Elimina el slot con <strong>Delete slot</strong> y confirma que el listado se actualiza sin errores.</li>
+          <li>Inicia sesión desde el header (se abrirá la landing, completará Cognito y te regresará) y confirma que aparecen el alias y el botón <strong>Guardar partida</strong>.</li>
+          <li>Haz clic en <strong>Guardar partida</strong>; espera el feedback verde y revisa en la consola que el log <code>Cloud save uploaded</code> incluye <code>systemId</code>/<code>anchorLabel</code>.</li>
+          <li>Abre Opciones → tab <strong>Partidas</strong>, pulsa <strong>Sync slots</strong> y comprueba que el slot 0 recién creado aparece con la fecha correcta.</li>
+          <li>Acciona <strong>Save slot 0</strong> desde el panel para actualizar el mismo índice y revisa que el timestamp de la fila se refresca sin duplicados.</li>
+          <li>Ejecuta <strong>Load latest</strong>, acepta la confirmación y verifica que el bloque “Last load” muestra sistema, anchor, build y <code>playTimeMs</code>, además del log con la duración en <code>LogCategory.SAVE_SYSTEM</code>.</li>
+          <li>Provoca un error (p. ej. desconectando la red) y vuelve a guardar: tanto el CTA como el panel deben mostrar la misma copia producida por <code>describeError()</code>.</li>
+          <li>Elimina el slot con <strong>Delete</strong> y confirma que si era el último cargado se limpia el bloque de feedback.</li>
         </ol>
-        <p class="note">Si algo falla, revisa el texto rojo al pie del tab: expone el último mensaje de error emitido por el SDK.</p>
+        <p class="note">Si la carga no inicia, revisa la consola y asegúrate de estar probando con un payload v1 completo antes de abrir un issue.</p>
       </section>
     </div>
   `,
@@ -263,21 +267,28 @@ export class CloudSavesWikiComponent implements OnInit {
       title: 'Cuenta AtroPELLO',
       bullets: [
         'Comparte credenciales con la landing. Si puedes iniciar sesión allí, puedes hacerlo aquí.',
-        'El header muestra el botón “Iniciar Sesión”; tras volver del Hosted UI se mostrará tu alias o nickname.'
+        'El header sólo muestra “Guardar partida” cuando `AuthService.authenticated()` es verdadero y reutiliza tu alias en el botón de logout.'
       ]
     },
     {
       title: 'Return URL permitido',
       bullets: [
         'El parámetro `return` siempre apunta a `https://to3.atropello-games.es` para que Cognito regrese al juego.',
-        'Al volver, la cookie `atropello-session` ya está disponible y el header se hidrata automáticamente.'
+        'Al volver, la cookie `atropello-session` ya está disponible y el CTA del header queda habilitado sin recargar la app.'
       ]
     },
     {
       title: 'Autorización para la API',
       bullets: [
         'El ID Token de Cognito firma cada llamada `GET/PUT/DELETE` al endpoint `https://api.atropello-games.es/cloud-saves`.',
-        'Si el token expira, vuelve a pulsar “Iniciar Sesión” antes de interactuar con los botones.'
+        '`CloudSavesService.describeError()` detecta expiraciones/401 y muestra “Inicia sesión” tanto en el panel como en el CTA si la sesión caduca.'
+      ]
+    },
+    {
+      title: 'Payload v1 real',
+      bullets: [
+        'Los slots almacenan `SaveGamePayload` v1 con metadata (`schemaVersion`, `savedAt`, `systemId`, anchor, buildLabel, `playTimeMs`).',
+        'Al cargar, `SaveGameMigrationService` normaliza el JSON y `GamePersistenceService.loadGame()` pausa/reanuda el loop para rehidratar el runtime.'
       ]
     }
   ];
@@ -288,31 +299,31 @@ export class CloudSavesWikiComponent implements OnInit {
       summary: 'Refresca la lista de slots disponibles (ordenados por fecha).',
       bullets: [
         'Invoca `CloudSavesService.syncSlots()` y, en caso de éxito, rellena la tabla del panel.',
-        'Se recomienda ejecutar este paso inmediatamente después de iniciar sesión para cargar el maestro.'
+        'Se recomienda ejecutar este paso inmediatamente después de iniciar sesión para cargar el maestro y detectar expiraciones de token temprano.'
       ]
     },
     {
       title: 'Load latest',
-      summary: 'Descarga el slot más reciente y muestra el JSON raw.',
+      summary: 'Descarga el slot más reciente y ofrece inyectarlo en el runtime.',
       bullets: [
-        'Equivale a `loadLatest()` que a su vez llama a `syncSlots()` y luego a `getSlot(index)`.',
-        'Útil para validar que una partida creada en la landing se pueda consumir desde TO³.'
+        'Equivale a `loadLatest()` que a su vez llama a `syncSlots()` y luego a `loadGameFromSlot()` antes de pasar el payload a `GamePersistenceService.loadGame()`.',
+        'Siempre pide confirmación antes de pausar el loop; si algo falla, el estado previo continúa intacto y el mensaje aparece en el pie del panel.'
       ]
     },
     {
-      title: 'Save demo slot',
-      summary: 'Genera un payload de prueba y lo guarda en el slot 0.',
+      title: 'Save slot 0',
+      summary: 'Captura la partida actual y la sube al slot 0 (mismo pipeline que el CTA del header).',
       bullets: [
-        'El payload incluye título, timestamp ISO y stats aleatorios para facilitar la verificación.',
-        'Tras guardar se ejecuta automáticamente `syncSlots()` para mostrar el nuevo registro.'
+        '`saveCurrentGame(0)` pausa el loop, serializa jugador + universo + UI/audio opcional, adjunta metadata y hace PUT al endpoint.',
+        'Tras guardar se ejecuta automáticamente `syncSlots()` y se actualiza el bloque de metadata con `savedAt`, `systemName` y `playTimeMs`.'
       ]
     },
     {
       title: 'Load slot / Delete',
       summary: 'Botones por fila para cargar o eliminar un índice específico.',
       bullets: [
-        'Ambos comandos deshabilitan los controles mientras la petición está en curso (usa `saves.loading()`).',
-        'Eliminar un slot limpia el feedback si la tarjeta mostraba ese mismo índice.'
+        'Cargar un índice reutiliza el pipeline completo (migración → snapshots → `GameEngine.restartWithContext()`); el resultado queda registrado en el bloque “Last load”.',
+        'Eliminar un slot llama a `deleteSave()` y, si era el último cargado, limpia el feedback para evitar inconsistencias.'
       ]
     }
   ];
@@ -322,25 +333,36 @@ export class CloudSavesWikiComponent implements OnInit {
       title: 'AuthService & cookies',
       summary: 'Procesa el callback del Hosted UI, serializa la sesión y expone señales live.',
       links: [
-        'Los métodos `loginWithRedirect` y `logoutWithRedirect` se conectan al botón del header.',
-        'La señal `displayName()` alimenta tanto el badge del header como el `username` que ve el panel.'
+        '`loginWithRedirect` abre `https://www.atropello-games.es/auth/launch?return=...` y `logoutWithRedirect` usa `https://www.atropello-games.es/auth/logout?return=...`.',
+        '`SessionCookieService` lee `payload.signature`, decodifica el primer segmento base64 y mapea `profile → identity` incluso sin firma.',
+        '`CloudSavesSessionBridgeService` retransmite token/identidad al servicio de saves para firmar peticiones.'
       ]
     },
     {
-      title: 'AuthService + SessionCookieService',
-      summary: 'Procesan el callback del Hosted UI y rehidratan la app leyendo la cookie `atropello-session`.',
+      title: 'Header CTA + Tab “Partidas”',
+      summary: 'Ambos comparten señales (`saving()`, `error()`) y helpers de formato para mostrar feedback coherente.',
       links: [
-        '`loginWithRedirect` abre `https://www.atropello-games.es/auth/launch?return=...` (el componente de la landing que arma la solicitud OAuth) y `logoutWithRedirect` ahora usa `https://www.atropello-games.es/auth/logout?return=...`, pantalla que muestra el progreso de cierre y luego llama al Hosted UI desde la landing.',
-        '`SessionCookieService` lee el formato `payload.signature`, decodifica el primer segmento base64 y mapea `profile → identity` incluso si la firma HMAC no está presente.',
-        '`CloudSavesSessionBridgeService` retransmite las señales de `AuthService` al panel para firmar peticiones.'
+        'El CTA invoca `saveCurrentGame(0)` con overrides mínimos y pinta el resultado en el propio header.',
+        'El panel muestra metadata formateada (sistema, anchor, build, `playTimeMs`) y conserva el último resultado de carga.',
+        'Ambos usan `CloudSavesService.describeError()` para mapear errores comunes a copy legible.'
       ]
     },
     {
-      title: 'CloudSavesService + Panel',
-      summary: 'SDK Angular con señales para slots, carga y errores.',
+      title: 'CloudSavesService',
+      summary: 'SDK Angular con señales para slots, carga, flags de busy y errores contextualizados.',
       links: [
-        '`slots()` contiene el listado sincronizado; `error()` expone el último mensaje mostrado al pie del panel.',
-        'El componente `app-cloud-saves-panel` se renderiza dentro del tab “Partidas” del diálogo de Opciones.'
+        '`saveCurrentGame()`/`loadGameFromSlot()` delegan en `GamePersistenceService` y registran logs `LogCategory.SAVE_SYSTEM`.',
+        '`sendWithRetry()` controla loading spinners y centraliza mensajes en castellano.',
+        'Más detalles en `documentacion/SaveGame_Serializacion_Cloud.md`.'
+      ]
+    },
+    {
+      title: 'GamePersistenceService',
+      summary: 'Orquesta captura y carga real del SaveGamePayload v1 con metadata lista para la nube.',
+      links: [
+        'Pausa/reanuda el loop para congelar nave, GameStateStore y universo antes de serializar el payload.',
+        'El metadata incluye `schemaVersion`, `savedAt`, `elapsedPlayTimeMs`, `systemId`, label del ancla y `userId` (si existe sesión).',
+        'La carga usa `SaveGameMigrationService.ensureLatestSchema()`, hidrata jugador/estado/universo y deja trazas en `LogCategory.SAVE_SYSTEM` para cada fase.'
       ]
     }
   ];

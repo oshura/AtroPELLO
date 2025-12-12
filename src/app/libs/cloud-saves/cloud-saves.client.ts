@@ -1,4 +1,4 @@
-import { CloudSaveMasterFile, CloudSaveSlotData } from './cloud-saves.models';
+import { CloudSaveMasterFile, CloudSaveSlotData, CloudSaveSlotMetadata } from './cloud-saves.models';
 import { CloudSavesSettings } from './cloud-saves.tokens';
 
 export class CloudSavesClient {
@@ -27,15 +27,26 @@ export class CloudSavesClient {
     });
   }
 
-  async putSave(token: string, gameId: string, index: number, payload: unknown): Promise<void> {
+  async putSave(token: string, gameId: string, index: number, payload: unknown, metadata?: CloudSaveSlotMetadata | null): Promise<void> {
     this.assertToken(token);
     await this.simulateLatency();
     const sanitizedIndex = Math.max(0, Math.floor(index));
     const url = this.buildUrl(`/slots/${sanitizedIndex}`, { gameId });
+    const body: {
+      gameId: string;
+      savegame: unknown;
+      metadata?: CloudSaveSlotMetadata | null;
+    } = {
+      gameId,
+      savegame: payload
+    };
+    if (metadata) {
+      body.metadata = metadata;
+    }
     await this.request(url, {
       method: 'PUT',
       headers: this.buildHeaders(token, true),
-      body: JSON.stringify({ gameId, savegame: payload })
+      body: JSON.stringify(body)
     });
   }
 

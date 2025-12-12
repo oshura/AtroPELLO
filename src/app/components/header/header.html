@@ -67,10 +67,22 @@
         </a>
         <button class="nav-button" (click)="onOptionsClick()">Opciones</button>
         <ng-container *ngIf="auth.authenticated(); else loginButton">
-          <span class="user-badge">
-            {{ auth.displayName() || 'Sesión iniciada' }}
+          <button
+            class="nav-button secondary"
+            type="button"
+            (click)="onSaveGameClick()"
+            [disabled]="isSaveDisabled()"
+            aria-live="polite"
+            title="Guardar partida en la nube"
+          >
+            {{ saves.saving() ? 'Guardando…' : 'Guardar partida' }}
+          </button>
+          <button class="nav-button" type="button" (click)="onLogoutClick()" title="Cerrar sesión">
+            {{ auth.displayName() || 'Cerrar sesión' }}
+          </button>
+          <span class="save-feedback" *ngIf="saveFeedback || saveError" [attr.data-error]="saveError ? true : null">
+            {{ saveError || saveFeedback }}
           </span>
-          <button class="nav-button" type="button" (click)="onLogoutClick()">Cerrar sesión</button>
         </ng-container>
         <ng-template #loginButton>
           <button class="nav-button primary" type="button" (click)="onLoginClick()">Iniciar Sesión</button>

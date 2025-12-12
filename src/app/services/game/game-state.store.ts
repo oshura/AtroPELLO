@@ -450,6 +450,18 @@ export class GameStateStore {
     };
   }
 
+  /** Devuelve todos los snapshots de intel planetario almacenados. */
+  public getPlanetIntelSnapshots(): PlanetIntelSnapshot[] {
+    const snapshots: PlanetIntelSnapshot[] = [];
+    for (const planetId of this.planetIntelById.keys()) {
+      const snapshot = this.getPlanetIntelSnapshot(planetId);
+      if (snapshot) {
+        snapshots.push(snapshot);
+      }
+    }
+    return snapshots;
+  }
+
   /** Obtiene la bitácora persistente de aterrizajes para un planeta. */
   public getLandingLogHistory(planetId: string): LandingEventResult[] {
     const entry = this.planetIntelById.get(planetId);
@@ -490,6 +502,15 @@ export class GameStateStore {
       velocity: s.velocity ? { ...s.velocity } : undefined,
       metadata: s.metadata ? { ...s.metadata } : undefined
     }));
+  }
+
+  /** Obtiene el historial completo de lesser beings por sistema (clonado). */
+  public getLesserBeingMemorySnapshot(): Record<string, LesserBeingInstanceSnapshot[]> {
+    const record: Record<string, LesserBeingInstanceSnapshot[]> = {};
+    for (const [systemId] of this.lesserBeingMemoryBySystem.entries()) {
+      record[systemId] = this.getLesserBeingSnapshots(systemId);
+    }
+    return record;
   }
 
   public clearLesserBeingSnapshots(systemId: string): void {
@@ -688,6 +709,28 @@ export class GameStateStore {
     return this.proceduralSystemArchive.length;
   }
 
+  /** Devuelve una copia profunda del archivo de sistemas procedurales. */
+  public getProceduralSystemArchiveSnapshot(): SolarSystemSnapshot[] {
+    return this.proceduralSystemArchive.map(snapshot => this.cloneSnapshot(snapshot));
+  }
+
+  /** Reemplaza el archivo de sistemas procedurales conservando el orden de entrada. */
+  public replaceProceduralSystemArchive(snapshots: SolarSystemSnapshot[] | null | undefined): void {
+    this.proceduralSystemArchive.length = 0;
+    if (!Array.isArray(snapshots) || snapshots.length === 0) {
+      return;
+    }
+    for (const snapshot of snapshots) {
+      if (!snapshot) {
+        continue;
+      }
+      this.proceduralSystemArchive.push(this.cloneSnapshot(snapshot));
+      if (this.proceduralSystemArchive.length >= this.PROCEDURAL_ARCHIVE_LIMIT) {
+        break;
+      }
+    }
+  }
+
   /**
    * Guarda o actualiza un snapshot procedural visitado para posibles Gate Rite rerolls.
    * Ignora sistemas artesanales.
@@ -721,6 +764,24 @@ export class GameStateStore {
     }
     const idx = Math.floor(Math.random() * this.proceduralSystemArchive.length);
     return this.cloneSnapshot(this.proceduralSystemArchive[idx]);
+  }
+
+  /** Snapshot de cooldowns de colisión usados por el juego. */
+  public getCollisionCooldownSnapshot(): Array<{ objectId: string; allowDamageAt: number }> {
+    const entries: Array<{ objectId: string; allowDamageAt: number }> = [];
+    for (const [objectId, allowDamageAt] of this.collisionCooldowns.entries()) {
+      entries.push({ objectId, allowDamageAt: typeof allowDamageAt === 'number' ? allowDamageAt : 0 });
+    }
+    return entries;
+  }
+
+  /** Snapshot serializable del cache de doppler cues. */
+  public getDopplerCueSnapshot(): Record<string, any> {
+    const snapshot: Record<string, any> = {};
+    for (const [objectId, cue] of this.dopplerCues.entries()) {
+      snapshot[objectId] = this.cloneJsonValue(cue);
+    }
+    return snapshot;
   }
   
   /**
@@ -1035,6 +1096,16 @@ export class GameStateStore {
       this.characterProfile.memory = this.clampPercent(partial.memory);
     }
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character' } });
+  }
+
+  /** Reemplaza el porcentaje narrativo usado por los paneles (0..100). */
+  setMemoryPercent(percent: number): void {
+    const next = this.clampPercent(percent);
+    if (next === this.memoryPercent) {
+      return;
+    }
+    this.memoryPercent = next;
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character', reason: 'memory-percent' } });
   }
 
   /** Ajusta la experiencia del piloto aplicando reglas de nivel. */
@@ -1485,6 +1556,17 @@ export class GameStateStore {
         ]
       }
     };
+  }
+
+  private cloneJsonValue(value: any): any {
+    if (value === null || value === undefined) {
+      return value ?? null;
+    }
+    try {
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return value;
+    }
   }
 
   private cloneSnapshot(snapshot: SolarSystemSnapshot): SolarSystemSnapshot {

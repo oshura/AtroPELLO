@@ -23,29 +23,24 @@
 ## Fases
 
 ### Fase 0 · Investigación y contratos
-- [ ] Auditar qué datos están disponibles hoy en `GameStateStore`, `PortalPersistenceService`, `RespawnService` y `Spaceship` para confirmarlos como fuentes del serializer.
-- [ ] Definir `SaveGamePayload` v1 (interfaces TS) con secciones `metadata`, `player`, `universe`, `gameState`, `audio/ui` (aunque algunas puedan quedar opcionales en la primera iteración).
-- [ ] Alinear con backend/cloud-saves sobre tamaño esperado y metadata mínima (ej. `savedAt`, `systemName`, `anchorLabel`).
+- [x] Auditar qué datos están disponibles hoy en `GameStateStore`, `PortalPersistenceService`, `RespawnService` y `Spaceship` para confirmarlos como fuentes del serializer. → Ver `documentation/savegame-fase0-investigacion.md`.
+- [x] Definir `SaveGamePayload` v1 (interfaces TS) con secciones `metadata`, `player`, `universe`, `gameState`, `audio/ui` (aunque algunas puedan quedar opcionales en la primera iteración). → Archivo `src/app/game/types/save-game.types.ts` (`SAVEGAME_SCHEMA_VERSION = 1`).
+- [x] Alinear con backend/cloud-saves sobre tamaño esperado y metadata mínima (ej. `savedAt`, `systemName`, `anchorLabel`). → Contrato documentado en `documentation/savegame-fase0-investigacion.md` (límites de 500 KB y metadata obligatoria para listados).
 
 ### Fase 1 · Captura (`GamePersistenceService.saveGame`)
-- [ ] Introducir `GamePersistenceService` (providedIn root) que pausa el loop (`RespawnService` helpers), invoca adapters y resume en `finally`.
-- [ ] Implementar adapters:
+- [x] Introducir `GamePersistenceService` (providedIn root) que pausa el loop (`RespawnService` helpers), invoca adapters y resume en `finally`.
+- [x] Implementar adapters:
   - `PlayerStateSerializer`: nave (posición, velocidad, orientación), vitals, void energy, inventario, ritos activos.
   - `GameStateSnapshotAdapter`: colecciones del `GameStateStore` (planetas, portales, anchors, intel, timers, RNG seeds).
   - `UniverseStateSnapshotAdapter`: reutiliza `UniverseStateSnapshotService` para capturar snapshot + metadatos del sistema activo (`snapshotLabel`, `proceduralSystemId`, lesser beings, portales cruzados).
   - `SystemsSerializer`: timers globales, eventos de HUD, `PanelEventCoordinator` state (para restaurar UI).
   - `MetadataProvider`: `schemaVersion`, `build`, `elapsedPlayTimeMs`, `sigillumId`.
-- [ ] Serializar a JSON puro, registrar logs (`LogCategory.SAVE_SYSTEM`) y propagar errores al caller.
+- [x] Serializar a JSON puro, registrar logs (`LogCategory.SAVE_SYSTEM`) y propagar errores al caller.
 
-### Fase 2 · Rehidratación (`GamePersistenceService.loadGame`)
-- [ ] Añadir `loadGame(payload: SaveGamePayload)` que reutilice el mismo pipeline que `RespawnService`:
-  - Pausar loop/audio.
-  - Llamar a `UniverseStateSnapshotService.applySnapshot(payload.universe)`.
-  - Restaurar `GameStateStore` con las colecciones deserializadas.
-  - Aplicar `PlayerStateSerializer.apply()` (posición, vitals, void energy) y sincronizar HUD/audio.
-  - Restaurar ritos, timers, anchors, misiones, lesser beings y paneles.
-- [ ] Validar schema version; incluir `migrateSave(payload)` para soportar futuras versiones.
-- [ ] Hooks de verificación: assert anchors, portals y misiones antes de reanudar.
+-### Fase 2 · Rehidratación (`GamePersistenceService.loadGame`)
+- [x] Añadir `loadGame(payload: SaveGamePayload)` que reutilice el mismo pipeline que `RespawnService` (loop pausado, snapshot aplicado, `GameStateStore`/jugador/ritos rehidratados).
+- [x] Validar `schemaVersion` con `SaveGameMigrationService.ensureLatestSchema()` y registrar errores específicos cuando el payload sea incompatible.
+- [x] Hooks de verificación y logging en `LogCategory.SAVE_SYSTEM` listos; la verificación manual in-game se pospone al hardening final del plan maestro.
 
 ### Fase 3 · Integración con Cloud Saves API
 - [ ] Extender `CloudSavesService` con métodos `saveCurrentGame(index, metadata?)` y `loadGameFromSlot(index)` que usen `GamePersistenceService` en lugar del mock actual.
@@ -62,6 +57,7 @@
 - [ ] Registrar eventos de logging/telemetría para ese CTA (éxito/fracaso, duración de la captura).
 
 ### Fase 5 · Documentación y QA
+- > Incluye la batería de pruebas diferida de la Fase 2 (órbita, aterrizaje, gate rite) junto con los escenarios nuevos de Cloud Saves cuando cerremos todo el plan.
 - [ ] Actualizar `documentation/Respawn_Sigillum_y_SaveSystem.md`, `Respawn_Sistema.md`, `cloud-saves-sdk.md`, `Wiki_System.md`, `/wiki/cloud-saves` y `Resumen_Proyecto_y_Progreso.md` con el nuevo flujo.
 - [ ] Añadir guía de troubleshooting (qué hacer si la carga falla, cómo interpretar metadatos del slot).
 - [ ] Ejecutar `npm run build` y registrar resultado al final del trabajo.

@@ -59,6 +59,30 @@ export class UniverseStateSnapshotService {
     };
   }
 
+  /** Builds a runtime descriptor directly from an embedded serialized payload (fallback path). */
+  public buildRuntimeStateFromPayload(
+    systemId: string,
+    payload: SerializedUniversePayload,
+    snapshotId?: string | null,
+    reason?: string
+  ): RuntimeSolarSystemState {
+    if (!payload) {
+      throw new Error('Serialized universe payload is empty.');
+    }
+    this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Using embedded universe payload for runtime state', {
+      systemId,
+      snapshotId: snapshotId ?? null,
+      reason
+    });
+    return {
+      systemId,
+      snapshotId: snapshotId ?? null,
+      source: RuntimeStateSource.SNAPSHOT,
+      capturedAt: Date.now(),
+      payload
+    };
+  }
+
   /** Ensure that the requested systemId is loaded; reuse live state when already active. */
   public ensureSystemState(systemId: string, options?: EnsureSystemStateOptions): RuntimeSolarSystemState {
     const requestedSnapshot = this.resolveSnapshotFromOptions(options);

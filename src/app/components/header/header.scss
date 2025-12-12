@@ -117,16 +117,28 @@
       background: linear-gradient(90deg, #5a6fd8 0%, #694a8f 100%);
     }
   }
+
+  &.secondary {
+    backdrop-filter: blur(6px);
+    border-color: rgba(118, 231, 202, 0.5);
+    color: #9be5c1;
+
+    &:hover {
+      background: rgba(118, 231, 202, 0.15);
+    }
+  }
 }
 
-.user-badge {
-  padding: 6px 14px;
-  border-radius: 999px;
-  background: rgba(15, 26, 44, 0.75);
-  border: 1px solid rgba(255, 255, 255, 0.25);
+.save-feedback {
+  font-size: 12px;
   color: #9be5c1;
-  font-weight: 600;
-  letter-spacing: 0.04em;
   text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-left: 8px;
+  opacity: 0.85;
+
+  &[data-error] {
+    color: #ff9b9b;
+  }
 }
 
