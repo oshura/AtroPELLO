@@ -1,4 +1,4 @@
-import { SaveGameHarness, createRichSaveGameHarnessOptions } from './testing/savegame-harness';
+import { SaveGameHarness, createGateRiteMismatchHarnessOptions, createRichSaveGameHarnessOptions } from './testing/savegame-harness';
 import { normalizeSaveGamePayload } from './testing/savegame-normalizer';
 import { SaveGamePlayerSection, SaveGameRespawnState } from '../../game/types/save-game.types';
 import { RuntimeSolarSystemState, RuntimeStateSource } from '../../game/types/universe-state.types';
@@ -193,5 +193,22 @@ describe('GamePersistenceService · harness roundtrip', () => {
     const applied = last(harness.playerSerializer.appliedSections);
     expect(applied?.inventory.cargoManifest.length ?? 0).toBeGreaterThan(1);
     expect(payload.universe.portals?.some(portal => portal.linkedPortalId)).toBeTrue();
+  });
+
+  it('prioritizes payload metadata system when anchors are stale', async () => {
+    const harness = new SaveGameHarness(
+      createGateRiteMismatchHarnessOptions({ anchorSystemId: 'sol-origin', destinationSystemId: 'ringworld-7' })
+    );
+    const payload = await harness.save({ reason: 'gate-rite-mismatch' });
+    expect(payload.metadata.systemId).toBe('ringworld-7');
+    expect(payload.player?.respawn?.activeAnchor?.systemId).toBe('sol-origin');
+
+    await harness.load(payload, { reason: 'gate-rite-mismatch-load' });
+
+    const ensureCall = last(harness.universeService.ensureCalls);
+    expect(ensureCall?.systemId).toBe('ringworld-7');
+    const restartContext = harness.getLastRestartContext();
+    expect(restartContext?.targetSystemId).toBe('ringworld-7');
+    expect(restartContext?.runtimeState.systemId).toBe('ringworld-7');
   });
 });

@@ -65,7 +65,8 @@
    - `withLoopPaused()` vuelve a detener el loop para aplicar el snapshot.
    - `gameState.reset()` + `GameStateSnapshotAdapter.restore()` sustituyen colecciones.
    - `PlayerStateSerializer.apply()` coloca al piloto/inventario en memoria.
-   - `UniverseStateSnapshotAdapter.ensureRuntimeState()` reconstruye el sistema destino usando snapshot IDs/anclas.
+   - `GamePersistenceService.resolveTargetSystemId()` ahora prioriza `payload.metadata.systemId` (derivado del snapshot capturado) antes de recurrir al anchor activo o al sistema en vivo; así Gate Rite y otros viajes por portal vuelven exactamente al sistema donde se guardó.
+   - `UniverseStateSnapshotAdapter.ensureRuntimeState()` reconstruye el sistema destino usando snapshot IDs/anclas, y `buildSnapshotOptions()` también incluye `metadata.systemName/systemId` como candidatos para `snapshotLabel`/`snapshotId`.
    - `GameEngine.restartWithContext()` inicia el loop en modo `LOAD_GAME`, posiciona nave/anchor y reanuda la simulación.
 
 4. **Reanudación y métricas**

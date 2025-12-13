@@ -326,17 +326,18 @@ export class GamePersistenceService {
   }
 
   private resolveTargetSystemId(payload: SaveGamePayload, anchor: RespawnAnchorMetadata | null): string {
-    return (
-      anchor?.systemId ??
-      payload.metadata.systemId ??
-      this.universeState.getActiveSystemId() ??
-      'human-system'
-    );
+    const metadataSystemId = payload.metadata.systemId?.trim();
+    const anchorSystemId = anchor?.systemId?.trim();
+    const activeSystemId = this.universeState.getActiveSystemId();
+    return metadataSystemId || anchorSystemId || activeSystemId || 'human-system';
   }
 
   private buildSnapshotOptions(params: { payload: SaveGamePayload; anchor: RespawnAnchorMetadata | null }): EnsureSystemStateOptions | undefined {
     const activeRespawn = params.payload.player?.respawn;
+    const metadata = params.payload.metadata;
     const labelCandidates: Array<string | null | undefined> = [
+      metadata.systemName,
+      metadata.systemId,
       params.anchor?.snapshotLabel,
       params.anchor?.label,
       activeRespawn?.defaultAnchor?.snapshotLabel,
@@ -346,12 +347,14 @@ export class GamePersistenceService {
     const snapshotLabel = labelCandidates.find(candidate => typeof candidate === 'string' && candidate.trim().length > 0)?.trim() ?? null;
     const snapshotId = params.anchor?.snapshotId
       ?? activeRespawn?.defaultAnchor?.snapshotId
-      ?? params.payload.metadata.respawnAnchorId
+      ?? metadata.respawnAnchorId
+      ?? metadata.systemId
       ?? null;
     if (!snapshotLabel && !snapshotId) {
       return undefined;
     }
     return {
+      // Prefer metadata captured at save-time to keep portal transitions consistent
       snapshotLabel,
       snapshotId,
       reason: 'load-game'

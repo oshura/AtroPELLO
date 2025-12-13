@@ -129,6 +129,8 @@ export class GameEngine {
   public gl: WebGL2RenderingContext | null = null;
   private isRunning: boolean = false;
   private lastFrameTime: number = 0;
+  private rafHandle: number | null = null;
+  private rafScheduleSerial: number = 0;
   
   // Sistemas principales
   public camera!: Camera;
@@ -2195,6 +2197,7 @@ export class GameEngine {
   this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'GameEngine.start() called', { wasRunning: this.isRunning });
     
     if (!this.isRunning) {
+      this.cancelPendingFrame('start');
       this.isRunning = true;
       this.lastFrameTime = performance.now();
       this.gameLoop();
@@ -2250,6 +2253,7 @@ export class GameEngine {
    */
   public stop(): void {
     this.isRunning = false;
+    this.cancelPendingFrame('stop');
   this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'GameEngine detenido');
   }
 
@@ -2326,6 +2330,7 @@ export class GameEngine {
    * Bucle principal del juego
    */
   private gameLoop = (): void => {
+    this.rafHandle = null;
     // DEBUG CRÍTICO - Verificar isRunning
     if (!this.isRunning) {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'GameLoop blocked - isRunning false', { isRunning: this.isRunning });
@@ -2352,8 +2357,46 @@ export class GameEngine {
     this.render();
 
     // Programar siguiente frame
-    requestAnimationFrame(this.gameLoop);
+    if (!this.isRunning) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Skipping RAF schedule because loop stopped mid-frame');
+      return;
+    }
+    this.scheduleNextFrame('game-loop');
   };
+
+  private scheduleNextFrame(origin: string): void {
+    if (!this.isRunning) {
+      return;
+    }
+    if (this.rafHandle !== null) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Detected overlapping RAF before scheduling next frame', {
+        origin,
+        rafId: this.rafHandle
+      });
+    }
+    this.rafScheduleSerial += 1;
+    this.rafHandle = requestAnimationFrame(this.gameLoop);
+    if (this.rafScheduleSerial % 240 === 0) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'RAF scheduled checkpoint', {
+        origin,
+        serial: this.rafScheduleSerial,
+        rafId: this.rafHandle
+      });
+    }
+  }
+
+  private cancelPendingFrame(origin: string): void {
+    if (this.rafHandle === null) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'No RAF pending to cancel', { origin });
+      return;
+    }
+    cancelAnimationFrame(this.rafHandle);
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Cancelled pending RAF', {
+      origin,
+      rafId: this.rafHandle
+    });
+    this.rafHandle = null;
+  }
 
   /**
    * Actualiza la lógica del juego
@@ -4359,7 +4402,7 @@ export class GameEngine {
     this.gameState.gameRunning = true;
     this.lastFrameTime = performance.now();
     this.isRunning = true;
-    requestAnimationFrame(() => this.gameLoop());
+    this.scheduleNextFrame('restart-loop');
     this.setAudioPausedForGame(false);
   }
 
@@ -4641,7 +4684,7 @@ export class GameEngine {
       this.lastFrameTime = performance.now();
       
       // Explicitly restart the game loop
-      requestAnimationFrame(() => this.gameLoop());
+      this.scheduleNextFrame('respawn-complete');
       
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn complete - game loop restarted');
       this.setAudioPausedForGame(false);
@@ -4650,7 +4693,7 @@ export class GameEngine {
       // Try to restart anyway
       this.isRunning = true;
       this.lastFrameTime = performance.now();
-      requestAnimationFrame(() => this.gameLoop());
+      this.scheduleNextFrame('respawn-fallback');
       this.setAudioPausedForGame(false);
     }
   }
@@ -4883,7 +4926,7 @@ export class GameEngine {
         this.lastFrameTime = performance.now();
         
         // Explicitly restart the game loop
-        requestAnimationFrame(() => this.gameLoop());
+        this.scheduleNextFrame('load-save-after-death');
         
         this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Save loaded - game loop restarted', { 
           position: { ...this.spaceship.position },

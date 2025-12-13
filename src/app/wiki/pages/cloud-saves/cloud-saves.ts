@@ -362,6 +362,8 @@ export class CloudSavesWikiComponent implements OnInit {
       links: [
         'Pausa/reanuda el loop para congelar nave, GameStateStore y universo antes de serializar el payload.',
         'El metadata incluye `schemaVersion`, `savedAt`, `elapsedPlayTimeMs`, `systemId`, label del ancla y `userId` (si existe sesión).',
+        '`resolveTargetSystemId()` prioriza `metadata.systemId` (capturado del snapshot guardado) y `buildSnapshotOptions()` agrega `systemName/systemId` para pedir el snapshot correcto aunque el anchor siga apuntando al sistema anterior.',
+        'Durante guardados/cargas se cancela el `requestAnimationFrame` pendiente, y los logs `LogCategory.GAME_LOOP` (“RAF scheduled checkpoint” / “Cancelled pending RAF”) permiten verificar que no quedan loops duplicados que maten los FPS tras usar el CTA o el tab.',
         'La carga usa `SaveGameMigrationService.ensureLatestSchema()`, hidrata jugador/estado/universo y deja trazas en `LogCategory.SAVE_SYSTEM` para cada fase.'
       ]
     }

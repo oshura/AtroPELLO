@@ -514,6 +514,34 @@ export function createRichSaveGameHarness(): SaveGameHarness {
   return new SaveGameHarness(createRichSaveGameHarnessOptions());
 }
 
+export function createGateRiteMismatchHarnessOptions(options?: {
+  anchorSystemId?: string;
+  destinationSystemId?: string;
+  destinationSnapshotId?: string | null;
+}): SaveGameHarnessOptions {
+  const anchorSystemId = options?.anchorSystemId ?? 'sol-origin';
+  const destinationSystemId = options?.destinationSystemId ?? 'gate-destination';
+  const destinationSnapshotId = options?.destinationSnapshotId ?? `${destinationSystemId}-snapshot`;
+  const player = deepClone(DEFAULT_PLAYER_SECTION);
+  if (player.respawn.activeAnchor) {
+    player.respawn.activeAnchor.systemId = anchorSystemId;
+    player.respawn.activeAnchor.label = player.respawn.activeAnchor.label ?? 'Origin Anchor';
+    player.respawn.activeAnchor.snapshotLabel = player.respawn.activeAnchor.snapshotLabel ?? 'Origin Anchor Snapshot';
+    player.respawn.activeAnchor.snapshotId = player.respawn.activeAnchor.snapshotId ?? 'origin-anchor-snapshot';
+    player.respawn.lastAnchorLabel = player.respawn.activeAnchor.label;
+  }
+  const runtimeState = deepClone({
+    ...DEFAULT_RUNTIME_STATE,
+    systemId: destinationSystemId,
+    snapshotId: destinationSnapshotId ?? undefined
+  });
+  return {
+    player,
+    runtimeState,
+    snapshotLabel: runtimeState.snapshotId ?? 'gate-destination-snapshot'
+  };
+}
+
 function buildRichPlayerSection(): SaveGamePlayerSection {
   const equipmentLoadout: Record<EquipmentSlot, EquipmentSlotState | null> = {
     [EquipmentSlot.CORE]: {
