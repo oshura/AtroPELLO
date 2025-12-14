@@ -149,6 +149,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <li><strong>Toggle Mode:</strong> Press C to switch between follow and free camera</li>
             <li><strong>Zoom:</strong> Mouse wheel to zoom in/out</li>
             <li><strong>Auto-follow:</strong> Camera automatically tracks ship in follow mode</li>
+            <li><strong>Resize-aware:</strong> Resizing the canvas or browser instantly recalculates aspect ratio and reticle alignment—no reloads or manual tweaks required.</li>
           </ul>
 
           <h3>Interface</h3>

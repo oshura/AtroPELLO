@@ -119,6 +119,14 @@ interface HardcoreDeathContext {
   message?: string;
 }
 
+interface CanvasResizeMetrics {
+  width?: number;
+  height?: number;
+  pixelWidth?: number;
+  pixelHeight?: number;
+  devicePixelRatio?: number;
+}
+
 /**
  * Motor principal del juego que coordina todos los sistemas
  */
@@ -165,6 +173,7 @@ export class GameEngine {
   // Defers a map selection when the user clicks immediately after opening the map
   // before the id->target mapping has been rebuilt in the first render pass.
   private pendingMapSelectId: string | null = null;
+  private canvasResizeHandler: EventListener | null = null;
   
   public debugSpawnLesserBeing(species: LesserBeing): void {
     if (!this.lesserBeingSpawner || !this.spaceship) {
@@ -1377,7 +1386,15 @@ export class GameEngine {
 
   // Crear cámara
   const canvas = canvasRef.nativeElement;
-  this.domCanvas = canvas;
+    this.domCanvas = canvas;
+        this.registerCanvasResizeListener(canvas);
+        this.applyCanvasResize({
+          width: canvas.clientWidth,
+          height: canvas.clientHeight,
+          pixelWidth: canvas.width,
+          pixelHeight: canvas.height,
+          devicePixelRatio: typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1
+        });
       const aspect = canvas.width / canvas.height;
       this.camera = new Camera(aspect);
 
@@ -9182,22 +9199,72 @@ export class GameEngine {
     }
   }
 
+  private registerCanvasResizeListener(canvas: HTMLCanvasElement): void {
+    this.unregisterCanvasResizeListener();
+    this.canvasResizeHandler = (event: Event) => {
+      const detail = (event as CustomEvent<CanvasResizeMetrics>).detail;
+      this.applyCanvasResize(detail);
+    };
+    canvas.addEventListener('webgl-resize', this.canvasResizeHandler);
+  }
+
+  private unregisterCanvasResizeListener(): void {
+    if (this.domCanvas && this.canvasResizeHandler) {
+      this.domCanvas.removeEventListener('webgl-resize', this.canvasResizeHandler);
+    }
+    this.canvasResizeHandler = null;
+  }
+
+  /**
+   * Sincroniza el canvas cuando cambia de tamaño (ResizeObserver o handler manual)
+   */
+  public applyCanvasResize(detail?: CanvasResizeMetrics): void {
+    if (!this.domCanvas) {
+      return;
+    }
+
+    const fallbackWidth = this.domCanvas.clientWidth || this.domCanvas.width;
+    const fallbackHeight = this.domCanvas.clientHeight || this.domCanvas.height;
+    const cssWidth = detail?.width ?? fallbackWidth;
+    const cssHeight = detail?.height ?? fallbackHeight;
+    const devicePixelRatio = detail?.devicePixelRatio ?? (typeof window !== 'undefined' ? window.devicePixelRatio || 1 : 1);
+
+    const pixelWidthRaw = detail?.pixelWidth ?? cssWidth * devicePixelRatio;
+    const pixelHeightRaw = detail?.pixelHeight ?? cssHeight * devicePixelRatio;
+
+    const pixelWidth = Math.max(1, Math.round(pixelWidthRaw || 1));
+    const pixelHeight = Math.max(1, Math.round(pixelHeightRaw || 1));
+    const displayWidth = Math.max(1, Math.round((cssWidth || pixelWidth)));
+    const displayHeight = Math.max(1, Math.round((cssHeight || pixelHeight)));
+
+    if (this.domCanvas.width !== pixelWidth || this.domCanvas.height !== pixelHeight) {
+      this.domCanvas.width = pixelWidth;
+      this.domCanvas.height = pixelHeight;
+    }
+
+    this.updateAspectRatio(pixelWidth, pixelHeight, displayWidth, displayHeight);
+  }
+
   /**
    * Actualiza el aspect ratio cuando cambia el tamaño del canvas
    */
-  public updateAspectRatio(width: number, height: number): void {
+  public updateAspectRatio(pixelWidth: number, pixelHeight: number, displayWidth?: number, displayHeight?: number): void {
+    const safePixelWidth = Math.max(1, Math.round(pixelWidth));
+    const safePixelHeight = Math.max(1, Math.round(pixelHeight));
+
     if (this.camera) {
-      this.camera.setAspectRatio(width / height);
+      this.camera.setAspectRatio(safePixelWidth / safePixelHeight);
     }
     
     if (this.gl) {
-      this.gl.viewport(0, 0, width, height);
+      this.gl.viewport(0, 0, safePixelWidth, safePixelHeight);
     }
 
-    // Actualizar tamaño del sistema de retícula
-    if (this.reticleManager) {
-      this.reticleManager.updateCanvasSize(width, height);
-    }
+    const hudWidth = Math.max(1, Math.round(displayWidth ?? safePixelWidth));
+    const hudHeight = Math.max(1, Math.round(displayHeight ?? safePixelHeight));
+
+    this.reticleManager?.updateCanvasSize(hudWidth, hudHeight);
+    this.adaptiveTargeting?.updateCanvasSize(hudWidth, hudHeight);
   }
 
   /**
@@ -9218,6 +9285,7 @@ export class GameEngine {
    */
   public cleanup(): void {
     this.stop();
+    this.unregisterCanvasResizeListener();
     
     if (this.shaderManager) {
       this.shaderManager.cleanup();

@@ -14,6 +14,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - `GameEngine`: render loop, iluminación, gestión de VAOs/VBOs, instancing opcional para asteroides, culling por distancia/LOD de clústeres.
   - Objetos clave: `Spaceship`, `Asteroid`, `SuperAsteroid`, `Planet` y variantes (Gaseous/Giant/Ringed/EarthSplit), `Sun`, `Portal`, `MegaAsteroid`.
   - Shaders y texturas: `ShaderManager` con servicios especializados (HUD/Outline/etc.) y `TextureManager` con texturas procedurales y cargadas.
+  - Canvas adaptativo: `GameEngine.applyCanvasResize()` escucha `webgl-resize` del `WebGLService` y recalcula aspect ratio, viewport y retícula diferenciando píxeles físicos (viewport) y dimensiones CSS (UI). `GameInitializer.updateCanvasSize()` invoca el mismo flujo como respaldo manual, así el HUD, la cámara y el targeting permanecen alineados al redimensionar la ventana o mover el canvas.
 
 - Sistema de Salud y Destrucción Reactivo
   - Arquitectura reactiva: `GameObject` base tiene getter/setter para `healthCurrent` con callback automático cuando salud <= 0.

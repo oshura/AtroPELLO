@@ -150,6 +150,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
               <span>Zoom In/Out</span>
             </div>
           </div>
+          <p class="note camera-note">Resize the browser or detach the canvas whenever you want—the resize-aware pipeline recalculates the cockpit camera, viewport and HUD/reticle alignment in the next frame so nothing stretches.</p>
 
           <div class="control-group">
             <h3>Interface</h3>

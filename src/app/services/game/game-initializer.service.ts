@@ -296,6 +296,16 @@ export class GameInitializer {
 
       this.logger.log(LogLevel.INFO, LogCategory.RENDER, 'Canvas resized', { width: displayWidth, height: displayHeight });
     }
+
+    if (this.gameEngine) {
+      this.gameEngine.applyCanvasResize({
+        width: rect.width,
+        height: rect.height,
+        pixelWidth: displayWidth,
+        pixelHeight: displayHeight,
+        devicePixelRatio
+      });
+    }
   }
 
   /**
