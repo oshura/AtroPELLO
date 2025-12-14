@@ -1,33 +1,82 @@
 <section class="cloud-panel">
   <header>
-    <p class="cloud-panel__eyebrow">{{ copy.eyebrow }}</p>
-    <h1>{{ copy.title }}</h1>
-    <p class="cloud-panel__subtitle">
-      {{ saves.hasSession() ? copy.subtitleAuth : copy.subtitleAnon }}
-    </p>
-    <p *ngIf="saves.hasSession() && username" class="cloud-panel__user">
-      {{ copy.loggedAsLabel }} <strong>{{ username }}</strong>
-    </p>
+    <p class="cloud-panel__eyebrow">{{ copy.eyebrow + ' for ' + (copy.loggedAsLabel || 'Guest') }}</p>
   </header>
+
+  <p class="cloud-panel__rule">
+    {{ copy.ruleSingleSlot }}
+  </p>
 
   <div *ngIf="!saves.hasSession()" class="cloud-panel__empty">
     <p>{{ copy.requirements }}</p>
   </div>
 
-  <div *ngIf="saves.hasSession()" class="cloud-panel__actions">
-    <button type="button" (click)="sync()" [disabled]="isBusy()">
-      {{ copy.actionSync }}
-    </button>
-    <button type="button" (click)="loadLatest()" [disabled]="isBusy()">
-      {{ copy.actionLoadLatest }}
-    </button>
-    <button type="button" class="cloud-panel__action--primary" (click)="saveSlotZero()" [disabled]="isBusy()">
-      {{ copy.actionSaveSlot }}
-    </button>
-    <button type="button" disabled>
-      {{ copy.actionManage }}
-    </button>
-  </div>
+  <ng-container *ngIf="saves.hasSession()">
+    <div class="cloud-panel__actions">
+      <div class="cloud-panel__action-group">
+        <button type="button" class="cloud-panel__action--primary" (click)="saveSelectedSlot()" [disabled]="isSaveDisabled()">
+          {{ copy.actionSave }}
+        </button>
+        <button type="button" (click)="loadSelectedSlot()" [disabled]="isLoadDisabled()">
+          {{ copy.actionLoad }}
+        </button>
+        <button type="button" class="cloud-panel__action--danger" (click)="deleteSelectedSlot()" [disabled]="isDeleteDisabled()">
+          {{ copy.actionDelete }}
+        </button>
+      </div>
+      <button type="button" class="cloud-panel__toggle" (click)="toggleViewAll()" [disabled]="isBusy()">
+        {{ viewAll() ? copy.actionViewAssigned : copy.actionViewAll }}
+      </button>
+    </div>
+
+    <p *ngIf="viewAll()" class="cloud-panel__warning">
+      {{ copy.viewAllWarning }}
+    </p>
+    <p *ngIf="requiresSelection() && selectedSlotIndex() === null" class="cloud-panel__hint">
+      {{ copy.selectionHint }}
+    </p>
+
+    <div *ngIf="displayedSlots().length; else emptySlots" class="cloud-panel__slots" [class.cloud-panel__slots--view-all]="viewAll()">
+      <article
+        *ngFor="let slot of displayedSlots(); trackBy: trackSlot"
+        class="cloud-panel__slot-card"
+        [class.cloud-panel__slot-card--active]="slot.index === lastLoadedIndex"
+        [class.cloud-panel__slot-card--selected]="slot.index === selectedSlotIndex()"
+        role="button"
+        tabindex="0"
+        (click)="selectSlot(slot.index)"
+        (keydown.enter)="selectSlot(slot.index)"
+        (keydown.space)="selectSlot(slot.index)"
+      >
+        <header>
+          <span>#{{ slot.index }}</span>
+          <small>{{ slot.metadata?.title || slot.metadata?.systemName || slot.key || '—' }}</small>
+        </header>
+        <p class="cloud-panel__slot-date">
+          {{ slot.savedAt ? (slot.savedAt | date: 'medium') : '—' }}
+        </p>
+        <dl>
+          <div>
+            <dt>{{ copy.metadataSystem }}</dt>
+            <dd>{{ slot.metadata?.systemName || slot.metadata?.systemId || '—' }}</dd>
+          </div>
+          <div>
+            <dt>{{ copy.metadataAnchor }}</dt>
+            <dd>{{ slot.metadata?.anchorLabel || slot.metadata?.anchorPlanetName || '—' }}</dd>
+          </div>
+          <div>
+            <dt>{{ copy.metadataCharacter }}</dt>
+            <dd>{{ slot.metadata?.characterId || '—' }}</dd>
+          </div>
+        </dl>
+      </article>
+    </div>
+    <ng-template #emptySlots>
+      <p class="cloud-panel__list-empty">
+        {{ copy.listEmpty }}
+      </p>
+    </ng-template>
+  </ng-container>
 
   <div *ngIf="lastLoadedSlot" class="cloud-panel__feedback">
     <div class="cloud-panel__feedback-meta">
@@ -60,45 +109,18 @@
           <dt>{{ copy.metadataBuild }}</dt>
           <dd>{{ lastLoadedMetadata?.buildLabel || '—' }}</dd>
         </div>
+        <div>
+          <dt>{{ copy.metadataCharacter }}</dt>
+          <dd>{{ lastLoadedMetadata?.characterId || '—' }}</dd>
+        </div>
+        <div>
+          <dt>{{ copy.metadataSlots }}</dt>
+          <dd>{{ lastLoadedMetadata?.slotCapacity ?? '—' }}</dd>
+        </div>
       </dl>
     </div>
     <pre><code>{{ lastLoadedSlot.savegame | json }}</code></pre>
   </div>
-
-  <ng-container *ngIf="saves.hasSession()">
-    <div *ngIf="saves.slots().length; else emptySlots" class="cloud-panel__list">
-      <div class="cloud-panel__list-head">
-        <span>{{ copy.listHeaderSlot }}</span>
-        <span>{{ copy.listHeaderSavedAt }}</span>
-        <span>{{ copy.listHeaderActions }}</span>
-      </div>
-
-      <div
-        *ngFor="let slot of saves.slots(); trackBy: trackSlot"
-        class="cloud-panel__row"
-        [class.cloud-panel__row--active]="slot.index === lastLoadedIndex"
-      >
-        <div class="cloud-panel__slot-label">
-          <span>#{{ slot.index }}</span>
-          <small>{{ slot.key }}</small>
-        </div>
-        <time>{{ slot.savedAt | date: 'medium' }}</time>
-        <div class="cloud-panel__row-actions">
-          <button type="button" (click)="loadSlot(slot.index)" [disabled]="isBusy()">
-            {{ copy.actionLoadSlot }}
-          </button>
-          <button type="button" class="cloud-panel__action--danger" (click)="deleteSlot(slot.index)" [disabled]="isBusy()">
-            {{ copy.actionDelete }}
-          </button>
-        </div>
-      </div>
-    </div>
-    <ng-template #emptySlots>
-      <p class="cloud-panel__list-empty">
-        {{ copy.listEmpty }}
-      </p>
-    </ng-template>
-  </ng-container>
 
   <p class="cloud-panel__note">
     {{ saves.error() || copy.note }}

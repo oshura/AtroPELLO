@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, computed, effect, signal } from '@angular/core';
 import { DatePipe, JsonPipe, NgFor, NgIf } from '@angular/common';
 import { CloudSavesService, CloudSlotLoadResult } from './cloud-saves.service';
 import { CloudSaveSlotData, CloudSaveSlotMetadata, CloudSaveSlotRef } from './cloud-saves.models';
@@ -12,19 +12,18 @@ export interface CloudSavesPanelCopy {
   subtitleAnon: string;
   loggedAsLabel: string;
   requirements: string;
-  actionSync: string;
-  actionLoadLatest: string;
-  actionSaveSlot: string;
-  actionLoadSlot: string;
+  actionSave: string;
+  actionLoad: string;
   actionDelete: string;
-  listHeaderSlot: string;
-  listHeaderSavedAt: string;
-  listHeaderActions: string;
+  actionViewAll: string;
+  actionViewAssigned: string;
   listEmpty: string;
   loadedFeedback: string;
-  actionManage: string;
   note: string;
   confirmLoad: string;
+  ruleSingleSlot: string;
+  selectionHint: string;
+  viewAllWarning: string;
   metadataHeading: string;
   metadataSystem: string;
   metadataAnchor: string;
@@ -32,6 +31,8 @@ export interface CloudSavesPanelCopy {
   metadataDuration: string;
   metadataSavedAt: string;
   metadataBuild: string;
+  metadataCharacter: string;
+  metadataSlots: string;
 }
 
 export const DEFAULT_CLOUD_SAVES_COPY: CloudSavesPanelCopy = {
@@ -41,26 +42,27 @@ export const DEFAULT_CLOUD_SAVES_COPY: CloudSavesPanelCopy = {
   subtitleAnon: 'Sign in with Cognito to enable cloud saves.',
   loggedAsLabel: 'Signed in as',
   requirements: 'You need an active session before sending authenticated REST calls.',
-  actionSync: 'Sync slots',
-  actionLoadLatest: 'Load latest slot',
-  actionSaveSlot: 'Save slot 0',
-  actionLoadSlot: 'Load slot',
-  actionDelete: 'Delete',
-  listHeaderSlot: 'Slot',
-  listHeaderSavedAt: 'Saved at',
-  listHeaderActions: 'Actions',
-  listEmpty: 'No slots yet. Use “Save slot 0” to create the first payload.',
+  actionSave: 'Save slot',
+  actionLoad: 'Load slot',
+  actionDelete: 'Delete slot',
+  actionViewAll: 'View all saves',
+  actionViewAssigned: 'View my slots',
+  listEmpty: 'No slots yet. Use "Save slot" to capture your current run.',
   loadedFeedback: 'Last load',
-  actionManage: 'Manage slots',
   note: 'If something fails check the console for LogCategory.SAVE_SYSTEM traces.',
   confirmLoad: 'Load this slot and overwrite the current session? The ship state will be replaced.',
+  ruleSingleSlot: 'Every pilot begins with a single slot. Spells or ship modules can grant more, but until then the header CTA saves directly to that slot.',
+  selectionHint: 'Select a slot to enable save/load/delete.',
+  viewAllWarning: 'Viewing all saves disables the save action to avoid overwriting other pilots.',
   metadataHeading: 'Runtime metadata',
   metadataSystem: 'System',
   metadataAnchor: 'Anchor',
   metadataPlaytime: 'Playtime',
   metadataDuration: 'Load duration',
   metadataSavedAt: 'Captured',
-  metadataBuild: 'Build'
+  metadataBuild: 'Build',
+  metadataCharacter: 'Pilot id',
+  metadataSlots: 'Slot capacity'
 };
 
 @Component({
@@ -77,39 +79,107 @@ export class CloudSavesPanelComponent {
   protected lastLoadedSlot: CloudSaveSlotData | null = null;
   protected lastLoadedMetadata: CloudSaveSlotMetadata | null = null;
   protected lastLoadResult: LoadGameResult | null = null;
+  protected selectedSlotIndex = signal<number | null>(null);
+  protected viewAll = signal(false);
+  protected displayedSlots = computed(() => (this.viewAll() ? this.saves.slots() : this.saves.characterSlots()));
 
-  constructor(protected readonly saves: CloudSavesService) {}
-
-  protected sync() {
-    void this.runSafely(() => this.saves.syncSlots());
+  constructor(protected readonly saves: CloudSavesService) {
+    effect(() => {
+      const slots = this.displayedSlots();
+      const current = this.selectedSlotIndex();
+      if (!slots.length) {
+        this.selectedSlotIndex.set(null);
+        return;
+      }
+      if (slots.length === 1) {
+        this.selectedSlotIndex.set(slots[0].index);
+        return;
+      }
+      if (!slots.some(slot => slot.index === current)) {
+        this.selectedSlotIndex.set(null);
+      }
+    });
   }
 
   protected isBusy(): boolean {
     return this.saves.loading() || this.saves.saving();
   }
 
-  protected loadLatest() {
-    const slots = this.saves.slots();
-    if (!slots.length) {
-      return;
-    }
-    void this.runSafely(() => this.loadAndApply(slots[0].index, 'latest'));
+  protected toggleViewAll(): void {
+    this.viewAll.update(value => !value);
   }
 
-  protected saveSlotZero() {
+  protected selectSlot(index: number): void {
+    if (this.isBusy()) {
+      return;
+    }
+    this.selectedSlotIndex.set(index);
+  }
+
+  protected trackSlot(_index: number, slot: CloudSaveSlotRef): string {
+    return slot.key ?? `${slot.index}-${slot.savedAt}`;
+  }
+
+  protected requiresSelection(): boolean {
+    return this.displayedSlots().length > 1;
+  }
+
+  protected isSaveDisabled(): boolean {
+    if (!this.saves.hasSession() || this.isBusy()) {
+      return true;
+    }
+    if (this.viewAll()) {
+      return true;
+    }
+    if (this.requiresSelection() && this.selectedSlotIndex() === null) {
+      return true;
+    }
+    return false;
+  }
+
+  protected isLoadDisabled(): boolean {
+    if (!this.saves.hasSession() || this.isBusy()) {
+      return true;
+    }
+    if (!this.displayedSlots().length) {
+      return true;
+    }
+    if (this.requiresSelection() && this.selectedSlotIndex() === null) {
+      return true;
+    }
+    return false;
+  }
+
+  protected isDeleteDisabled(): boolean {
+    return this.isLoadDisabled();
+  }
+
+  protected saveSelectedSlot(): void {
+    if (this.isSaveDisabled()) {
+      return;
+    }
+    const index = this.selectedSlotIndex() ?? this.saves.getDefaultSaveSlotIndex();
     void this.runSafely(() =>
-      this.saves.saveCurrentGame(0, {
-        reason: 'cloud-panel-save-slot-0',
-        label: 'Panel slot 0'
+      this.saves.saveCurrentGame(index, {
+        reason: `cloud-panel-save-slot-${index}`,
+        label: `Panel slot ${index}`
       })
     );
   }
 
-  protected loadSlot(index: number) {
+  protected loadSelectedSlot(): void {
+    if (this.isLoadDisabled()) {
+      return;
+    }
+    const index = this.selectedSlotIndex() ?? this.saves.getDefaultSaveSlotIndex();
     void this.runSafely(() => this.loadAndApply(index, `slot-${index}`));
   }
 
-  protected deleteSlot(index: number) {
+  protected deleteSelectedSlot(): void {
+    if (this.isDeleteDisabled()) {
+      return;
+    }
+    const index = this.selectedSlotIndex() ?? this.saves.getDefaultSaveSlotIndex();
     void this.runSafely(async () => {
       await this.saves.deleteSave(index);
       if (this.lastLoadedIndex === index) {
@@ -119,14 +189,6 @@ export class CloudSavesPanelComponent {
         this.lastLoadResult = null;
       }
     });
-  }
-
-  protected trackSlot(_index: number, slot: CloudSaveSlotRef): string {
-    return slot.key ?? `${slot.index}-${slot.savedAt}`;
-  }
-
-  protected manage() {
-    // Placeholder for future UI (slots table, delete, etc.)
   }
 
   private async loadAndApply(index: number, reasonSuffix: string): Promise<void> {
@@ -146,7 +208,7 @@ export class CloudSavesPanelComponent {
     try {
       return await work();
     } catch (error) {
-      console.warn('[CloudSavesPanel] Acción de cloud saves fallida', error);
+      console.warn('[CloudSavesPanel] Accion de cloud saves fallida', error);
       return null;
     }
   }
@@ -179,7 +241,11 @@ export class CloudSavesPanelComponent {
       anchorPlanetName: meta.anchorPlanetName ?? null,
       savedAt: meta.savedAt ?? null,
       playTimeMs: meta.elapsedPlayTimeMs ?? null,
-      buildLabel: meta.buildLabel ?? null
+      buildLabel: meta.buildLabel ?? null,
+      characterId: meta.characterId ?? null,
+      characterSlotIndexes: meta.characterSlotIndexes ?? null,
+      slotCapacity: meta.slotCapacity ?? null,
+      activeSlotIndex: meta.activeSlotIndex ?? null
     };
   }
 

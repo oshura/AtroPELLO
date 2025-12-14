@@ -17,6 +17,20 @@ import { CloudSavesPanelComponent } from '../../../libs/cloud-saves/cloud-saves-
 })
 export class AudioSettingsDialogComponent implements OnChanges {
   @Input() isVisible = false;
+  private requestedStartTab: 'audio' | 'controls' | 'saves' | null = null;
+
+  @Input()
+  set startTab(value: 'audio' | 'controls' | 'saves' | null) {
+    this.requestedStartTab = value;
+    if (value) {
+      this.applyExternalTab(value);
+    }
+  }
+
+  get startTab(): 'audio' | 'controls' | 'saves' | null {
+    return this.requestedStartTab;
+  }
+
   @Output() closed = new EventEmitter<void>();
 
   // UI values [0..100]
@@ -63,6 +77,9 @@ export class AudioSettingsDialogComponent implements OnChanges {
       if (now) {
         if (this.activeTab === 'saves' && !this.auth.authenticated()) {
           this.activeTab = 'audio';
+        }
+        if (this.requestedStartTab) {
+          this.applyExternalTab(this.requestedStartTab);
         }
         // Dialog opened: pause ambient loop and music to allow accurate previews
   try { this.musicDirector.stop(300); this.pausedMusic = true; } catch {}
@@ -217,6 +234,7 @@ export class AudioSettingsDialogComponent implements OnChanges {
       return;
     }
     this.activeTab = tab;
+    this.requestedStartTab = tab;
   }
 
   private rebuildBindingColumns() {
@@ -232,5 +250,13 @@ export class AudioSettingsDialogComponent implements OnChanges {
       { base: perCol, items: c2 },
       { base: perCol*2, items: c3 }
     ].filter(col => col.items.length > 0);
+  }
+
+  private applyExternalTab(tab: 'audio' | 'controls' | 'saves'): void {
+    if (tab === 'saves' && !this.auth.authenticated()) {
+      this.activeTab = 'audio';
+      return;
+    }
+    this.activeTab = tab;
   }
 }

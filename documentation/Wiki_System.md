@@ -18,9 +18,8 @@
 | `/wiki/spaceship` | `pages/spaceship/spaceship.ts` | Información del fuselaje, módulos y ahora la Marquesina del HUD (eventos visibles). | `nave`, `thrusters`, `hud` |
 | `/wiki/solar-systems` | `pages/solar-systems/solar-systems.ts` | Generación de sistemas solares. | `procedural`, `orbita` |
 | `/wiki/planets` | `pages/planets/planets.ts` | Tipos de planeta y trasfondo. | `planetas`, `habitabilidad` |
-| `/wiki/game-rules` | `pages/game-rules/game-rules.ts` | Reglas básicas, aterrizaje y supervivencia. | `controles`, `aterrizaje` |
+| `/wiki/game-rules` | `pages/game-rules/game-rules.ts` | Reglas básicas, aterrizaje, supervivencia y limitaciones actuales de Cloud Saves (un slot por piloto salvo mejoras). | `controles`, `aterrizaje`, `cloud saves` |
 | (nuevo) `/wiki/inventory` | `pages/inventory/inventory.ts` | Panel de inventario, estadísticas y slots. | `inventario`, `equipo`, `cordura` |
-| `/wiki/cloud-saves` | `pages/cloud-saves/cloud-saves.ts` | Login por cookie compartida, CTA del header y tab “Partidas” con slots reales, metadata y manejo de errores. | `cloud`, `saves`, `cognito` |
 
 ## Reglas para añadir páginas
 1. **Registrar la ruta** en `wiki.routes.ts` usando `loadComponent` para mantener lazy loading.

@@ -4,6 +4,7 @@ export interface CloudSaveSlotRef {
   index: number;
   key: string;
   savedAt: string;
+  metadata?: CloudSaveSlotMetadata | null;
 }
 
 export interface CloudSaveSlotMetadata {
@@ -15,6 +16,10 @@ export interface CloudSaveSlotMetadata {
   savedAt?: number | null;
   playTimeMs?: number | null;
   buildLabel?: string | null;
+  characterId?: string | null;
+  characterSlotIndexes?: number[] | null;
+  slotCapacity?: number | null;
+  activeSlotIndex?: number | null;
 }
 
 export interface CloudSaveSlotData extends CloudSaveSlotRef {

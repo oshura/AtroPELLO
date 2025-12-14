@@ -194,6 +194,14 @@ export class GameStateStore {
   public readonly knownSpells: Set<SpellType> = new Set(Object.values(SpellType));
   /** Layout personalizado de glifos del grimorio (coordenadas normalizadas 0..1) */
   public grimoireGlyphLayout: Partial<Record<SpellType, { nx: number; ny: number }>> = {};
+  /** Identificador persistente del piloto para Cloud Saves / progresión. */
+  private characterId: string = this.createCharacterId();
+  /** Índices de slots de Cloud Saves asignados a este piloto. */
+  private cloudSaveSlotIndexes: number[] = [0];
+  /** Número máximo de slots que este piloto puede desbloquear. */
+  private cloudSaveSlotCapacity = 1;
+  /** Slot activo sobre el que se guardará/cargará por defecto. */
+  private activeCloudSaveSlotIndex: number | null = 0;
   
   // ═══════════════════════════════════════════════════════════════════════════
   //  GAME STATE FLAGS
@@ -327,6 +335,59 @@ export class GameStateStore {
       }
     }
     return snapshot;
+  }
+
+  public getCharacterId(): string {
+    return this.characterId;
+  }
+
+  public setCharacterId(id: string | null | undefined): void {
+    const normalized = id?.trim();
+    this.characterId = normalized && normalized.length ? normalized : this.createCharacterId();
+  }
+
+  public getCloudSaveSlotIndexes(): number[] {
+    return [...this.cloudSaveSlotIndexes];
+  }
+
+  public setCloudSaveSlotIndexes(indexes: Array<number | null | undefined> | null | undefined): void {
+    const normalized = this.normalizeSlotIndexList(indexes);
+    this.cloudSaveSlotIndexes = normalized.length ? normalized : [0];
+    if (!this.cloudSaveSlotIndexes.includes(this.activeCloudSaveSlotIndex ?? Number.NaN)) {
+      this.activeCloudSaveSlotIndex = this.cloudSaveSlotIndexes[0] ?? null;
+    }
+  }
+
+  public getCloudSaveSlotCapacity(): number {
+    return this.cloudSaveSlotCapacity;
+  }
+
+  public setCloudSaveSlotCapacity(value: number | null | undefined): void {
+    this.cloudSaveSlotCapacity = this.normalizeSlotCapacity(value);
+  }
+
+  public getActiveCloudSaveSlotIndex(): number | null {
+    return this.activeCloudSaveSlotIndex;
+  }
+
+  public setActiveCloudSaveSlotIndex(index: number | null | undefined): void {
+    const normalized = this.normalizeSlotIndex(index);
+    if (normalized === null) {
+      this.activeCloudSaveSlotIndex = this.cloudSaveSlotIndexes[0] ?? null;
+      return;
+    }
+    if (!this.cloudSaveSlotIndexes.includes(normalized)) {
+      this.cloudSaveSlotIndexes = [...this.cloudSaveSlotIndexes, normalized].sort((a, b) => a - b);
+    }
+    this.activeCloudSaveSlotIndex = normalized;
+  }
+
+  public getDefaultCloudSaveSlotIndex(): number {
+    return this.activeCloudSaveSlotIndex ?? this.cloudSaveSlotIndexes[0] ?? 0;
+  }
+
+  public getCloudSaveSlotCount(): number {
+    return this.cloudSaveSlotIndexes.length;
   }
 
   public getRespawnAnchor(): RespawnAnchorMetadata | null {
@@ -1343,6 +1404,10 @@ export class GameStateStore {
     this.grimoireReopenAllowedAtMs = 0;
     this.landingStatus = { ready: false, context: null };
     this.landingThreat = { active: false, reasons: [] };
+    this.characterId = this.createCharacterId();
+    this.cloudSaveSlotIndexes = [0];
+    this.cloudSaveSlotCapacity = 1;
+    this.activeCloudSaveSlotIndex = 0;
     
     // Limpiar mapeos
     this.collisionCooldowns.clear();
@@ -1365,6 +1430,39 @@ export class GameStateStore {
    */
   private _notifyChange(event: GameStateChangeEvent): void {
     this._stateChanged$.next(event);
+  }
+
+  private createCharacterId(): string {
+    try {
+      if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+        return crypto.randomUUID();
+      }
+    } catch {}
+    return `pilot-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
+  }
+
+  private normalizeSlotIndex(value: number | null | undefined): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return null;
+    }
+    return Math.max(0, Math.floor(value));
+  }
+
+  private normalizeSlotIndexList(indexes: Array<number | null | undefined> | null | undefined): number[] {
+    if (!Array.isArray(indexes)) {
+      return [];
+    }
+    const normalized = indexes
+      .map(value => this.normalizeSlotIndex(value))
+      .filter((value): value is number => value !== null);
+    return Array.from(new Set(normalized)).sort((a, b) => a - b);
+  }
+
+  private normalizeSlotCapacity(value: number | null | undefined): number {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return Math.max(1, this.cloudSaveSlotIndexes.length);
+    }
+    return Math.max(1, Math.floor(value));
   }
 
   private clampPercent(value: number): number {

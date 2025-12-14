@@ -172,7 +172,11 @@ export class PlayerStateSerializer {
         ...profile,
         age: { ...profile.age }
       },
-      memoryPercent: this.safeNumber(this.gameState.memoryPercent)
+      memoryPercent: this.safeNumber(this.gameState.memoryPercent),
+      characterId: this.gameState.getCharacterId(),
+      slotCapacity: this.gameState.getCloudSaveSlotCapacity(),
+      availableSlotIndexes: this.gameState.getCloudSaveSlotIndexes(),
+      activeSlotIndex: this.gameState.getActiveCloudSaveSlotIndex()
     };
   }
 
@@ -241,6 +245,18 @@ export class PlayerStateSerializer {
     }
     if (typeof state?.memoryPercent === 'number') {
       this.gameState.setMemoryPercent(state.memoryPercent);
+    }
+    if (state?.characterId) {
+      this.gameState.setCharacterId(state.characterId);
+    }
+    if (Array.isArray(state?.availableSlotIndexes)) {
+      this.gameState.setCloudSaveSlotIndexes(state.availableSlotIndexes);
+    }
+    if (typeof state?.slotCapacity === 'number') {
+      this.gameState.setCloudSaveSlotCapacity(state.slotCapacity);
+    }
+    if (state && 'activeSlotIndex' in state) {
+      this.gameState.setActiveCloudSaveSlotIndex(state.activeSlotIndex ?? null);
     }
   }
 

@@ -2,24 +2,42 @@ import { TestBed } from '@angular/core/testing';
 import { provideZonelessChangeDetection } from '@angular/core';
 import { CloudSavesService } from './cloud-saves.service';
 import { CLOUD_SAVES_GAME_CONTEXT, CLOUD_SAVES_SESSION_BRIDGE, CLOUD_SAVES_SETTINGS, CloudSavesGameContext, CloudSavesSessionBridge, CloudSavesSettings } from './cloud-saves.tokens';
-import { CloudSaveMasterFile } from './cloud-saves.models';
+import { CloudSaveMasterFile, CloudSaveSlotData } from './cloud-saves.models';
 import { CloudSavesClient } from './cloud-saves.client';
 import { GamePersistenceService } from '../../services/game/game-persistence.service';
 import { LoggingService } from '../../services/logging.service';
 
-class StubClient implements Pick<CloudSavesClient, 'listSlots' | 'putSave' | 'deleteSave'> {
+class StubClient implements Pick<CloudSavesClient, 'listSlots' | 'putSave' | 'deleteSave' | 'getSlot'> {
   public lastPut: { index: number; payload: unknown; metadata?: unknown } | null = null;
   public lastDelete: number | null = null;
   public slots: CloudSaveMasterFile = {
     gameId: 'cloud-test',
     userId: 'user-123',
-    saves: [
-      { index: 0, key: 'slot-0', savedAt: '2025-12-09T00:00:00Z' }
-    ]
+    saves: []
   };
 
   async listSlots(): Promise<CloudSaveMasterFile> {
     return this.slots;
+  }
+
+  async getSlot(_token: string, _gameId: string, index: number): Promise<CloudSaveSlotData> {
+    return {
+      index,
+      key: `slot-${index}`,
+      savedAt: '2025-12-09T00:00:00Z',
+      savegame: {
+        schemaVersion: 1,
+        metadata: {
+          savedAt: Date.now(),
+          elapsedPlayTimeMs: 0,
+          buildLabel: 'test-build',
+          systemId: 'test-system'
+        },
+        player: undefined as any,
+        universe: undefined as any,
+        gameState: undefined as any
+      }
+    } as CloudSaveSlotData;
   }
 
   async putSave(_token: string, _gameId: string, index: number, payload: unknown, metadata?: unknown): Promise<void> {

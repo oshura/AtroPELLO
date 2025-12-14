@@ -2,6 +2,45 @@
 
 > Documento de referencia para entender cómo capturamos el estado del juego, lo serializamos en un `SaveGamePayload` v1, lo subimos al servicio REST de Cloud Saves y cómo se rehidrata para continuar la partida sin romper el bucle principal.
 
+## Resumen ejecutivo
+
+- Las fuentes críticas (`GameStateStore`, `PortalPersistenceService`, `RespawnService` y `Spaceship`) ya exponen snapshots listos para clonar sin depender de WebGL/DOM.
+- `GamePersistenceService` actúa como orquestador único: pausa el loop, captura player/gameState/universe/UI/audio y entrega un `SaveGamePayload` consistente sin side effects.
+- El payload real se mantiene por debajo de 400 KB si evitamos buffers binarios y registramos el tamaño en `LogCategory.SAVE_SYSTEM`. Seguimos alertando si un payload supera los 500 KB (soft limit acordado con backend).
+- El backend acepta `savegame: unknown`, por lo que incluimos metadata explícita (fecha, sistema, anchor, duración, build, usuario y versión de esquema) para listados rápidos y migraciones futuras.
+
+## Fuentes auditadas para la captura
+
+### `GameStateStore` (`src/app/services/game/game-state.store.ts`)
+
+- Colecciones vivas: asteroides, planetas, portales, debris y Lesser Beings indexados por sistema.
+- Entidades clave (`spaceship`, `sun`, `camera`, `respawnAnchor`, `activeLandingPlanet`, etc.) listas para clonado profundo a través de helpers `getAllObjects()`, `getPlanetIntelSnapshot()`, `getActiveMissionsSnapshot()`, `getGrimoireGlyphLayoutSnapshot()` y derivados.
+- También concentra estado narrativo/UI (misiones, paneles, timers y flags como `gameRunning`/`frameCount`), lo que alimenta las secciones `player`, `gameState` y parte de `universe`.
+
+### `PortalPersistenceService` (`src/app/game/services/game/portal-persistence.service.ts`)
+
+- Guarda snapshots etiquetados con `snapshotLabel`, `persistentSystemId` y `proceduralSystemId`.
+- Expone `apply`, `list` y `findByPortalId()` para rehidratar portales y enriquecer `metadata.systemName`/`anchorLabel` cuando hay viajes previos.
+- Mantiene los índices `portalIndex`/`systemIndex`, evitando referencias rotas durante `loadGame()`.
+
+### `RespawnService` (`src/app/game/services/state/respawn.service.ts`)
+
+- Ya pausan/resumen el loop y construyen `PlayerResetState` (posición, velocidad, stats de piloto, energía del vacío) desde el anchor vigente.
+- Sus helpers (`getEffectiveRespawnAnchor`, `resolveCharacterStats`) se reutilizan dentro de `GamePersistenceService` tanto para `saveGame()` como para `loadGame()`.
+
+### `Spaceship` (`src/app/game/game-objects/Spaceship.ts`)
+
+- Exponen orientación en quaternion/matriz, estado físico completo, energía del vacío, controles y carga.
+- Getter/setter de salud y callbacks permiten capturar `healthCurrent/Max` sin tocar WebGL.
+- Se serializa un snapshot compacto (posición, velocidad, orientación, energía, carga, thrusters) dentro de `player.ship`.
+
+## Riesgos y gaps controlados
+
+- **Orientación nave**: `GameStateStore` no guarda la orientación, por lo que `PlayerStateSerializer` lee directamente del `Spaceship` activo.
+- **Timers UI**: `mapReopenAllowedAtMs` y similares se guardan en `gameState.timers`; podemos resetearlos si el payload viene corrupto.
+- **Audio**: solamente serializamos `audio.currentScene`; el resto de capas sigue fuera de alcance y se marca como `TODO` dentro del payload.
+- **Tamaño de payload**: `GamePersistenceService` registra `JSON.stringify(payload).length` (comprimido/not-comprimido) y levanta alerta si excede 500 KB; Cloud Saves notificará si se acerca a 1 MB.
+
 ## Componentes principales
 
 | Elemento | Archivo | Rol en la arquitectura |
@@ -11,14 +50,15 @@
 | `CloudSavesClient` | `src/app/libs/cloud-saves/cloud-saves.client.ts` | Cliente HTTP que firma peticiones con el ID Token y normaliza URLs / headers. |
 | `CloudSavesSessionBridgeService` | `src/app/libs/cloud-saves/cloud-saves-session-bridge.service.ts` | Proxy entre `AuthService` y Cloud Saves. Expone token y callbacks para refrescar sesión. |
 | `CloudSavesPanelComponent` | `src/app/libs/cloud-saves/cloud-saves-panel.component.ts` | UI principal dentro del diálogo de Opciones → “Partidas”. Consume las señales de `CloudSavesService`. |
-| Header CTA | `src/app/components/header/header.ts` | Botón "Guardar partida" que dispara el mismo pipeline que el panel. Muestra feedback inline cuando termina. |
+| Header CTA | `src/app/components/header/header.ts` | Botón "Guardar partida" que dispara el mismo pipeline que el panel cuando sólo hay un slot asignado. Si el piloto tiene varios slots, abre directamente el diálogo de Opciones en la pestaña "Partidas" para forzar la selección manual antes de guardar. |
 | Wiki `/wiki/cloud-saves` | `src/app/wiki/pages/cloud-saves/cloud-saves.ts` | Documentación in-game del flujo completo y checklist de QA. |
 
 ## Pipeline de guardado
 
 1. **Entrada del jugador**
-   - CTA del header o botón `Save slot 0` del panel.
+   - CTA del header o botón `Save slot` del panel.
    - Ambos revisan `auth.authenticated()` y el flag `saves.saving()` para evitar capturas concurrentes.
+   - El CTA detecta si el piloto tiene múltiples slots (`CloudSavesService.hasMultipleSlots()`); en ese caso abre el diálogo de Opciones (tab "Partidas") en lugar de guardar automáticamente.
 
 2. **Captura con `GamePersistenceService.saveGame()`**
    - El servicio resuelve opciones (`reason`, `includeUiState`, `skipPause`).
@@ -35,6 +75,13 @@
      - `systemId`/`systemName`, `anchorLabel`, `anchorPlanetName`, `respawnAnchorId`.
      - `buildLabel`, `userId`, `backendSlot` (placeholder).
    - Todo queda dentro de `SaveGamePayload.metadata`.
+
+### Contrato con Cloud Saves
+
+- `metadata.schemaVersion` entero (arranca en `1`) para permitir migraciones automáticas.
+- Campos obligatorios: `savedAt`, `elapsedPlayTimeMs`, `systemId`, `systemName`, `anchorLabel`, `anchorPlanetName`, `buildLabel`, `userId`.
+- `CloudSavesService` adjunta `CloudSaveSlotMetadata` replicando esos campos y agregando timestamps adicionales para listados.
+- Errores de backend se traducen a `SaveGameSchemaVersionMismatchError`, `SaveGamePayloadInvalidError`, `payloadTooLarge` o `deserializationFailed` antes de propagarse a la UI.
 
 4. **Entrega a `CloudSavesService.saveCurrentGame()`**
    - Recibe el payload y genera metadata específica del slot (`CloudSaveSlotMetadata`) reutilizando los campos anteriores.
@@ -54,7 +101,8 @@
 ## Pipeline de carga y reanudación
 
 1. **Selección del slot**
-   - Panel: botones `Load latest` o `Load slot #X` (pide confirmación `window.confirm`).
+   - Panel: tarjetas que muestran los slots asignados al piloto; el botón “Ver todas las partidas” expone el master data y bloquea la acción de guardado para evitar sobrescrituras accidentales.
+   - El panel auto-selecciona el único slot cuando sólo existe uno. Si hay varios, los botones Load/Delete requieren selección manual.
    - Servicio: `loadGameFromSlot(index)` obtiene el slot (`getSlot`) y valida el payload con `ensurePayload()`.
 
 2. **Migración y validaciones**
@@ -139,5 +187,12 @@ UI ← actualiza bloque "Last load" + JSON mostrado
 ## Referencias adicionales
 
 - Wiki in-game: `/wiki/cloud-saves`.
-- Plan Fase 3: `documentacion/plans/savegame-phase3-cloud-panel.md`.
 - Resumen general: `documentacion/Resumen_Proyecto_y_Progreso.md` (sección "Autenticación y Cloud Saves").
+
+## Checklist histórico (Fase 0)
+
+1. Definir `SaveGamePayload` v1 reutilizando tipos existentes. ✅
+2. Implementar `GamePersistenceService` con adapters (`PlayerStateSerializer`, `GameStateSnapshotAdapter`, `UniverseStateSnapshotAdapter`). ✅
+3. Integrar con `CloudSavesService`, enviar metadata completa y medir tamaño/tiempo de captura. ✅
+
+Este checklist se conserva para contexto histórico de la investigación inicial; todas las acciones están completadas y sirven como validación de la arquitectura actual.

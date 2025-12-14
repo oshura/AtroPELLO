@@ -75,7 +75,7 @@
             aria-live="polite"
             title="Guardar partida en la nube"
           >
-            {{ saves.saving() ? 'Guardando…' : 'Guardar partida' }}
+            {{ saves.saving() ? 'Guardando...' : 'Guardar partida' }}
           </button>
           <button class="nav-button" type="button" (click)="onLogoutClick()" title="Cerrar sesión">
             {{ auth.displayName() || 'Cerrar sesión' }}
@@ -91,4 +91,8 @@
     </div>
   </div>
 </header>
-<app-audio-settings-dialog [isVisible]="showAudio" (closed)="showAudio=false"></app-audio-settings-dialog>
+<app-audio-settings-dialog
+  [isVisible]="showAudio"
+  [startTab]="optionsInitialTab"
+  (closed)="onOptionsClosed()"
+></app-audio-settings-dialog>

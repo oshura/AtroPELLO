@@ -43,6 +43,10 @@ export interface SaveGameMetadata {
   respawnAnchorId?: string | null;
   userId?: string | null;
   backendSlot?: number | null;
+  characterId?: string | null;
+  characterSlotIndexes?: number[] | null;
+  slotCapacity?: number | null;
+  activeSlotIndex?: number | null;
 }
 
 /** Sección dedicada al jugador: nave, piloto e inventario. */
@@ -88,6 +92,10 @@ export interface SaveGameShipState {
 export interface SaveGameCharacterState {
   profile: CharacterProfile;
   memoryPercent: number;
+  characterId?: string | null;
+  slotCapacity?: number | null;
+  availableSlotIndexes?: number[] | null;
+  activeSlotIndex?: number | null;
 }
 
 export interface SaveGameInventoryState {

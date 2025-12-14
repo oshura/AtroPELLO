@@ -260,16 +260,10 @@ export class WikiIndexComponent implements OnInit {
       id: 'game-rules',
       title: '📜 Game Rules',
       route: 'game-rules',
-      description: 'How to play: landing on planets, navigation, spell casting, collision mechanics, and survival.',
-      keywords: ['rules', 'landing', 'controls', 'gameplay', 'mechanics']
+      description: 'How to play: landing, navigation, collision rules, survival tips and the current Cloud Saves limitation (one slot per pilot unless upgraded).',
+      keywords: ['rules', 'landing', 'controls', 'gameplay', 'mechanics', 'cloud saves']
     },
-    {
-      id: 'cloud-saves',
-      title: '☁️ Cloud Saves',
-      route: 'cloud-saves',
-      description: 'Login con Cognito, panel flotante y flujo para sincronizar, guardar, cargar o borrar slots QA.',
-      keywords: ['cloud', 'saves', 'cognito', 'login', 'slots', 'api']
-    }
+    
   ];
 
   filteredEntries = signal<WikiEntry[]>(this.entries);

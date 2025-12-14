@@ -20,6 +20,28 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
       </section>
 
       <section class="rule-section">
+        <h2>☁️ Cloud Saves · Regla actual</h2>
+        <div class="rule-content">
+          <p>
+            Cada piloto comienza con <strong>un único slot</strong> adjudicado en la nube. El motor sincroniza los slots al arrancar si hay sesión y
+            carga automáticamente la partida más reciente de tu piloto. Si el botón del header dice “Guardar partida” significa que guardará
+            directamente sobre ese slot. Cuando desbloquees magia <em>Memoria Ancestral</em> o módulos como <em>Máquina del Tiempo</em>, tu
+            personaje añadirá más índices a su array de slots y el CTA ya no guardará sin preguntar: abrirá el diálogo en la pestaña “Partidas”.
+          </p>
+          <ul>
+            <li><strong>Ver todas las partidas</strong> muestra el master data completo. Mientras está activo no puedes guardar para evitar sobrescribir otras campañas.</li>
+            <li><strong>Guardar/Load/Delete</strong> sólo se habilitan cuando seleccionas un slot (si solo hay uno se selecciona automáticamente).</li>
+            <li>El algoritmo <code>CloudSaveSlotFinderService.acquireNewSlot()</code> reserva el siguiente índice libre cuando un piloto gana un slot adicional.</li>
+            <li>El array de slots y la capacidad máxima se guardan dentro del <code>SaveGamePayload.metadata</code> para que cada carga respete tus mejoras.</li>
+          </ul>
+          <p>
+            Si inicias una nueva campaña con el mismo usuario, la master data puede contener varios pilotos. El juego siempre cargará la partida más
+            reciente de tu piloto activo y ocultará el resto salvo que pulses “Ver todas las partidas”.
+          </p>
+        </div>
+      </section>
+
+      <section class="rule-section">
         <h2>🛬 Aterrizaje manual y pilotos HUD</h2>
         <div class="rule-content">
           <p>

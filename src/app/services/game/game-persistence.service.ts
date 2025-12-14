@@ -279,6 +279,10 @@ export class GamePersistenceService {
       anchorPlanetId: anchor?.planetId ?? null,
       anchorPlanetName: anchor?.planetName ?? null,
       respawnAnchorId: anchor?.anchorId ?? null,
+      characterId: this.gameState.getCharacterId(),
+      characterSlotIndexes: this.gameState.getCloudSaveSlotIndexes(),
+      slotCapacity: this.gameState.getCloudSaveSlotCapacity(),
+      activeSlotIndex: this.gameState.getActiveCloudSaveSlotIndex(),
       userId: await this.resolveUserIdSafe(),
       backendSlot: null
     };

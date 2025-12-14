@@ -15,6 +15,7 @@ import { CloudSavesService } from '../../libs/cloud-saves/cloud-saves.service';
 })
 export class Header {
   showAudio = false;
+  protected optionsInitialTab: 'audio' | 'controls' | 'saves' = 'audio';
   protected wikiNav = inject(WikiNavigationService);
   protected auth = inject(AuthService);
   protected saves = inject(CloudSavesService);
@@ -27,8 +28,8 @@ export class Header {
     return this.wikiNav.getLastRoute();
   }
   onOptionsClick() {
-    this.showAudio = true;
     this.logger.debug(LogCategory.INPUT, 'Options dialog opened');
+    this.openOptions('audio');
   }
 
   onLoginClick() {
@@ -49,15 +50,25 @@ export class Header {
     if (this.isSaveDisabled()) {
       return;
     }
-    this.logger.info(LogCategory.SAVE_SYSTEM, 'Header save CTA clicked');
+    const slotIndex = this.saves.getDefaultSaveSlotIndex();
+    this.logger.info(LogCategory.SAVE_SYSTEM, 'Header save CTA clicked', { slotIndex });
+    if (this.saves.hasMultipleSlots()) {
+      this.saveFeedback = null;
+      this.saveError = null;
+      this.logger.info(LogCategory.SAVE_SYSTEM, 'Multiple slots detected, redirecting CTA to cloud saves tab');
+      this.openOptions('saves');
+      return;
+    }
     this.saveError = null;
-    this.saveFeedback = 'Guardando slot 0…';
+    this.saveFeedback = `Guardando slot ${slotIndex}...`;
     try {
-      const payload = await this.saves.saveCurrentGame(0, {
-        reason: 'header-save-slot-0',
+      const payload = await this.saves.saveCurrentGame(slotIndex, {
+        reason: `header-save-slot-${slotIndex}`,
         label: 'Header CTA'
       });
-      this.saveFeedback = `Guardado ${payload.metadata.systemName ?? payload.metadata.anchorLabel ?? '#0'} (${new Date(payload.metadata.savedAt).toLocaleTimeString()})`;
+      const label = payload.metadata.systemName ?? payload.metadata.anchorLabel ?? `#${slotIndex}`;
+      const savedAt = payload.metadata.savedAt ?? Date.now();
+      this.saveFeedback = `Guardado ${label} (${new Date(savedAt).toLocaleTimeString()})`;
       this.logger.info(LogCategory.SAVE_SYSTEM, 'Header save CTA completed', {
         systemId: payload.metadata.systemId,
         anchorLabel: payload.metadata.anchorLabel ?? null
@@ -67,5 +78,15 @@ export class Header {
       this.saveFeedback = null;
       this.logger.error(LogCategory.SAVE_SYSTEM, 'Header save CTA failed', { error });
     }
+  }
+
+  protected onOptionsClosed(): void {
+    this.showAudio = false;
+    this.optionsInitialTab = 'audio';
+  }
+
+  private openOptions(tab: 'audio' | 'controls' | 'saves'): void {
+    this.optionsInitialTab = tab;
+    this.showAudio = true;
   }
 }

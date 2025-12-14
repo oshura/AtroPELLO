@@ -13,6 +13,8 @@ import {
   SaveGameSchemaVersionMismatchError
 } from '../../services/game/persistence/save-game.errors';
 import { LoggingService, LogCategory } from '../../services/logging.service';
+import { GameStateStore } from '../../services/game/game-state.store';
+import { CloudSaveSlotFinderService } from './cloud-save-slot-finder.service';
 
 @Injectable()
 export class CloudSavesService {
@@ -23,13 +25,14 @@ export class CloudSavesService {
   private readonly logger = inject(LoggingService);
   private readonly client = new CloudSavesClient(this.settings);
 
-  private readonly slotsState = signal<CloudSaveSlotRef[]>([]);
+  private readonly masterSlotsState = signal<CloudSaveSlotRef[]>([]);
   private readonly loadingState = signal(false);
   private readonly errorState = signal<string | null>(null);
   private readonly tokenState = signal<string | null>(null);
   private readonly savingState = signal(false);
 
-  readonly slots: Signal<CloudSaveSlotRef[]> = this.slotsState.asReadonly();
+  readonly slots: Signal<CloudSaveSlotRef[]> = this.masterSlotsState.asReadonly();
+  readonly characterSlots: Signal<CloudSaveSlotRef[]> = computed(() => this.filterSlotsByCharacter(this.masterSlotsState()));
   readonly loading: Signal<boolean> = this.loadingState.asReadonly();
   readonly error: Signal<string | null> = this.errorState.asReadonly();
   readonly hasSession = computed(() => !!this.tokenState());
@@ -37,10 +40,21 @@ export class CloudSavesService {
 
   private readonly defaultSaveReason = 'cloud-persist-slot';
 
+  private readonly gameState = inject(GameStateStore);
+  private readonly slotFinder = inject(CloudSaveSlotFinderService);
+  private autoLoadPerformed = false;
+
   constructor() {
-    void this.refreshToken();
+    void this.refreshToken().then(() => {
+      if (this.tokenState()) {
+        void this.bootstrapFromSession();
+      }
+    });
     this.sessionBridge.onSessionChange?.((token) => {
       this.tokenState.set(token);
+      if (token) {
+        void this.bootstrapFromSession();
+      }
     });
   }
 
@@ -59,6 +73,7 @@ export class CloudSavesService {
       });
       const metadata = this.buildSlotMetadata(payload, options?.metadataOverrides);
       await this.putSave(targetIndex, payload, metadata);
+      this.gameState.setActiveCloudSaveSlotIndex(targetIndex);
       this.logger.info(LogCategory.SAVE_SYSTEM, 'Cloud save uploaded', {
         index: targetIndex,
         schemaVersion: payload.schemaVersion,
@@ -90,6 +105,7 @@ export class CloudSavesService {
         reason,
         skipPause: options?.skipPause ?? false
       });
+      this.gameState.setActiveCloudSaveSlotIndex(slot.index);
       this.logger.info(LogCategory.SAVE_SYSTEM, 'Cloud load completed', {
         index: slot.index,
         durationMs: result.durationMs,
@@ -109,7 +125,9 @@ export class CloudSavesService {
     this.errorState.set(null);
     try {
       const response = await this.client.listSlots(token, this.gameContext.gameId);
-      this.slotsState.set(response.saves);
+      const sorted = this.sortSlots(response.saves ?? []);
+      this.masterSlotsState.set(sorted);
+      this.alignCharacterSlotsWithMaster(sorted);
     } catch (error) {
       this.handleError(error, 'sync');
     } finally {
@@ -119,7 +137,7 @@ export class CloudSavesService {
 
   async loadLatest(): Promise<CloudSaveSlotData | null> {
     await this.syncSlots();
-    const slots = this.slotsState();
+    const slots = this.masterSlotsState();
     if (!slots.length) {
       return null;
     }
@@ -128,6 +146,18 @@ export class CloudSavesService {
 
   async loadSlot(index: number): Promise<CloudSaveSlotData | null> {
     return this.loadSlotContent(index);
+  }
+
+  characterSlotCount(): number {
+    return this.gameState.getCloudSaveSlotCount();
+  }
+
+  hasMultipleSlots(): boolean {
+    return this.characterSlotCount() > 1;
+  }
+
+  getDefaultSaveSlotIndex(): number {
+    return this.gameState.getDefaultCloudSaveSlotIndex();
   }
 
   async putSave(index: number, payload: unknown, metadata?: CloudSaveSlotMetadata | null): Promise<void> {
@@ -172,6 +202,41 @@ export class CloudSavesService {
     const token = await this.sessionBridge.getToken();
     this.tokenState.set(token);
   }
+
+  private async bootstrapFromSession(): Promise<void> {
+    try {
+      await this.syncSlots();
+      await this.autoLoadLatestForCharacter();
+    } catch (error) {
+      this.logger.warn(LogCategory.SAVE_SYSTEM, 'Cloud bootstrap failed', { error });
+    }
+  }
+
+  private async autoLoadLatestForCharacter(): Promise<void> {
+    if (this.autoLoadPerformed) {
+      return;
+    }
+    const target = this.pickPreferredSlot();
+    if (!target) {
+      return;
+    }
+    try {
+      await this.loadGameFromSlot(target.index, { reason: 'cloud-auto-load-on-session', skipPause: false });
+      this.autoLoadPerformed = true;
+    } catch (error) {
+      this.logger.warn(LogCategory.SAVE_SYSTEM, 'Automatic load skipped', { error });
+    }
+  }
+
+  private pickPreferredSlot(): CloudSaveSlotRef | null {
+    const personal = this.characterSlots();
+    if (personal.length) {
+      return personal[0];
+    }
+    const master = this.masterSlotsState();
+    return master[0] ?? null;
+  }
+
   private async loadSlotContent(index: number): Promise<CloudSaveSlotData | null> {
     const token = await this.ensureToken();
     const target = Math.max(0, Math.floor(index));
@@ -210,9 +275,91 @@ export class CloudSavesService {
       anchorPlanetName: payload.metadata.anchorPlanetName ?? null,
       savedAt: payload.metadata.savedAt ?? Date.now(),
       playTimeMs: payload.metadata.elapsedPlayTimeMs ?? null,
-      buildLabel: payload.metadata.buildLabel ?? null
+      buildLabel: payload.metadata.buildLabel ?? null,
+      characterId: payload.metadata.characterId ?? null,
+      characterSlotIndexes: payload.metadata.characterSlotIndexes ?? null,
+      slotCapacity: payload.metadata.slotCapacity ?? null,
+      activeSlotIndex: payload.metadata.activeSlotIndex ?? null
     };
     return { ...base, ...(overrides ?? {}) };
+  }
+
+  private sortSlots(slots: CloudSaveSlotRef[]): CloudSaveSlotRef[] {
+    return [...slots].sort((a, b) => {
+      const left = Date.parse(b.savedAt ?? '') || 0;
+      const right = Date.parse(a.savedAt ?? '') || 0;
+      return left - right;
+    });
+  }
+
+  private filterSlotsByCharacter(slots: CloudSaveSlotRef[]): CloudSaveSlotRef[] {
+    const characterId = this.gameState.getCharacterId();
+    const assigned = new Set(this.gameState.getCloudSaveSlotIndexes());
+    return slots.filter(slot => {
+      if (slot.metadata?.characterId && slot.metadata.characterId === characterId) {
+        return true;
+      }
+      return assigned.has(slot.index);
+    });
+  }
+
+  private alignCharacterSlotsWithMaster(slots: CloudSaveSlotRef[]): void {
+    const characterId = this.gameState.getCharacterId();
+    const assigned = new Set(this.gameState.getCloudSaveSlotIndexes());
+    const discovered = new Set<number>();
+    let capacity: number | null = null;
+    let active: number | null = null;
+
+    for (const slot of slots) {
+      const metadata = slot.metadata;
+      if (!metadata) {
+        continue;
+      }
+      if (metadata.characterId && metadata.characterId !== characterId) {
+        continue;
+      }
+      const normalizedIndex = this.normalizeSlotIndex(slot.index);
+      if (normalizedIndex !== null) {
+        discovered.add(normalizedIndex);
+      }
+      for (const idx of metadata.characterSlotIndexes ?? []) {
+        const normalized = this.normalizeSlotIndex(idx);
+        if (normalized !== null) {
+          discovered.add(normalized);
+        }
+      }
+      if (typeof metadata.slotCapacity === 'number') {
+        const candidate = Math.max(1, Math.floor(metadata.slotCapacity));
+        capacity = capacity === null ? candidate : Math.max(capacity, candidate);
+      }
+      if (typeof metadata.activeSlotIndex === 'number') {
+        active = this.normalizeSlotIndex(metadata.activeSlotIndex);
+      }
+    }
+
+    const merged = new Set<number>([...assigned, ...discovered]);
+    if (!merged.size) {
+      const fallback = this.slotFinder.acquireNewSlot(slots, [...assigned]);
+      merged.add(fallback);
+      active = fallback;
+    }
+
+    this.gameState.setCloudSaveSlotIndexes([...merged]);
+    if (capacity !== null) {
+      this.gameState.setCloudSaveSlotCapacity(capacity);
+    }
+    if (active !== null) {
+      this.gameState.setActiveCloudSaveSlotIndex(active);
+    } else if (!this.gameState.getActiveCloudSaveSlotIndex()) {
+      this.gameState.setActiveCloudSaveSlotIndex(this.gameState.getDefaultCloudSaveSlotIndex());
+    }
+  }
+
+  private normalizeSlotIndex(value: number | null | undefined): number | null {
+    if (typeof value !== 'number' || !Number.isFinite(value)) {
+      return null;
+    }
+    return Math.max(0, Math.floor(value));
   }
 
   private ensurePayload(candidate: SaveGamePayload | unknown): SaveGamePayload {

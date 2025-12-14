@@ -26,10 +26,6 @@ export const WIKI_ROUTES: Routes = [
     loadComponent: () => import('./pages/planets/planets').then(m => m.PlanetsWikiComponent)
   },
   {
-    path: 'cloud-saves',
-    loadComponent: () => import('./pages/cloud-saves/cloud-saves').then(m => m.CloudSavesWikiComponent)
-  },
-  {
     path: 'inventory',
     loadComponent: () => import('./pages/inventory/inventory').then(m => m.InventoryWikiComponent)
   },
