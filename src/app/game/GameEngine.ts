@@ -78,6 +78,8 @@ import { PLANET_INTEL_STATUS } from './types/planet-intel.types';
 import { GameObjectAnimosity } from './types/animosity.types';
 import { CompassCountdownPayload, HudMarqueeEventType } from './types/hud.types';
 import { OrientationBasis, computeHeadingFromForward } from './targeting/compass-direction.util';
+
+const PANEL_REOPEN_COOLDOWN_MS = 500;
 import { Vector3 } from '../types/game.types';
 import { LesserBeingController } from './services/lesser-beings/lesser-being-controller';
 import { LesserBeingSpawner } from './services/lesser-beings/lesser-being-spawner';
@@ -7251,14 +7253,14 @@ export class GameEngine {
           } catch (e) {
             this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Map close sound failed', e);
           }
-          this.gameState.mapReopenAllowedAtMs = now + 1000;
+          this.gameState.mapReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
           this.clearPanelCursorOverlay();
         }
         // Ensure mutual exclusivity with Grimoire
         if (this.systemPanel.isEnabled() && this.grimoirePanel) {
           try { 
             this.grimoirePanel.setEnabled(false); 
-            this.gameState.grimoireReopenAllowedAtMs = performance.now() + 1000;
+            this.gameState.grimoireReopenAllowedAtMs = performance.now() + PANEL_REOPEN_COOLDOWN_MS;
           } catch {}
         }
         if (this.systemPanel.isEnabled() && this.inventoryPanel?.isEnabled()) {
@@ -7266,7 +7268,7 @@ export class GameEngine {
             this.inventoryPanel.setEnabled(false);
             this.inventoryPanel.resetScroll();
             this.clearInventorySelection();
-            this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+            this.gameState.inventoryReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
             this.updateInventoryPointerBinding();
             this.updateCanvasCursor();
           } catch {}
@@ -7318,7 +7320,7 @@ export class GameEngine {
           }
         } else {
           this.grimoirePanel.setEnabled(false);
-          this.gameState.grimoireReopenAllowedAtMs = now + 1000;
+          this.gameState.grimoireReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
           // Play grimoire close sound
           try {
             if (this.audio) {
@@ -7333,7 +7335,7 @@ export class GameEngine {
         if (this.grimoirePanel.isEnabled() && this.systemPanel) {
           try { 
             this.systemPanel.setEnabled(false); 
-            this.gameState.mapReopenAllowedAtMs = performance.now() + 1000;
+            this.gameState.mapReopenAllowedAtMs = performance.now() + PANEL_REOPEN_COOLDOWN_MS;
           } catch {}
         }
         if (this.grimoirePanel.isEnabled() && this.inventoryPanel?.isEnabled()) {
@@ -7341,7 +7343,7 @@ export class GameEngine {
             this.inventoryPanel.setEnabled(false);
             this.inventoryPanel.resetScroll();
             this.clearInventorySelection();
-            this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+            this.gameState.inventoryReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
             this.updateInventoryPointerBinding();
             this.updateCanvasCursor();
           } catch {}
@@ -7402,7 +7404,7 @@ export class GameEngine {
         const target = this.adaptiveTargeting?.getCurrentTarget?.() || this.adaptiveTargeting?.getHoveredTarget?.();
         if (this.systemPanel && this.systemPanel.isEnabled()) {
           this.systemPanel.setEnabled(false);
-          this.gameState.mapReopenAllowedAtMs = performance.now() + 1000;
+          this.gameState.mapReopenAllowedAtMs = performance.now() + PANEL_REOPEN_COOLDOWN_MS;
           try { this.updateMapClickBinding(); } catch {}
           try { this.updateCanvasCursor(); } catch {}
           this.clearPanelCursorOverlay();
@@ -9962,14 +9964,14 @@ export class GameEngine {
         this.inventoryPanel.setEnabled(false);
         this.inventoryPanel.resetScroll();
         this.clearInventorySelection();
-        this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+        this.gameState.inventoryReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
         this.updateInventoryPointerBinding();
         this.updateCanvasCursor();
       }
     } else {
       // Map closed
       try { this.audio?.play('ui_map_close'); } catch {}
-      this.gameState.mapReopenAllowedAtMs = now + 1000;
+      this.gameState.mapReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
       this.clearPanelCursorOverlay();
     }
     this.syncPanelCursorOverlay();
@@ -10115,14 +10117,14 @@ export class GameEngine {
         this.inventoryPanel.setEnabled(false);
         this.inventoryPanel.resetScroll();
         this.clearInventorySelection();
-        this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+        this.gameState.inventoryReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
         this.updateInventoryPointerBinding();
         this.updateCanvasCursor();
       }
     } else {
       // Grimoire closed
       try { this.audio?.play('ui_grimoire_close'); } catch {}
-      this.gameState.grimoireReopenAllowedAtMs = now + 1000;
+      this.gameState.grimoireReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
       this.clearPanelCursorOverlay();
     }
     this.syncPanelCursorOverlay();
@@ -10221,12 +10223,12 @@ export class GameEngine {
       // Close other overlays for mutual exclusivity
       if (this.systemPanel?.isEnabled()) {
         this.systemPanel.setEnabled(false);
-        this.gameState.mapReopenAllowedAtMs = now + 1000;
+        this.gameState.mapReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
         this.updateMapClickBinding();
       }
       if (this.grimoirePanel?.isEnabled()) {
         this.grimoirePanel.setEnabled(false);
-        this.gameState.grimoireReopenAllowedAtMs = now + 1000;
+        this.gameState.grimoireReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
         this.updateGrimoirePointerBinding();
       }
       this.inventoryPanel.resetScroll();
@@ -10243,7 +10245,7 @@ export class GameEngine {
       this.inventoryPanel.setEnabled(false);
       this.inventoryPanel.resetScroll();
       this.clearInventorySelection();
-      this.gameState.inventoryReopenAllowedAtMs = now + 1000;
+      this.gameState.inventoryReopenAllowedAtMs = now + PANEL_REOPEN_COOLDOWN_MS;
       this.inventoryHoverKey = null;
       try {
         this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.6 });
@@ -10500,7 +10502,7 @@ export class GameEngine {
       this.inventoryPanel.setEnabled(false);
       this.inventoryPanel.resetScroll();
       this.clearInventorySelection();
-      this.gameState.inventoryReopenAllowedAtMs = performance.now() + 1000;
+      this.gameState.inventoryReopenAllowedAtMs = performance.now() + PANEL_REOPEN_COOLDOWN_MS;
       this.updateInventoryPointerBinding();
       this.inventoryHoverKey = null;
       try { this.audio?.play('ui_inventory_close', { bus: 'ui', volume: 0.6 }); } catch {}

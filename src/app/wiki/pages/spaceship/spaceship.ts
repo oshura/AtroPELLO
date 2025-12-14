@@ -152,13 +152,17 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             </div>
           </div>
           <p class="note camera-note">Resize the browser or detach the canvas whenever you want—the resize-aware pipeline recalculates the cockpit camera, viewport and HUD/reticle alignment in the next frame so nothing stretches.</p>
-          <p class="note camera-note">Los modos externos 0 y 7 ahora incorporan un <em>intent offset</em>: cuando mantienes <kbd>W/S/A/D/Q/E</kbd>, la cámara se desplaza o banca ligeramente en esa dirección para mostrar la intención del piloto y vuelve suavemente a su ancla al soltar las teclas. El HUD interno (modo 8) y la cámara 9 permanecen sin cambios.</p>
+          <p class="note camera-note">Los modos externos 0 y 7 ahora incorporan un <em>intent offset</em>: cuando mantienes <kbd>W/S/A/D/Q/E</kbd> la cámara se desplaza o banca ligeramente en esa dirección, y al acelerar/frenar con <kbd>+</kbd>/<kbd>-</kbd> sólo cambia la distancia hacia la nave sin girar el ángulo. Todo vuelve suave a su ancla al soltar las teclas. El HUD interno (modo 8) y la cámara 9 permanecen sin cambios.</p>
 
           <div class="control-group">
             <h3>Interface</h3>
             <div class="control-item">
               <kbd>G</kbd>
               <span>Open Grimoire</span>
+            </div>
+            <div class="control-item">
+              <kbd>I</kbd>
+              <span>Toggle Inventory Panel</span>
             </div>
             <div class="control-item">
               <kbd>Tab</kbd>
@@ -170,6 +174,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             </div>
           </div>
         </div>
+        <p class="note interface-note">Map, Grimoire and Inventory toggles now comparten un cooldown común de 500&nbsp;ms para evitar dobles aperturas accidentales. Puedes cerrar y reabrir cualquiera casi al instante, pero el motor ignora inputs repetidos dentro de esa ventana para que el focus del cursor no se rompa.</p>
       </section>
 
       <section class="hud-marquee">

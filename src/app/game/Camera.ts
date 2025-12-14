@@ -288,6 +288,7 @@ export class CockpitCamera extends BaseCamera {
   private intentPitch = 0;
   private intentYaw = 0;
   private intentRoll = 0;
+  private intentThrottle = 0;
 
   private readonly intentConfig = {
     responsiveness: 8,
@@ -296,7 +297,8 @@ export class CockpitCamera extends BaseCamera {
     yawXOffset: 0.75,
     rollXOffset: 0.35,
     rollYOffset: 0.25,
-    rollBankRadians: 0.18
+    rollBankRadians: 0.18,
+    throttleZOffset: -0.4
   };
 
   protected updateCameraMode(spaceship: Spaceship, deltaTime: number): void {
@@ -332,10 +334,12 @@ export class CockpitCamera extends BaseCamera {
     const pitchTarget = this.resolveIntentAxis(controls?.up, controls?.down);
     const yawTarget = this.resolveIntentAxis(controls?.left, controls?.right);
     const rollTarget = this.resolveIntentAxis(controls?.rollLeft, controls?.rollRight);
+    const throttleTarget = this.resolveIntentAxis(controls?.speedUp, controls?.speedDown);
 
     this.intentPitch = this.smoothValue(this.intentPitch, pitchTarget, deltaTime, this.intentConfig.responsiveness);
     this.intentYaw = this.smoothValue(this.intentYaw, yawTarget, deltaTime, this.intentConfig.responsiveness);
     this.intentRoll = this.smoothValue(this.intentRoll, rollTarget, deltaTime, this.intentConfig.responsiveness);
+    this.intentThrottle = this.smoothValue(this.intentThrottle, throttleTarget, deltaTime, this.intentConfig.responsiveness);
   }
 
   private resolveIntentAxis(positive?: boolean, negative?: boolean): number {
@@ -347,7 +351,9 @@ export class CockpitCamera extends BaseCamera {
     return {
       x: baseOffset.x + (this.intentYaw * this.intentConfig.yawXOffset) + (this.intentRoll * this.intentConfig.rollXOffset),
       y: baseOffset.y + (this.intentPitch * this.intentConfig.pitchYOffset) + (this.intentRoll * this.intentConfig.rollYOffset),
-      z: baseOffset.z + (this.intentPitch * this.intentConfig.pitchZOffset)
+      z: baseOffset.z
+        + (this.intentPitch * this.intentConfig.pitchZOffset)
+        + (this.intentThrottle * this.intentConfig.throttleZOffset)
     };
   }
 
@@ -396,6 +402,7 @@ export class RearViewCamera extends BaseCamera {
   private intentPitch = 0;
   private intentYaw = 0;
   private intentRoll = 0;
+  private intentThrottle = 0;
 
   private readonly intentConfig = {
     responsiveness: 8,
@@ -404,7 +411,8 @@ export class RearViewCamera extends BaseCamera {
     yawXOffset: 0.65,
     rollXOffset: 0.3,
     rollYOffset: 0.2,
-    rollBankRadians: 0.15
+    rollBankRadians: 0.15,
+    throttleZOffset: 0.4
   };
 
   protected updateCameraMode(spaceship: Spaceship, deltaTime: number): void {
@@ -440,10 +448,12 @@ export class RearViewCamera extends BaseCamera {
     const pitchTarget = this.resolveIntentAxis(controls?.up, controls?.down);
     const yawTarget = this.resolveIntentAxis(controls?.left, controls?.right);
     const rollTarget = this.resolveIntentAxis(controls?.rollLeft, controls?.rollRight);
+    const throttleTarget = this.resolveIntentAxis(controls?.speedUp, controls?.speedDown);
 
     this.intentPitch = this.smoothValue(this.intentPitch, pitchTarget, deltaTime, this.intentConfig.responsiveness);
     this.intentYaw = this.smoothValue(this.intentYaw, yawTarget, deltaTime, this.intentConfig.responsiveness);
     this.intentRoll = this.smoothValue(this.intentRoll, rollTarget, deltaTime, this.intentConfig.responsiveness);
+    this.intentThrottle = this.smoothValue(this.intentThrottle, throttleTarget, deltaTime, this.intentConfig.responsiveness);
   }
 
   private resolveIntentAxis(positive?: boolean, negative?: boolean): number {
@@ -455,7 +465,9 @@ export class RearViewCamera extends BaseCamera {
     return {
       x: baseOffset.x + (-this.intentYaw * this.intentConfig.yawXOffset) + (this.intentRoll * this.intentConfig.rollXOffset),
       y: baseOffset.y + (this.intentPitch * this.intentConfig.pitchYOffset) + (this.intentRoll * this.intentConfig.rollYOffset),
-      z: baseOffset.z + (this.intentPitch * this.intentConfig.pitchZOffset)
+      z: baseOffset.z
+        + (this.intentPitch * this.intentConfig.pitchZOffset)
+        + (this.intentThrottle * this.intentConfig.throttleZOffset)
     };
   }
 
