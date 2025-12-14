@@ -1,4 +1,4 @@
-import { Component, OnDestroy, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnDestroy, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { NgIf } from '@angular/common';
 import { AudioSettingsDialogComponent } from '../dialogs/audio-settings-dialog/audio-settings-dialog';
@@ -22,6 +22,8 @@ export class Header implements OnDestroy {
   protected saveFeedback: string | null = null;
   protected saveError: string | null = null;
   private feedbackTimeoutId: ReturnType<typeof setTimeout> | null = null;
+  private readonly cdr = inject(ChangeDetectorRef);
+  private destroyed = false;
   
   constructor(private logger: LoggingService) {}
   
@@ -62,6 +64,7 @@ export class Header implements OnDestroy {
     this.saveError = null;
     this.clearFeedbackTimer();
     this.saveFeedback = `Guardando slot ${slotIndex}...`;
+    this.triggerViewUpdate();
     try {
       const payload = await this.saves.saveCurrentGame(slotIndex, {
         reason: `header-save-slot-${slotIndex}`,
@@ -71,6 +74,7 @@ export class Header implements OnDestroy {
       const savedAt = payload.metadata.savedAt ?? Date.now();
       this.saveFeedback = `Guardado ${label} (${new Date(savedAt).toLocaleTimeString()})`;
       this.scheduleFeedbackDismiss();
+      this.triggerViewUpdate();
       this.logger.info(LogCategory.SAVE_SYSTEM, 'Header save CTA completed', {
         systemId: payload.metadata.systemId,
         anchorLabel: payload.metadata.anchorLabel ?? null
@@ -79,6 +83,7 @@ export class Header implements OnDestroy {
       this.clearFeedbackTimer();
       this.saveError = this.saves.describeError(error, 'save');
       this.saveFeedback = null;
+      this.triggerViewUpdate();
       this.logger.error(LogCategory.SAVE_SYSTEM, 'Header save CTA failed', { error });
     }
   }
@@ -94,6 +99,7 @@ export class Header implements OnDestroy {
   }
 
   ngOnDestroy(): void {
+    this.destroyed = true;
     this.clearFeedbackTimer();
   }
 
@@ -102,6 +108,7 @@ export class Header implements OnDestroy {
     this.feedbackTimeoutId = setTimeout(() => {
       this.saveFeedback = null;
       this.feedbackTimeoutId = null;
+      this.triggerViewUpdate();
     }, delayMs);
   }
 
@@ -116,5 +123,12 @@ export class Header implements OnDestroy {
     this.clearFeedbackTimer();
     this.saveFeedback = null;
     this.saveError = null;
+    this.triggerViewUpdate();
+  }
+
+  private triggerViewUpdate(): void {
+    if (!this.destroyed) {
+      this.cdr.detectChanges();
+    }
   }
 }
