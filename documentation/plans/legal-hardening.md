@@ -61,7 +61,7 @@ El objetivo es dejar la landing y el proyecto en regla frente a editoras o recla
 
 - [x] Inventariar los datos tratados actualmente (auth Cognito, logs técnicos, partidas guardadas en S3 sin email).
 - [x] Redactar y publicar `public/privacy-policy.html` y `public/cookies-policy.html` con contactos y bases legales.
-- [x] Actualizar la wiki legal para enlazar ambas políticas y describir el almacenamiento local real.
+- [x] Actualizar la wiki legal para enlazar ambas políticas, describir el almacenamiento local real y aclarar que el login se delega a la landing atropello-games.es.
 - [x] Ejecutar `npm run build` tras los cambios.
 
 ## Plan activo — Fase 4 (diciembre 2025)

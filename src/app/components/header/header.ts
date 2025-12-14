@@ -6,6 +6,7 @@ import { LoggingService, LogCategory } from '../../services/logging.service';
 import { WikiNavigationService } from '../../services/wiki-navigation.service';
 import { AuthService } from '../../services/auth.service';
 import { CloudSavesService } from '../../libs/cloud-saves/cloud-saves.service';
+import { LANDING_SETTINGS } from '../../settings/landing-settings';
 
 @Component({
   selector: 'app-header',
@@ -19,6 +20,7 @@ export class Header implements OnDestroy {
   protected wikiNav = inject(WikiNavigationService);
   protected auth = inject(AuthService);
   protected saves = inject(CloudSavesService);
+  protected landingUrl = inject(LANDING_SETTINGS).landingUrl;
   protected saveFeedback: string | null = null;
   protected saveError: string | null = null;
   private feedbackTimeoutId: ReturnType<typeof setTimeout> | null = null;

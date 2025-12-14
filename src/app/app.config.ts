@@ -9,12 +9,14 @@ import { CloudSavesService } from './libs/cloud-saves/cloud-saves.service';
 import { CLOUD_SAVES_GAME_CONTEXT, CLOUD_SAVES_SESSION_BRIDGE, CLOUD_SAVES_SETTINGS } from './libs/cloud-saves/cloud-saves.tokens';
 import { CloudSavesSessionBridgeService } from './libs/cloud-saves/cloud-saves-session-bridge.service';
 import { CloudSettings, CLOUD_SETTINGS, resolveCloudSettings } from './settings/cloud-settings';
+import { LandingSettings, LANDING_SETTINGS, normalizeLandingUrl, resolveLandingSettings } from './settings/landing-settings';
 
 function initAudioManifest(manifest: AudioManifestService) {
   return () => manifest.init();
 }
 
 const baseCloudSettings = resolveCloudSettings();
+const baseLandingSettings = resolveLandingSettings();
 const env = typeof import.meta !== 'undefined' && import.meta ? import.meta.env ?? {} : {};
 
 function parseAllowlist(value: unknown): string[] | undefined {
@@ -44,6 +46,9 @@ const cloudSettings: CloudSettings = {
 };
 
 const cloudSavesApiBase = env['NG_APP_CLOUD_SAVES_API'] ?? 'https://api.atropello-games.es/cloud-saves';
+const landingSettings: LandingSettings = {
+  landingUrl: normalizeLandingUrl(env['NG_APP_LANDING_URL'] ?? baseLandingSettings.landingUrl)
+};
 
 export const appConfig: ApplicationConfig = {
   providers: [
@@ -64,6 +69,7 @@ export const appConfig: ApplicationConfig = {
       }
     },
     { provide: CLOUD_SAVES_GAME_CONTEXT, useValue: { gameId: 'to3' } },
-    { provide: CLOUD_SAVES_SESSION_BRIDGE, useExisting: CloudSavesSessionBridgeService }
+    { provide: CLOUD_SAVES_SESSION_BRIDGE, useExisting: CloudSavesSessionBridgeService },
+    { provide: LANDING_SETTINGS, useValue: landingSettings }
   ]
 };

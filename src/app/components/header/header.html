@@ -1,13 +1,24 @@
 <header class="app-header">
   <div class="header-container">
     <div class="header-left">
-      <div class="logo">
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="16" cy="16" r="16" fill="#DD0031"/>
-          <path d="M16 8L20 16L16 24L12 16Z" fill="white"/>
-        </svg>
-        <h1>AtroPELLO</h1>
-      </div>
+      <a
+        class="brand-link"
+        [href]="landingUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        aria-label="Abrir landing de AtroPELLO Games"
+        title="Ir a la landing oficial"
+      >
+        <span class="brand-mark">
+          <span class="brand-spark" aria-hidden="true"></span>
+          <span class="brand-orbit" aria-hidden="true"></span>
+          <span class="brand-core" aria-hidden="true"></span>
+        </span>
+        <span class="brand-copy">
+          <span class="brand-title">AtroPELLO Games</span>
+          <small class="brand-tagline">Sello independiente para juegos.</small>
+        </span>
+      </a>
     </div>
     <div class="header-center" aria-label="The Old and Only One">
       <svg class="pearl-title" width="420" height="36" viewBox="0 0 420 36" xmlns="http://www.w3.org/2000/svg" role="img">

@@ -26,10 +26,17 @@
       <section>
         <h2>2. Datos tratados</h2>
         <ul>
-          <li><strong>Autenticación Cognito:</strong> tokens almacenados en el navegador para iniciar sesión en el launcher.</li>
+          <li><strong>Autenticación Cognito:</strong> tokens almacenados en el navegador para iniciar sesión en el launcher. El flujo de login redirige al dominio <strong>atropello-games.es</strong>, que opera la pantalla de acceso y sus propias cookies; ambos servicios comparten identidad pero cada uno gestiona sus registros.</li>
           <li><strong>Partidas guardadas:</strong> archivos JSON almacenados en un bucket privado de AWS S3 bajo un identificador interno (no el correo electrónico).</li>
           <li><strong>Logs operativos:</strong> trazas técnicas del servicio web que incluyen timestamps, IP pública y eventos del juego para depurar incidencias.</li>
         </ul>
+      </section>
+
+      <section>
+        <h2>Servicios vinculados</h2>
+        <p>
+          El login y la gestión de cuenta se realizan en la landing oficial de AtroPELLO Games (<a href="https://www.atropello-games.es" target="_blank" rel="noopener">atropello-games.es</a>). Dicho sitio actúa como responsable conjunto para la autenticación y conserva sus propios registros (cookies del launcher, formularios de contacto). Cuando el usuario vuelve al cliente TO3, solo se guarda el token emitido por Cognito y nunca se sincroniza el correo electrónico completo.
+        </p>
       </section>
 
       <section>
