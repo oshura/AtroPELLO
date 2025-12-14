@@ -73,9 +73,6 @@
     </div>
     <div class="header-right">
       <nav class="header-nav">
-        <a [routerLink]="getWikiRoute()" class="wiki-link" title="Game Wiki">
-          <img src="assets/Wiki.png" alt="Abrir wiki" class="wiki-icon" loading="lazy" />
-        </a>
         <button class="nav-button" (click)="onOptionsClick()">Opciones</button>
         <ng-container *ngIf="auth.authenticated(); else loginButton">
           <button
@@ -99,6 +96,9 @@
         <ng-template #loginButton>
           <button class="nav-button primary" type="button" (click)="onLoginClick()">Iniciar Sesión</button>
         </ng-template>
+        <a [routerLink]="getWikiRoute()" class="wiki-link" title="Game Wiki">
+          <img src="assets/Wiki.png" alt="Abrir wiki" class="wiki-icon" loading="lazy" />
+        </a>
       </nav>
     </div>
   </div>
@@ -106,5 +106,5 @@
 <app-audio-settings-dialog
   [isVisible]="showAudio"
   [startTab]="optionsInitialTab"
-  (closed)="onOptionsClosed()"
-></app-audio-settings-dialog>
+  (closed)="onOptionsClosed()">
+</app-audio-settings-dialog>
