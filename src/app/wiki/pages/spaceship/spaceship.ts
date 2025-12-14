@@ -92,6 +92,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
               <li>Variable thrust output (0-100%)</li>
               <li>Dynamic audio pitch based on throttle</li>
               <li>Visual particle trail effect</li>
+              <li>Ambient space dust realigns with ship orientation after takeoff/portal jumps, so the parallax cloud never collapses into a single plane.</li>
               <li>Forward acceleration only (reverse via rotation)</li>
             </ul>
             <p><strong>Audio:</strong> Continuous loop with real-time volume/pitch modulation. Thruster sound fades in/out smoothly with throttle input.</p>

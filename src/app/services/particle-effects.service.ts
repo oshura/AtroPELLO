@@ -610,20 +610,58 @@ export class ParticleEffectsService {
   }
 
   private respawnAmbientParticleAhead(d: { position: {x:number;y:number;z:number}; size:number; brightness:number }, spaceship: Spaceship): void {
-    const fwd = spaceship.forwardDirection;
+    const forward = this.normalize({
+      x: spaceship.forwardDirection.x,
+      y: spaceship.forwardDirection.y,
+      z: spaceship.forwardDirection.z
+    });
     const pos = spaceship.position;
     const dist = this.ambientNear + Math.random() * (this.ambientFar - this.ambientNear);
     const sideX = (Math.random() * 2 - 1) * this.ambientSideX;
     const sideY = (Math.random() * 2 - 1) * this.ambientSideY;
-    // Construir base delante del ship: pos + fwd*dist + pequeños desplazamientos laterales en un marco aproximado
-    // Aproximamos el lateral como algún vector perpendicular fijo (no perfecto), suficiente visualmente
-    const up = { x: 0, y: 1, z: 0 };
-    const right = this.cross(fwd, up);
-    d.position.x = pos.x + fwd.x * dist + right.x * sideX + up.x * sideY;
-    d.position.y = pos.y + fwd.y * dist + right.y * sideX + up.y * sideY;
-    d.position.z = pos.z + fwd.z * dist + right.z * sideX + up.z * sideY;
-    d.size = 0.28 + Math.random()*0.22; // más grande para que se note
-    d.brightness = 0.12 + Math.random()*0.18;
+
+    let shipRight: { x: number; y: number; z: number } = { x: 1, y: 0, z: 0 };
+    let shipUp: { x: number; y: number; z: number } = { x: 0, y: 1, z: 0 };
+
+    const orientation = typeof spaceship.getOrientationQuaternion === 'function'
+      ? spaceship.getOrientationQuaternion()
+      : null;
+
+    if (orientation) {
+      const upVec = vec3.create();
+      vec3.transformQuat(upVec, vec3.fromValues(0, 1, 0), orientation);
+      shipUp = this.normalize({ x: upVec[0], y: upVec[1], z: upVec[2] });
+
+      const rightVec = vec3.create();
+      vec3.transformQuat(rightVec, vec3.fromValues(1, 0, 0), orientation);
+      shipRight = this.normalize({ x: rightVec[0], y: rightVec[1], z: rightVec[2] });
+    } else {
+      shipRight = this.normalize(this.cross(forward, shipUp));
+      if (this.vectorLength(shipRight) < 1e-3) {
+        shipUp = { x: 0, y: 0, z: 1 };
+        shipRight = this.normalize(this.cross(forward, shipUp));
+      }
+    }
+
+    if (this.vectorLength(shipRight) < 1e-3) {
+      const fallbackUp = Math.abs(forward.y) < 0.95 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+      shipRight = this.normalize(this.cross(forward, fallbackUp));
+    }
+
+    shipUp = this.normalize(this.cross(shipRight, forward));
+    if (this.vectorLength(shipUp) < 1e-3) {
+      shipUp = { x: 0, y: 1, z: 0 };
+    }
+
+    d.position.x = pos.x + forward.x * dist + shipRight.x * sideX + shipUp.x * sideY;
+    d.position.y = pos.y + forward.y * dist + shipRight.y * sideX + shipUp.y * sideY;
+    d.position.z = pos.z + forward.z * dist + shipRight.z * sideX + shipUp.z * sideY;
+    d.size = 0.28 + Math.random() * 0.22;
+    d.brightness = 0.12 + Math.random() * 0.18;
+  }
+
+  private vectorLength(v: { x: number; y: number; z: number }): number {
+    return Math.hypot(v.x, v.y, v.z);
   }
 
   private dot(a: {x:number;y:number;z:number}, b: {x:number;y:number;z:number}): number { return a.x*b.x + a.y*b.y + a.z*b.z; }
