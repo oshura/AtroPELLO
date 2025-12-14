@@ -217,7 +217,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           </div>
         </div>
         <p class="note marquee-note">Queue is throttled, deduped per event type and capped to keep the scroll readable. Expect a ~1.2s grace period after respawn before void energy starts draining again.</p>
-        <p class="note marquee-note">Cada alerta completa una única vuelta en el panel antes de caducar y el scroll aplica compensación de FPS bajos para que los textos no avancen a golpes incluso cuando el juego corre a 32&nbsp;FPS.</p>
+        <p class="note marquee-note">Cada alerta completa una única vuelta en el panel antes de caducar y el scroll aplica compensación de FPS bajos para que los textos no avancen a golpes incluso cuando el juego corre a 32&nbsp;FPS. El panel se mantiene discreto cuando no hay cola y se ilumina con un halo verde intenso en cuanto vuelve a emitir mensajes.</p>
       </section>
 
       <section class="customization tbd-section">

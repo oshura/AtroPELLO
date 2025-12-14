@@ -11,15 +11,9 @@
  
   
  - Poder ver personaje y nave estando aterrizado.
- - Criaturas entrada por portal o desde el vacío.
  - Bajar el fiushhh a 3u y 5u aljarse, y que a los debries no se lo aplica.
- - Marquee messages:
-	- Entrada de una nave enemiga (30s).
-	- 
- - A veces no marca unos asteroides temp (debries) en el mapa, a parte de estar a 3Ku cuando a no se cuando deben desaparecer del juego.
-	
- - Cantidad y distribución de polvo estelar. Sobretodo despues de despegar.
- 
+ - Marquee messages vistosos.
+
  - Landing menus:
 	- Afinar que si es neutral pero no se ha buscado criatura, no de la misión.
 	Cambiar:
@@ -34,12 +28,8 @@
  
  - La historia del principio para que gane algun hechizo, esconder hechizos, visitando la nave nodriza, y descubra ese 20% de memoria.
  
- - Iniciar sesion:
-	- Para grabar partida y cargar partida.
+  - Donar €€.
  
- - Donar €€.
- 
- - Realistic move efect.
  - Hechizo de mind flight.
  
  - Weapons
@@ -69,6 +59,8 @@ Efectos de slots auxiliares:
 
 - Resurrección en portal más recientemente cruzado. Memoria ancestral.
 
+- demasiadas particulas.
+
 - Drift por el vacío intergalactico:
 	- Sistema de control de drift.
 	- Hechizo de control de drift mejorado.
@@ -77,9 +69,7 @@ Efectos de slots auxiliares:
 		- Llegar a un espacio vacío con un dios primigenio (-10 cordura y 1 punto mas por minuto) para luchar con él o perecer y tener que respawnear.
 		- Perdido en el vacío exterior: +1 año entero de edad y -10 de cordura, con posibilidad claro de morir y tener que respawnear.
 
-- Colision? then apply improved algorithm.
 
-- demasiadas particulas.
 
 
 
@@ -92,3 +82,7 @@ aws cloudfront create-invalidation --distribution-id E2ZSJEHDE5STC --paths "/*"
 aws s3 sync . s3://atropello-games-landing --acl public-read --delete --exclude "node_modules/*" --exclude ".git/*" --exclude "*.md"  
 aws cloudfront create-invalidation --distribution-id E3A8FKCLUO30EI --paths "/*"
 
+Email: `usertesto@steron.es`
+Contraseña: `jfe!sASR22r!`
+
+npm run test -- --watch=false --include src/app/services/game/game-persistence.service.spec.ts

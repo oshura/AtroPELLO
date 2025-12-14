@@ -25,6 +25,12 @@ export class MarqueePanel {
   private readonly backgroundColor = '#0a3d0a'; // Verde oscuro
   private readonly textColor = '#00ff41';       // Verde fosforito
   private readonly borderColor = '#8b4513';     // Marrón
+  private readonly activeBackgroundColor = '#105d1b';
+  private readonly activeBorderColor = '#d97706';
+  private readonly panelGlowColor = 'rgba(0, 255, 65, 0.55)';
+  private readonly activeGradientTop = 'rgba(0, 255, 65, 0.28)';
+  private readonly activeGradientBottom = 'rgba(0, 16, 0, 0.8)';
+  private readonly textStretchFactorY = 1.35;
   
   public update(deltaMs: number = this.defaultDeltaMs): string[] {
     const completed: string[] = [];
@@ -96,14 +102,36 @@ export class MarqueePanel {
     // Configurar contexto
     ctx.save();
     
+    const hasMessages = this.messages.length > 0;
+    const baseBackground = hasMessages ? this.activeBackgroundColor : this.backgroundColor;
+
     // Dibujar fondo del panel
-    ctx.fillStyle = this.backgroundColor;
+    ctx.fillStyle = baseBackground;
     ctx.fillRect(x, y, this.panelWidth, this.panelHeight);
-    
+
+    if (hasMessages) {
+      const glowGradient = ctx.createLinearGradient(x, y, x, y + this.panelHeight);
+      glowGradient.addColorStop(0, this.activeGradientTop);
+      glowGradient.addColorStop(0.45, 'rgba(0, 64, 0, 0.08)');
+      glowGradient.addColorStop(1, this.activeGradientBottom);
+      ctx.fillStyle = glowGradient;
+      ctx.fillRect(x, y, this.panelWidth, this.panelHeight);
+    }
+
     // Dibujar borde
-    ctx.strokeStyle = this.borderColor;
-    ctx.lineWidth = 3; // Borde más grueso para panel más grande
-    ctx.strokeRect(x, y, this.panelWidth, this.panelHeight);
+    ctx.strokeStyle = hasMessages ? this.activeBorderColor : this.borderColor;
+    ctx.lineWidth = hasMessages ? 4 : 3; // Borde más grueso cuando está activo
+    ctx.strokeRect(x + 0.5, y + 0.5, this.panelWidth - 1, this.panelHeight - 1);
+
+    if (hasMessages) {
+      ctx.save();
+      ctx.strokeStyle = this.activeBorderColor;
+      ctx.lineWidth = 2;
+      ctx.shadowColor = this.panelGlowColor;
+      ctx.shadowBlur = 18;
+      ctx.strokeRect(x + 2, y + 2, this.panelWidth - 4, this.panelHeight - 4);
+      ctx.restore();
+    }
     
     // Crear área de clipping para el texto
     ctx.beginPath();
@@ -111,14 +139,13 @@ export class MarqueePanel {
     ctx.clip();
 
     const textY = y + this.panelHeight / 2;
-    const hasMessages = this.messages.length > 0;
 
     // Configurar estilo base
     ctx.fillStyle = this.textColor;
     ctx.font = 'bold 24px "Courier New", monospace';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor = this.textColor;
-    ctx.shadowBlur = 6;
+    ctx.shadowColor = hasMessages ? 'rgba(0, 255, 65, 0.95)' : this.textColor;
+    ctx.shadowBlur = hasMessages ? 10 : 6;
     ctx.shadowOffsetX = 0;
     ctx.shadowOffsetY = 0;
 
@@ -131,7 +158,7 @@ export class MarqueePanel {
     ctx.textAlign = 'left';
     const currentMessage = this.messages[this.currentMessageIndex]?.text || '';
     const currentTextX = x + 15 - this.scrollPosition;
-    ctx.fillText(currentMessage, currentTextX, textY);
+    this.drawStretchedText(ctx, currentMessage, currentTextX, textY);
     
     // Dibujar próximo mensaje si es necesario (flujo continuo)
     const messageWidth = this.estimateMessageWidth(currentMessage);
@@ -140,7 +167,7 @@ export class MarqueePanel {
       const nextMessage = this.messages[nextIndex]?.text || '';
       const nextStartPosition = messageWidth + this.messageSpacing;
       const nextTextX = x + 15 + (nextStartPosition - this.scrollPosition);
-      ctx.fillText(nextMessage, nextTextX, textY);
+      this.drawStretchedText(ctx, nextMessage, nextTextX, textY);
     }
     
     ctx.restore();
@@ -211,6 +238,19 @@ export class MarqueePanel {
 
   private estimateMessageWidth(message: string): number {
     return Math.max(0, message.length * 16);
+  }
+
+  private drawStretchedText(
+    ctx: CanvasRenderingContext2D,
+    text: string,
+    textX: number,
+    textY: number
+  ): void {
+    ctx.save();
+    ctx.translate(textX, textY);
+    ctx.scale(1, this.textStretchFactorY);
+    ctx.fillText(text, 0, 0);
+    ctx.restore();
   }
 
 }
