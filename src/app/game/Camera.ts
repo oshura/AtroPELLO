@@ -47,13 +47,13 @@ export abstract class BaseCamera {
   /**
    * Método abstracto que cada modo de cámara debe implementar
    */
-  protected abstract updateCameraMode(spaceship: Spaceship): void;
+  protected abstract updateCameraMode(spaceship: Spaceship, deltaTime: number): void;
 
   /**
    * Actualiza la cámara
    */
   public update(spaceship: Spaceship, deltaTime: number): void {
-    this.updateCameraMode(spaceship);
+    this.updateCameraMode(spaceship, deltaTime);
     this.updateViewMatrix();
   }
 
@@ -203,13 +203,55 @@ export abstract class BaseCamera {
     matrix[14] = (forward.x * eye.x + forward.y * eye.y + forward.z * eye.z);
     matrix[15] = 1;
   }
+
+  /** Smooth damp helper for scalar intent values. */
+  protected smoothValue(current: number, target: number, deltaTime: number, responsiveness: number = 8): number {
+    if (!isFinite(deltaTime) || deltaTime <= 0) {
+      return target;
+    }
+    const k = Math.max(0.0001, responsiveness);
+    const factor = 1 - Math.exp(-k * deltaTime);
+    return current + (target - current) * factor;
+  }
+
+  /** Normalizes a vector safely. */
+  protected normalizeVector(vector: Vector3): Vector3 {
+    const length = Math.hypot(vector.x, vector.y, vector.z) || 1;
+    return {
+      x: vector.x / length,
+      y: vector.y / length,
+      z: vector.z / length
+    };
+  }
+
+  /** Rotates a vector around a normalized axis using Rodrigues' formula. */
+  protected rotateVectorAroundAxis(vector: Vector3, axis: Vector3, angle: number): Vector3 {
+    if (!isFinite(angle) || Math.abs(angle) < 1e-4) {
+      return { ...vector };
+    }
+    const normalizedAxis = this.normalizeVector(axis);
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const dot = normalizedAxis.x * vector.x + normalizedAxis.y * vector.y + normalizedAxis.z * vector.z;
+    const cross = {
+      x: normalizedAxis.y * vector.z - normalizedAxis.z * vector.y,
+      y: normalizedAxis.z * vector.x - normalizedAxis.x * vector.z,
+      z: normalizedAxis.x * vector.y - normalizedAxis.y * vector.x
+    };
+
+    return {
+      x: vector.x * cos + cross.x * sin + normalizedAxis.x * dot * (1 - cos),
+      y: vector.y * cos + cross.y * sin + normalizedAxis.y * dot * (1 - cos),
+      z: vector.z * cos + cross.z * sin + normalizedAxis.z * dot * (1 - cos)
+    };
+  }
 }
 
 /**
  * Cámara trasera que sigue a la nave (modo 9)
  */
 export class RearExternalCamera extends BaseCamera {
-  protected updateCameraMode(spaceship: Spaceship): void {
+  protected updateCameraMode(spaceship: Spaceship, _deltaTime: number): void {
     // Compensar FOV 55° - alejar cámara trasera para mantener perspectiva original
     const REAR_EXTERNAL_OFFSET = { x: 0, y: 2.5, z: -this.zoomDistance * 2.2 };
     
@@ -243,38 +285,75 @@ export class RearExternalCamera extends BaseCamera {
  * Cámara externa inmóvil que rota con la nave (modo 0)
  */
 export class CockpitCamera extends BaseCamera {
-  protected updateCameraMode(spaceship: Spaceship): void {
-    // Compensar FOV 55° - alejar cámara externa para mantener perspectiva original
-    const COCKPIT_OFFSET = { x: 0, y: 2.0, z: -this.zoomDistance * 2.0 };
-    
-    // Obtener el cuaternión de orientación de la nave
+  private intentPitch = 0;
+  private intentYaw = 0;
+  private intentRoll = 0;
+
+  private readonly intentConfig = {
+    responsiveness: 8,
+    pitchYOffset: 0.85,
+    pitchZOffset: -0.55,
+    yawXOffset: 0.75,
+    rollXOffset: 0.35,
+    rollYOffset: 0.25,
+    rollBankRadians: 0.18
+  };
+
+  protected updateCameraMode(spaceship: Spaceship, deltaTime: number): void {
+    this.updateIntentState(spaceship, deltaTime);
+
+    const baseOffset: Vector3 = { x: 0, y: 2.0, z: -this.zoomDistance * 2.0 };
+    const offsetWithIntent = this.applyIntentToOffset(baseOffset);
+
     const spaceshipQuaternion = spaceship.getOrientationQuaternion();
-    
-    // Rotar el offset usando el cuaternión de la nave
-    const rotatedOffset = this.rotateVectorByQuaternion(COCKPIT_OFFSET, spaceshipQuaternion);
+    const rotatedOffset = this.rotateVectorByQuaternion(offsetWithIntent, spaceshipQuaternion);
     const rotatedForward = this.rotateVectorByQuaternion({ x: 0, y: 0, z: 3.0 }, spaceshipQuaternion);
-    const rotatedUp = this.rotateVectorByQuaternion({ x: 0, y: 1, z: 0 }, spaceshipQuaternion);
-    
-    // Posición de la cámara rotada con la nave
+    let rotatedUp = this.rotateVectorByQuaternion({ x: 0, y: 1, z: 0 }, spaceshipQuaternion);
+
+    rotatedUp = this.applyRollBank(rotatedUp, rotatedForward);
+
     this.position = {
       x: spaceship.position.x + rotatedOffset.x,
       y: spaceship.position.y + rotatedOffset.y,
       z: spaceship.position.z + rotatedOffset.z
     };
-    
-    // Target rotado con la nave (mira en la misma dirección)
+
     this.target = {
       x: this.position.x + rotatedForward.x,
       y: this.position.y + rotatedForward.y,
       z: this.position.z + rotatedForward.z
     };
-    
-    // Vector up rotado con la nave
-    this.up = {
-      x: rotatedUp.x,
-      y: rotatedUp.y,
-      z: rotatedUp.z
+
+    this.up = rotatedUp;
+  }
+
+  private updateIntentState(spaceship: Spaceship, deltaTime: number): void {
+    const controls = spaceship.controls;
+    const pitchTarget = this.resolveIntentAxis(controls?.up, controls?.down);
+    const yawTarget = this.resolveIntentAxis(controls?.left, controls?.right);
+    const rollTarget = this.resolveIntentAxis(controls?.rollLeft, controls?.rollRight);
+
+    this.intentPitch = this.smoothValue(this.intentPitch, pitchTarget, deltaTime, this.intentConfig.responsiveness);
+    this.intentYaw = this.smoothValue(this.intentYaw, yawTarget, deltaTime, this.intentConfig.responsiveness);
+    this.intentRoll = this.smoothValue(this.intentRoll, rollTarget, deltaTime, this.intentConfig.responsiveness);
+  }
+
+  private resolveIntentAxis(positive?: boolean, negative?: boolean): number {
+    const value = (positive ? 1 : 0) + (negative ? -1 : 0);
+    return Math.max(-1, Math.min(1, value));
+  }
+
+  private applyIntentToOffset(baseOffset: Vector3): Vector3 {
+    return {
+      x: baseOffset.x + (this.intentYaw * this.intentConfig.yawXOffset) + (this.intentRoll * this.intentConfig.rollXOffset),
+      y: baseOffset.y + (this.intentPitch * this.intentConfig.pitchYOffset) + (this.intentRoll * this.intentConfig.rollYOffset),
+      z: baseOffset.z + (this.intentPitch * this.intentConfig.pitchZOffset)
     };
+  }
+
+  private applyRollBank(upVector: Vector3, forwardVector: Vector3): Vector3 {
+    const bankAngle = this.intentRoll * this.intentConfig.rollBankRadians;
+    return this.rotateVectorAroundAxis(upVector, forwardVector, bankAngle);
   }
 
   /**
@@ -314,38 +393,75 @@ export class CockpitCamera extends BaseCamera {
  * Igual que INMOVILE_EXTERNAL pero colocada delante de la nave y mirando hacia atrás
  */
 export class RearViewCamera extends BaseCamera {
-  protected updateCameraMode(spaceship: Spaceship): void {
-    // Usar distancia equivalente a la cámara externa pero delante de la nave
-    const FRONT_OFFSET = { x: 0, y: 2.0, z: this.zoomDistance * 2.0 };
+  private intentPitch = 0;
+  private intentYaw = 0;
+  private intentRoll = 0;
 
-    // Obtener orientación de la nave
+  private readonly intentConfig = {
+    responsiveness: 8,
+    pitchYOffset: 0.75,
+    pitchZOffset: -0.35,
+    yawXOffset: 0.65,
+    rollXOffset: 0.3,
+    rollYOffset: 0.2,
+    rollBankRadians: 0.15
+  };
+
+  protected updateCameraMode(spaceship: Spaceship, deltaTime: number): void {
+    this.updateIntentState(spaceship, deltaTime);
+
+    const baseOffset: Vector3 = { x: 0, y: 2.0, z: this.zoomDistance * 2.0 };
+    const offsetWithIntent = this.applyIntentToOffset(baseOffset);
+
     const spaceshipQuaternion = spaceship.getOrientationQuaternion();
-
-    // Rotar vectores base por la orientación de la nave
-    const rotatedOffset = this.rotateVectorByQuaternion(FRONT_OFFSET, spaceshipQuaternion);
-    // Mirar hacia atrás respecto a la dirección de la nave → -Z local
+    const rotatedOffset = this.rotateVectorByQuaternion(offsetWithIntent, spaceshipQuaternion);
     const rotatedBackward = this.rotateVectorByQuaternion({ x: 0, y: 0, z: -3.0 }, spaceshipQuaternion);
-    const rotatedUp = this.rotateVectorByQuaternion({ x: 0, y: 1, z: 0 }, spaceshipQuaternion);
+    let rotatedUp = this.rotateVectorByQuaternion({ x: 0, y: 1, z: 0 }, spaceshipQuaternion);
 
-    // Posición de la cámara delante de la nave
+    rotatedUp = this.applyRollBank(rotatedUp, rotatedBackward);
+
     this.position = {
       x: spaceship.position.x + rotatedOffset.x,
       y: spaceship.position.y + rotatedOffset.y,
       z: spaceship.position.z + rotatedOffset.z
     };
 
-    // La cámara mira hacia atrás (opuesta al forward de la nave)
     this.target = {
       x: this.position.x + rotatedBackward.x,
       y: this.position.y + rotatedBackward.y,
       z: this.position.z + rotatedBackward.z
     };
 
-    this.up = {
-      x: rotatedUp.x,
-      y: rotatedUp.y,
-      z: rotatedUp.z
+    this.up = rotatedUp;
+  }
+
+  private updateIntentState(spaceship: Spaceship, deltaTime: number): void {
+    const controls = spaceship.controls;
+    const pitchTarget = this.resolveIntentAxis(controls?.up, controls?.down);
+    const yawTarget = this.resolveIntentAxis(controls?.left, controls?.right);
+    const rollTarget = this.resolveIntentAxis(controls?.rollLeft, controls?.rollRight);
+
+    this.intentPitch = this.smoothValue(this.intentPitch, pitchTarget, deltaTime, this.intentConfig.responsiveness);
+    this.intentYaw = this.smoothValue(this.intentYaw, yawTarget, deltaTime, this.intentConfig.responsiveness);
+    this.intentRoll = this.smoothValue(this.intentRoll, rollTarget, deltaTime, this.intentConfig.responsiveness);
+  }
+
+  private resolveIntentAxis(positive?: boolean, negative?: boolean): number {
+    const value = (positive ? 1 : 0) + (negative ? -1 : 0);
+    return Math.max(-1, Math.min(1, value));
+  }
+
+  private applyIntentToOffset(baseOffset: Vector3): Vector3 {
+    return {
+      x: baseOffset.x + (-this.intentYaw * this.intentConfig.yawXOffset) + (this.intentRoll * this.intentConfig.rollXOffset),
+      y: baseOffset.y + (this.intentPitch * this.intentConfig.pitchYOffset) + (this.intentRoll * this.intentConfig.rollYOffset),
+      z: baseOffset.z + (this.intentPitch * this.intentConfig.pitchZOffset)
     };
+  }
+
+  private applyRollBank(upVector: Vector3, backwardVector: Vector3): Vector3 {
+    const bankAngle = this.intentRoll * this.intentConfig.rollBankRadians;
+    return this.rotateVectorAroundAxis(upVector, backwardVector, bankAngle);
   }
 
   /**
@@ -383,7 +499,7 @@ export class RearViewCamera extends BaseCamera {
  * Cámara interna en la cabina del piloto (modo 8)
  */
 export class CockpitInternalCamera extends BaseCamera {
-  protected updateCameraMode(spaceship: Spaceship): void {
+  protected updateCameraMode(spaceship: Spaceship, _deltaTime: number): void {
     // Posición ajustada para FOV 55° y para ver HUD en parte inferior
     // Y más bajo para que el HUD aparezca en la parte horizontal inferior de la visión
     const COCKPIT_INTERNAL_OFFSET = { x: 0, y: -0.2, z: 1.2 }; // Más atrás y bajo para FOV 55°
@@ -623,7 +739,7 @@ export class Camera {
  * No modifica posición/target automáticamente; sólo actualiza la viewMatrix.
  */
 export class ManualCamera extends BaseCamera {
-  protected updateCameraMode(_spaceship: Spaceship): void {
+  protected updateCameraMode(_spaceship: Spaceship, _deltaTime: number): void {
     // No-op: la animación externa gestiona position/target/up
   }
   public getDebugInfo() {
