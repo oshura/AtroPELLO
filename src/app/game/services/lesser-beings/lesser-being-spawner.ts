@@ -55,12 +55,11 @@ export class LesserBeingSpawner {
     if (!species) {
       return null;
     }
-    const patron = this.resolvePatronElderGod(species, elderGod);
     this.engine.logger?.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Prepared lesser being encounter', {
-      elderGod: patron,
+      elderGod,
       species
     });
-    return { elderGod: patron, species };
+    return { elderGod, species };
   }
 
   public onVoidJumpCompleted(prepared?: LesserBeingEncounterPlan | null): void {
@@ -277,33 +276,51 @@ export class LesserBeingSpawner {
     } catch {}
   }
 
-  private resolvePatronElderGod(species: LesserBeing, fallback: ElderGod): ElderGod {
-    return LESSER_BEING_PATRONS[species] ?? fallback;
-  }
-
   private pickSpeciesFromPool(elderGod: ElderGod, reason: SpawnOptions['reason']): LesserBeing | null {
-    let speciesPool = ELDER_GOD_SUMMONS[elderGod] ?? [];
+    const configuredPool = ELDER_GOD_SUMMONS[elderGod] ?? [];
+    const canonicalPool = configuredPool.filter(
+      (species) => LESSER_BEING_PATRONS[species] === elderGod,
+    );
+
+    let speciesPool = canonicalPool.length > 0 ? canonicalPool : configuredPool;
     this.engine.logger?.log(LogLevel.DEBUG, LogCategory.LESSER_BEINGS, 'Resolved species pool for spawn', {
       reason,
       elderGod,
-      poolSize: speciesPool.length
+      poolSize: speciesPool.length,
+      canonicalSize: canonicalPool.length,
     });
-    if (!speciesPool.length) {
-      this.engine.logger?.log(LogLevel.WARN, LogCategory.LESSER_BEINGS, 'Elder god has no summonable species, using fallback pool', {
-        elderGod,
-        reason
-      });
+
+    if (canonicalPool.length === 0 && configuredPool.length > 0) {
+      this.engine.logger?.log(
+        LogLevel.WARN,
+        LogCategory.LESSER_BEINGS,
+        'Configured species not aligned with patron elder god; using unfiltered pool',
+        { elderGod, reason, configuredPool },
+      );
+    }
+
+    if (speciesPool.length === 0) {
+      this.engine.logger?.log(
+        LogLevel.WARN,
+        LogCategory.LESSER_BEINGS,
+        'No configured lesser being species for elder god; falling back to generic pool',
+        { elderGod, reason },
+      );
       speciesPool = SUMMONABLE_SPECIES;
     }
+
     if (!speciesPool.length) {
-      this.engine.logger?.log(LogLevel.ERROR, LogCategory.LESSER_BEINGS, 'No lesser being species available for spawning', {
-        elderGod,
-        reason
-      });
+      this.engine.logger?.log(
+        LogLevel.ERROR,
+        LogCategory.LESSER_BEINGS,
+        'No lesser being species available for spawning',
+        { elderGod, reason },
+      );
       return null;
     }
-    const species = speciesPool[Math.floor(Math.random() * speciesPool.length)];
-    return species;
+
+    const idx = Math.floor(Math.random() * speciesPool.length);
+    return speciesPool[idx];
   }
 
   private evaluatePortalSpawns(): void {

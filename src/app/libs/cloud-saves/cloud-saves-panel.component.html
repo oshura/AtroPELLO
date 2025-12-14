@@ -1,6 +1,6 @@
 <section class="cloud-panel">
   <header>
-    <p class="cloud-panel__eyebrow">{{ copy.eyebrow + ' for ' + (copy.loggedAsLabel || 'Guest') }}</p>
+    <p class="cloud-panel__eyebrow">{{ copy.eyebrow + ' for ' + (username || 'Guest') }}</p>
   </header>
 
   <p class="cloud-panel__rule">
@@ -24,9 +24,6 @@
           {{ copy.actionDelete }}
         </button>
       </div>
-      <button type="button" class="cloud-panel__toggle" (click)="toggleViewAll()" [disabled]="isBusy()">
-        {{ viewAll() ? copy.actionViewAssigned : copy.actionViewAll }}
-      </button>
     </div>
 
     <p *ngIf="viewAll()" class="cloud-panel__warning">
@@ -76,6 +73,7 @@
         {{ copy.listEmpty }}
       </p>
     </ng-template>
+    
   </ng-container>
 
   <div *ngIf="lastLoadedSlot" class="cloud-panel__feedback">
@@ -121,8 +119,13 @@
     </div>
     <pre><code>{{ lastLoadedSlot.savegame | json }}</code></pre>
   </div>
-
-  <p class="cloud-panel__note">
-    {{ saves.error() || copy.note }}
-  </p>
+  <div class="cloud-panel__actions">
+    <button type="button" class="cloud-panel__toggle" (click)="toggleViewAll()" [disabled]="isBusy()">
+          {{ viewAll() ? copy.actionViewAssigned : copy.actionViewAll }}
+    </button>
+  </div>
+    <p class="cloud-panel__note">
+      {{ saves.error() || copy.note }}
+    </p>
+  
 </section>

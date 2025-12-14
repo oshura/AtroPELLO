@@ -543,6 +543,7 @@ handlePortalTraversal()
 - El snapshot humano define explícitamente `meta.elderGod = CTHULHU`, evitando reasignaciones accidentales cada vez que se regenera.
 - `SystemGeneratorService` ahora persiste un `elderGod` aleatorio para cada sistema procedural utilizando únicamente divinidades con criaturas asociadas en `ELDER_GOD_SUMMONS`, así la diversidad de lesser beings deriva del propio snapshot.
 - `LesserBeingSpawner` consume ese metadato para elegir especies mixtas y, cuando la incursión proviene de un portal, fuerza al controlador a fijar la nave y emite un evento `HudMarqueeEventType.LESSER_BEING` notificando al jugador.
+- `VoidJumpAnimation` y `AnimationManager` leen siempre `GameEngine.getCurrentSystemElderGod()` para renderizar la deidad durante el salto, así que una vez asignado un dueño al sistema no volverá a alternarse entre Cthulhu/Azathoth/Yog-Sothoth/Cthugha en cada salto.
 
 ### Datos Preservados Entre Sistemas
 - **Portales persistentes**: Mantenidos en PortalPersistenceService

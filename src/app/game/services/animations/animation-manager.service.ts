@@ -153,9 +153,9 @@ export class AnimationManagerService {
     const pending = typeof engine.peekPendingVoidJumpEncounter === 'function'
       ? engine.peekPendingVoidJumpEncounter()
       : null;
-    const elder = pending?.elderGod ?? (typeof engine.getCurrentSystemElderGod === 'function'
+    const elder = typeof engine.getCurrentSystemElderGod === 'function'
       ? engine.getCurrentSystemElderGod()
-      : ElderGod.CTHULHU);
+      : (pending?.elderGod ?? ElderGod.CTHULHU);
     const mapped = this.elderGodFlashImages[elder];
     if (mapped) {
       return mapped;

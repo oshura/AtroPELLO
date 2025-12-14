@@ -256,9 +256,15 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           </p>
           <p>
             Durante un Void Jump ya no se improvisa el invasor: el motor planifica el encuentro antes de mostrar la animación,
-            fija la especie que va a manifestarse y reutiliza ese dato para seleccionar la imagen del dios exterior (Semillas →
-            Cthulhu, Shoggoth → Azathoth, Vampiro de fuego → Cthugha). Si la tirada
-            descarta la irrupción, la animación vuelve al icono del sistema y el salto no reintentará la invocación al aterrizar.
+            fija la especie que va a manifestarse y la secuencia visual interroga a <code>GameEngine.getCurrentSystemElderGod()</code>
+            para mostrar siempre a la misma deidad que gobierna ese sistema. Si la tirada descarta la irrupción, la animación
+            conserva el mismo icono y el salto no reintentará la invocación al aterrizar.
+          </p>
+          <p>
+            Ese plan respeta ahora la jerarquía de patronazgo: cada pool descarta automáticamente a las especies cuyo
+            <em>LESSER_BEING_PATRON</em> no coincide con el dios que rige el sistema. Así, un dominio de Cthulhu sólo puede
+            proponer Semillas Estelares y Azathoth monopoliza los Shoggoths; si algún pool queda vacío, el motor cae al
+            conjunto genérico y deja un warning para depurar la configuración.
           </p>
           <p>
             Las Semillas y los Vampiros invocados desde portales comparan constantemente la distancia a la nave con la distancia a

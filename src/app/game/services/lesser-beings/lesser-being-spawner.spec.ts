@@ -173,7 +173,7 @@ describe('LesserBeingSpawner', () => {
 
     const plan = spawner.prepareVoidJumpEncounter();
 
-    expect(plan).toEqual({ elderGod: ElderGod.AZATHOTH, species: LesserBeing.SHOGGOTH });
+    expect(plan).toEqual({ elderGod: ElderGod.CTHULHU, species: LesserBeing.SEMILLAS_ESTELARES });
     (Math.random as jasmine.Spy).and.returnValue(0.25);
   });
 

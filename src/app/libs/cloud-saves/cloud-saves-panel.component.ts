@@ -51,7 +51,7 @@ export const DEFAULT_CLOUD_SAVES_COPY: CloudSavesPanelCopy = {
   loadedFeedback: 'Last load',
   note: 'If something fails check the console for LogCategory.SAVE_SYSTEM traces.',
   confirmLoad: 'Load this slot and overwrite the current session? The ship state will be replaced.',
-  ruleSingleSlot: 'Every pilot begins with a single slot. Spells or ship modules can grant more, but until then the header CTA saves directly to that slot.',
+  ruleSingleSlot: 'Every pilot begins with a single slot. Spells or ship modules can grant more.',
   selectionHint: 'Select a slot to enable save/load/delete.',
   viewAllWarning: 'Viewing all saves disables the save action to avoid overwriting other pilots.',
   metadataHeading: 'Runtime metadata',

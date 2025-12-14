@@ -45,7 +45,7 @@ Incluye los enviados conocidos:
 - `YOG_SOTHOTH` → `[SHOGGOTH, VAMPIRO_FUEGO]`
 - `CTHUGHA` → `[VAMPIRO_FUEGO, SEMINILLAS_ESTELARES]`
   
-Cada especie conserva además un “patrón” visual fijo utilizado por la animación de Void Jump:
+Cada especie conserva además un “patrón” visual fijo (HUD/bestiario) para reforzar su patronazgo arcano, pero la animación de Void Jump siempre proyecta al `ElderGod` asignado al sistema para evitar rerolls o cambios entre saltos.
 - `SEMINILLAS_ESTELARES` → iconografía de `CTHULHU`.
 - `SHOGGOTH` → iconografía de `AZATHOTH`.
 - `VAMPIRO_FUEGO` → iconografía de `CTHUGHA`.
