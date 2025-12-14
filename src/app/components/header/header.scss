@@ -129,12 +129,24 @@
   }
 }
 
+.save-feedback-container {
+  flex: 0 0 210px;
+  max-width: 210px;
+  min-height: 32px;
+  margin-left: 4px;
+  display: flex;
+  align-items: center;
+}
+
 .save-feedback {
   font-size: 12px;
   color: #9be5c1;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
-  margin-left: 8px;
+  letter-spacing: 0.04em;
+  white-space: normal;
+  word-break: break-word;
+  line-height: 1.25;
+  display: block;
+  width: 100%;
   opacity: 0.85;
 
   &[data-error] {

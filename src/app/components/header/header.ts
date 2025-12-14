@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, OnDestroy, inject } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { NgIf } from '@angular/common';
 import { AudioSettingsDialogComponent } from '../dialogs/audio-settings-dialog/audio-settings-dialog';
@@ -13,7 +13,7 @@ import { CloudSavesService } from '../../libs/cloud-saves/cloud-saves.service';
   templateUrl: './header.html',
   styleUrl: './header.scss'
 })
-export class Header {
+export class Header implements OnDestroy {
   showAudio = false;
   protected optionsInitialTab: 'audio' | 'controls' | 'saves' = 'audio';
   protected wikiNav = inject(WikiNavigationService);
@@ -21,6 +21,7 @@ export class Header {
   protected saves = inject(CloudSavesService);
   protected saveFeedback: string | null = null;
   protected saveError: string | null = null;
+  private feedbackTimeoutId: ReturnType<typeof setTimeout> | null = null;
   
   constructor(private logger: LoggingService) {}
   
@@ -53,13 +54,13 @@ export class Header {
     const slotIndex = this.saves.getDefaultSaveSlotIndex();
     this.logger.info(LogCategory.SAVE_SYSTEM, 'Header save CTA clicked', { slotIndex });
     if (this.saves.hasMultipleSlots()) {
-      this.saveFeedback = null;
-      this.saveError = null;
+      this.resetFeedback();
       this.logger.info(LogCategory.SAVE_SYSTEM, 'Multiple slots detected, redirecting CTA to cloud saves tab');
       this.openOptions('saves');
       return;
     }
     this.saveError = null;
+    this.clearFeedbackTimer();
     this.saveFeedback = `Guardando slot ${slotIndex}...`;
     try {
       const payload = await this.saves.saveCurrentGame(slotIndex, {
@@ -69,11 +70,13 @@ export class Header {
       const label = payload.metadata.systemName ?? payload.metadata.anchorLabel ?? `#${slotIndex}`;
       const savedAt = payload.metadata.savedAt ?? Date.now();
       this.saveFeedback = `Guardado ${label} (${new Date(savedAt).toLocaleTimeString()})`;
+      this.scheduleFeedbackDismiss();
       this.logger.info(LogCategory.SAVE_SYSTEM, 'Header save CTA completed', {
         systemId: payload.metadata.systemId,
         anchorLabel: payload.metadata.anchorLabel ?? null
       });
     } catch (error) {
+      this.clearFeedbackTimer();
       this.saveError = this.saves.describeError(error, 'save');
       this.saveFeedback = null;
       this.logger.error(LogCategory.SAVE_SYSTEM, 'Header save CTA failed', { error });
@@ -88,5 +91,30 @@ export class Header {
   private openOptions(tab: 'audio' | 'controls' | 'saves'): void {
     this.optionsInitialTab = tab;
     this.showAudio = true;
+  }
+
+  ngOnDestroy(): void {
+    this.clearFeedbackTimer();
+  }
+
+  private scheduleFeedbackDismiss(delayMs = 3000): void {
+    this.clearFeedbackTimer();
+    this.feedbackTimeoutId = setTimeout(() => {
+      this.saveFeedback = null;
+      this.feedbackTimeoutId = null;
+    }, delayMs);
+  }
+
+  private clearFeedbackTimer(): void {
+    if (this.feedbackTimeoutId !== null) {
+      clearTimeout(this.feedbackTimeoutId);
+      this.feedbackTimeoutId = null;
+    }
+  }
+
+  private resetFeedback(): void {
+    this.clearFeedbackTimer();
+    this.saveFeedback = null;
+    this.saveError = null;
   }
 }
