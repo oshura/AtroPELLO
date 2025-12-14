@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <title>Política de Privacidad · AtroPELLO Games</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body { font-family: 'Segoe UI', system-ui, -apple-system, BlinkMacSystemFont, sans-serif; margin: 0; padding: 48px 16px; background: #05070c; color: #e5f4ff; }
+      .container { max-width: 960px; margin: 0 auto; }
+      h1, h2 { color: #7fffd4; }
+      section { margin-bottom: 32px; padding: 24px; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }
+      ul { line-height: 1.6; }
+      code { background: rgba(255,255,255,0.08); padding: 2px 4px; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>Política de Privacidad</h1>
+      <p>Última actualización: 14 de diciembre de 2025</p>
+
+      <section>
+        <h2>1. Responsable</h2>
+        <p>Proyecto independiente gestionado por Oshura Domo (Granollers, España). Contacto: zargantana@gmail.com.</p>
+      </section>
+
+      <section>
+        <h2>2. Datos tratados</h2>
+        <ul>
+          <li><strong>Autenticación Cognito:</strong> tokens almacenados en el navegador para iniciar sesión en el launcher.</li>
+          <li><strong>Partidas guardadas:</strong> archivos JSON almacenados en un bucket privado de AWS S3 bajo un identificador interno (no el correo electrónico).</li>
+          <li><strong>Logs operativos:</strong> trazas técnicas del servicio web que incluyen timestamps, IP pública y eventos del juego para depurar incidencias.</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>3. Finalidad y base legal</h2>
+        <ul>
+          <li>Prestación del servicio y sincronización de partidas (ejecución de contrato implícito al usar TO3).</li>
+          <li>Seguridad y prevención de fraude (interés legítimo para detectar abuso).</li>
+          <li>Comunicación con el titular cuando se solicita soporte (consentimiento explícito al escribir).</li>
+        </ul>
+      </section>
+
+      <section>
+        <h2>4. Conservación</h2>
+        <p>Los tokens locales se eliminan al cerrar sesión. Las partidas guardadas se mantienen hasta que el usuario las borre o solicite su eliminación. Los logs rotan cada 90 días.</p>
+      </section>
+
+      <section>
+        <h2>5. Compartición</h2>
+        <p>No se venden ni ceden datos a terceros. AWS (Cognito y S3) actúa como encargado de tratamiento, sin acceder al contenido salvo para alojarlo.</p>
+      </section>
+
+      <section>
+        <h2>6. Derechos</h2>
+        <p>Para ejercer acceso, rectificación, supresión u oposición escribe a zargantana@gmail.com indicando el ID de piloto. Se responderá en un máximo de 30 días.</p>
+      </section>
+
+      <section>
+        <h2>7. Seguridad</h2>
+        <p>Los buckets S3 son privados y requieren credenciales del backend. El cliente nunca expone claves; solo manipula tokens Cognito emitidos por AWS.</p>
+      </section>
+
+      <section>
+        <h2>8. Cambios</h2>
+        <p>Los cambios importantes se comunicarán mediante la wiki legal y se versionarán con fecha.</p>
+      </section>
+    </div>
+  </body>
+</html>

@@ -16,16 +16,15 @@ El objetivo es dejar la landing y el proyecto alineados con buenas prácticas le
   - Documentar internamente las pruebas de autoría/cesión (ubicación en repo o drive).
   - Progreso: Registro inicial en `documentation/legal/asset-inventory.md` (audio TO3, componentes visuales, datos de juegos) y texto solicitado para TO3 en `documentation/TO3-requests/audio-terms.md`. Pendiente completar tabla de juegos y licencias detalladas de FreeSound.
 
-- [ ] 3. Política de privacidad y cookies
-  - Enumerar qué datos se procesan (logs, emails, Cognito, etc.), dónde se almacenan y con qué finalidad.
-  - Redactar una política de privacidad simple (GDPR friendly): base legal, derechos ARCO, contacto y procedimientos.
-  - Alinear la política de cookies: ya se usa localStorage para Cognito; revisar si hay otras herramientas.
+- [x] 3. Política de privacidad y cookies
+  - Inventario actualizado: auth Cognito, logs propios, partidas guardadas en S3 con identificador interno sin correo.
+  - Publicadas `public/privacy-policy.html` y `public/cookies-policy.html` con contacto y base legal.
+  - La wiki legal enlaza ambas políticas y describe el almacenamiento local real.
 
-- [ ] 4. Contratos y relación con terceros
-  - Identificar juegos/colaboradores alojados en la landing y garantizar que existen permisos escritos.
-  - Preparar un acuerdo sencillo para terceros (cesión de derechos limitada + cláusula de indemnización) o recopilar los existentes.
-  - Definir canal para reclamaciones (DMCA, contenido ofensivo, etc.).
-  - Progreso: Plantilla base creada en `documents/game-integration-minimum-agreement.md`; falta personalizar por juego y definir canal de reclamaciones.
+- [x] 4. Contratos y relación con terceros
+  - Situación actual: no hay terceros ni acuerdos externos; todo el contenido es propio.
+  - Registro preventivo en `documentation/legal/third-party-agreements.md` para anotar colaboradores futuros.
+  - El canal de reclamaciones documentado en `/wiki/legal#reclamaciones` permanece como vía oficial.
 
 - [ ] 5. Registros y fiscalidad
   - Revisar obligaciones como autónomo/persona física: facturación, declaraciones de ingresos, almacenamiento de recibos.
