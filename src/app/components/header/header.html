@@ -68,7 +68,7 @@
         <button class="nav-button" (click)="onOptionsClick()">Opciones</button>
         <ng-container *ngIf="auth.authenticated(); else loginButton">
           <button
-            class="nav-button secondary"
+            class="nav-button secondary nav-button-nowrap"
             type="button"
             (click)="onSaveGameClick()"
             [disabled]="isSaveDisabled()"

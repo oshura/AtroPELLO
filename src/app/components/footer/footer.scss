@@ -10,9 +10,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 12px 20px;
-  max-width: 1200px;
-  margin: 0 auto;
+  padding: 12px clamp(16px, 2vw, 48px);
+  width: 100%;
   min-height: 50px;
 }
 
