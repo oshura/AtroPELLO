@@ -138,6 +138,15 @@ app-game {
 - Diseño minimalista
 - Colores sutiles para no distraer
 
+### 🟢 Control flotante de pantalla completa
+
+- Requisito: usuario autenticado (`AuthService.authenticated()` debe ser `true`).
+- Componente: botón fijo en la esquina inferior derecha renderizado desde `AppComponent`.
+- Iconografía: muestra un glifo verde fosforescente similar a `[ ]`; al activar el modo, el glifo se compacta en `▣` para indicar que puedes restaurar el header/footer.
+- Estilos clave: `.fullscreen-toggle`, `.toggle-glyph` y la clase de host `:host.fullscreen-active` que colapsa los cromos superior/inferior con transición en `max-height`, `opacity` y `transform`.
+- Accesibilidad: usa `aria-pressed`, `aria-label` dinámico y un `<span class="sr-only">` para lectores de pantalla.
+- Persistencia: al cerrar sesión, un `effect` resetea el estado para evitar dejar la UI sin cabecera en sesiones anónimas.
+
 ---
 
 ## 📱 Responsividad

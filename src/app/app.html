@@ -7,3 +7,17 @@
 </main>
 <app-footer></app-footer>
 <audio-debug-overlay></audio-debug-overlay>
+@if (auth.authenticated()) {
+  <button
+    type="button"
+    class="fullscreen-toggle"
+    [class.active]="fullViewportEnabled()"
+    (click)="toggleFullViewport()"
+    [attr.aria-pressed]="fullViewportEnabled()"
+    [attr.aria-label]="fullscreenTooltip()"
+    [title]="fullViewportEnabled() ? 'Restaurar header y footer' : 'Ocultar header y footer'"
+  >
+    <span class="sr-only">{{ fullscreenTooltip() }}</span>
+    <span class="toggle-glyph" aria-hidden="true"></span>
+  </button>
+}

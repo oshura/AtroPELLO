@@ -158,6 +158,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <li><strong>Solar System Map:</strong> Tab to view all planets and asteroids</li>
             <li><strong>Pause:</strong> Esc to pause and access settings</li>
             <li><strong>Audio:</strong> Click anywhere to unlock audio on first load</li>
+            <li><strong>Full Screen Toggle:</strong> un botón verde fosforescente con icono <code>[ ]</code> aparece en la esquina inferior derecha cuando estás autenticado. Pulsa para ocultar header/footer y maximizar el canvas; el icono cambia a <code>▣</code> para regresar.</li>
           </ul>
         </div>
       </section>

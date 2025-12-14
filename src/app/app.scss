@@ -4,6 +4,38 @@
   height: 100vh;
   margin: 0;
   padding: 0;
+  background: #020308;
+}
+
+app-header,
+app-footer {
+  display: block;
+  overflow: hidden;
+  transition: opacity 0.4s ease, max-height 0.4s ease, transform 0.4s ease;
+}
+
+app-header {
+  max-height: 140px;
+}
+
+app-footer {
+  max-height: 120px;
+}
+
+:host.fullscreen-active app-header,
+:host.fullscreen-active app-footer {
+  opacity: 0;
+  max-height: 0;
+  transform: translateY(var(--fullscreen-shift, 0));
+  pointer-events: none;
+}
+
+:host.fullscreen-active app-header {
+  --fullscreen-shift: -30px;
+}
+
+:host.fullscreen-active app-footer {
+  --fullscreen-shift: 30px;
 }
 
 .main-content {
@@ -64,4 +96,69 @@
     }
   }
 
+}
+
+.fullscreen-toggle {
+  position: fixed;
+  bottom: clamp(12px, 3vw, 28px);
+  right: clamp(12px, 3vw, 28px);
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  border: none;
+  background: transparent;
+  color: #00ff41;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1100;
+  box-shadow: none;
+  cursor: pointer;
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease, background 0.2s ease;
+}
+
+.fullscreen-toggle:hover {
+  transform: translateY(-1px) scale(1.02);
+}
+
+.fullscreen-toggle:focus-visible {
+  outline: 2px solid #00ff41;
+  outline-offset: 2px;
+}
+
+.fullscreen-toggle.active {
+  background: transparent;
+}
+
+.toggle-glyph {
+  font-family: 'IBM Plex Mono', 'Courier New', monospace;
+  font-size: 18px;
+  letter-spacing: 2px;
+  color: #00ff41;
+  line-height: 1;
+}
+
+.toggle-glyph::before {
+  content: '[ ]';
+  display: inline-block;
+  white-space: nowrap;
+  transition: letter-spacing 0.25s ease, transform 0.25s ease, content 0.25s ease;
+}
+
+.fullscreen-toggle.active .toggle-glyph::before {
+  content: '▣';
+  letter-spacing: 0;
+  transform: scale(0.95);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
