@@ -12,6 +12,7 @@
 
 | Ruta | Archivo | Propósito | Palabras clave sugeridas |
 | --- | --- | --- | --- |
+| `/wiki/legal` | `pages/legal-terms/legal-terms.ts` | Aviso legal, contacto ofuscado y procedimiento de reclamaciones. | `legal`, `contacto`, `cookies`, `reclamaciones`, `licencias` |
 | `/wiki` | `pages/wiki-index/wiki-index.ts` | Portada con buscador y mosaico de entradas. | `wiki`, `buscador`, `indice` |
 | `/wiki/glyphs` | `pages/glyphs/glyphs.ts` | Descripción de hechizos/glifos y sus costes. | `hechizos`, `glifos`, `rituales` |
 | `/wiki/game-objects` | `pages/game-objects/game-objects.ts` | Catálogo de objetos físicos del juego. | `asteroides`, `planetas` |

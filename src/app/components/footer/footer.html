@@ -1,12 +1,18 @@
 <footer class="app-footer">
   <div class="footer-container">
     <div class="footer-links">
-      <a href="#">Política de Cookies</a>
-      <a href="#">Contactar</a>
-      <a href="#">Términos Legales</a>
+      <a [routerLink]="['/wiki/legal']" fragment="cookies" (click)="onCookiesClick()">Política de Cookies</a>
+      <a [routerLink]="['/wiki/legal']" fragment="contacto" (click)="onContactClick()">Contactar</a>
+      <a [routerLink]="['/wiki/legal']" (click)="onLegalClick()">Términos Legales</a>
+      <a
+        href="/third-party-licenses/"
+        target="_blank"
+        rel="noopener noreferrer"
+        (click)="onThirdPartyLicensesClick()"
+      >Third Party Licenses</a>
     </div>
     <div class="footer-brand">
-      <span>&copy; 2024 AtroPELLO Games</span>
+      <span>&copy; {{ currentYear }} AtroPELLO Games</span>
     </div>
   </div>
 </footer>

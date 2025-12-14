@@ -163,6 +163,26 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
       </section>
 
       <section class="rule-section">
+        <h2>⚖️ Compliance & Licenses</h2>
+        <div class="rule-content">
+          <p>
+            El footer del juego ahora incluye el enlace <strong>Third Party Licenses</strong> que abre la página estática
+            <code>/third-party-licenses/</code> sin necesidad de autenticación para revisar las licencias vigentes (Angular, Express,
+            gl-matrix, RxJS y tslib).
+          </p>
+          <ul>
+            <li>Cada entrada muestra el paquete, el tipo de licencia (MIT, Apache&nbsp;2.0 u 0BSD) y enlaza con el texto completo.</li>
+            <li>Los ficheros viven en <code>/third-party-licenses/licenses/</code>, así que puedes guardar las copias en local para auditorías offline.</li>
+            <li>El enlace abre en una pestaña externa y no pausa la sesión actual del juego ni cierra la wiki.</li>
+          </ul>
+          <p class="warning">
+            Si la build incorpora nuevas dependencias, este apartado y la página de licencias se actualizan en bloque para reflejar los textos
+            obligatorios sin esperar a un parche mayor.
+          </p>
+        </div>
+      </section>
+
+      <section class="rule-section">
         <h2>💀 Survival Tips</h2>
         <div class="rule-content">
           <ul>

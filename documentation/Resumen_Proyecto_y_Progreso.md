@@ -51,6 +51,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - Sistema de retícula: `ReticleManager` (detección 3D→2D, estados y rendering), se actualiza y renderiza en cada frame.
   - Overlays/Paneles: `SolarSystemPanel` (mapa top-down), sistema de diálogos modales (`src/app/components/modal/`).
   - Debug: Overlay de datos de la nave (F1) vía servicios en `services/debug`. Tecla F1 mapea al toggle del overlay desde `components/game/game.ts`.
+  - El footer expone ahora «Third Party Licenses», que abre `/third-party-licenses/` (estático en `public/third-party-licenses`) con la tabla de dependencias y enlaces directos a los textos MIT/Apache/0BSD almacenados en `public/third-party-licenses/licenses/`.
 
 - Targeting y outlines (Fase 4)
   - `OutlineRenderer` (en `game/targeting/rendering/`): pipeline de dos pasadas con framebuffer offscreen y post-proceso para resaltar objetivos.

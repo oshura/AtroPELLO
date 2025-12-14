@@ -215,6 +215,13 @@ export class WikiIndexComponent implements OnInit {
   
   entries: WikiEntry[] = [
     {
+      id: 'legal',
+      title: '⚖️ Aviso Legal',
+      route: 'legal',
+      description: 'Titular, jurisdicción aplicable, canales de contacto ofuscados y procedimiento de reclamaciones.',
+      keywords: ['legal', 'contacto', 'cookies', 'jurisdiccion', 'reclamaciones']
+    },
+    {
       id: 'game-objects',
       title: '🌌 Game Objects',
       route: 'game-objects',
@@ -260,8 +267,8 @@ export class WikiIndexComponent implements OnInit {
       id: 'game-rules',
       title: '📜 Game Rules',
       route: 'game-rules',
-      description: 'How to play: landing, navigation, collision rules, survival tips and the current Cloud Saves limitation (one slot per pilot unless upgraded).',
-      keywords: ['rules', 'landing', 'controls', 'gameplay', 'mechanics', 'cloud saves']
+      description: 'How to play: landing, navigation, collision rules, survival tips, Cloud Saves limits and dónde consultar las Third Party Licenses del cliente.',
+      keywords: ['rules', 'landing', 'controls', 'gameplay', 'mechanics', 'cloud saves', 'licencias']
     },
     
   ];

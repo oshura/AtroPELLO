@@ -6,6 +6,10 @@ export const WIKI_ROUTES: Routes = [
     loadComponent: () => import('./pages/wiki-index/wiki-index').then(m => m.WikiIndexComponent)
   },
   {
+    path: 'legal',
+    loadComponent: () => import('./pages/legal-terms/legal-terms').then(m => m.LegalTermsComponent)
+  },
+  {
     path: 'game-objects',
     loadComponent: () => import('./pages/game-objects/game-objects').then(m => m.GameObjectsWikiComponent)
   },
