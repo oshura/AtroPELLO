@@ -65,3 +65,99 @@ Adelante porfavor!
 
  
  
+Vamos a crear un nuevo tipo de gameObject. Lo que será un LesserBeing como base ya derivada de GameObject, y como derivada el SEMINILLAS_ESTELARES, SHOGGOTH y VAMPIRO_FUEGO. 
+Comparte caracteristicas con el GamObject StarShip. Porque lo que estamos diseñando son las 'naves' enemigas. Digo 'naves' porque son realmente criaturas del universo de lovecraft, pero que se comportan como una nave enemiga en el espacio.
+Quiero que tengan las siguientes caracteristicas y habilidades como el sistema de ataque y su comportamiento para que preparemos algun tipo de IA programada para definir como se comporta.
+Las semillas estelares:
+	- Health: 500u
+	- Max Speed: 100u
+	- acceleration: 20u
+	- deceleration: 25u
+	- rotationSpeed: Math.PI / 1.25
+	- minRotationSpeed: Math.PI / 2.5
+	- Ataque: Disparo de escupitajo acido no muy lejos y decrece con la distancia el daño. Un disparo cada 3 segundos de 100u de daño al health si impacta a 1u de distancia, y a 200u de distancia 1u de daño. Haz la regresión.
+	- Comporatamiento: Rapidos y de corto alcance. Se acercan tanto como pueden al target e intenta posicionarse en la cola a la minima distancia (minimo 10u) para ir disparando.
+Los Shoggots:
+	- Health: 1000u
+	- Max Speed:  40u
+	- acceleration: 1u
+	- deceleration: 1u
+	- rotationSpeed: Math.PI / 5
+	- minRotationSpeed: Math.PI / 10
+	- Ataque: Dispara orbes lentos en todas direcciones, 40 orbes por disparo cada 10 segundos. Cada orbe circula a 10u de velocidad y salen radialmente repartidos 
+	          en toda la esfera del shoggot. Llegan a 100u y desaparecen. Cada orbe produce 50u de daño.
+	- Comporatamiento: Lentos pero potentes. No se dirigen al target para atacarlo, solo se dirigen a planetas para ocuparlos. Por el camino disparan para protegerse. Si no hay planetas que poseer, atacaran al target acercandose y simplemente orbitando a su alrededor a 80u de distancia.
+Los vampiros de fuego:
+	- Health: 100u
+	- Max Speed: 50u
+	- acceleration: 4.0
+	- deceleration: 5.0
+	- rotationSpeed: Math.PI / 2.5
+	- minRotationSpeed: Math.PI / 5
+	- Ataque: Radiaran daño a 1000u de 1u de daño escalado hasta 10u de daño a 1u de distancia, cada 10 segundos.
+	- Comporatamiento: se mantienen a la distancia haciendo daño. Si intentan atacar a la nave, solamente intentaran mantener una distancia lo mas lejos posible pero que produzca daño, si puede, a unos 800u del target. Si el target se consigue acergar huirá.
+
+El comportamiento de todo LesserBeing en general es dirigirse al planeta más cercano no poseido ya por un lesser being y 'aterrizar' en él para poseerlo. A partir de entonces, el planete tiene criatura, y su estado de si la tiene o no, es no develado. El lesser Being deja de existir ya en la escena 3D.
+Por tanto, un lesserBeing irá de cabeza a impactar contra un planeta. De producirse la colisión, diremos que es un 'aterrizaje' de lesserBeing. 
+Si por el camino, tiene a mas corta distancia en algun momento, y no es un shoggot, atacará a la nave. Si no hay nave ni planeta, por la razón que sea, cualquier lesser being se queda orbitando un planeta aleatorio a la espera de tener nave destino, o que se libere un planeta de criatura.
+
+Preparame un plan para llevar a cabo la incorporación de estas naves enemigas, e indicame opciones para programar esta inteligencia de comportamiento en la escena 3D.
+Tambien quiero que planifiques su geometria: Los tres son básicamente esferas tan grandes como la boundig sphere de la nave ahora mismo al inicio del juego. Las semillas estelares son verdes y tienen unos tentaculos alarfados hacia atras que van serpenteando mientras se desplazan.
+Los shoggots son solo la esfera, pero estan cubiertos de ojos, unos 40 y algunas protuberancias. Son grises, y las protuberancias amarillas. Los vampiros de fuego, son semitransparentes y rojos. Van dando destellos de fulgor amarillo.
+
+Como se materializan estos enemigos? Pues fácil. Cada vez que se realiza un void-jump, existe una probabilidad del 50% de que se materialice uno de ellos por el borde del sistema solar dirigiendose hacia el planeta sin ciatura mas cercano, o a la nave, o al planeta aleatorio par aorbitarlo y esperar 'su 'turno'.
+Tambien se materializan por portales que haya abierto el jugador y que no se les haya aplicado un hechizo PORTAL_CONCORD. Cada 1 minuto se evalua un 12% de probabilidad de que se materialice un enemigo.
+
+Avisame si crees que me dejo de especificar algo. Gracias.
+
+Algunas veces, el respawn me deja sin energia del vacío. Supongo que porque 'transporta' la nave desde un sitio a otro y se consume por cada  ciertas unidades de espacio viajadas.... Podemos mitigar este efecto de alguna forma para que el respawn siempre te deje con el 'tanque lleno'?
+El marquee panel del HUD me ha desaparecido. Te pedí hace unos cauntos chats, que dejaras de mostrar todos los textos actuales. Pero el marquee quiero que aparezca y ya te diré yo la lista de eventos en que quiero que se muestre información:
+- Cada vez que se 'invoque' un lesser being por la razón que sea: "Nueva amenaza detectada. Sugerencia: analizar mapa.". 1 vuelta.
+- Cada vez que entres en un area de daño por tiempo, como la de un sol, o la de un vampiro estelar: "Integridad comprometida. Sujerencia: alejarse de la amenza.". 1 vuelta.
+- Al inicio del juego: Una vuelta de cada una ->"Explosion detectada.", "Integridad comprometida.",  "Piloto dañado",  "Sugerencia: contactar nave nodriza.".
+- Al recibir X daño la nave: "Daño recibido: X.", 1 vuelta.
+- Al llegar al un sistema solar a través de un portal: "Sistema solar X", 1 vuelta. Donde X es el nombre del sol del sistema solar.
+- Al acercarse a menos de 300u del planeta X: "Planeta X disponible para aterrizaje. Manetener trayectoria: velocidad menor de 5u, distancia 50u, paralela superficie.".
+- Al consumir cordura temporal por cualquier razon: "Cordura: -X.). 1 vuelta.
+
+
+Vale mira, tengo pensado usar el boton 'Iniciar Sesión' para identificar a los usuarios de la plataforma de juegos.
+Al llegar a la web todo funciona como ahora y el usuario puede acceder a los juegos publicados, pero de forma anonima y no puede disfrutar de pantalla completa o guardar partidas. Por ejemplo en TO3, solo puede hacer respawn o iniciar partida nueva.
+Pero si inicia sesión, tendrá su espacio en la nube: un S3 común para todos los users. Objetos para cada jugador identificados de forma exclusiva, para que no se mezclen. Prefijo por juego. Y no seran publicos. Por tanto no puedes leerlos ni escribirlos.
+Vamos a hacer una lambda asociada al S3 que cuando el usuario escribe un objeto [gameprefix]-command-[user id].json con contenido {"token":"[El token de sesion de cognito]","command":"[GET/PUT/DEL/LST]","keyname":"[a very very random id for a interchange file]","parameters":{"index":[index number],"savegame":{[save game JSON model]}}, 
+La lambdra, lee el objeto con el comando, lo elimina, y verifica que el token corresponda al playerid del objeto leído. Imagino que los tokens llevan unos datos identificativos no?
+De ser incorrecta la validación, finaliza la ejecución y traza en algun lugar de cloudwatch para que se detecte el posible fraude.
+De ser correcto:
+	- GET: intenta obtener la partida numero index del user id y dejarla en un objeto con el keyname publico y con caducidad de 1 minuto, en el porpio S3. Las partidas ya hemos dicho que se almacenan en ficheros referenciados por un fichero master con id único del usuario, que los enumera. Todo privado solo accesible por la lambda en local asociada a eventos PUT de S3.
+	- PUT: Se graba una partida salvada en el index. Sobreescribe si ya hay objeto en ese index. Si es un índex por encima del último existente, simplemente queda como el nuevo último y toma ese indice para referenciarse ya que ocupa esa posicion en el master.
+	- DEL: Elimina una partida salvada. La lambda lee el master para saber que fichero es el referenciado por la posición index, y si existe tanto en el master como en el S3, lo elimina.
+	- LST: 'devuelve' la lista de partidas salvadas. Sus referencias visuales para el user ha de ser una lista con la fecha en que se grabó. Para esta 'API' de la lambda, se le pasa el índice de la partida respecto la lista del master. Por tanto se le copia al usuario en el keyname indicado en publico y caducando en 1 minuto, el listado de fechas de savegames ordenado igual que en master. Por tanto master podria componerese justamente de un listado de fechas asociados a los nombres de objetos del S3 privados y totalmente random.
+Como ves, es una manera de intercambiarse ficheros y asegurar que solo el usuario tiene acceso. El objeto de entrada de comandos, solo es de escitura, no de lectura por nadie mas que la lambda. Por tanto se manda y nadie puede leerlo. 
+Luego, como el nombre de intercambio de info es random (keyname) y siempre expira en 1 minuto, el juego lo lee en ese tiempo y ya nadie, por lo random del nombre, podrá acceder nunca mas a él en poco tiempo.
+Vale. Pues como ves, quiero que 'iniciar sesión' redirija a un servicio cognito usando amplify y recupere los tokens y los guarde en session storage para que expiren al cerrar pestañas o el navegador. Pero mientras tanto, que de ese token que tendremos sea el del command que hemos definido.
+Deja los parametros necesarios para esta integracion como settings que pueda dar yo valor, en un fichero de la app de settings, y ponme un ejemplo ya de como sería el valor. Tambien dime los datos que me pedirá de nuestra app SPA del landing para el login y logout, el servicio de cognito. Los datos de integracion que pedirá el cognito, vaya.
+La pagina web SPA residirá en el subdominio www del dominio atropello-games.es (https://www.atropello-games.es) Pero tambien se podrá hacer login desde subdominios como to3.atropello-games.es, y debe ser identico el login y los mismo endpoints. Porque quiero que desde los juegos publicados, se tenga la forma de hacer login, si entras in haberlo hecho es como una demo o el juego completo, pero con ciertas limitaicones.
+Tambien querré el codigo python para incrustar de la lambda en AWS directamente, la que hace todo el manejo de objetos al subir un fichero command.
+La idea es que una vez iniciada la sesión, en lugar del boton iniciar sesión tengamos un "Logout" (cognito). Si es que estamos con login hecho dentro de un juego como TO3 el boton del Header seria "Saved Games" y si entras en el juego carga la partida más reciente ya sin preguntar:
+	- Comando LST, dar unos segundos de tiempo (Loading...) leer el objeto con nombre keyname acordado.
+	- GET del index del savegame mas reciente, dar unos segundos de tiempo (Loading...) leer el objeto con nombre keyname acordado como el modelo de partida guardada.
+	- Deserializar.
+	- Iniciar el loop del juego con lo deserializado.
+El jugador en saved games podrá visualizar la lista de partidas en orden iguale que el master del S3, y podrá eliminarlas, cargarlas, sobreescribirlas con un save de la partida en curso o crear una nueva en un slot nuevo (max index +1).
+Ten siempre en cuenta indices que empiezan desde el 0. En todo caso que se contemple una enumeración de elementos, el primero es el que está en posición 0.
+
+
+
+Vale, ¡plan, que esto es bastante complejo, y a correr!
+
+ SpellType Temporal/Maxima
+ SPEED 1/2
+ LONGJUMP 2/4
+ GATE_RITE 5/5
+ ETERNAL_RITE 1/0
+ DISRUPT 1/1
+ ANCHORING_PULSE 2/3
+ VOID_KINESIS 2/3
+ SPECIES_SCAN 1/3
+ CREATURE_SCAN 1/3
+ 
