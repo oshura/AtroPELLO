@@ -10,11 +10,10 @@
  CREATURE_SCAN 1/3
  
   
- - Poder ver personaje y nave estando aterrizado.
- - Bajar el fiushhh a 3u y 5u aljarse, y que a los debries no se lo aplica.
- - Marquee messages vistosos.
+ - La carga en un segundo sistema solar falla.
 
  - Landing menus:
+	- Poder ver personaje y nave estando aterrizado.
 	- Afinar que si es neutral pero no se ha buscado criatura, no de la misión.
 	Cambiar:
 	- Menuses de misiones reordenar y que haya arbol de dialogos.
@@ -28,20 +27,12 @@
  
  - La historia del principio para que gane algun hechizo, esconder hechizos, visitando la nave nodriza, y descubra ese 20% de memoria.
  
-  - Donar €€.
+ - Donar €€.
  
- - Hechizo de mind flight.
+ - Hechizo de mind flight/equipo neural flight.
  
  - Weapons
- 
- - Rules del respawn:
-	- Que se mantengan las razas, criaturas, artefactos y todo lo descubierto.
-	- Se mantengan los portales.
-	
- - Despegue: La nave no empieza en el centro en ese momento si no en el centro de cuando aterrizó
- 
- - Aterrizar: A veces no surfea bien por dentro y se va fuera.
- 
+
 Efectos de slots auxiliares: 
 - Cargar void energy de la radiación solar.
 - Protección solar.
@@ -58,8 +49,6 @@ Efectos de slots auxiliares:
 - Autofollow target.
 
 - Resurrección en portal más recientemente cruzado. Memoria ancestral.
-
-- demasiadas particulas.
 
 - Drift por el vacío intergalactico:
 	- Sistema de control de drift.

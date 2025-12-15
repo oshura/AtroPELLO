@@ -54,6 +54,12 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - Debug: Overlay de datos de la nave (F1) vía servicios en `services/debug`. Tecla F1 mapea al toggle del overlay desde `components/game/game.ts`.
   - El footer expone ahora «Third Party Licenses», que abre `/third-party-licenses/` (estático en `public/third-party-licenses`) con la tabla de dependencias y enlaces directos a los textos MIT/Apache/0BSD almacenados en `public/third-party-licenses/licenses/`.
 
+- SEO e indexación
+  - `src/index.html` ahora incluye título semántico, descripción, canonical `https://to3.atropello-games.es/`, etiquetas Open Graph/Twitter y JSON-LD (`VideoGame` + `SoftwareApplication`) apuntando a la build WebGL.
+  - Servicio `SeoService` (`src/app/services/seo/seo.service.ts`) coordina `<title>`, `<meta>`, canonical dinámico y structured data; se activa desde `AppComponent` al reaccionar a cada `NavigationEnd`.
+  - Todas las rutas de la wiki exponen `data.seo` (título, descripción, URL absoluta e imagen) en `wiki.routes.ts`, de modo que cada página overlay empuja sus propios metadatos cuando se visita `/wiki/...` sin romper el canvas del juego.
+  - `public/robots.txt` y `public/sitemap.xml` apuntan al dominio to3.atropello-games.es, listan todas las secciones activas de la wiki y declaran `xmlns:xhtml` para evitar errores al añadir `xhtml:link` en el futuro.
+
 - Targeting y outlines (Fase 4)
   - `OutlineRenderer` (en `game/targeting/rendering/`): pipeline de dos pasadas con framebuffer offscreen y post-proceso para resaltar objetivos.
   - Tipos: SOLID, GLOW, PULSE, SCAN, DANGER con opciones (grosor, intensidad, frecuencia, color RGBA).

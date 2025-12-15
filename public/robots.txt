@@ -1,5 +1,5 @@
 # AtroPELLO Game - robots.txt
-# https://atropello.game
+# https://to3.atropello-games.es
 
 User-agent: *
 Allow: /
@@ -7,7 +7,7 @@ Allow: /wiki
 Allow: /wiki/*
 
 # Sitemap location
-Sitemap: https://atropello.game/sitemap.xml
+Sitemap: https://to3.atropello-games.es/sitemap.xml
 
 # Crawl delay (be nice to server)
 Crawl-delay: 1
