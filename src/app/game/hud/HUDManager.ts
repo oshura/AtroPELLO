@@ -161,6 +161,8 @@ export class HUDManager {
     speedRiteRemainingSec?: number | null;
     // Optional: timed spell payload for compass overlay
     compassCountdown?: CompassCountdownPayload | null;
+    // Optional: precision rotation indicator
+    precisionModeActive?: boolean;
     // Optional: portal traversal cooldown seconds remaining
     portalCooldownSec?: number | null; // ignored (wireframe removed)
   }): void {
@@ -184,6 +186,7 @@ export class HUDManager {
   this.compass.update(gameData.heading, targetInfo);
   // Timed spell countdown overlay routed to compass
   this.compass.setCountdown(gameData.compassCountdown ?? null);
+  this.compass.setPrecisionMode(gameData.precisionModeActive ?? false);
     
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
   // Determinar si el rito de velocidad está activo (hasta 200%)

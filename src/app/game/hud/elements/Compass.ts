@@ -12,6 +12,7 @@ export class Compass {
   private targetInfo: TargetInfo | null = null;
   // Optional countdown overlay (timed spell or effect)
   private countdown: CompassCountdownPayload | null = null;
+  private precisionActive: boolean = false;
   
   constructor() {}
 
@@ -33,6 +34,10 @@ export class Compass {
     };
   }
 
+  public setPrecisionMode(active: boolean): void {
+    this.precisionActive = !!active;
+  }
+
   public render(ctx: CanvasRenderingContext2D, position: { x: number; y: number }): void {
     ctx.save();
     ctx.translate(position.x, position.y);
@@ -46,6 +51,9 @@ export class Compass {
     // Draw optional countdown overlay inside the ring, top-center with margin
     if (this.countdown && this.countdown.seconds > 0) {
       this.drawCountdown(ctx, this.countdown);
+    }
+    if (this.precisionActive) {
+      this.drawPrecisionOverlay(ctx);
     }
     
     ctx.restore();
@@ -242,6 +250,21 @@ export class Compass {
     ctx.fillText(timeText, 0, 0);
     ctx.restore();
 
+    ctx.restore();
+  }
+
+  private drawPrecisionOverlay(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillStyle = 'rgba(255,255,255,0.85)';
+    ctx.shadowColor = '#00FFF6';
+    ctx.shadowBlur = 6;
+    ctx.font = '11px "Space Mono", monospace';
+    ctx.translate(0, 34);
+    ctx.scale(1, 1.33);
+    ctx.fillText('PRECISION', 0, 0);
+    ctx.shadowBlur = 0;
     ctx.restore();
   }
 }

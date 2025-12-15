@@ -254,6 +254,8 @@ export class GameEngine {
   private dopplerSkip: boolean = false; // throttle doppler updates (every other frame)
   private hoverAudioMuted: boolean = false;
   private panelInputsLocked: boolean = false;
+  private precisionHoldActive: boolean = false;
+  private precisionLatchActive: boolean = false;
   private precastChantDurationMs: number | null = null;
   private sunExposureTimerMs: number = 0;
   private readonly SUN_DAMAGE_INTERVAL_MS: number = 5000;
@@ -9204,7 +9206,37 @@ export class GameEngine {
       case '_':
         this.spaceship.controls.speedDown = pressed;
         break;
+      case 'shift':
+        this.setPrecisionHoldActive(pressed);
+        break;
     }
+  }
+
+  private setPrecisionHoldActive(active: boolean): void {
+    if (this.precisionHoldActive === active) {
+      return;
+    }
+    this.precisionHoldActive = active;
+    this.refreshPrecisionRotationState();
+  }
+
+  public setPrecisionLatchActive(active: boolean): void {
+    if (this.precisionLatchActive === active) {
+      return;
+    }
+    this.precisionLatchActive = active;
+    this.refreshPrecisionRotationState();
+  }
+
+  public isPrecisionRotationActive(): boolean {
+    return !!(this.spaceship?.isPrecisionRotationActive?.());
+  }
+
+  private refreshPrecisionRotationState(): void {
+    const shouldEnable = this.precisionHoldActive || this.precisionLatchActive;
+    try {
+      this.spaceship?.setPrecisionRotationActive(shouldEnable);
+    } catch {}
   }
 
   private registerCanvasResizeListener(canvas: HTMLCanvasElement): void {
@@ -9549,6 +9581,7 @@ export class GameEngine {
       position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z },
       speedRiteRemainingSec: riteActive ? Math.max(0, Math.floor((this.speedRiteUntilMs! - now) / 1000)) : null,
       compassCountdown: this.getCompassCountdownPayload(now),
+      precisionModeActive: this.isPrecisionRotationActive(),
       // Portal cooldown HUD removido (no se expone)
     };
 
@@ -9640,7 +9673,8 @@ export class GameEngine {
       normalizedY: projection.normalizedY,
       edgeFade: edgeAttenuation,
       speedRatio,
-      mode: hasWeapons ? 'combat' : 'navigation'
+      mode: hasWeapons ? 'combat' : 'navigation',
+      precisionActive: this.isPrecisionRotationActive()
     };
   }
 

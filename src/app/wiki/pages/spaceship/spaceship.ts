@@ -138,7 +138,17 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
               <kbd>S</kbd> / <kbd>↓</kbd>
               <span>Brake / Slow Down</span>
             </div>
+            <div class="control-item">
+              <kbd>Shift</kbd>
+              <span>Precision rotation (half turn rate while held)</span>
+            </div>
+            <div class="control-item">
+              <kbd>Caps&nbsp;Lock</kbd>
+              <span>Toggle precision rotation latch</span>
+            </div>
           </div>
+
+          <p class="note movement-note">Mantén <kbd>Shift</kbd> presionado o alterna <kbd>Caps&nbsp;Lock</kbd> para activar la rotación precisa: el motor reduce al 50&nbsp;% la velocidad de pitch, yaw y roll, y la brújula ilumina el texto <em>PRECISION</em> bajo los timers para recordarte que sigues en modo fino.</p>
 
           <div class="control-group">
             <h3>Camera</h3>

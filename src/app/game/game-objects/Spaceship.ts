@@ -88,6 +88,9 @@ export class Spaceship extends GameObject {
     rollRight: false  // F key - Roll hacia la derecha
   };
 
+  private precisionRotationActive: boolean = false;
+  private precisionRotationScalar: number = 1;
+
   // Override healthCurrent con getter/setter reactivo
   public override get healthCurrent(): number {
     return this._healthCurrent;
@@ -286,7 +289,7 @@ export class Spaceship extends GameObject {
     // Calcular velocidad de rotación basada en la velocidad actual
     const speedFactor = this.currentSpeed / this.maxSpeed;
     const rotationMultiplier = 1.0 - (speedFactor * 0.58); // Reduce a 42% a velocidad máxima
-    const currentRotationSpeed = this.rotationSpeed * rotationMultiplier;
+    const currentRotationSpeed = this.rotationSpeed * rotationMultiplier * this.precisionRotationScalar;
     const deltaRotation = currentRotationSpeed * deltaTime;
 
     // EXTRAER EJES LOCALES REALES DE LA NAVE desde la matriz de orientación
@@ -389,6 +392,19 @@ export class Spaceship extends GameObject {
         this.isThrusting = false;
       }
     }
+  }
+
+  /** Activa/desactiva el modo de rotación precisa (mitad de velocidad) */
+  public setPrecisionRotationActive(active: boolean): void {
+    if (this.precisionRotationActive === active) {
+      return;
+    }
+    this.precisionRotationActive = active;
+    this.precisionRotationScalar = active ? 0.2 : 1;
+  }
+
+  public isPrecisionRotationActive(): boolean {
+    return this.precisionRotationActive;
   }
 
   /**

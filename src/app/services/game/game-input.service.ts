@@ -26,7 +26,7 @@ export class GameInputHandler {
    * Inicializa el estado de las teclas
    */
   private initializeKeyState(): void {
-  const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', 'h', 't', 'm', 'l', 'i', '+', '=', '-', '_', 'shift', 'control', 'escape', '0', '7', '8', '9', '1', '2', '3', '4'];
+  const gameKeys = ['w', 'a', 's', 'd', 'q', 'e', 'h', 't', 'm', 'l', 'i', '+', '=', '-', '_', 'shift', 'capslock', 'control', 'escape', '0', '7', '8', '9', '1', '2', '3', '4'];
     gameKeys.forEach(key => {
       this.keyState[key.toLowerCase()] = false;
     });
@@ -68,6 +68,21 @@ export class GameInputHandler {
     const keyRaw = event.key.toLowerCase();
     const composite = event.shiftKey && keyRaw !== 'shift' ? 'shift+' + keyRaw : keyRaw;
     const action = this.keyBindings.findActionForKey(composite);
+    if (keyRaw === 'shift') {
+      this.keyState['shift'] = true;
+      this.gameEngine.handleKeyDown('shift');
+      event.preventDefault();
+      return true;
+    }
+    if (keyRaw === 'capslock') {
+      const isActive = typeof event.getModifierState === 'function'
+        ? event.getModifierState('CapsLock')
+        : !this.keyState['capslock'];
+      this.keyState['capslock'] = isActive;
+      this.gameEngine.setPrecisionLatchActive(isActive);
+      event.preventDefault();
+      return true;
+    }
     // Debug
     // Debug trace at low frequency (optional)
     if (Math.random() < 0.001) {
@@ -116,6 +131,21 @@ export class GameInputHandler {
     const keyRaw = event.key.toLowerCase();
     const composite = event.shiftKey && keyRaw !== 'shift' ? 'shift+' + keyRaw : keyRaw;
     const action = this.keyBindings.findActionForKey(composite);
+    if (keyRaw === 'shift') {
+      this.keyState['shift'] = false;
+      this.gameEngine.handleKeyUp('shift');
+      event.preventDefault();
+      return true;
+    }
+    if (keyRaw === 'capslock') {
+      const isActive = typeof event.getModifierState === 'function'
+        ? event.getModifierState('CapsLock')
+        : this.keyState['capslock'];
+      this.keyState['capslock'] = isActive;
+      this.gameEngine.setPrecisionLatchActive(isActive);
+      event.preventDefault();
+      return true;
+    }
     if (action) {
       const translated = this.keyBindings.getDefaultKey(action);
       if (translated in this.keyState) this.keyState[translated] = false;

@@ -6,13 +6,13 @@
 - Requisito nuevo: presionar `Shift` debe reducir (½) la velocidad de rotación para maniobras finas.
 
 ## Pasos
-- [ ] 1. Propagar el estado de `Shift` hacia el motor.
+- [x] 1. Propagar el estado de `Shift` hacia el motor.
   - Ajustar `GameInputHandler` para que `keydown/keyup` de `Shift` actualice `keyState['shift']` y llame a `GameEngine.handleKeyDown/Up('shift')`, manteniendo compatibilidad con combinaciones como `Shift+T`.
-- [ ] 2. Exponer en `Spaceship` un flag/factor de rotación de precisión.
+- [x] 2. Exponer en `Spaceship` un flag/factor de rotación de precisión.
   - Añadir propiedad (p.ej. `precisionRotationFactor`) y método público para activarla/desactivarla, aplicando el factor al calcular `currentRotationSpeed`.
-- [ ] 3. Integrar el flag en el motor.
+- [x] 3. Integrar el flag en el motor.
   - Actualizar `GameEngine.updateShipControls()` para reaccionar a `shift` (set/unset precisión) respetando los locks de input.
-- [ ] 4. Documentar y comunicar.
+- [x] 4. Documentar y comunicar.
   - Actualizar `documentation/Input_Bindings.md` y la página de la nave en la wiki (`src/app/wiki/pages/spaceship/`) para describir el modo de rotación precisa.
 - [ ] 5. Validar y limpiar.
   - Ejecutar `npm run build`, revisar logs, y al completar el trabajo eliminar este plan.

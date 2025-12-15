@@ -19,6 +19,8 @@
    - `'g'` controla el grimorio y sincroniza la selección de hechizos.
    - `'i'` (nueva acción `inventory`) abre el panel de inventario, gestiona cooldowns y limpia la selección si se cierra.
    - `'h'` dispara hechizos, `'escape'` cierra paneles o limpia el target, `'t'` cicla objetivos, etc.
+   - `'shift'` no es un binding configurable: se reenvía siempre como modificador nativo para que la nave active el modo de rotación precisa (mitad de velocidad de giro) mientras la tecla se mantenga presionada.
+   - `Caps Lock` (Bloq Mayús) ahora funciona como un “latch” de precisión: cada pulsación alterna la rotación precisa sin necesidad de mantener la tecla, ideal para trayectorias largas.
 6. **Sync de puntero/paneles** – Tras abrir/cerrar paneles, el motor actualiza `PanelEventCoordinator` (`updateMapClickBinding`, `updateGrimoirePointerBinding`, `updateInventoryPointerBinding`) para que el canvas sólo escuche clicks/rueda cuando corresponde y así evitar conflictos con inputs 3D.
 
 ## Servicio de key bindings
