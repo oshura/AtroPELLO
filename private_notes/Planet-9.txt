@@ -61,6 +61,8 @@
 		- Terminar en un nuevo sistema solar sin portal que lo vinculen a los anteriores sistemas. 10% de que uno nuevo lleve a sistemas antiguos.
 		- Llegar a un espacio vacío con un dios primigenio (-10 cordura y 1 punto mas por minuto) para luchar con él o perecer y tener que respawnear.
 		- Perdido en el vacío exterior: +1 año entero de edad y -10 de cordura, con posibilidad claro de morir y tener que respawnear.
+		- Kadath.
+		- Rlyeh.
 
 aws s3 sync . s3://inverter-ia --acl public-read --delete --exclude "node_modules/*" --exclude ".git/*" --exclude "*.md"      
 aws cloudfront create-invalidation --distribution-id E8G73EYE943D2 --paths "/*"
@@ -77,3 +79,11 @@ Contraseña: `jfe!sASR22r!`
 npm run test -- --watch=false --include src/app/services/game/game-persistence.service.spec.ts
 npm run test -- --watch=false --browsers=ChromeHeadless --code-coverage=false
 npm run build --production
+
+
+CYBERSEC
+- Visibilidad primero: activa CloudTrail y VPC Flow Logs en los servicios críticos para tener trazabilidad de cada request. Sin registros claros no podrás distinguir entre uso legítimo y abuso ni tendrás base forense si algo sale mal.
+- Control de perímetro: un AWS WAF con reglas específicas sigue siendo lo más efectivo para frenar bruteforce/DoS a endpoints públicos. Usa managed rules (CommonRuleSet, BotControl) y añade reglas propias por IP reputation, geolocalización o patrones (ej. bloquear más de N POST/minuto a /auth/*). Encadena el WAF delante de CloudFront o del ALB que sirva tu API para que filtre antes de tocar recursos caros.
+- Rate limiting y bursting: para APIs expuestas publica cada operación a través de API Gateway o CloudFront Functions/Lambda@Edge con límites. Configura throttling por usuario/IP, usa API keys o tokens firmados y revoca rápidamente los que generen tráfico anómalo. Esto evita facturas inesperadas por ejecuciones en cascada (Lambda, Dynamo, etc.).
+- MFA/Zero Trust para paneles y credenciales sensibles. Si alguien logra bruteforcear un login interno con solo usuario/contraseña, el impacto es total. Usa Cognito + MFA o integra SSO con conditional access. Además, aplica políticas de contraseña robustas y bloqueo tras intentos fallidos.
+- Gestión de secretos: cualquier credencial que un atacante obtenga de un repositorio, instancia o variable de entorno vale oro. Centraliza en Secrets Manager/SSM, rota automáticamente y aplica IAM mínimamente privilegiado. Audita que no existan claves IAM con permisos excesivos, especialmente si se usan desde entornos expuestos.
