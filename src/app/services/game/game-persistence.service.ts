@@ -64,6 +64,7 @@ export class GamePersistenceService {
   private captureInProgress = false;
   private loadInProgress = false;
   private readonly buildLabel = this.resolveBuildLabel();
+  private readonly slotSnapshotPins = new Map<number | 'manual', string>();
 
   constructor(
     private readonly gameInitializer: GameInitializer,
@@ -120,6 +121,7 @@ export class GamePersistenceService {
           respawn: playerSection.respawn,
           captureLabel: resolved.label
         });
+        this.bindSnapshotLabelToSlot(metadata.snapshotLabel, metadata.activeSlotIndex ?? this.gameState.getActiveCloudSaveSlotIndex());
         const payload: SaveGamePayload = {
           schemaVersion: SAVEGAME_SCHEMA_VERSION,
           metadata,
@@ -178,6 +180,10 @@ export class GamePersistenceService {
     const anchor = this.cloneRespawnAnchor(this.resolvePrimaryAnchor(payload.player.respawn));
     const targetSystemId = this.resolveTargetSystemId(payload, anchor);
     const snapshotOptions = this.buildSnapshotOptions({ payload, anchor });
+    this.bindSnapshotLabelToSlot(
+      snapshotOptions?.snapshotLabel ?? payload.metadata.snapshotLabel ?? null,
+      payload.metadata.activeSlotIndex ?? this.gameState.getActiveCloudSaveSlotIndex()
+    );
 
     if (!snapshotOptions) {
       if (payload.universe) {
@@ -197,7 +203,31 @@ export class GamePersistenceService {
       throw new SaveGamePayloadInvalidError('SaveGame payload is missing snapshot metadata required to restore the universe state.');
     }
 
-    const runtimeState = this.universeState.ensureSystemState(targetSystemId, snapshotOptions);
+    let runtimeState = this.universeState.ensureSystemState(targetSystemId, snapshotOptions);
+    const activeSystemAfterEnsure = this.universeState.getActiveSystemId();
+    const snapshotMissing = !activeSystemAfterEnsure || activeSystemAfterEnsure !== targetSystemId;
+    if (snapshotMissing && payload.universe) {
+      this.logger.log(LogLevel.WARN, LogCategory.SAVE_SYSTEM, 'Snapshot metadata failed, using embedded runtime payload', {
+        targetSystemId,
+        snapshotId: snapshotOptions?.snapshotId ?? null,
+        anchorId: payload.metadata.respawnAnchorId ?? null,
+        reason
+      });
+      runtimeState = this.universeState.replaceRuntimeWithPayload({
+        systemId: targetSystemId,
+        payload: payload.universe,
+        snapshotId: snapshotOptions?.snapshotId ?? payload.metadata.snapshotId ?? payload.metadata.respawnAnchorId ?? null,
+        snapshotLabel:
+          snapshotOptions?.snapshotLabel ??
+          payload.metadata.snapshotLabel ??
+          payload.metadata.systemName ??
+          payload.metadata.systemId ??
+          null,
+        reason: `${reason}:snapshot-fallback`
+      });
+    } else if (snapshotMissing) {
+      throw new SaveGamePayloadInvalidError('Unable to restore runtime state because both snapshots and serialized payload are missing.');
+    }
     const context: GameStartContext = {
       targetSystemId,
       runtimeState,
@@ -269,12 +299,16 @@ export class GamePersistenceService {
   }): Promise<SaveGameMetadata> {
     const anchor = this.resolvePrimaryAnchor(params.respawn);
     const systemId = params.runtimeState.systemId ?? anchor?.systemId ?? 'unknown-system';
+    const snapshotId = params.runtimeState.snapshotId ?? this.universeState.getActiveSnapshotId() ?? null;
+    const snapshotLabel = this.normalizeLabel(this.gameInitializer.getGameEngine()?.getCurrentSnapshotLabel?.());
     return {
       savedAt: Date.now(),
       elapsedPlayTimeMs: this.estimateElapsedPlayTimeMs(),
       buildLabel: this.buildLabel,
       systemId,
       systemName: this.resolveSystemName(params.runtimeState, anchor, params.captureLabel),
+      snapshotLabel,
+      snapshotId,
       anchorLabel: this.resolveAnchorLabel(anchor, params.captureLabel),
       anchorPlanetId: anchor?.planetId ?? null,
       anchorPlanetName: anchor?.planetName ?? null,
@@ -340,6 +374,7 @@ export class GamePersistenceService {
     const activeRespawn = params.payload.player?.respawn;
     const metadata = params.payload.metadata;
     const labelCandidates: Array<string | null | undefined> = [
+      metadata.snapshotLabel,
       metadata.systemName,
       metadata.systemId,
       params.anchor?.snapshotLabel,
@@ -350,6 +385,7 @@ export class GamePersistenceService {
     ];
     const snapshotLabel = labelCandidates.find(candidate => typeof candidate === 'string' && candidate.trim().length > 0)?.trim() ?? null;
     const snapshotId = params.anchor?.snapshotId
+      ?? metadata.snapshotId
       ?? activeRespawn?.defaultAnchor?.snapshotId
       ?? metadata.respawnAnchorId
       ?? metadata.systemId
@@ -390,6 +426,24 @@ export class GamePersistenceService {
           }
         : undefined
     };
+  }
+
+  private bindSnapshotLabelToSlot(label: string | null | undefined, slotIndex: number | null | undefined): void {
+    const key: number | 'manual' = typeof slotIndex === 'number' && Number.isFinite(slotIndex) ? slotIndex : 'manual';
+    const normalized = label && label.trim().length ? label.trim() : null;
+    const previous = this.slotSnapshotPins.get(key);
+    if (previous === normalized) {
+      return;
+    }
+    if (previous) {
+      this.universeState.unpinSnapshotLabel(previous);
+      this.slotSnapshotPins.delete(key);
+    }
+    if (!normalized) {
+      return;
+    }
+    this.universeState.pinSnapshotLabel(normalized);
+    this.slotSnapshotPins.set(key, normalized);
   }
 
   private estimateElapsedPlayTimeMs(): number {
@@ -544,5 +598,13 @@ export class GamePersistenceService {
       return performance.now();
     }
     return Date.now();
+  }
+
+  private normalizeLabel(value?: string | null): string | null {
+    if (!value) {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length ? trimmed : null;
   }
 }

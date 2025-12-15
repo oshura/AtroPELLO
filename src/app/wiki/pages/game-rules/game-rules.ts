@@ -38,6 +38,11 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             Si inicias una nueva campaña con el mismo usuario, la master data puede contener varios pilotos. El juego siempre cargará la partida más
             reciente de tu piloto activo y ocultará el resto salvo que pulses “Ver todas las partidas”.
           </p>
+          <p>
+            Cuando guardas en sistemas remotos tras un Gate Rite o un Sigillum móvil, el payload guarda también el <em>snapshot label</em> y el ID exacto del
+            sistema activo. Al cargar, el motor busca primero esos campos antes que cualquier anchor por defecto, así que aunque el Sigillum siga apuntando al
+            trail humano, te rehidratará en el sistema que fotografiaste.
+          </p>
         </div>
       </section>
 
@@ -253,6 +258,13 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             guarda un sistema, se sobreescribe cualquier snapshot previo con el mismo <em>persistentSystemId</em> y se reasigna cada
             <code>portalId</code> al label más reciente. Ya no existen versiones antiguas de un mismo sistema; al cruzar un portal o
             reaparecer tras una muerte siempre recuperas la última captura válida, con los dos extremos del portal enlazados.
+          </p>
+          <p>
+            Desde la última build, <code>GamePersistenceService.loadGame()</code> descarta el runtime humano antes de reanudar una
+            partida y delega en <code>UniverseStateSnapshotService.replaceRuntimeWithPayload()</code> cuando la etiqueta guardada se
+            perdió. Ese helper sintetiza un snapshot con los objetos del payload, lo fija en <code>PortalPersistenceService</code>
+            (pin) y sólo entonces vuelve a llamar a <code>restartWithContext()</code>. Así, incluso si viajaste y el label original
+            fue evictado, los loads vuelven exactamente al sistema que grabaste en el slot.
           </p>
           <p>
             Durante un Void Jump ya no se improvisa el invasor: el motor planifica el encuentro antes de mostrar la animación,

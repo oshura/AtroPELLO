@@ -14,6 +14,7 @@ export class PortalPersistenceService {
   private snapshots = new Map<string, SolarSystemSnapshot>();
   private portalIndex = new Map<string, string>();
   private systemIndex = new Map<string, string>();
+  private pinnedSnapshots = new Map<string, number>();
 
   private cloneSnapshot(snapshot: SolarSystemSnapshot): SolarSystemSnapshot {
     return JSON.parse(JSON.stringify(snapshot)) as SolarSystemSnapshot;
@@ -25,7 +26,7 @@ export class PortalPersistenceService {
     prepared.meta = { ...(prepared.meta || {}), snapshotLabel: label };
 
     // Remove any previous snapshot stored under the same label
-    this.removeSnapshot(label);
+    this.removeSnapshot(label, { force: true });
 
     const systemKey = this.resolveSystemKey(prepared) ?? label;
     if (systemKey) {
@@ -43,6 +44,39 @@ export class PortalPersistenceService {
     const label = `${prefix}-${++this.sequence}`;
     this.save(label, snapshot);
     return label;
+  }
+
+  pin(label: string | null | undefined): void {
+    const normalized = typeof label === 'string' ? label.trim() : '';
+    if (!normalized) {
+      return;
+    }
+    const next = (this.pinnedSnapshots.get(normalized) ?? 0) + 1;
+    this.pinnedSnapshots.set(normalized, next);
+  }
+
+  unpin(label: string | null | undefined): void {
+    const normalized = typeof label === 'string' ? label.trim() : '';
+    if (!normalized) {
+      return;
+    }
+    const current = this.pinnedSnapshots.get(normalized);
+    if (!current) {
+      return;
+    }
+    if (current <= 1) {
+      this.pinnedSnapshots.delete(normalized);
+      return;
+    }
+    this.pinnedSnapshots.set(normalized, current - 1);
+  }
+
+  private isPinned(label: string | null | undefined): boolean {
+    const normalized = typeof label === 'string' ? label.trim() : '';
+    if (!normalized) {
+      return false;
+    }
+    return (this.pinnedSnapshots.get(normalized) ?? 0) > 0;
   }
 
   get(label: string): SolarSystemSnapshot | undefined {
@@ -158,7 +192,11 @@ export class PortalPersistenceService {
   private evictSystemSnapshots(systemKey: string, exceptLabel?: string): void {
     const currentLabel = this.systemIndex.get(systemKey);
     if (currentLabel && currentLabel !== exceptLabel) {
-      this.removeSnapshot(currentLabel);
+      if (this.isPinned(currentLabel)) {
+        GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'Skip eviction for pinned snapshot', { label: currentLabel, systemKey });
+      } else {
+        this.removeSnapshot(currentLabel);
+      }
       return;
     }
 
@@ -168,6 +206,10 @@ export class PortalPersistenceService {
           continue;
         }
         if (this.resolveSystemKey(snap) === systemKey) {
+          if (this.isPinned(label)) {
+            GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'Skip eviction for pinned snapshot', { label, systemKey });
+            continue;
+          }
           this.removeSnapshot(label);
           break;
         }
@@ -175,9 +217,14 @@ export class PortalPersistenceService {
     }
   }
 
-  private removeSnapshot(label: string): void {
+  private removeSnapshot(label: string, options?: { force?: boolean }): void {
     const existing = this.snapshots.get(label);
     if (!existing) {
+      return;
+    }
+
+    if (!options?.force && this.isPinned(label)) {
+      GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'Removal skipped for pinned snapshot', { label });
       return;
     }
 

@@ -37,6 +37,8 @@ export interface SaveGameMetadata {
   buildLabel: string;
   systemId: string;
   systemName?: string | null;
+  snapshotLabel?: string | null;
+  snapshotId?: string | null;
   anchorLabel?: string | null;
   anchorPlanetId?: string | null;
   anchorPlanetName?: string | null;

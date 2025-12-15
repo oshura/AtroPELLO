@@ -72,14 +72,14 @@
 3. **Metadata de savegame**
    - `buildMetadata()` compone:
      - `savedAt` (epoch ms) y `elapsedPlayTimeMs` (estimación por `frameCount`).
-     - `systemId`/`systemName`, `anchorLabel`, `anchorPlanetName`, `respawnAnchorId`.
+   - `systemId`/`systemName`, `snapshotLabel`, `snapshotId`, `anchorLabel`, `anchorPlanetName`, `respawnAnchorId`.
      - `buildLabel`, `userId`, `backendSlot` (placeholder).
    - Todo queda dentro de `SaveGamePayload.metadata`.
 
 ### Contrato con Cloud Saves
 
 - `metadata.schemaVersion` entero (arranca en `1`) para permitir migraciones automáticas.
-- Campos obligatorios: `savedAt`, `elapsedPlayTimeMs`, `systemId`, `systemName`, `anchorLabel`, `anchorPlanetName`, `buildLabel`, `userId`.
+- Campos obligatorios: `savedAt`, `elapsedPlayTimeMs`, `systemId`, `systemName`, `anchorLabel`, `anchorPlanetName`, `buildLabel`, `userId` (y ahora `snapshotId` cuando existe).
 - `CloudSavesService` adjunta `CloudSaveSlotMetadata` replicando esos campos y agregando timestamps adicionales para listados.
 - Errores de backend se traducen a `SaveGameSchemaVersionMismatchError`, `SaveGamePayloadInvalidError`, `payloadTooLarge` o `deserializationFailed` antes de propagarse a la UI.
 
@@ -114,7 +114,7 @@
    - `gameState.reset()` + `GameStateSnapshotAdapter.restore()` sustituyen colecciones.
    - `PlayerStateSerializer.apply()` coloca al piloto/inventario en memoria.
    - `GamePersistenceService.resolveTargetSystemId()` ahora prioriza `payload.metadata.systemId` (derivado del snapshot capturado) antes de recurrir al anchor activo o al sistema en vivo; así Gate Rite y otros viajes por portal vuelven exactamente al sistema donde se guardó.
-   - `UniverseStateSnapshotAdapter.ensureRuntimeState()` reconstruye el sistema destino usando snapshot IDs/anclas, y `buildSnapshotOptions()` también incluye `metadata.systemName/systemId` como candidatos para `snapshotLabel`/`snapshotId`.
+   - `UniverseStateSnapshotAdapter.ensureRuntimeState()` reconstruye el sistema destino usando snapshot IDs/anclas, y `buildSnapshotOptions()` ahora coloca `metadata.snapshotLabel`/`metadata.snapshotId` al frente de los candidatos antes de recurrir a labels del ancla o `systemName/systemId`.
    - `GameEngine.restartWithContext()` inicia el loop en modo `LOAD_GAME`, posiciona nave/anchor y reanuda la simulación.
 
 4. **Reanudación y métricas**

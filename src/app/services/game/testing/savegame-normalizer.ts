@@ -27,6 +27,7 @@ function normalizeMetadata(payload: SaveGamePayload): void {
   metadata.respawnAnchorId = metadata.respawnAnchorId ?? null;
   metadata.userId = metadata.userId ?? null;
   metadata.backendSlot = metadata.backendSlot ?? null;
+  metadata.characterId = metadata.characterId ? 'NORMALIZED-CHAR' : null;
 }
 
 function normalizePlayerSection(section: SaveGamePlayerSection): void {

@@ -39,6 +39,7 @@ describe('SolarSystemRuntimeSerializerService', () => {
     const snapshot: SolarSystemSnapshot = {
       id: 'snapshot-1',
       meta: {},
+      sun: { id: 'sun-spec', position: { x: 0, y: 0, z: 0 }, radius: 1200 },
       planets: [],
       portals: [],
       clusters: []
@@ -48,7 +49,7 @@ describe('SolarSystemRuntimeSerializerService', () => {
 
     const result = service.saveWithLabel('Void Jump', engine);
 
-    expect(result?.meta?.elderGod).toBe('Azathoth');
+    expect(result?.meta?.['elderGod']).toBe('Azathoth');
     expect(portalPersistence.save).toHaveBeenCalledWith(
       'Void Jump',
       jasmine.objectContaining({

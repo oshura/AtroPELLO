@@ -18,7 +18,7 @@ import {
   RuntimeStateSource
 } from '../../../game/types/universe-state.types';
 import { LoggingService, LogCategory, LogLevel } from '../../logging.service';
-import { UniverseStateSnapshotService } from '../../../game/services/state/universe-state-snapshot.service';
+import { UniverseStateSnapshotService, ReplaceRuntimePayloadOptions } from '../../../game/services/state/universe-state-snapshot.service';
 import { SerializedUniversePayload } from '../../../game/types/universe-state.types';
 import { UserIdentity, UNKNOWN_IDENTITY } from '../../../types/identity';
 import {
@@ -93,7 +93,7 @@ export class SaveGameHarness {
 
     this.engine = new HarnessGameEngineStub(fixtures.snapshotLabel);
     this.initializer = new HarnessGameInitializerStub(this.engine);
-    this.playerSerializer = new HarnessPlayerStateSerializerStub(fixtures.playerSection, fixtures.playerResetState);
+    this.playerSerializer = new HarnessPlayerStateSerializerStub(this.gameState, fixtures.playerSection, fixtures.playerResetState);
     this.gameStateAdapter = new HarnessGameStateSnapshotAdapterStub(fixtures.gameStateSection);
     this.universeService = new HarnessUniverseStateSnapshotServiceStub(fixtures.runtimeState);
     this.universeAdapter = new HarnessUniverseStateSnapshotAdapterStub(fixtures.runtimeState);
@@ -195,7 +195,11 @@ class HarnessPlayerStateSerializerStub {
   private captureSection: SaveGamePlayerSection;
   private resetState: PlayerResetState;
 
-  constructor(section: SaveGamePlayerSection, resetState: PlayerResetState) {
+  constructor(
+    private readonly gameState: GameStateStore,
+    section: SaveGamePlayerSection,
+    resetState: PlayerResetState
+  ) {
     this.captureSection = deepClone(section);
     this.resetState = deepClone(resetState);
   }
@@ -206,6 +210,10 @@ class HarnessPlayerStateSerializerStub {
 
   apply(section: SaveGamePlayerSection): PlayerResetState {
     this.appliedSections.push(deepClone(section));
+    const characterId = section?.character?.characterId;
+    if (characterId) {
+      this.gameState.setCharacterId(characterId);
+    }
     return deepClone(this.resetState);
   }
 
@@ -244,18 +252,31 @@ class HarnessGameStateSnapshotAdapterStub {
 
 class HarnessUniverseStateSnapshotServiceStub {
   public readonly ensureCalls: Array<{ systemId: string; snapshotLabel?: string | null }> = [];
+  public readonly payloadRehydrations: Array<{ systemId: string; snapshotLabel: string | null }> = [];
+  public readonly pinnedLabels = new Set<string>();
   private runtimeState: RuntimeSolarSystemState;
+  private activeSystemIdOverride: string | null;
+  private activeSystemIdLocked = false;
 
   constructor(state: RuntimeSolarSystemState) {
     this.runtimeState = deepClone(state);
+    this.activeSystemIdOverride = state.systemId;
   }
 
   setRuntimeState(state: RuntimeSolarSystemState): void {
     this.runtimeState = deepClone(state);
+    if (!this.activeSystemIdLocked) {
+      this.activeSystemIdOverride = state.systemId;
+    }
+  }
+
+  setActiveSystemId(value: string | null, options?: { lock?: boolean }): void {
+    this.activeSystemIdOverride = value;
+    this.activeSystemIdLocked = options?.lock ?? false;
   }
 
   getActiveSystemId(): string {
-    return this.runtimeState.systemId;
+    return this.activeSystemIdOverride ?? this.runtimeState.systemId;
   }
 
   captureRuntimeState(): RuntimeSolarSystemState {
@@ -264,13 +285,17 @@ class HarnessUniverseStateSnapshotServiceStub {
 
   ensureSystemState(systemId: string, options?: { snapshotLabel?: string | null; snapshotId?: string | null }): RuntimeSolarSystemState {
     this.ensureCalls.push({ systemId, snapshotLabel: options?.snapshotLabel ?? null });
-    return {
+    const ensured: RuntimeSolarSystemState = {
       ...deepClone(this.runtimeState),
       systemId,
       snapshotId: options?.snapshotId ?? this.runtimeState.snapshotId ?? null,
       source: options?.snapshotLabel || options?.snapshotId ? RuntimeStateSource.SNAPSHOT : RuntimeStateSource.LIVE,
       payload: null
     };
+    if (!this.activeSystemIdLocked) {
+      this.activeSystemIdOverride = systemId;
+    }
+    return ensured;
   }
 
   buildRuntimeStateFromPayload(systemId: string, payload: SerializedUniversePayload, snapshotId?: string | null): RuntimeSolarSystemState {
@@ -281,6 +306,33 @@ class HarnessUniverseStateSnapshotServiceStub {
       capturedAt: Date.now(),
       payload: deepClone(payload)
     };
+  }
+
+  replaceRuntimeWithPayload(options: ReplaceRuntimePayloadOptions): RuntimeSolarSystemState {
+    this.payloadRehydrations.push({ systemId: options.systemId, snapshotLabel: options.snapshotLabel ?? null });
+    this.activeSystemIdOverride = options.systemId;
+    this.activeSystemIdLocked = false;
+    return {
+      systemId: options.systemId,
+      snapshotId: options.snapshotId ?? this.runtimeState.snapshotId ?? null,
+      source: RuntimeStateSource.SNAPSHOT,
+      capturedAt: Date.now(),
+      payload: deepClone(options.payload)
+    };
+  }
+
+  pinSnapshotLabel(label: string | null | undefined): void {
+    if (!label) {
+      return;
+    }
+    this.pinnedLabels.add(label);
+  }
+
+  unpinSnapshotLabel(label: string | null | undefined): void {
+    if (!label) {
+      return;
+    }
+    this.pinnedLabels.delete(label);
   }
 }
 
@@ -422,7 +474,8 @@ const DEFAULT_PLAYER_SECTION: SaveGamePlayerSection = {
       },
       survivability: 100
     },
-    memoryPercent: 12
+    memoryPercent: 12,
+    characterId: 'pilot-default'
   },
   inventory: {
     personalGear: [],
@@ -732,7 +785,8 @@ function buildRichPlayerSection(): SaveGamePlayerSection {
         },
         survivability: 89
       },
-      memoryPercent: 42
+      memoryPercent: 42,
+      characterId: 'pilot-helio'
     },
     inventory: {
       personalGear,

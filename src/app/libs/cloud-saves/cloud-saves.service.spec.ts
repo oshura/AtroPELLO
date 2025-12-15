@@ -60,7 +60,8 @@ describe('CloudSavesService (integration)', () => {
     info: jasmine.createSpy('info'),
     warn: jasmine.createSpy('warn'),
     error: jasmine.createSpy('error'),
-    debug: jasmine.createSpy('debug')
+    debug: jasmine.createSpy('debug'),
+    log: jasmine.createSpy('log')
   } as Partial<LoggingService> as LoggingService;
 
   const settings: CloudSavesSettings = {
@@ -84,6 +85,7 @@ describe('CloudSavesService (integration)', () => {
     (logger.warn as jasmine.Spy).calls.reset();
     (logger.error as jasmine.Spy).calls.reset();
     (logger.debug as jasmine.Spy).calls.reset();
+    (logger.log as jasmine.Spy).calls.reset();
     TestBed.configureTestingModule({
       providers: [
         provideZonelessChangeDetection(),

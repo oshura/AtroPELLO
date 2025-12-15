@@ -75,7 +75,8 @@ function buildPlayerSection(anchorOverrides?: Partial<SaveGameRespawnState['acti
         },
         survivability: 95
       },
-      memoryPercent: 33
+      memoryPercent: 33,
+      characterId: 'spec-pilot'
     },
     inventory: {
       personalGear: [],
@@ -210,5 +211,21 @@ describe('GamePersistenceService · harness roundtrip', () => {
     const restartContext = harness.getLastRestartContext();
     expect(restartContext?.targetSystemId).toBe('ringworld-7');
     expect(restartContext?.runtimeState.systemId).toBe('ringworld-7');
+  });
+
+  it('rehydrates the saved system when portal snapshots are missing', async () => {
+    const harness = new SaveGameHarness(
+      createGateRiteMismatchHarnessOptions({ anchorSystemId: 'sol-origin', destinationSystemId: 'ringworld-42' })
+    );
+    const payload = await harness.save({ reason: 'rehydration-save' });
+    harness.universeService.setActiveSystemId('human-system', { lock: true });
+
+    await harness.load(payload, { reason: 'rehydration-load' });
+
+    const restartContext = harness.getLastRestartContext();
+    expect(restartContext?.targetSystemId).toBe(payload.metadata.systemId);
+    expect(restartContext?.runtimeState.systemId).toBe(payload.metadata.systemId);
+    const rehydrationCall = last(harness.universeService.payloadRehydrations);
+    expect(rehydrationCall?.systemId).toBe(payload.metadata.systemId);
   });
 });
