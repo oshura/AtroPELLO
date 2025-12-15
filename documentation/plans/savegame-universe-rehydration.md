@@ -11,9 +11,10 @@
 3. Endurecer la rehidratación al cargar, reutilizando payload embebido cuando la snapshot no existe y asegurando que el `GameEngine` aplica ese estado antes de reanudar el loop.
 
 ## Checklist de trabajo
-- [ ] **Auditoría de captura**: Revisar `GameEngine.persistActiveSystemState()`, `PortalPersistenceService.save()`, `UniverseStateSnapshotService.captureRuntimeState()` y `GamePersistenceService.buildMetadata()` para verificar que cada salto/guardado actualiza snapshotId/systemId/snapshotLabel coherentes.
-- [ ] **Etiquetado consistente**: Si se detectan gaps, actualizar la lógica que resuelve `systemId`/`snapshotLabel`/`respawnAnchorId` para que Gate Rite y Sigillum remoto registren el sistema correcto en metadata y en PortalPersistenceService.
-- [ ] **Rehidratación robusta**: Asegurar que `GamePersistenceService.applyLoadedPayload()` y el `GameEngine` reciben un `RuntimeSolarSystemState` con payload listo; si sólo existe el payload embebido, registrarlo temporalmente dentro de `PortalPersistenceService` (con label sintético) o aplicarlo inmediatamente antes del `restartWithContext`.
-- [ ] **QA rápido**: Reproducir flujo (Gate Rite → guardar → morir → cargar) y validar que el sistema remoto conserva portales, sol y planetas; ejecutar `npm run build` para confirmar compilación.
+- [x] **Auditoría de captura**: Revisar logs recientes (`/logs/logs.txt`) y el pipeline de guardado/carga para confirmar que el payload embebido sólo contiene `SerializedGameObjectState` minimalistas (sin órbitas ni metadata de planetas/sol), provocando sistemas rehidratados incompletos.
+- [x] **Captura enriquecida**: Extender `UniverseStateSnapshotService.captureRuntimeState()`/`serializeGameObject()` para inyectar en `payload.objects[].custom` los campos relevantes por tipo (sol, planetas, portales: órbitas, radio, colores, inhabitantes, estado de sello, etc.) aprovechando las propiedades de `Planet`, `Sun`, `Portal`.
+- [x] **Reconstrucción fiel**: Actualizar `buildSnapshotFromPayload()` para consumir esa metadata y generar `SolarSystemSnapshot` con sol+planetas completos (incluyendo órbitas y meta existente). Registrar el snapshot sintetizado en `PortalPersistenceService` conservando labels/pins.
+- [ ] **Cobertura**: Añadir pruebas unitarias para `UniverseStateSnapshotService.replaceRuntimeWithPayload()` que validen el recuento de planetas/sol, y ampliar el harness de `GamePersistenceService` para asegurar que la carga vía payload mantiene múltiples planetas.
+- [ ] **QA y cierre**: Validar manualmente Gate Rite → guardar → cargar (logs + inspección visual), actualizar wiki si el flujo cambia y correr `npm run test`, `npm run build` para cerrar la fase.
 
 > Nota: Actualizar la wiki (`/wiki/game-rules` o `/wiki/cloud-saves`) si se modifica el comportamiento observable del guardado/carga.

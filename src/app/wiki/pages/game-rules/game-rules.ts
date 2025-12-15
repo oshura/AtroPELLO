@@ -164,6 +164,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <li><strong>Pause:</strong> Esc to pause and access settings</li>
             <li><strong>Audio:</strong> Click anywhere to unlock audio on first load</li>
             <li><strong>Full Screen Toggle:</strong> un botón verde fosforescente con icono <code>[ ]</code> aparece en la esquina inferior derecha cuando estás autenticado. Pulsa para ocultar header/footer y maximizar el canvas; el icono cambia a <code>▣</code> para regresar.</li>
+            <li><strong>Flight Vector Reticle:</strong> una cruz discreta se dibuja ahora directamente sobre la pantalla (fuera del HUD) marcando el punto de fuga real de la nave. Cambia de posición al girar, escala con la velocidad, se oculta al abrir paneles diegéticos y, en el futuro, pasará a modo punto de mira cuando se activen armas.</li>
           </ul>
         </div>
       </section>
@@ -265,6 +266,17 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             perdió. Ese helper sintetiza un snapshot con los objetos del payload, lo fija en <code>PortalPersistenceService</code>
             (pin) y sólo entonces vuelve a llamar a <code>restartWithContext()</code>. Así, incluso si viajaste y el label original
             fue evictado, los loads vuelven exactamente al sistema que grabaste en el slot.
+          </p>
+          <p>
+            Además, el payload embebido ahora captura órbitas, radios y metadata completa de planetas, soles y portales. Cuando se
+            activa la ruta de rehidratación, ese bloque serializado reconstruye cada planeta con su órbita, habitantes y sellos en
+            vez de caer en el fallback genérico de «planet-B», por lo que los loads sin snapshot recuperan el sistema tal cual lo
+            dejaste antes del Gate Rite o del Sigillum.
+          </p>
+          <p>
+            El grimorio también conserva tu distribución personalizada: cada vez que mueves un glifo, la posición normalizada se
+            guarda en la partida y, al cargar o reanudar tras un Sigillum, el panel aplica automáticamente ese layout antes de
+            mostrar el libro. No hace falta recolocar runas después de un respawn ni tras volver desde el menú principal.
           </p>
           <p>
             Durante un Void Jump ya no se improvisa el invasor: el motor planifica el encuentro antes de mostrar la animación,

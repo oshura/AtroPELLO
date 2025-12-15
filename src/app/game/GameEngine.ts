@@ -24,6 +24,7 @@ import { SolarSystemRuntimeSerializerService } from './services/game/solar-syste
 import { PORTAL_SNAPSHOT_LABELS } from './constants/portal-snapshot-labels';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
+import { FlightVectorReticleState } from './hud/elements/FlightVectorReticle';
 import { ReticleManager } from './targeting';
 import { AdaptiveTargetingIntegrator } from './targeting/v2/AdaptiveTargetingIntegrator';
 import { AsteroidClusterService } from './services/game/asteroid-cluster.service';
@@ -37,6 +38,7 @@ import { SolarSystemPanel } from './hud/SolarSystemPanel';
 import { GrimoirePanel } from './hud/GrimoirePanel';
 import { InventoryPanel } from './hud/InventoryPanel';
 import { PanelCursorOverlay } from './hud/utils/panel-cursor-overlay';
+import { FlightVectorReticleOverlay } from './hud/utils/flight-vector-reticle-overlay';
 import { SpellType, getSpellSanityCost } from './types/spell.types';
 import { RespawnAnchorMetadata } from './types/respawn.types';
 import { GameStartContext, PlayerResetState } from './types/universe-state.types';
@@ -78,6 +80,7 @@ import { PLANET_INTEL_STATUS } from './types/planet-intel.types';
 import { GameObjectAnimosity } from './types/animosity.types';
 import { CompassCountdownPayload, HudMarqueeEventType } from './types/hud.types';
 import { OrientationBasis, computeHeadingFromForward } from './targeting/compass-direction.util';
+import { mat4, vec4 } from 'gl-matrix';
 
 const PANEL_REOPEN_COOLDOWN_MS = 500;
 import { Vector3 } from '../types/game.types';
@@ -172,6 +175,7 @@ export class GameEngine {
   // Landing overlay removed
   private domCanvas: HTMLCanvasElement | null = null;
   private panelCursorOverlay: PanelCursorOverlay | null = null;
+  private flightVectorOverlay: FlightVectorReticleOverlay | null = null;
   // Defers a map selection when the user clicks immediately after opening the map
   // before the id->target mapping has been rebuilt in the first render pass.
   private pendingMapSelectId: string | null = null;
@@ -315,6 +319,8 @@ export class GameEngine {
   
   // Matrices auxiliares
   private normalMatrix = new Float32Array(16);
+  private flightVectorViewProjection = mat4.create();
+  private flightVectorClipVec = vec4.create();
   // Debug: track potential attribute collisions/state
   private onceLoggedAttribCollision: boolean = false;
   private lastNormalAttribEnabled: boolean | null = null;
@@ -1365,12 +1371,7 @@ export class GameEngine {
   try {
     this.grimoirePanel = new GrimoirePanel(this.gl, this.audio, 1024, 1024);
     this.grimoirePanel.setEnabled(false);
-    try {
-      const savedLayout = this.gameState.getGrimoireGlyphLayoutSnapshot();
-      this.grimoirePanel.applyNormalizedGlyphLayout(savedLayout);
-    } catch (e) {
-      this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'No se pudo aplicar layout guardado del grimorio', e);
-    }
+    this.syncGrimoireLayoutFromState('engine-init');
   } catch (e) {
     this.logger.log(LogLevel.WARN, LogCategory.HUD, 'GrimoirePanel initialization failed', e);
     this.grimoirePanel = null;
@@ -1389,6 +1390,7 @@ export class GameEngine {
   // Crear cámara
   const canvas = canvasRef.nativeElement;
     this.domCanvas = canvas;
+        this.ensureFlightVectorOverlay();
         this.registerCanvasResizeListener(canvas);
         this.applyCanvasResize({
           width: canvas.clientWidth,
@@ -4384,6 +4386,7 @@ export class GameEngine {
 
     try {
       this.resetLoopStateForRestart();
+      this.syncGrimoireLayoutFromState('restart');
 
       const shipApplied = this.applyPlayerResetState(context.playerState);
       if (!shipApplied) {
@@ -5514,6 +5517,7 @@ export class GameEngine {
   const centerLabel = this.gameState.sun ? ((this.gameState.sun as any).customName || undefined) : undefined;
   this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, enemies, ship, portals, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
+      this.flightVectorOverlay?.setState(null);
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.HUD, 'SolarSystemPanel render failed', e);
     }
@@ -5522,6 +5526,7 @@ export class GameEngine {
       // Update and render the grimoire; delta not tracked here, content is quasi-static
       this.grimoirePanel.update(0);
       this.grimoirePanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
+      this.flightVectorOverlay?.setState(null);
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.HUD, 'GrimoirePanel render failed', e);
     }
@@ -5529,6 +5534,7 @@ export class GameEngine {
     try {
       this.refreshInventoryPanelSnapshot();
       this.inventoryPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
+      this.flightVectorOverlay?.setState(null);
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.HUD, 'InventoryPanel render failed', e);
     }
@@ -9511,6 +9517,8 @@ export class GameEngine {
     const riteActive = !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && now < this.speedRiteUntilMs);
     const voidJumpActive = !!this.voidJumpActive;
     const speedForHud = voidJumpActive ? Math.max(0, Math.min(100, speedPctExtended)) : Math.max(0, Math.min(200, speedPctExtended));
+    const flightVectorReticle = this.buildFlightVectorReticleState(speedForHud);
+    this.updateFlightVectorOverlay(flightVectorReticle);
     const gameData = {
       velocity: velocityMagnitude,
       heading: computeHeadingFromForward(orientationBasis.forward),
@@ -9602,6 +9610,96 @@ export class GameEngine {
     }
     candidates.sort((a, b) => a.priority - b.priority);
     return candidates[0].payload;
+  }
+
+  private buildFlightVectorReticleState(speedGaugeValue: number): FlightVectorReticleState | null {
+    if (!this.spaceship || !this.camera) {
+      return null;
+    }
+
+    const forward = this.getShipForwardVector();
+    const projectionDistance = this.resolveFlightVectorProjectionDistance();
+    const samplePoint: Vector3 = {
+      x: this.spaceship.position.x + forward.x * projectionDistance,
+      y: this.spaceship.position.y + forward.y * projectionDistance,
+      z: this.spaceship.position.z + forward.z * projectionDistance
+    };
+
+    const projection = this.projectPointToHud(samplePoint);
+    if (!projection || !projection.inFront || !projection.visible) {
+      return null;
+    }
+
+    const hasWeapons = Array.isArray(this.spaceship.weapons) && this.spaceship.weapons.length > 0;
+    const speedRatio = Math.max(0, Math.min(1, speedGaugeValue / 200));
+    const edgeAttenuation = Math.max(0, 1 - Math.min(1, Math.max(Math.abs(projection.ndcX), Math.abs(projection.ndcY))));
+
+    return {
+      visible: true,
+      normalizedX: projection.normalizedX,
+      normalizedY: projection.normalizedY,
+      edgeFade: edgeAttenuation,
+      speedRatio,
+      mode: hasWeapons ? 'combat' : 'navigation'
+    };
+  }
+
+  private projectPointToHud(point: Vector3): {
+    ndcX: number;
+    ndcY: number;
+    ndcZ: number;
+    normalizedX: number;
+    normalizedY: number;
+    inFront: boolean;
+    visible: boolean;
+  } | null {
+    if (!this.camera) {
+      return null;
+    }
+
+    const view = this.camera.viewMatrix as unknown as mat4;
+    const proj = this.camera.projectionMatrix as unknown as mat4;
+    mat4.multiply(this.flightVectorViewProjection, proj, view);
+
+    this.flightVectorClipVec[0] = point.x;
+    this.flightVectorClipVec[1] = point.y;
+    this.flightVectorClipVec[2] = point.z;
+    this.flightVectorClipVec[3] = 1;
+    vec4.transformMat4(this.flightVectorClipVec, this.flightVectorClipVec, this.flightVectorViewProjection);
+
+    const w = this.flightVectorClipVec[3];
+    if (!isFinite(w) || Math.abs(w) < 1e-5) {
+      return null;
+    }
+
+    const ndcX = this.flightVectorClipVec[0] / w;
+    const ndcY = this.flightVectorClipVec[1] / w;
+    const ndcZ = this.flightVectorClipVec[2] / w;
+    const normalizedX = Math.max(0, Math.min(1, (ndcX + 1) * 0.5));
+    const normalizedY = Math.max(0, Math.min(1, (1 - ndcY) * 0.5));
+    const inFront = w > 0;
+    // NDC válido está en [-1, 1]; añadimos tolerancia ligera para evitar clipping temprano.
+    const zInRange = ndcZ >= -1.1 && ndcZ <= 1.1;
+    const visible = inFront && zInRange;
+
+    return {
+      ndcX,
+      ndcY,
+      ndcZ,
+      normalizedX,
+      normalizedY,
+      inFront,
+      visible
+    };
+  }
+
+  private resolveFlightVectorProjectionDistance(): number {
+    if (!this.spaceship) {
+      return 450;
+    }
+    const speed = Math.max(0, this.spaceship.currentSpeed ?? 0);
+    const dynamic = 450 + speed * 2.5;
+    return Math.max(250, Math.min(1800, dynamic));
   }
 
   /**
@@ -9896,6 +9994,32 @@ export class GameEngine {
     this.panelCursorOverlay.setState(null);
   }
 
+  private ensureFlightVectorOverlay(): void {
+    if (this.flightVectorOverlay || !this.domCanvas) {
+      return;
+    }
+    this.flightVectorOverlay = new FlightVectorReticleOverlay(this.domCanvas);
+  }
+
+  private updateFlightVectorOverlay(state: FlightVectorReticleState | null): void {
+    if (!state || !this.shouldDisplayFlightVectorOverlay()) {
+      this.flightVectorOverlay?.setState(null);
+      return;
+    }
+    this.ensureFlightVectorOverlay();
+    this.flightVectorOverlay?.setState(state);
+  }
+
+  private shouldDisplayFlightVectorOverlay(): boolean {
+    if (!this.camera || !this.spaceship) {
+      return false;
+    }
+    if (this.systemPanel?.isEnabled() || this.grimoirePanel?.isEnabled() || this.inventoryPanel?.isEnabled()) {
+      return false;
+    }
+    return true;
+  }
+
   /**
    * Configura eventos del mouse para el sistema de targeting adaptativo
    */
@@ -10185,7 +10309,27 @@ export class GameEngine {
       const result = (this.grimoirePanel as any).endGlyphDrag?.();
       if (result && result.spell && result.normalized) {
         this.gameState.setGrimoireGlyphPosition(result.spell, result.normalized);
+        this.syncGrimoireLayoutFromState('glyph-updated');
       }
+    }
+  }
+
+  private syncGrimoireLayoutFromState(origin: string = 'unknown'): void {
+    if (!this.grimoirePanel || !this.gameState) {
+      return;
+    }
+    try {
+      const layout = this.gameState.getGrimoireGlyphLayoutSnapshot();
+      this.grimoirePanel.applyNormalizedGlyphLayout(layout);
+      this.logger.log(LogLevel.DEBUG, LogCategory.HUD, 'Grimoire layout synchronized', {
+        origin,
+        glyphs: Object.keys(layout as Record<string, unknown>).length
+      });
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.HUD, 'Failed to sync grimoire layout from state', {
+        origin,
+        error
+      });
     }
   }
 

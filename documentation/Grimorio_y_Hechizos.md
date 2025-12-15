@@ -43,6 +43,7 @@ Características clave:
 - Entrada del usuario: navegación con mouse/teclado; las entradas capturadas por el panel bloquean la interacción con la escena 3D mientras está abierto.
 - Persistencia de selección: si cierras el grimorio con una runa seleccionada, puedes seguir lanzándola con la tecla rápida; abrir/cerrar el panel NO borra la selección.
 - Coherencia visual: los glifos usan RNG con semilla para imágenes deterministas; las áreas de runa están enmarcadas con delineado claro.
+- Layout persistente: las coordenadas normalizadas de cada glifo se almacenan en la partida (sección `inventory.grimoireLayout`) y al cargar se reaplican al `GrimoirePanel` antes de habilitarlo, de modo que no hay que recolocar sellos tras respawns o loads manuales.
 
 ### Selección y tecla rápida
 
