@@ -1,5 +1,7 @@
 /*********  PENDING ***********/
 
+ - Linterna.
+
  - Landing menus o pensar bien el juego de landing:
 	- Poder ver personaje y nave estando aterrizado.
 	- Afinar que si es neutral pero no se ha buscado criatura, no de la misión.
@@ -10,12 +12,6 @@
 	Probar:
 	- Enemy(xq hay lesserBeing en el planeta):
 		- Luchar con lesserBeing para destruirlo. +50PX. COR a tope, SALUD a la mitad de lo que tenia el PJ.
-
- - La historia del principio para que gane algun hechizo, esconder hechizos, visitando la nave nodriza, y descubra ese 20% de memoria.
-  
- - Efectos de subir de nivel.
-
- - Donar €€.
  
  - Comercio y adquisicion de sellos
 	- Efectos de slots auxiliares: 
@@ -37,6 +33,12 @@
 		- de mind flight.
 		- Resurrección en portal más recientemente cruzado. Memoria ancestral.
 	- Weapons
+
+- La historia del principio para que gane algun hechizo, esconder hechizos, visitando la nave nodriza, y descubra ese 20% de memoria.
+  
+ - Efectos de subir de nivel.
+
+ - Donar €€.
 
  - Otros seres intergalacticos y sus reglas de aparicion y comportamiento:
 	- Tortugas lunares(1 huevo/Vuelta la vacio) y tortugas solares(1-3 huevos/Suicidio solar).

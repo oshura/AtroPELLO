@@ -9650,6 +9650,13 @@ export class GameEngine {
       return null;
     }
 
+    const cinematicAnimationRunning = typeof this.animationManager?.getCurrentAnimation === 'function'
+      ? this.animationManager.getCurrentAnimation() !== null
+      : false;
+    if (cinematicAnimationRunning) {
+      return null;
+    }
+
     const forward = this.getShipForwardVector();
     const projectionDistance = this.resolveFlightVectorProjectionDistance();
     const samplePoint: Vector3 = {
