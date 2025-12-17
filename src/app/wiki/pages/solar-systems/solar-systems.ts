@@ -39,10 +39,6 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <div class="note">
             <strong>Special Feature:</strong> Earth has been split into two halves, exposing the molten core. 
             The debris field between the halves is extremely dense and dangerous.
-            <p>
-              Cuando vuelves a este sistema encuentras el mismo cinturón de fragmentos que dejaste: ni la Tierra partida ni los anillos de Saturno duplican su densidad aunque viajes entre portales una y otra vez.
-              Los gigantes gaseosos también recuperan su tamaño real cada vez que aterrizas; dejan de inflarse o encogerse tras varios respawn y siempre respetan la escala original del cataclismo.
-            </p>
           </div>
         </div>
 
@@ -80,14 +76,6 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             </div>
           </div>
 
-          <div class="note latest-note">
-            <strong>Balance reciente:</strong>
-            <ul>
-              <li>Los portales reducen su burbuja interactiva cuando estás dentro, así que tras un Gate Rite puedes seleccionar otros objetivos sin alejarte.</li>
-              <li>Los planetas gigantes y anillados generados se limitan al tamaño de Júpiter/Saturno; siguen viéndose masivos pero ya no tapan todo el mapa.</li>
-              <li>Cada sistema procedural queda bajo la tutela de un Elder God aleatorio (Cthulhu sigue siendo exclusivo del sistema humano). Ese patrono determina qué criaturas cruzan portales y qué alertas aparecen en tu HUD.</li>
-            </ul>
-          </div>
         </div>
       </div>
 
@@ -169,17 +157,6 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         </div>
       </section>
 
-      <section class="tbd-section">
-        <h2>🔮 Future Features (TBD)</h2>
-        <ul>
-          <li><strong>Planetary Rotation:</strong> Planets orbit sun with realistic periods</li>
-          <li><strong>Binary Star Systems:</strong> Two suns with figure-8 orbits</li>
-          <li><strong>Nebulae:</strong> Gas clouds affecting visibility and navigation</li>
-          <li><strong>Gravitational Wells:</strong> Realistic gravity affecting ship movement near massive objects</li>
-          <li><strong>Comet Trails:</strong> Dynamic objects with spectacular visual effects</li>
-          <li><strong>Space Stations:</strong> Safe havens for repairs and upgrades</li>
-        </ul>
-      </section>
     </div>
   `,
   styles: [`

@@ -118,68 +118,107 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
 
       <section class="controls">
         <h2>⌨️ Controls</h2>
+        <p class="note controls-note">Todos los atajos listados corresponden a la configuración por defecto documentada en <em>Input_Bindings</em>. Si personalizas las teclas en el diálogo de controles, recuerda adaptar estas acciones a tu nuevo esquema.</p>
         <div class="controls-grid">
           <div class="control-group">
-            <h3>Movement</h3>
+            <h3>Actitud</h3>
             <div class="control-item">
-              <kbd>W</kbd> / <kbd>↑</kbd>
-              <span>Thrust Forward</span>
+              <kbd>W</kbd>
+              <span>Pitch down</span>
             </div>
             <div class="control-item">
-              <kbd>A</kbd> / <kbd>←</kbd>
-              <span>Rotate Left</span>
+              <kbd>S</kbd>
+              <span>Pitch up</span>
             </div>
             <div class="control-item">
-              <kbd>D</kbd> / <kbd>→</kbd>
-              <span>Rotate Right</span>
+              <kbd>A</kbd>
+              <span>Yaw left</span>
             </div>
             <div class="control-item">
-              <kbd>S</kbd> / <kbd>↓</kbd>
-              <span>Brake / Slow Down</span>
+              <kbd>D</kbd>
+              <span>Yaw right</span>
+            </div>
+            <div class="control-item">
+              <kbd>Q</kbd>
+              <span>Roll left</span>
+            </div>
+            <div class="control-item">
+              <kbd>E</kbd>
+              <span>Roll right</span>
+            </div>
+          </div>
+
+          <div class="control-group">
+            <h3>Empuje y precisión</h3>
+            <div class="control-item">
+              <span class="key-cluster">
+                <kbd>+</kbd>
+                <span class="key-sep">/</span>
+                <kbd>=</kbd>
+              </span>
+              <span>Thruster up</span>
+            </div>
+            <div class="control-item">
+              <span class="key-cluster">
+                <kbd>-</kbd>
+                <span class="key-sep">/</span>
+                <kbd>_</kbd>
+              </span>
+              <span>Thruster down</span>
             </div>
             <div class="control-item">
               <kbd>Shift</kbd>
-              <span>Precision rotation (half turn rate while held)</span>
+              <span>Precisión mientras se mantiene</span>
             </div>
             <div class="control-item">
               <kbd>Caps&nbsp;Lock</kbd>
-              <span>Toggle precision rotation latch</span>
+              <span>Precisión conmutada</span>
             </div>
           </div>
 
-          <p class="note movement-note">Mantén <kbd>Shift</kbd> presionado o alterna <kbd>Caps&nbsp;Lock</kbd> para activar la rotación precisa: el motor reduce al 50&nbsp;% la velocidad de pitch, yaw y roll, y la brújula ilumina el texto <em>PRECISION</em> bajo los timers para recordarte que sigues en modo fino.</p>
-
           <div class="control-group">
-            <h3>Camera</h3>
+            <h3>Cámaras y zoom</h3>
             <div class="control-item">
-              <kbd>C</kbd>
-              <span>Toggle Camera Mode</span>
+              <kbd>7</kbd>
+              <span>Rear view</span>
+            </div>
+            <div class="control-item">
+              <kbd>8</kbd>
+              <span>Cockpit</span>
+            </div>
+            <div class="control-item">
+              <kbd>9</kbd>
+              <span>Rear tracking</span>
+            </div>
+            <div class="control-item">
+              <kbd>0</kbd>
+              <span>Vista externa fija</span>
             </div>
             <div class="control-item">
               <kbd>Mouse Wheel</kbd>
-              <span>Zoom In/Out</span>
+              <span>Zoom in/out</span>
             </div>
           </div>
           <p class="note camera-note">Puedes redimensionar la ventana o sacar el canvas cuando quieras: la cámara y el HUD se reajustan al instante, sin estirar la imagen.</p>
-          <p class="note camera-note">Las cámaras externas ahora aplican un ligero <em>intent offset</em>: al mantener <kbd>W/S/A/D/Q/E</kbd> la vista se desplaza o banca en esa dirección, y al acelerar/frenar con <kbd>+</kbd>/<kbd>-</kbd> sólo varía la distancia a la nave. Todo vuelve suave a su ancla al soltar las teclas. La vista interior y la cinemática se mantienen fijas.</p>
+          <p class="note camera-note">Las cámaras externas aplican un ligero <em>intent offset</em>: al mantener <kbd class="key-chord">W/S/A/D/Q/E</kbd> la vista se desplaza o banca en esa dirección, y al acelerar/frenar con <span class="key-cluster"><kbd>+</kbd><span class="key-sep">/</span><kbd>-</kbd></span> solo varía la distancia a la nave. Todo vuelve suave a su ancla al soltar las teclas. La vista interior y la cinemática se mantienen fijas.</p>
 
           <div class="control-group">
-            <h3>Interface</h3>
+            <h3>Paneles</h3>
+            <div class="control-item">
+              <kbd>M</kbd>
+              <span>Solar System Panel</span>
+            </div>
             <div class="control-item">
               <kbd>G</kbd>
-              <span>Open Grimoire</span>
+              <span>Grimorio</span>
             </div>
             <div class="control-item">
               <kbd>I</kbd>
-              <span>Toggle Inventory Panel</span>
-            </div>
-            <div class="control-item">
-              <kbd>Tab</kbd>
-              <span>Toggle Solar System Panel</span>
+              <span>Inventario</span>
             </div>
             <div class="control-item">
               <kbd>Esc</kbd>
-              <span>Pause Menu</span>
+              <span>Cierra panel o limpia objetivo</span>
             </div>
           </div>
         </div>
@@ -188,7 +227,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
 
       <section class="hud-marquee">
         <h2>🖥️ HUD Marquee Link</h2>
-        <p>The marquee is now fully event-driven. It only scrolls curated alerts (respawn, threats, rituals, portals) and stays visually mounted even when idle—an empty text line simply means there are no pending events.</p>
+        <p>La marquesina te muestra alertas y consejos en tiempo real: aterrizajes, amenazas, rituales o eventos del sistema. Si no hay mensajes pendientes permanece visible, indicando que la situación está estable.</p>
         <div class="marquee-columns">
           <div class="marquee-card">
             <h3>Mission Flow</h3>
@@ -214,19 +253,9 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
               <li><strong>Void Ritual:</strong> Anchoring Pulse, Material Disruption and other rites.</li>
             </ul>
           </div>
-          <div class="marquee-card boot-sequence">
-            <h3>Boot Sequence Alerts</h3>
-            <ol>
-              <li>Explosion detectada.</li>
-              <li>Integridad comprometida.</li>
-              <li>Piloto dañado.</li>
-              <li>Sugerencia: contactar nave nodriza.</li>
-            </ol>
-            <p class="note">Se emiten automáticamente al iniciar sesión o tras reconstruir el HUD para dejar claro el estado de emergencia inicial.</p>
-          </div>
         </div>
         <p class="note marquee-note">El feed filtra duplicados y limita la velocidad del scroll para que siempre puedas leer los avisos. Tras cada respawn hay un respiro de ~1.2&nbsp;s antes de que la Energía del Vacío vuelva a bajar.</p>
-        <p class="note marquee-note">Cada alerta completa una única vuelta en el panel antes de caducar y el scroll aplica compensación de FPS bajos para que los textos no avancen a golpes incluso cuando el juego corre a 32&nbsp;FPS. El panel se mantiene discreto cuando no hay cola y se ilumina con un halo verde intenso en cuanto vuelve a emitir mensajes.</p>
+        <p class="note marquee-note">Cada alerta completa una única vuelta antes de caducar; cuando no hay cola la marquesina se atenúa y vuelve a iluminarse en cuanto llega un mensaje nuevo.</p>
       </section>
 
       <section class="customization tbd-section">
@@ -269,25 +298,37 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
       text-shadow: 0 0 10px #00ff41;
     }
 
-    .intro {
-      background: rgba(0, 255, 65, 0.05);
-      border-left: 4px solid #00ff41;
-      padding: 1.5rem;
-      margin-bottom: 2rem;
-      border-radius: 4px;
+    .key-cluster {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
     }
 
-    .ship-overview {
-      background: rgba(0, 255, 65, 0.03);
-      border: 1px solid rgba(0, 255, 65, 0.3);
-      border-radius: 8px;
-      padding: 2rem;
-      margin-bottom: 2rem;
+    .key-sep {
+      color: #7dd3fc;
+      font-weight: 600;
+      font-family: 'JetBrains Mono', monospace;
     }
 
-    .ship-overview h2 {
+    kbd {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(0, 255, 65, 0.2);
       color: #00ff41;
-      margin-top: 0;
+      padding: 0.25rem 0.75rem;
+      border-radius: 4px;
+      border: 1px solid #00ff41;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      box-shadow: 0 2px 0 rgba(0, 255, 65, 0.3);
+      min-width: 40px;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    kbd.key-chord {
+      letter-spacing: 0.05rem;
     }
 
     .specs-grid {
@@ -394,19 +435,6 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
       background: rgba(0, 255, 65, 0.03);
       border-radius: 4px;
       margin-bottom: 0.5rem;
-    }
-
-    kbd {
-      background: rgba(0, 255, 65, 0.2);
-      color: #00ff41;
-      padding: 0.25rem 0.75rem;
-      border-radius: 4px;
-      border: 1px solid #00ff41;
-      font-family: monospace;
-      font-size: 0.9rem;
-      box-shadow: 0 2px 0 rgba(0, 255, 65, 0.3);
-      min-width: 40px;
-      text-align: center;
     }
 
     .control-item span {

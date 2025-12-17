@@ -112,7 +112,6 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <ul>
             <li><strong>Access Grimoire:</strong> Press <kbd>G</kbd> to view available spells</li>
             <li><strong>Spell States:</strong> Locked 🔒, Available ⚡, Active ⏱️, Cooldown ⏳</li>
-            <li><strong>Keybindings:</strong> Each spell assigned to number keys (1-5)</li>
             <li><strong>Visual Feedback:</strong> Active spells show duration timer</li>
           </ul>
 
@@ -141,7 +140,6 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
 
           <h3>Camera</h3>
           <ul>
-            <li><strong>Toggle Mode:</strong> Press C to switch between follow and free camera</li>
             <li><strong>Zoom:</strong> Mouse wheel to zoom in/out</li>
             <li><strong>Auto-follow:</strong> Camera automatically tracks ship in follow mode</li>
             <li><strong>Resize-aware:</strong> Resizing the canvas or browser instantly recalculates aspect ratio and reticle alignment—no reloads or manual tweaks required.</li>
@@ -151,31 +149,10 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <ul>
             <li><strong>Grimoire:</strong> G to open spell book</li>
             <li><strong>Solar System Map:</strong> Tab to view all planets and asteroids</li>
-            <li><strong>Pause:</strong> Esc to pause and access settings</li>
             <li><strong>Audio:</strong> Click anywhere to unlock audio on first load</li>
             <li><strong>Full Screen Toggle:</strong> un botón verde fosforescente con icono <code>[ ]</code> aparece en la esquina inferior derecha cuando estás autenticado. Pulsa para ocultar header/footer y maximizar el canvas; el icono cambia a <code>▣</code> para regresar.</li>
             <li><strong>Flight Vector Reticle:</strong> una cruz discreta se dibuja ahora directamente sobre la pantalla (fuera del HUD) marcando el punto de fuga real de la nave. Cambia de posición al girar, escala con la velocidad, se oculta al abrir paneles diegéticos y, en el futuro, pasará a modo punto de mira cuando se activen armas.</li>
           </ul>
-        </div>
-      </section>
-
-      <section class="rule-section">
-        <h2>⚖️ Compliance & Licenses</h2>
-        <div class="rule-content">
-          <p>
-            El footer del juego ahora incluye el enlace <strong>Third Party Licenses</strong> que abre la página estática
-            <code>/third-party-licenses/</code> sin necesidad de autenticación para revisar las licencias vigentes (Angular, Express,
-            gl-matrix, RxJS y tslib).
-          </p>
-          <ul>
-            <li>Cada entrada muestra el paquete, el tipo de licencia (MIT, Apache&nbsp;2.0 u 0BSD) y enlaza con el texto completo.</li>
-            <li>Los ficheros viven en <code>/third-party-licenses/licenses/</code>, así que puedes guardar las copias en local para auditorías offline.</li>
-            <li>El enlace abre en una pestaña externa y no pausa la sesión actual del juego ni cierra la wiki.</li>
-          </ul>
-          <p class="warning">
-            Si la build incorpora nuevas dependencias, este apartado y la página de licencias se actualizan en bloque para reflejar los textos
-            obligatorios sin esperar a un parche mayor.
-          </p>
         </div>
       </section>
 
@@ -228,8 +205,6 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <li>Las Semillas y Vampiros comparan constantemente la distancia a tu nave con la de los planetas cercanos: si estás más cerca, la persecución es obligatoria.</li>
           </ul>
 
-          <div class="warning">
-            Recordatorio: los Sigillum se limpian al iniciar un “Full Respawn”. Graba otro enseguida si quieres volver a un planeta concreto.</div>
         </div>
       </section>
 
@@ -237,13 +212,12 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <h2>🔮 Future Mechanics (TBD)</h2>
         <div class="rule-content">
           <ul>
-            <li><strong>Health Regeneration:</strong> Passive healing over time or at stations</li>
             <li><strong>Resource Gathering:</strong> Mining asteroids for upgrades</li>
             <li><strong>Ship Upgrades:</strong> Better thrusters, stronger hull, more spell slots</li>
             <li><strong>Combat System:</strong> Weapons, targeting, enemy ships</li>
             <li><strong>Missions:</strong> Objectives, rewards, progression system</li>
             <li><strong>Multiplayer:</strong> Co-op exploration, competitive races</li>
-            <li><strong>Permadeath Mode:</strong> Hardcore difficulty with no respawn</li>
+            <li><strong>Permadeath:</strong> Get old and die forever and ever. But there are ways to last longer...</li>
             <li><strong>Save System:</strong> Save/load game state</li>
           </ul>
         </div>
@@ -257,17 +231,12 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
       min-height: 100%;
       background: #0a0a0f;
     }
-
     .wiki-page {
       max-width: 1200px;
       width: 100%;
       margin: 0 auto;
       padding: 2rem 3rem;
       color: #e0e0e0;
-    }
-
-    .page-header {
-      margin-bottom: 2rem;
     }
 
     .page-header h1 {
