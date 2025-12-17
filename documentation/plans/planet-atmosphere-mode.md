@@ -9,7 +9,7 @@ Queremos añadir un segundo sistema jugable que utilice el mismo `GameStateStore
 - `documentation/Sistema_Landing_Narrativa.md` — comportamiento del HUD de aterrizaje.
 
 ## Estrategia
-Descomponeremos el desarrollo en fases claras que puedan retomarse en cualquier momento. Cada fase cerrará con build (`npm run build`) y actualización de documentación/wiki cuando aplique. Para el arte y shading, investigaremos referencias existentes (terrain synthesis, cielos volumétricos, renders NASA/ESA) para fundamentar paletas y ruidos antes de implementar.
+Descomponeremos el desarrollo en fases claras que puedan retomarse en cualquier momento. Cada fase cerrará con build (`npm run build`) y actualización de documentación/wiki cuando aplique. Para el arte y shading, investigaremos referencias existentes (terrain synthesis, cielos volumétricos, renders NASA/ESA) para fundamentar paletas y ruidos antes de implementar y definiremos un board de inspiración con muestras clasificadas por tipo de planeta.
 
 ## Fases
 1. **Análisis y diseño compartido**
@@ -19,7 +19,8 @@ Descomponeremos el desarrollo en fases claras que puedan retomarse en cualquier 
 2. **Infraestructura del modo atmosférico**
    - Crear scaffold del nuevo "motor" (p. ej. `PlanetAtmosphereEngine`) que se monte/desmonte desde `GameInitializer` y comparta `GameStateStore`.
    - Configurar escena base con sky dome de nubes tintadas por planeta, luz atmosférica y compatibilidad con HUDManager.
-   - Documentar referencias visuales recopiladas (fotografía satelital, renders procedurales) para orientar shaders y texturas.
+   - Encapsular la lógica de transición (espacio⇄atmósfera) en un orquestador para que otras features puedan enganchar callbacks.
+   - Documentar referencias visuales recopiladas (fotografía satelital, renders procedurales) para orientar shaders y texturas y archivar enlaces en `/documentation/research/planet-atmosphere.md` (archivo nuevo).
 
 3. **Geometrías y límites del planeta**
    - Implementar las dos superficies concéntricas con radios configurables y al menos 50u de separación.
@@ -35,20 +36,29 @@ Descomponeremos el desarrollo en fases claras que puedan retomarse en cualquier 
 
 4. **Paridad de controles y HUD**
    - Conectar los mismos `GameInputHandler`, HUD y paneles diegéticos para que las teclas (movimiento, paneles, hechizos, Backspace del marquee, etc.) funcionen igual.
-   - Validar que los paneles puedan abrirse en el modo atmosférico y que la cámara/HUD sigan sincronizados.
+   - Validar que los paneles puedan abrirse en el modo atmosférico y que la cámara/HUD sigan sincronizados independientemente del LOD o la posición relativa al suelo.
+   - Añadir telemetría ligera (stats overlay) para monitorear FPS y latencia del HUD en ambos modos.
+   - Integrar un horizonte artificial en la brújula cuando estemos en modo atmosférico: dividir el anillo en cielo (azules graduales) y tierra (ocres/arena) con líneas de pitch/roll sincronizadas con la nave.
+   - Superponer un altímetro dentro de la brújula (escala circular o columna lateral) que muestre altura sobre el suelo local y marcas clave (50u, 100u) para anticipar el comportamiento del terreno/LOD.
 
 5. **Integración de hechizos dependientes de planeta**
    - Detectar hechizos que requieren seleccionar un planeta objetivo y resolver automáticamente el planeta actual cuando estemos en la atmósfera.
-   - Ajustar validaciones de distancia para que usen el radio del planeta activo.
+   - Ajustar validaciones de distancia para que usen el radio del planeta activo e introducir callbacks para hechizos que cambien el clima/terreno.
+   - Agregar pruebas manuales/documentadas para Gate Rite/Eternal Rite dentro de la atmósfera y registrar resultados.
 
 6. **Secuencias y animaciones de aterrizaje/despegue**
    - Crear la animación de aterrizaje planetario: bloqueo de controles, descenso a altura 0 en 2s, cámara lateral/oblicua que se posiciona a ras del suelo y tracking de la nave, con efectos de polvo o vapor según material (humo rojizo, spray de hielo, etc.).
    - Mantener la escena congelada ~2s tras el touchdown antes de mostrar el diálogo existente.
    - Implementar la animación de despegue cuando se cruza la esfera superior, incluyendo fundido de nubes y transición progresiva al modo espacial.
 
-7. **Documentación y QA**
-   - Actualizar documentación (Resumen, Landing, Wiki/hud) con el nuevo modo.
-   - Ejecutar `npm run build` y, si aplica, añadir pruebas manuales/registros en la bitácora QA.
+7. **Documentación, QA y research continuo**
+   - Actualizar documentación (Resumen, Landing, Wiki/hud) con el nuevo modo y anexar el board de inspiración.
+   - Ejecutar `npm run build`, preparar checklist QA cruzada (modo espacial vs atmósfera) y añadir pruebas manuales/registros en la bitácora QA.
+   - Evaluar rendimiento en targets de 32 FPS con el compensador del HUD y registrar métricas antes/después.
+
+8. **Opcional — Variaciones climáticas y narrativa**
+   - Añadir presets de clima (tormenta de polvo, aurora, blizzard) que modifiquen el shading y la densidad de nubes.
+   - Coordinar con narrativa para definir eventos únicos cuando aterrizas en determinados biomas.
 
 ## Seguimiento
 - [ ] Fase 1 completada
