@@ -314,11 +314,6 @@ export class HUDManager {
           event.preventDefault();
           this.toggleDebugCanvas();
           break;
-        case 'Backspace':
-          if (this.tryReplayMarqueeHistory()) {
-            event.preventDefault();
-          }
-          break;
       }
     });
 
@@ -486,7 +481,7 @@ export class HUDManager {
     }
   }
 
-  private tryReplayMarqueeHistory(): boolean {
+  public replayLastMarqueeHistory(): boolean {
     const replayEntry = this.marqueeHistory.pop();
     if (!replayEntry) {
       return false;

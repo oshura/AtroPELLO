@@ -6,6 +6,7 @@ export type GameAction =
   | 'roll_left' | 'roll_right'
   | 'accelerate' | 'brake'
   | 'map' | 'pause' | 'book' | 'spell' | 'inventory'
+  | 'marquee_replay'
   | 'target_next' | 'target_prev'
   | 'camera_7' | 'camera_8' | 'camera_9' | 'camera_0'
   | 'stats_overlay'
@@ -33,6 +34,7 @@ const DEFAULT_BINDINGS: Record<GameAction, string> = {
   spell: 'h',
   target_next: 't',
   target_prev: 'shift+t',
+  marquee_replay: 'backspace',
   camera_7: '7',
   camera_8: '8',
   camera_9: '9',

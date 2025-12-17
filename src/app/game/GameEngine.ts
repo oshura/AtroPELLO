@@ -7193,29 +7193,35 @@ export class GameEngine {
   }
 
   public handleKeyDown(key: string): void {
-    // Block most inputs during animations/pre-cast delay; allow Escape to close panels
-    if (this.areSpellGameplayInputsLocked() && key.toLowerCase() !== 'escape') {
+    const normalized = key.toLowerCase();
+    // Block most inputs during animations/pre-cast delay; allow Escape/backspace while locked
+    if (this.areSpellGameplayInputsLocked() && normalized !== 'escape' && normalized !== 'backspace') {
       return;
     }
     // Manejo de cambio de modos de cámara
-    if (key === '0') {
+    if (normalized === '0') {
       this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
       return;
-    } else if (key === '7') {
+    } else if (normalized === '7') {
       this.camera.setCameraMode(CameraMode.REAR_VIEW);
       return;
-    } else if (key === '8') {
+    } else if (normalized === '8') {
       this.camera.setCameraMode(CameraMode.COCKPIT);
       return;
-    } else if (key === '9') {
+    } else if (normalized === '9') {
       this.camera.setCameraMode(CameraMode.REAR_TRACKING);
       return;
     }
 
-    if (key.toLowerCase() === 'enter') {
+    if (normalized === 'enter') {
       if (this.tryStartLandingSequence()) {
         return;
       }
+    }
+
+    if (normalized === 'backspace') {
+      this.hudManager?.replayLastMarqueeHistory?.();
+      return;
     }
 
     if (this.tryActivateAuxiliaryAbilityForKey(key)) {
@@ -7227,7 +7233,7 @@ export class GameEngine {
       this.updateShipControls(key, true);
     }
     // Toggle panel de mapa del sistema con tecla 'M'
-    if (key.toLowerCase() === 'm') {
+    if (normalized === 'm') {
       if (this.arePanelsLockedBySpell()) {
         this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Map toggle blocked by spell IO lock');
         return;
@@ -7302,7 +7308,7 @@ export class GameEngine {
       return;
     }
     // Toggle Grimoire (ancient book) with 'G'
-    if (key.toLowerCase() === 'g') {
+    if (normalized === 'g') {
       if (this.arePanelsLockedBySpell()) {
         this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Grimoire toggle blocked by spell IO lock');
         return;
@@ -7368,7 +7374,7 @@ export class GameEngine {
       return;
     }
     // Toggle Inventory panel with 'I'
-    if (key.toLowerCase() === 'i') {
+    if (normalized === 'i') {
       if (this.arePanelsLockedBySpell()) {
         this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Inventory toggle blocked by spell IO lock');
         return;
@@ -7377,12 +7383,12 @@ export class GameEngine {
       return;
     }
     // Escape: cerrar paneles (mapa, grimorio, inventario) o limpiar selección
-    if (key.toLowerCase() === 'escape') {
+    if (normalized === 'escape') {
       this.handleEscape();
       return;
     }
     // Fase 2: lanzar hechizo con 'h' (desde el grimorio o recordando el seleccionado)
-    if (key.toLowerCase() === 'h') {
+    if (normalized === 'h') {
       if (this.grimoirePanel && this.grimoirePanel.isEnabled()) {
         const spell = (this.grimoirePanel as any).getSelectedSpellType?.() as SpellType | null;
         if (!spell) {
