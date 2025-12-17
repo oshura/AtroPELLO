@@ -124,7 +124,7 @@ interface Glyph {
         <ul>
           <li>Los costes de cordura temporal se aplican tras ejecutar el efecto.</li>
           <li>Augurio y Revelación comparten alcance (≤ 500u) con la bahía auxiliar.</li>
-          <li>Si falta energía o el objetivo es inválido, verás un placeholder sin gastar recursos.</li>
+          <li>Si falta energía o el objetivo es inválido, verás un aviso y conservarás todos tus recursos.</li>
         </ul>
       </section>
     </div>
@@ -370,7 +370,7 @@ export class GlyphsWikiComponent implements OnInit {
       voidEnergy: '0u',
       requirements: ['No requiere objetivo.', 'Animación de precast completada (2 s).'],
       description: 'Perfecto para travesías largas. Si lo relanzas antes de expirar refresca la duración; al terminar, la velocidad se ajusta para evitar sobresaltos.',
-      notes: 'Buff instantáneo; clampa targetSpeed al finalizar.'
+      notes: 'Cuando termina reduce la velocidad poco a poco para evitar tirones.'
     },
     {
       name: 'Void Jump',
@@ -382,8 +382,8 @@ export class GlyphsWikiComponent implements OnInit {
       sanityReserve: 4,
       voidEnergy: '0u',
       requirements: ['Objetivo válido y a > 4000u.', 'Animaciones libres.'],
-      description: 'Herramienta de escape fiable. Si el objetivo no es válido, verás un placeholder y conservarás tus recursos.',
-      notes: 'El flash muestra al Elder God dueño del sistema (Cthulhu/Azathoth/Yog-Sothoth/Cthugha) sin coste de energía: solo bloquea el input antes de saltar.'
+      description: 'Herramienta de escape fiable. Si el objetivo no es válido, verás un aviso y conservarás tus recursos.',
+      notes: 'El flash muestra al Elder God dueño del sistema (Cthulhu/Azathoth/Yog-Sothoth/Cthugha) y congela brevemente los controles antes del salto.'
     },
     {
       name: 'Gate Rite',
@@ -396,7 +396,7 @@ export class GlyphsWikiComponent implements OnInit {
       voidEnergy: '0u (pausa/rellena)',
       requirements: ['Planeta dentro de ≤ 50u.', 'Sin amenaza activa bloqueando la animación.'],
       description: 'La secuencia bloquea inputs y daño. Al llegar, el portal queda disponible para volver y tu Energía del Vacío se rellena.',
-      notes: 'Enlaza portales origen/destino y elimina el planeta colapsado del snapshot.'
+      notes: 'El planeta colapsado desaparece para siempre y el nuevo portal queda enlazado como ruta estable.'
     },
     {
       name: 'Eternal Rite',
@@ -407,7 +407,7 @@ export class GlyphsWikiComponent implements OnInit {
       sanityTemp: 1,
       sanityReserve: 0,
       voidEnergy: '0u',
-      requirements: ['Animador disponible.', 'No se superpone con Gate Rite ni Void Jump.'],
+      requirements: ['Necesitas tener el control de la nave.', 'No se superpone con Gate Rite ni Void Jump.'],
       description: 'Ideal para atravesar campos densos de escombros. No aumenta daño ni velocidad: solo detiene el entorno temporalmente.',
       notes: 'Se puede cancelar manualmente volviendo a castear.'
     },
@@ -421,8 +421,8 @@ export class GlyphsWikiComponent implements OnInit {
       sanityReserve: 1,
       voidEnergy: '0u',
       requirements: ['Objetivo válido y visible.', 'Distancia ≤ 50u.'],
-      description: 'Herramienta antisabotaje. Cancela portales hostiles y devuelve “TARGET TOO FAR” si excedes el rango.',
-      notes: 'El haz usa la misma cámara que el HUD para alineación precisa.'
+      description: 'Herramienta antisabotaje. Cancela portales hostiles y, si estás fuera de rango, muestra un aviso sin gastar cordura.',
+      notes: 'El haz sigue el mismo ángulo que tu cámara, así que apunta donde estés mirando.'
     },
     {
       name: 'Anchoring Pulse',
@@ -433,9 +433,9 @@ export class GlyphsWikiComponent implements OnInit {
       sanityTemp: 2,
       sanityReserve: 3,
       voidEnergy: '0u',
-      requirements: ['Asteroide a ≤ 50u.', 'Bodega con espacio ≥ rendimiento estimado.'],
-      description: 'Cuando la bodega se llena aparece “BODEGA SIN ESPACIO”. Las nuevas entradas se reflejan en el inventario inmediatamente.',
-      notes: 'Registra automáticamente el manifiesto en el GameStateStore.'
+      requirements: ['Asteroide a ≤ 50u.', 'Necesitas espacio libre en la bodega.'],
+      description: 'Cuando la bodega se llena aparece un aviso de capacidad completa. Las nuevas entradas se reflejan en el inventario inmediatamente.',
+      notes: 'Añade el mineral directamente al manifiesto del inventario.'
     },
     {
       name: 'Void Kinesis',
@@ -447,8 +447,8 @@ export class GlyphsWikiComponent implements OnInit {
       sanityReserve: 3,
       voidEnergy: '+8u a +70u',
       requirements: ['Asteroide en rango.', 'Reserva del vacío con margen suficiente.'],
-      description: 'Si el incremento llenaría la reserva aparece “RESERVA DEL VACÍO LLENA” y el objetivo se mantiene intacto.',
-      notes: 'Añade mensajes al marquee con la energía ganada.'
+      description: 'Si el incremento llenaría la reserva aparece un aviso de límite y el objetivo se mantiene intacto.',
+      notes: 'El HUD muestra cuánta energía del vacío obtuviste tras cada extracción.'
     },
     {
       name: 'Void Cocoon',
@@ -462,7 +462,7 @@ export class GlyphsWikiComponent implements OnInit {
       voidEnergy: '0u',
       requirements: ['Sin animaciones bloqueantes en curso.', 'La nave debe estar operativa (no destruida).'],
       description: 'El capullo es semitransparente y muestra un countdown “COCOON” en la brújula. Cada impacto absorbido emite un mensaje y deja intactos tus puntos de vida.',
-      notes: 'Solo reproduce IaIa.wav al activarse; no hay placeholder textual.'
+      notes: 'Emite un pulso grave al activarse para que sepas que sigues protegido.'
     },
     {
       name: 'Tempus Sigillum',
@@ -473,9 +473,9 @@ export class GlyphsWikiComponent implements OnInit {
       sanityTemp: 2,
       sanityReserve: 5,
       voidEnergy: '0u',
-      requirements: ['Planeta válido dentro de ≤ 500u.', 'Target seleccionado en la retícula.'],
+      requirements: ['Planeta válido dentro de ≤ 500u.', 'Debes tener el planeta marcado en el HUD.'],
       description: 'Ideal para rerollear habitantes o pacificar sistemas problemáticos. Limpia el lesser being y obliga a un nuevo escaneo.',
-      notes: 'Muestra un placeholder “TEMPUS SIGILLUM” con el nombre del planeta.'
+      notes: 'El HUD confirma qué planeta fue reiniciado al acabar el ritual.'
     },
     {
       name: 'Quimio Sigillum',
@@ -487,8 +487,8 @@ export class GlyphsWikiComponent implements OnInit {
       sanityReserve: 8,
       voidEnergy: '0u',
       requirements: ['No requiere objetivo.', 'Supervivencia < 100% para obtener efecto.'],
-      description: 'Sello alquímico para recuperarte de tiradas de envejecimiento o encuentros letales. Si no puede aplicar el 5%, muestra placeholder y no cobra cordura.',
-      notes: 'Sin countdown; muestra texto “QUIMIO SIGILLUM” con el porcentaje restaurado.'
+      description: 'Sello alquímico para recuperarte de tiradas de envejecimiento o encuentros letales. Si no puede aplicar el 5%, verás un aviso y el coste no se consume.',
+      notes: 'El HUD indica el porcentaje de supervivencia que recuperaste.'
     },
     {
       name: 'Concordia Gate',
@@ -501,7 +501,7 @@ export class GlyphsWikiComponent implements OnInit {
       voidEnergy: '0u',
       requirements: ['Portal objetivo con estado hostil.', 'Distancia ≤ 500u desde la nave.', 'Sin otra animación de rito en curso.'],
       description: 'El pentáculo pasa de carmesí a cian y el HUD confirma el pacto. Los portales aliados no permitirán que seres menores penetren hacia tus rutas.',
-      notes: 'Muestra placeholder “CONCORDIA GATE” con el nombre del portal (o sistema) al completarse.'
+      notes: 'El mensaje emergente confirma el portal pacificado para que recuerdes qué ruta quedó segura.'
     },
     {
       name: 'Augurio',
@@ -514,7 +514,7 @@ export class GlyphsWikiComponent implements OnInit {
       voidEnergy: '50u',
       requirements: ['Planeta escaneable a ≤ 500u.', 'Objetivo seleccionado en el HUD.'],
       description: 'Otorga +100 XP la primera vez que detectas una especie distinta de NONE en ese planeta.',
-      notes: 'Muestra overlay “AUGURIO” con planeta + especie.'
+      notes: 'El registro de intel añade automáticamente la especie descubierta.'
     },
     {
       name: 'Revelación',
@@ -527,7 +527,7 @@ export class GlyphsWikiComponent implements OnInit {
       voidEnergy: '50u',
       requirements: ['Planeta escaneable a ≤ 500u.', 'Objetivo seleccionado.'],
       description: 'Genera el mensaje “SER MENOR REVELADO/NO DETECTADO” junto al nombre del planeta.',
-      notes: 'Solo consume energía cuando el objetivo pasa todas las validaciones.'
+      notes: 'Solo consume energía cuando la lectura es válida y se añade al registro.'
     }
   ];
 }

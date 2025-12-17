@@ -41,8 +41,8 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <strong>Special Feature:</strong> Earth has been split into two halves, exposing the molten core. 
             The debris field between the halves is extremely dense and dangerous.
             <p>
-              Runtime snapshots now preserve those debris belts exactly: when you respawn or re-enter the system through a portal we skip spawning new mega asteroids for Earth or Saturn if the snapshot already includes their debris, so rings never double in density.
-              Giant/gaseous worlds (Jupiter, Uranus, Neptune) also keep the exact radius stored in the snapshot instead of reapplying their massive multipliers, so they stop inflating after multiple respawns. Jupiter now loads at its full 1.6k radius again, matching the pre-cataclysm reference scale.
+              Cuando vuelves a este sistema encuentras el mismo cinturón de fragmentos que dejaste: ni la Tierra partida ni los anillos de Saturno duplican su densidad aunque viajes entre portales una y otra vez.
+              Los gigantes gaseosos también recuperan su tamaño real cada vez que aterrizas; dejan de inflarse o encogerse tras varios respawn y siempre respetan la escala original del cataclismo.
             </p>
           </div>
         </div>
@@ -86,7 +86,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <ul>
               <li>Los portales reducen su burbuja interactiva cuando estás dentro, así que tras un Gate Rite puedes seleccionar otros objetivos sin alejarte.</li>
               <li>Los planetas gigantes y anillados generados se limitan al tamaño de Júpiter/Saturno; siguen viéndose masivos pero ya no tapan todo el mapa.</li>
-              <li>Cada snapshot procedural se etiqueta ahora con un Elder God aleatorio (Cthulhu queda reservado para el sistema humano). Ese dueño arcano define qué criaturas pueden colarse por los portales y qué alertas verás en el HUD.</li>
+              <li>Cada sistema procedural queda bajo la tutela de un Elder God aleatorio (Cthulhu sigue siendo exclusivo del sistema humano). Ese patrono determina qué criaturas cruzan portales y qué alertas aparecen en tu HUD.</li>
             </ul>
           </div>
         </div>
@@ -98,27 +98,27 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <div class="physics-details">
           <h3>Planetary Orbits</h3>
           <ul>
-            <li><strong>Orbital Velocity:</strong> Currently static (planets don't move). Orbital motion TBD for future update.</li>
-            <li><strong>Spacing Rules:</strong> Each planet orbit separated by 1500-3000 units to ensure safe navigation corridors.</li>
-            <li><strong>Minimum Solar Distance:</strong> First planet never closer than 2000 units from sun to prevent instant death.</li>
-            <li><strong>Collision Detection:</strong> Spherical bounding volumes. Ship-planet collision causes catastrophic damage (100,000 HP).</li>
+            <li><strong>Estado actual:</strong> Los planetas permanecen estáticos, así que puedes planear rutas sin preocuparte por órbitas móviles. Más adelante empezarán a moverse.</li>
+            <li><strong>Corredores seguros:</strong> Cada órbita deja un pasillo de 1500-3000 unidades para maniobrar sin rozar otras esferas de influencia.</li>
+            <li><strong>Distancia mínima al sol:</strong> Ningún mundo aparece a menos de 2000 unidades, dándote margen antes de entrar en la zona de calor letal.</li>
+            <li><strong>Impactos:</strong> Golpear un planeta equivale a 100.000 de daño: no hay aterrizajes de emergencia si llegas a esa velocidad.</li>
           </ul>
 
           <h3>Asteroid Mechanics</h3>
           <ul>
-            <li><strong>Cluster Formation:</strong> Asteroids spawn in groups called "trails" with 5-15 members each.</li>
-            <li><strong>Shared Motion:</strong> All asteroids in a cluster move together with same base velocity.</li>
-            <li><strong>Drift Speed:</strong> Individual drift within cluster: 0.1-0.5 units/frame in random direction.</li>
-            <li><strong>Cluster Center:</strong> Each trail has a center point that defines the group's position and velocity.</li>
-            <li><strong>Distribution:</strong> Clusters concentrate in asteroid belt regions (between planetary orbits).</li>
+            <li><strong>Trails:</strong> Los campos aparecen en pequeños trenes de 5-15 rocas que comparten dirección.</li>
+            <li><strong>Movimiento común:</strong> Cada trail avanza con la misma velocidad base, así que puedes leer su trayectoria a simple vista.</li>
+            <li><strong>Deriva individual:</strong> Las rocas se mueven unos 0.1-0.5u por fotograma en direcciones aleatorias, generando huecos temporales.</li>
+            <li><strong>Núcleo invisible:</strong> Cada trail orbita un centro que define la posición del grupo; destruirlo dispersa las piezas.</li>
+            <li><strong>Zonas calientes:</strong> La mayoría se concentra entre órbitas rocosas y gigantes gaseosos.</li>
           </ul>
 
           <h3>Collision Physics</h3>
           <ul>
-            <li><strong>Small Asteroids:</strong> Full 3D inelastic collision with momentum conservation. Restitution coefficient: 0.2-0.3.</li>
-            <li><strong>Cluster Ejection:</strong> Asteroids become independent when hit, maintaining collision velocity.</li>
-            <li><strong>Large Objects:</strong> Immovable. Ship slides around them with tangential velocity preservation.</li>
-            <li><strong>Approach Detection:</strong> System detects if ship hits stationary asteroid vs asteroid hitting moving ship.</li>
+            <li><strong>Asteroides pequeños:</strong> Rebotan contigo y transfieren parte de tu inercia; cuanto más rápido vas, mayor será el empujón.</li>
+            <li><strong>Trails fragmentados:</strong> Cada impacto separa esa roca del grupo y la deja flotando con la velocidad que llevaba.</li>
+            <li><strong>Objetos enormes:</strong> No se mueven ni un milímetro. Si los rozas, la nave se desliza por su superficie preservando la velocidad tangencial.</li>
+            <li><strong>Detección de aproximación:</strong> El juego distingue si embistes una roca estacionaria o si una roca móvil te golpea para aplicar el daño adecuado.</li>
           </ul>
         </div>
       </section>

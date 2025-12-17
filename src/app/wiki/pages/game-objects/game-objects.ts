@@ -73,10 +73,10 @@ interface GameObjectData {
       <section class="physics-notes">
         <h2>Physics Notes</h2>
         <ul>
-          <li><strong>SMALL</strong> objects: Full 3D inelastic collision physics with momentum conservation</li>
-          <li><strong>MEDIUM/LARGE</strong> objects: Immovable, ship slides around them</li>
-          <li><strong>MASSIVE</strong> objects: Extremely high damage, ship cannot penetrate</li>
-          <li><strong>ETHEREAL</strong> objects: No collision physics (portals)</li>
+          <li><strong>SMALL</strong> objects: rebotan y alteran tu trayectoria, sobre todo si llegas con mucha velocidad.</li>
+          <li><strong>MEDIUM/LARGE</strong> objects: actúan como muros inmóviles; la nave se desliza alrededor y pierde gran parte de su escudo.</li>
+          <li><strong>MASSIVE</strong> objects: impacto letal inmediato. No intentes atravesarlos.</li>
+          <li><strong>ETHEREAL</strong> objects: no tienen colisión física; solo sirven como portales o marcadores.</li>
         </ul>
       </section>
     </div>
@@ -288,7 +288,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'SMALL',
       minRadius: 8,
       maxRadius: 25,
-      generation: 'Generated in clusters (trails). Each cluster contains 5-15 asteroids with shared orbital motion. Random drift speeds between 0.1-0.5 units/frame.'
+      generation: 'Se agrupan en trail y comparten trayectoria. Son rápidos y te obligan a corregir rumbo si impactas con varios seguidos.'
     },
     {
       type: 'Super Asteroid',
@@ -298,7 +298,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'MEDIUM',
       minRadius: 35,
       maxRadius: 80,
-      generation: 'Spawned independently in asteroid-rich regions. Approximately 5-10% of asteroid population. Immovable obstacles that cause significant damage.'
+      generation: 'Aparecen aislados en los tramos más densos. Apenas se mueven y tienes que rodearlos porque cualquier roce destroza el fuselaje.'
     },
     {
       type: 'Mega Asteroid',
@@ -308,7 +308,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'LARGE',
       minRadius: 100,
       maxRadius: 200,
-      generation: 'Rare spawns (1-3 per solar system). Often found near planetary orbits. Ship must navigate around them - collision is catastrophic.'
+      generation: 'Solo encontrarás unos pocos por sistema y suelen custodiar órbitas estratégicas. Chocar contra uno equivale a una muerte automática.'
     },
     {
       type: 'Planet',
@@ -318,7 +318,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'MASSIVE',
       minRadius: 300,
       maxRadius: 800,
-      generation: 'Procedurally generated in orbital paths. 3-8 planets per solar system. Distance between orbits: 1500-3000 units. Various visual types with random colors.'
+      generation: 'Orbitan alrededor del sol y definen las rutas principales. Entre órbitas queda espacio suficiente para maniobrar y preparar aterrizajes.'
     },
     {
       type: 'Ringed Planet',
@@ -328,7 +328,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'MASSIVE',
       minRadius: 400,
       maxRadius: 900,
-      generation: 'Rare variant (10-20% of planets). Features procedurally generated ring system with multiple bands. Ring radius typically 1.5-2.5x planet radius.'
+      generation: 'Variante poco frecuente que añade anillos muy visibles. Los fragmentos del anillo ocultan asteroides secundarios y dificultan la navegación cercana.'
     },
     {
       type: 'Gaseous Planet',
@@ -338,7 +338,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'MASSIVE',
       minRadius: 500,
       maxRadius: 1000,
-      generation: 'Large gas giants with swirling atmospheric patterns. Typically outer solar system. Distinctive banded appearance with dynamic cloud textures.'
+      generation: 'Gigantes gaseosos del exterior. Sus bandas en movimiento se ven desde muy lejos y su atmósfera es letal: nunca intentes aterrizar.'
     },
     {
       type: 'Giant Planet',
@@ -348,7 +348,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'MASSIVE',
       minRadius: 600,
       maxRadius: 1200,
-      generation: 'Largest planetary bodies. 0-2 per system. Dominant gravitational influence in their orbital region. Can have multiple moons (TBD).'
+      generation: 'Los cuerpos más pesados del sistema. Obligan a la nave a bordearlos con mucha antelación porque cualquier contacto provoca daños masivos.'
     },
     {
       type: 'Dwarf Planet',
@@ -358,7 +358,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'MASSIVE',
       minRadius: 150,
       maxRadius: 300,
-      generation: 'Small rocky bodies in outer orbits. 2-5 per system. Often found in asteroid belt regions. Can be landed on with precision.'
+      generation: 'Pequeños mundos rocosos en los cinturones exteriores. Son perfectos para aterrizajes rápidos y para ocultar portales improvisados.'
     },
     {
       type: 'Protoplanet',
@@ -368,7 +368,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'MASSIVE',
       minRadius: 200,
       maxRadius: 400,
-      generation: 'Forming planetary bodies with irregular shapes. Rare (5% spawn rate). Visual effect of accretion disk. Unstable appearance.'
+      generation: 'Planetas en formación con formas irregulares y polvo orbitando. Algunos eventos narrativos solo se activan frente a ellos.'
     },
     {
       type: 'Earth Split Planet',
@@ -378,7 +378,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'MASSIVE',
       minRadius: 400,
       maxRadius: 600,
-      generation: 'Unique to Human Solar System. Earth after catastrophic split. Exposed molten core visible. Two halves with debris field between them.'
+      generation: 'Exclusivo del sistema humano: la Tierra partida en dos mitades con el núcleo al rojo vivo y un cinturón inestable que corta el ecuador.'
     },
     {
       type: 'Sun',
@@ -388,7 +388,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'MASSIVE',
       minRadius: 1500,
       maxRadius: 2500,
-      generation: 'One per solar system at center (0,0,0). Emits dynamic light with corona effects. Extreme heat damage when approached. Minimum safe distance: 3000 units.'
+      generation: 'Cada sistema tiene uno en el centro. Irradia calor extremo y debes mantenerte a distancia si no quieres ver cómo la nave se funde.'
     },
     {
       type: 'Portal',
@@ -398,7 +398,7 @@ export class GameObjectsWikiComponent implements OnInit {
       physicsSize: 'ETHEREAL',
       minRadius: 80,
       maxRadius: 150,
-      generation: 'Created by Gate Rite spell. Links two locations in space. Semi-transparent visual with swirling energy. Player can traverse. Persists until dismissed or limit reached.'
+      generation: 'Surgidos tras completar un Gate Rite. Enlazan dos sistemas y permanecen activos para permitir viajes de ida y vuelta.'
     }
   ];
 }

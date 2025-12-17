@@ -218,14 +218,14 @@ export class WikiIndexComponent implements OnInit {
       id: 'legal',
       title: '⚖️ Aviso Legal',
       route: 'legal',
-      description: 'Titular, jurisdicción aplicable, canales de contacto ofuscados y procedimiento de reclamaciones.',
+      description: 'Titular, jurisdicción aplicable, canales de contacto y procedimiento de reclamaciones.',
       keywords: ['legal', 'contacto', 'cookies', 'jurisdiccion', 'reclamaciones']
     },
     {
       id: 'game-objects',
       title: '🌌 Game Objects',
       route: 'game-objects',
-      description: 'Complete catalog of all game objects with masses, collision damage, physics properties, and generation parameters.',
+      description: 'Catálogo de los objetos interactivos del universo, su peligrosidad y cómo afectan a tu nave.',
       keywords: ['asteroids', 'planets', 'mass', 'collision', 'physics', 'damage', 'portals']
     },
     {
@@ -239,21 +239,21 @@ export class WikiIndexComponent implements OnInit {
       id: 'spaceship',
       title: '🚀 Spaceship',
       route: 'spaceship',
-      description: 'Your vessel and its components: body, wings, thrusters, weapons (TBD). Ship models and characteristics.',
+      description: 'Tu nave y sus módulos principales: fuselaje, alas, propulsores, cabina y futuras mejoras.',
       keywords: ['ship', 'thruster', 'wings', 'weapons', 'body', 'components']
     },
     {
       id: 'inventory',
       title: '📦 Inventory & Pilot',
       route: 'inventory',
-      description: 'Breakdown of the inventory overlay, pilot stats (salud, memoria, cordura) and jettison rules.',
+      description: 'Cómo leer el panel de inventario, gestionar la carga y entender las estadísticas del piloto.',
       keywords: ['inventory', 'stats', 'cordura', 'cargo', 'personal gear', 'expulsar']
     },
     {
       id: 'solar-systems',
       title: '☀️ Solar Systems',
       route: 'solar-systems',
-      description: 'Physics and generation of solar systems. Parameters, debris distribution, orbital mechanics, and procedural generation.',
+      description: 'Panorama de los sistemas solares: estructuras típicas, cinturones de escombros y peligros regionales.',
       keywords: ['solar system', 'generation', 'orbits', 'debris', 'physics', 'human system']
     },
     {

@@ -59,9 +59,8 @@ interface ExperienceEventRow {
       <section class="stats">
         <h2>🧬 Ficha del piloto</h2>
         <p>
-          El bloque izquierdo renderiza barras condensadas para salud, memoria y experiencia, además de la cuadrícula de cordura.
-          Los valores provienen directamente de <code>GameStateStore.characterProfile</code> y se actualizan cada vez que un
-          servicio invoca <code>CharacterProfileService.adjustVitals()</code> o <code>adjustExperience()</code>.
+          El bloque izquierdo muestra barras de salud, memoria y experiencia junto a la cuadrícula de cordura. Todo se actualiza
+          en tiempo real cuando completas eventos, aterrizas o sufres daño, así que siempre ves el estado auténtico del piloto.
         </p>
         <div class="stats-grid">
           @for (stat of stats; track stat.name) {
@@ -97,9 +96,8 @@ interface ExperienceEventRow {
       <section class="xp-table">
         <h2>⭐ Eventos de experiencia</h2>
         <p>
-          <code>CharacterProfileService.registerExperienceEvent()</code> usa esta tabla (valores definidos en
-          <code>EXPERIENCE_EVENT_VALUES</code>). Al alcanzar <code>experienceMax</code> el nivel sube y el contador se reinicia con el
-          nuevo tope.
+          Cada acción relevante otorga o resta experiencia según esta tabla. Cuando llenas la barra, subes de nivel y el contador
+          vuelve a cero con un tope mayor.
         </p>
         <table>
           <thead>
@@ -124,10 +122,10 @@ interface ExperienceEventRow {
       <section class="personal-gear">
         <h2>🧥 Equipo personal y slots</h2>
         <ul>
-          <li>El traje determina cuántos accesorios simultáneos puedes mostrar (hasta 3). El panel solo renderiza tantos slots vacíos como permita <code>accessorySlots</code>.</li>
-          <li>Los accesorios más allá de ese límite quedan ocultos hasta que instales un traje mejor o expulses equipo.</li>
-          <li>El botón “Expulsar carga/equipo” del pie funciona con selecciones de carga o de equipo personal; nunca desmonta módulos de nave.</li>
-          <li>Al expulsar carga se llama a <code>Spaceship.removeCargo()</code> y <code>CargoHoldService.removeCargoEntry()</code>; al expulsar equipo personal se elimina la entrada del <code>GameStateStore</code>.</li>
+          <li>El traje determina cuántos accesorios puedes llevar a la vista (hasta 3). El panel solo deja huecos para los slots realmente disponibles.</li>
+          <li>Los accesorios extra quedan almacenados fuera de la vista hasta que mejores el traje o expulses algo.</li>
+          <li>El botón “Expulsar carga/equipo” solo actúa sobre lo que tengas seleccionado en la bodega o en el equipo personal; nunca desmonta módulos de la nave.</li>
+          <li>Los objetos expulsados desaparecen de inmediato y liberan capacidad, así que confirma que no necesitas ese recurso antes de pulsar.</li>
         </ul>
       </section>
 
@@ -146,8 +144,8 @@ interface ExperienceEventRow {
             <h3>Interacción</h3>
             <ul>
               <li>La rueda del ratón desplaza la columna donde se encuentre el cursor (izquierda = equipo personal, centro = módulos, derecha = carga).</li>
-              <li>Cada tarjeta/filas registra un <code>InventoryPanelRegion</code>, así que las selecciones son persistentes incluso si la lista cambia.</li>
-              <li>El pie indica qué elemento está activo y habilita la expulsión solo cuando la selección lo permite.</li>
+              <li>Las selecciones se mantienen aunque la lista cambie, por lo que puedes revisar varias columnas sin perder el foco.</li>
+              <li>El pie indica qué elemento está activo y solo habilita la expulsión cuando de verdad es posible.</li>
             </ul>
           </article>
         </div>
@@ -358,8 +356,8 @@ export class InventoryWikiComponent implements OnInit {
       summary: 'Resumen contextual + botón Expulsar',
       bullets: [
         'Describe la selección actual (slot · etiqueta) para evitar equivocaciones.',
-        'Botón “Expulsar carga/equipo” habilitado solo cuando la selección es de carga o equipo personal.',
-        'El botón registra un `InventoryPanelRegion` de tipo acción, así que respeta la misma lógica de selección.'
+        'El botón “Expulsar carga/equipo” solo se ilumina cuando la selección es válida.',
+        'El panel mantiene la misma selección aunque cambies de columna para que puedas revisar los datos con calma.'
       ]
     }
   ];
@@ -368,30 +366,30 @@ export class InventoryWikiComponent implements OnInit {
     {
       name: 'Salud',
       scope: '0 — 100',
-      summary: 'Integridad física del piloto. Refleja impactos recibidos más allá de los escudos de la nave.',
-      gains: ['Eventos de descanso o scripts que llamen a `adjustVitals({ health: +x })`.', 'Reiniciar partida o checkpoints de misión.'],
-      losses: ['Colisiones y daño ambiental cuando el motor replica el impacto sobre el perfil del piloto.', 'Scripts narrativos que inyecten deltas negativos.']
+      summary: 'Integridad física del piloto cuando el daño traspasa los escudos de la nave.',
+      gains: ['Descansos en planetas o eventos de historia que curan.', 'Respawns completos o checkpoints especiales.'],
+      losses: ['Colisiones fuertes, impactos solares y estados alterados.', 'Eventos narrativos que apliquen heridas.']
     },
     {
       name: 'Memoria',
       scope: '0 — 100',
-      summary: 'Progreso narrativo desbloqueado. No se regenera automáticamente porque representa conocimiento.',
-      gains: ['Descubrimientos clave y escenas que disparan `adjustVitals({ memory: +x })`.', 'Cheats o herramientas de depuración que modifiquen el perfil.'],
-      losses: ['Solo scripts dedicados podrían restarla (la campaña actual no incluye decrementos).', 'Reinicios manuales del perfil mediante herramientas internas.']
+      summary: 'Grado de lucidez y conocimiento recordado por el piloto. No se regenera sola.',
+      gains: ['Misiones de historia, descubrimientos y escenas clave.', 'Consumibles o mejoras específicas que restauren recuerdos.'],
+      losses: ['Ciertos eventos de historia que fuerzan sacrificios.', 'Reinicios manuales del perfil.']
     },
     {
       name: 'Experiencia',
       scope: 'Nivel + XP actual',
-      summary: 'Se alimenta con `adjustExperience(delta)` y sube de nivel al alcanzar `experienceMax`.',
-      gains: ['Eventos registrados en `registerExperienceEvent` (ver tabla).', 'Ajustes directos con `awardExperience` o herramientas de QA.'],
-      losses: ['Evento `PLAYER_DEATH` (−50 XP).', 'Deltas negativos explícitos enviados por scripts o depuración.']
+      summary: 'Sube al realizar acciones heroicas. Al llenar la barra aumentas de nivel.',
+      gains: ['Eventos descritos en la tabla (combate, hallazgos, diplomacia).', 'Recompensas especiales de misiones secundarias.'],
+      losses: ['Muerte del piloto (pierdes parte del progreso).', 'Fallar ciertos eventos críticos.']
     },
     {
       name: 'Cordura',
       scope: 'Base 99 · tope dinámico',
-      summary: 'Casillas disponibles para lanzar glifos. Cada hechizo aprendido reserva parte del máximo y cada lanzamiento consume cordura temporal.',
-      gains: ['`adjustVitals({ sanity: +x })` tras descansos, aterrizajes seguros u otros eventos.', 'Olvidar glifos libera casillas reservadas y restituye el tope efectivo.'],
-      losses: ['Aprender glifos añade reservas permanentes igual a `SpellSanityCost.max`.', 'Castear glifos resta `SpellSanityCost.temp` mediante `applySpellSanityCost`.']
+      summary: 'Casillas disponibles para los glifos. Cada hechizo aprendido bloquea parte del máximo y cada lanzamiento consume cordura temporal.',
+      gains: ['Descansos seguros, aterrizajes exitosos o rituales de recuperación.', 'Olvidar un glifo libera sus casillas reservadas.'],
+      losses: ['Aprender glifos aumenta el coste permanente.', 'Castear hechizos consume cordura temporal hasta que se estabiliza.']
     }
   ];
 

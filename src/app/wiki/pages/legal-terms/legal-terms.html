@@ -14,8 +14,8 @@
       cualquier reclamación relacionada con el cliente WebGL.
     </p>
     <p class="muted">
-      Los datos personales se publican ofuscados y solo se renderizan en el cliente para reducir el scraping automático;
-      la interacción humana sigue siendo necesaria para completar el formulario de contacto.
+      Los datos personales se muestran bajo demanda para reducir el spam automatizado; basta con pulsar el botón inferior
+      para consultarlos en claro.
     </p>
   </section>
 
@@ -25,8 +25,8 @@
       <span class="badge">Persona física</span>
     </div>
     <p>
-      La información se descodifica manualmente para evitar spiders sencillos. Si necesitas comparar con documentación
-      contractual previa, incluye la referencia del acuerdo en tu mensaje.
+      La información se presenta tras confirmar la acción para asegurarnos de que la petición proviene de una persona real.
+      Si necesitas contrastar datos con contratos anteriores, indica la referencia correspondiente en tu mensaje.
     </p>
 
     @if (hasRevealed()) {
@@ -47,8 +47,7 @@
     } @else {
       <div class="reveal-block">
         <p>
-          Haz clic en «Mostrar datos verificados» para revelar el nombre legal, el municipio y el correo operativo. Este
-          paso evita que los crawlers que solo leen el HTML estático copien los datos sin interacción.
+          Haz clic en «Mostrar datos verificados» para revelar el nombre legal, el municipio y el correo operativo.
         </p>
         <button type="button" class="reveal-button" (click)="revealContact()">Mostrar datos verificados</button>
       </div>
@@ -87,16 +86,16 @@
       necesarios para identificar la sesión del piloto y sincronizar partidas:
     </p>
     <ul>
-      <li><strong>Auth:</strong> tokens Cognito guardados en <em>sessionStorage/localStorage</em> para iniciar sesión en el launcher.</li>
+      <li><strong>Inicio de sesión:</strong> credenciales temporales necesarias para validar la identidad del piloto.</li>
       <li><strong>Cloud Saves:</strong> identificadores del slot activo para reanudar el guardado en la nube.</li>
-      <li><strong>Preferencias locales:</strong> ajustes de audio y paneles guardados en el navegador.</li>
+      <li><strong>Preferencias locales:</strong> ajustes de audio y paneles almacenados en tu navegador.</li>
     </ul>
     <p>
       Consulta los textos completos en <a href="/privacy-policy.html" target="_blank" rel="noopener">Política de Privacidad</a> y
       <a href="/cookies-policy.html" target="_blank" rel="noopener">Política de Cookies</a>. Ambos documentos se versionan con fecha y se mantienen en el repositorio.
     </p>
     <p>
-      El flujo de inicio de sesión se delega a la landing oficial (<strong>atropello-games.es</strong>). Ese sitio controla sus propias cookies del launcher y trata los datos de acceso bajo la misma titularidad, mientras que el cliente TO3 solo conserva el token emitido por Cognito y nunca guarda el correo completo.
+      El flujo de inicio de sesión se delega a la landing oficial (<strong>atropello-games.es</strong>). Ese sitio controla sus propias cookies del launcher y trata los datos de acceso bajo la misma titularidad, mientras que el cliente TO3 solo conserva los datos mínimos necesarios para validar la sesión.
     </p>
     <p>
       Puedes abrir esa landing directamente pulsando el logotipo de la barra superior o visitando
@@ -122,9 +121,8 @@
   <section class="legal-block" id="licencias">
     <h2>Propiedad intelectual y licencias</h2>
     <p>
-      El inventario de assets y licencias de terceros vive en la carpeta <code>/documentation/legal/</code> y se refleja públicamente en la página
-      <a href="/third-party-licenses/" target="_blank" rel="noopener">Third Party Licenses</a>. Las colaboraciones musicales actuales siguen los términos
-      descritos en <em>documentation/landing-requests/audio-terms.md</em>.
+      El inventario de assets y licencias de terceros se publica en la página
+      <a href="/third-party-licenses/" target="_blank" rel="noopener">Third Party Licenses</a>, con texto completo y vigencia de cada proveedor.
     </p>
     <ul>
       <li>Los materiales aportados por terceros se usan bajo licencia revocable; cualquier revocación se aplica en el siguiente despliegue.</li>

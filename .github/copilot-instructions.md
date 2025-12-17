@@ -1,8 +1,7 @@
 <!-- Use this file to provide workspace-specific custom instructions to Copilot. For more details, visit https://code.visualstudio.com/docs/copilot/copilot-customization#_use-a-githubcopilotinstructionsmd-file -->
 
-- Clarify Project Requirements
-	This is an Angular 20 SPA with header, footer, and main content area for OpenGL web game.
-  Angular 20 project created with routing, SCSS, SSR, and zoneless configuration.
+- Aclarar los requisitos del proyecto.
+Este proyecto es un Angular 20 SPA con encabezado, pie de página y área de contenido principal para juegos web OpenGL (webGL). Creado con routing, SCSS, SSR y configuración zoneless.
 
 - En la carpera /documentation existe la documentacion técnica del proyecto, escrita en español. Utiliza esta documentación para conocer el proyecto cuando se analiza codigo relacionado con una de las funcionalidades documentadas.
 

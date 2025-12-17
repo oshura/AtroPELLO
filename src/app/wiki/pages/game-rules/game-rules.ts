@@ -23,25 +23,22 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <h2>☁️ Cloud Saves · Regla actual</h2>
         <div class="rule-content">
           <p>
-            Cada piloto comienza con <strong>un único slot</strong> adjudicado en la nube. El motor sincroniza los slots al arrancar si hay sesión y
-            carga automáticamente la partida más reciente de tu piloto. Si el botón del header dice “Guardar partida” significa que guardará
-            directamente sobre ese slot. Cuando desbloquees magia <em>Memoria Ancestral</em> o módulos como <em>Máquina del Tiempo</em>, tu
-            personaje añadirá más índices a su array de slots y el CTA ya no guardará sin preguntar: abrirá el diálogo en la pestaña “Partidas”.
+            Cada piloto comienza con <strong>un único slot</strong> en la nube. El juego sincroniza tus partidas al iniciar sesión y carga automáticamente la más reciente.
+            Si el botón del header dice “Guardar partida” es porque guardará sobre ese slot sin pedir confirmación.
           </p>
           <ul>
-            <li><strong>Ver todas las partidas</strong> muestra el master data completo. Mientras está activo no puedes guardar para evitar sobrescribir otras campañas.</li>
-            <li><strong>Guardar/Load/Delete</strong> sólo se habilitan cuando seleccionas un slot (si solo hay uno se selecciona automáticamente).</li>
-            <li>El algoritmo <code>CloudSaveSlotFinderService.acquireNewSlot()</code> reserva el siguiente índice libre cuando un piloto gana un slot adicional.</li>
-            <li>El array de slots y la capacidad máxima se guardan dentro del <code>SaveGamePayload.metadata</code> para que cada carga respete tus mejoras.</li>
+            <li><strong>Ver todas las partidas</strong> muestra la lista completa de campañas. Mientras la vista esté abierta no puedes guardar para evitar sobrescribir otra historia.</li>
+            <li><strong>Guardar/Load/Delete</strong> sólo se activan cuando eliges un slot (si solo tienes uno, queda marcado por defecto).</li>
+            <li>Al desbloquear <em>Memoria Ancestral</em> o módulos como <em>Máquina del Tiempo</em> ganas slots adicionales y el botón “Guardar” abre el selector en vez de sobrescribir.</li>
+            <li>La cantidad de slots y tus mejoras quedan ligadas al piloto, así que cada carga respeta el progreso que hayas comprado o ganado.</li>
           </ul>
           <p>
-            Si inicias una nueva campaña con el mismo usuario, la master data puede contener varios pilotos. El juego siempre cargará la partida más
-            reciente de tu piloto activo y ocultará el resto salvo que pulses “Ver todas las partidas”.
+            Si creas varios pilotos con el mismo usuario, el juego siempre mostrará primero la campaña más reciente de tu personaje activo y ocultará las demás
+            salvo que pulses “Ver todas las partidas”.
           </p>
           <p>
-            Cuando guardas en sistemas remotos tras un Gate Rite o un Sigillum móvil, el payload guarda también el <em>snapshot label</em> y el ID exacto del
-            sistema activo. Al cargar, el motor busca primero esos campos antes que cualquier anchor por defecto, así que aunque el Sigillum siga apuntando al
-            trail humano, te rehidratará en el sistema que fotografiaste.
+            Guardar tras un Gate Rite, un Sigillum móvil o cualquier salto remoto captura el sistema exacto, el portal y los portales abiertos. Al cargar vuelves a esa
+            instantánea en lugar del ancla humano por defecto, aunque el Sigillum original apuntara a otro lugar.
           </p>
         </div>
       </section>
@@ -50,40 +47,34 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <h2>🛬 Aterrizaje manual y pilotos HUD</h2>
         <div class="rule-content">
           <p>
-            El HUD muestra dos pilotos junto al marquee: <strong>Landing</strong> (verde) cuando la aproximación cumple todos los
-            requisitos y <strong>Threat</strong> (rojo) cuando el motor detecta condiciones peligrosas. Ambos se alimentan de
-            <code>GameEngine.updateLandingTelemetry()</code> cada frame.
+            El HUD muestra dos pilotos junto al marquee: <strong>Landing</strong> (verde) cuando cumples las condiciones y <strong>Threat</strong> (rojo) cuando algo pone en peligro la maniobra.
           </p>
 
-          <h3>Checklist para encender el piloto verde</h3>
+          <h3>Checklist para aterrizar</h3>
           <ol>
-            <li><strong>Reduce la velocidad</strong> por debajo de <code>5 u/s</code> usando freno (S) o pulsos cortos inversos.</li>
-            <li><strong>Alinea la nave</strong> con la normal del planeta: el producto punto debe ser ≤ <code>0.5</code> (≈ ±60° respecto a la perpendicular).</li>
-            <li><strong>Acércate</strong> hasta situarte a ≤ <code>50u</code> de la superficie (distancia centro-radio).</li>
-            <li><strong>Mantén los valores estables</strong> durante al menos <code>3000 ms</code> (<code>LANDING_READY_HOLD_MS</code>, 3&nbsp;s), sin oscillaciones.</li>
+            <li><strong>Velocidad:</strong> reduce por debajo de 5&nbsp;u/s usando el freno (<kbd>S</kbd>) o pulsos cortos inversos.</li>
+            <li><strong>Alineación:</strong> coloca la nave casi paralela a la superficie (±60°). Evita picar directo al suelo.</li>
+            <li><strong>Distancia:</strong> acércate hasta quedar a 50&nbsp;u o menos sin chocar con la esfera del planeta.</li>
+            <li><strong>Estabilidad:</strong> mantenlo todo estable durante unos 3&nbsp;s. Si fallas algún punto, el piloto verde se apaga y debes reiniciar el proceso.</li>
           </ol>
 
           <div class="warning">
-            <strong>Consejo:</strong> cualquier violación reinicia el temporizador interno y el piloto vuelve a apagarse. Ajusta primero velocidad, luego alineación y, por último, distancia.
+            <strong>Consejo:</strong> ajusta primero la velocidad, después la orientación y por último la distancia. Es la forma más rápida de encender el piloto verde.
           </div>
 
           <h3>Iniciar la secuencia</h3>
           <ul>
-            <li>Con el piloto verde encendido y <strong>Threat</strong> apagado, pulsa <kbd>Enter</kbd> para llamar a <code>startLandingSequence</code>.</li>
-            <li>El Animation Manager toma el control, bloquea inputs y aplica un flare automático hasta tocar superficie.</li>
-            <li>Tras el touchdown se abre el Landing Panel con opciones de permanecer o despegar; los daños siguen suprimidos hasta completar una orden.</li>
+            <li>Con verde encendido y <strong>Threat</strong> apagado, pulsa <kbd>Enter</kbd> para que la nave complete automáticamente el touchdown.</li>
+            <li>Durante la animación se bloquean los controles y recibes un breve flare de protección contra daño.</li>
+            <li>Al tocar suelo se abre el panel de aterrizaje con acciones de descanso, exploración o despegue.</li>
           </ul>
 
           <h3>Piloto rojo “Threat”</h3>
-          <p><code>computeLandingThreat()</code> solo activa la luz si un objetivo hostil (<code>RelationService = enemy</code>) entra en el radio de ≤ <code>500u</code>. El motivo que genera se corresponde con ese game object e incluye la distancia.</p>
-          <ul>
-            <li><strong>Hostil a ≤ 500u:</strong> cuando aparece, el reason luce como “Garra Umbral a 184u”.</li>
-          </ul>
-          <p>Mientras el piloto rojo esté activo, <code>tryStartLandingSequence</code> devuelve temprano sin mensajes adicionales: el propio indicador es el bloqueo.</p>
+          <p>Se activa si un enemigo, meteorito o anomalía entra a 500&nbsp;u o menos. Mientras esté encendido no podrás iniciar el aterrizaje.</p>
           <h4>Cómo despejar la amenaza</h4>
           <ul>
-            <li>Destruye o empuja al enemigo fuera del radio (Void Jump/Speed Rite sirven para abrir hueco).</li>
-            <li>Si no quieres combatir, traza una órbita amplia hasta que todos los hostiles queden a &gt;500u.</li>
+            <li>Destruye o empuja al enemigo usando tus glifos o maniobras evasivas.</li>
+            <li>En lugar de combatir, traza una órbita amplia hasta que todos los hostiles queden fuera del radio.</li>
           </ul>
         </div>
       </section>
@@ -93,24 +84,24 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <div class="rule-content">
           <h3>Asteroid Collisions</h3>
           <ul>
-            <li><strong>Small Asteroids:</strong> Full 3D physics. Asteroids bounce realistically based on impact angle and relative velocities</li>
-            <li><strong>Momentum Conservation:</strong> Both ship and asteroid velocities change according to physics</li>
-            <li><strong>Cluster Ejection:</strong> Hitting cluster asteroid ejects it, making it independent</li>
-            <li><strong>Damage:</strong> 10 HP per small asteroid, 75 HP for super, 150 HP for mega</li>
+            <li><strong>Asteroides pequeños:</strong> Rebotan según el ángulo del impacto y la velocidad relativa, así que un toque suave apenas te moverá y un choque frontal te lanzará en otra dirección.</li>
+            <li><strong>Intercambio de velocidad:</strong> Ambos objetos cambian su trayectoria tras la colisión; puedes usarlo para empujar rocas fuera del camino.</li>
+            <li><strong>Trails fragmentados:</strong> Al golpear una roca perteneciente a un cluster, esa pieza se independiza y empieza a vagar sola.</li>
+            <li><strong>Daño:</strong> 10&nbsp;HP por asteroide pequeño, 75&nbsp;HP por uno “super” y 150&nbsp;HP por un “mega”.</li>
           </ul>
 
           <h3>Planet Collisions</h3>
           <ul>
-            <li><strong>Instant Catastrophe:</strong> 100,000 damage (ship has 1000 HP)</li>
-            <li><strong>Ship Slides:</strong> If contact occurs, ship is pushed tangentially around planet</li>
-            <li><strong>No Landing:</strong> High-speed contact is not landing - it's death</li>
+            <li><strong>Choque fatal:</strong> Impactar un planeta inflige 100.000 de daño (tu nave sólo tiene 1000&nbsp;HP).</li>
+            <li><strong>Rozes:</strong> Si apenas rozas la superficie, la nave se desliza alrededor del planeta conservando su impulso lateral.</li>
+            <li><strong>Sin atajos:</strong> Un golpe a alta velocidad nunca cuenta como aterrizaje; siempre es destrucción.</li>
           </ul>
 
           <h3>Sun Collision</h3>
           <ul>
-            <li><strong>Extreme Danger:</strong> 100,000 damage on contact</li>
-            <li><strong>Heat Damage:</strong> Proximity damage TBD</li>
-            <li><strong>Minimum Distance:</strong> Stay at least 3000 units away</li>
+            <li><strong>Peligro extremo:</strong> Contacto directo = 100.000 de daño instantáneo.</li>
+            <li><strong>Radiación:</strong> El calor empieza a morder tus escudos mucho antes de tocar la superficie.</li>
+            <li><strong>Distancia segura:</strong> Mantente al menos a 3000&nbsp;u para no entrar en la zona de quemado.</li>
           </ul>
         </div>
       </section>
@@ -208,112 +199,38 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
       <section class="rule-section">
         <h2>🌀 Respawn & Sigillum</h2>
         <div class="rule-content">
-          <p>
-            Cuando mueres, <code>RespawnService</code> prepara un nuevo contexto para el motor. Existen dos rutas:
-          </p>
+          <p>Cuando mueres, el juego recompone el sistema y coloca la nave en uno de estos dos contextos:</p>
           <ul>
-            <li>
-              <strong>Sin Respawn Sigillum:</strong> el juego usa el <em>ancla por defecto</em> sembrado al arrancar la partida
-              (label «Trail Entry»). Ese anchor se guarda en <code>GameStateStore.defaultRespawnAnchor</code> y siempre apunta al
-              inicio del trail terrestre dentro de <code>human-system</code>; ya no existe el respawn improvisado cerca del sol.
-            </li>
-            <li>
-              <strong>Con Sigillum grabado:</strong> se reutiliza tu ancla actual (posición, planeta, snapshot) y
-              <code>UniverseStateSnapshotService.ensureSystemState()</code> carga ese sistema antes de llamar a <code>restartWithContext()</code>.
-            </li>
+            <li><strong>Sin Sigillum:</strong> reapareces en el ancla humano “Trail Entry”, lejos del sol y con todos los instrumentos recomenzados.</li>
+            <li><strong>Con Sigillum:</strong> vuelves exactamente al punto que sellaste, con planeta, órbita y portales tal y como estaban cuando grabaste el símbolo.</li>
           </ul>
-          <p>
-            Cada sistema queda etiquetado dentro de <code>PortalPersistenceService</code>. Cuando atraviesas un portal,
-            el motor refresca el snapshot del sistema origen con ese mismo label antes de aplicar el destino, de modo que
-            cualquier planeta destruido, sello de portal o rastro de lesser beings se conserva para el siguiente retorno.
-          </p>
-          <p>
-            Antes de reanudar el loop tras un respawn, <code>resetPanelInteractionState()</code> limpia mapa, grimorio e inventario,
-            desbloquea el <em>PanelEventCoordinator</em> y restaura el cursor del canvas. Así ningún Sigillum deja el mouse
-            congelado tras una muerte: puedes volver a abrir paneles o atacar inmediatamente sin reiniciar el juego.
-          </p>
-          <p>
-            Desde la build actual, cada muerte dispara el mismo ritual: antes de reconstruir el contexto de respawn,
-            <code>GameEngine.persistActiveSystemState('respawn-transition')</code> captura el sistema activo, guarda los lesser
-            beings en memoria y sobrescribe su etiqueta. Así, incluso si reapareces en el mismo sistema, verás exactamente el
-            estado en el que caíste (portales sellados, planetas demolidos, debris flotando, etc.).
-          </p>
-          <p>
-            Ese refresco sólo ocurre si sigues en el mismo sistema que tu Sigillum. El motor compara el <code>systemId</code> del
-            ancla con el snapshot activo antes de clonar nada, de modo que un Gate Rite o una muerte lejana ya no pueden
-            sobrescribir la etiqueta <code>respawn-anchor-latest</code>; únicamente cuando estás en casa se vuelca el nuevo portal en
-            el sello.
-          </p>
-          <p>
-            Esas capturas incluyen ahora un identificador persistente del sistema y el bloque <code>lesserBeingMemory</code>. Si
-            abandonas un sistema con un lesser en pleno salto y vuelves horas después (o tras reiniciar el juego), el snapshot
-            rehidrata los datos desde el propio portal, por lo que el intruso sigue acechando en el mismo borde del sistema.
-          </p>
-          <p>
-            También se conserva el dios primigenio que regenta cada sistema: el serializer añade <code>meta.elderGod</code> antes
-            de persistirlo y <code>PortalPersistenceService</code> nunca vuelve a sortearlo. Así, cuando reapareces mediante Sigillum,
-            Gate Rite o un respawn completo, verás a la misma deidad dominando el cielo en lugar del fallback genérico.
-          </p>
-          <p>
-            Para evitar portales "fantasma" se añadió un índice dentro de <code>PortalPersistenceService</code>: cada vez que se
-            guarda un sistema, se sobreescribe cualquier snapshot previo con el mismo <em>persistentSystemId</em> y se reasigna cada
-            <code>portalId</code> al label más reciente. Ya no existen versiones antiguas de un mismo sistema; al cruzar un portal o
-            reaparecer tras una muerte siempre recuperas la última captura válida, con los dos extremos del portal enlazados.
-          </p>
-          <p>
-            Desde la última build, <code>GamePersistenceService.loadGame()</code> descarta el runtime humano antes de reanudar una
-            partida y delega en <code>UniverseStateSnapshotService.replaceRuntimeWithPayload()</code> cuando la etiqueta guardada se
-            perdió. Ese helper sintetiza un snapshot con los objetos del payload, lo fija en <code>PortalPersistenceService</code>
-            (pin) y sólo entonces vuelve a llamar a <code>restartWithContext()</code>. Así, incluso si viajaste y el label original
-            fue evictado, los loads vuelven exactamente al sistema que grabaste en el slot.
-          </p>
-          <p>
-            Además, el payload embebido ahora captura órbitas, radios y metadata completa de planetas, soles y portales. Cuando se
-            activa la ruta de rehidratación, ese bloque serializado reconstruye cada planeta con su órbita, habitantes y sellos en
-            vez de caer en el fallback genérico de «planet-B», por lo que los loads sin snapshot recuperan el sistema tal cual lo
-            dejaste antes del Gate Rite o del Sigillum.
-          </p>
-          <p>
-            El grimorio también conserva tu distribución personalizada: cada vez que mueves un glifo, la posición normalizada se
-            guarda en la partida y, al cargar o reanudar tras un Sigillum, el panel aplica automáticamente ese layout antes de
-            mostrar el libro. No hace falta recolocar runas después de un respawn ni tras volver desde el menú principal.
-          </p>
-          <p>
-            Durante un Void Jump ya no se improvisa el invasor: el motor planifica el encuentro antes de mostrar la animación,
-            fija la especie que va a manifestarse y la secuencia visual interroga a <code>GameEngine.getCurrentSystemElderGod()</code>
-            para mostrar siempre a la misma deidad que gobierna ese sistema. Si la tirada descarta la irrupción, la animación
-            conserva el mismo icono y el salto no reintentará la invocación al aterrizar.
-          </p>
-          <p>
-            Ese plan respeta ahora la jerarquía de patronazgo: cada pool descarta automáticamente a las especies cuyo
-            <em>LESSER_BEING_PATRON</em> no coincide con el dios que rige el sistema. Así, un dominio de Cthulhu sólo puede
-            proponer Semillas Estelares y Azathoth monopoliza los Shoggoths; si algún pool queda vacío, el motor cae al
-            conjunto genérico y deja un warning para depurar la configuración.
-          </p>
-          <p>
-            Las Semillas y los Vampiros invocados desde portales comparan constantemente la distancia a la nave con la distancia a
-            la superficie del planeta libre más cercano; si la nave gana aunque sea por unos metros, la persecución es obligatoria
-            y sólo se desvían a colonizar cuando existe un planeta desocupado mucho más cercano.
-          </p>
-          <p>
-            Además, <code>handlePortalTraversal()</code> pausa el consumo de energía del vacío y reinicia el muestreo justo después de
-            colocarte frente al portal de destino. Así evitas perder 100u de void energy por recorrer medio sistema en un único frame.
-          </p>
-          <p>
-            Gate Rite ejecuta la misma captura justo antes de saltar: la animación llama a <code>persistActiveSystemState('gate-rite-transition')</code>
-            antes de aplicar el snapshot remoto, de modo que el sistema humano conserva el portal arcano recién abierto aunque mueras lejos de él.
-          </p>
-          <p>
-            Los respawns siempre reutilizan un label existente: <code>human-default-system</code> se sobreescribe automáticamente
-            cuando abandonas el trail humano sin Sigillum, y <code>respawn-anchor-latest</code> ahora se reescribe (solo cuando
-            existe un Sigillum activo) cada vez que <code>GameEngine.persistActiveSystemState()</code> captura el sistema (muerte,
-            Gate Rite o cruce de portal). Antes de reaparecer, el motor rehidrata esa etiqueta desde
-            <code>PortalPersistenceService</code> incluso si ya estabas en el mismo sistema, así tu Sigillum conserva portales,
-            debris y lesser beings recientes sin volver a grabarlo mientras el fallback humano permanece intacto.
-          </p>
-          <p class="warning">
-            Recordatorio: los sellos se limpian cuando inicias un «Full Respawn», así que vuelve a grabar uno si quieres reaparecer en un planeta concreto.
-          </p>
+
+          <h3>Qué conserva un Sigillum</h3>
+          <ul>
+            <li>Portales y sellos: cada vez que abres o cierras uno, el estado queda ligado al sistema y se mantiene entre muertes o viajes.</li>
+            <li>Planetas alterados: si destruyes un mundo, limpias un bioma o divides a la Tierra, la escena se conserva cuando regreses.</li>
+            <li>Lesser beings: su posición, objetivo y memoria se guardan, así que un perseguidor reaparece exactamente donde lo dejaste.</li>
+            <li>Deidad regente: cada sistema mantiene al mismo Elder God, por lo que las incursiones y cielos siguen siendo coherentes sesión tras sesión.</li>
+            <li>Grimorio y paneles: la disposición de glifos y el estado de los paneles se restauran al cargar o tras un respawn.</li>
+          </ul>
+
+          <h3>Portales y transiciones</h3>
+          <ul>
+            <li>Al cruzar un portal o ejecutar Gate Rite, el juego guarda una instantánea del sistema origen antes de saltar, evitando portales fantasma o duplicados.</li>
+            <li>Las dos bocas de cada portal permanecen enlazadas incluso después de morir o atravesar otro sistema.</li>
+            <li>El consumo de Energía del Vacío se pausa durante la animación de portal y se reactiva al aparecer frente al destino.</li>
+            <li>Los labels de sistema se reciclan en orden, así que nunca quedarás atrapado con capturas antiguas o inconsistentes.</li>
+          </ul>
+
+          <h3>Lesser beings y deidades</h3>
+          <ul>
+            <li>Cada sistema tiene un patrono concreto (Cthulhu, Azathoth, etc.) que define qué seres pueden invadirlo.</li>
+            <li>Cuando ejecutas Void Jump, el juego decide de antemano si habrá incursión y qué criatura aparecerá según el patrono vigente.</li>
+            <li>Las Semillas y Vampiros comparan constantemente la distancia a tu nave con la de los planetas cercanos: si estás más cerca, la persecución es obligatoria.</li>
+          </ul>
+
+          <div class="warning">
+            Recordatorio: los Sigillum se limpian al iniciar un “Full Respawn”. Graba otro enseguida si quieres volver a un planeta concreto.</div>
         </div>
       </section>
 

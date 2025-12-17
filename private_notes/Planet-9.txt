@@ -1,6 +1,8 @@
 /*********  PENDING ***********/
 
  - Linterna.
+ 
+ - Wiki solo funcional no develop.
 
  - Landing menus o pensar bien el juego de landing:
 	- Poder ver personaje y nave estando aterrizado.

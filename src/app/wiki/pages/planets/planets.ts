@@ -113,21 +113,21 @@ interface Planet {
 
       <section class="landing">
         <h2>🛬 Landing Mechanics</h2>
-        <p>Landing sigue un checklist muy específico antes de ceder el control al panel:</p>
+        <p>El aterrizaje manual es seguro siempre que sigas estos pasos:</p>
         <ul>
-          <li><strong>Velocidad:</strong> reduce a &le; <strong>5u/s</strong>; el HUD central muestra el valor en tiempo real.</li>
-          <li><strong>Distancia:</strong> ingresa en la esfera de colisión y mantente a &le; <strong>50u</strong> de la superficie.</li>
-          <li><strong>Orientación:</strong> mantén la nariz prácticamente tangente (±60°) para no clavar la nave.</li>
-          <li><strong>Hold:</strong> conserva estas condiciones durante <strong>3000&nbsp;ms</strong> (<code>LANDING_READY_HOLD_MS</code>) hasta que el piloto verde «Landing» se encienda.</li>
-          <li><strong>Threat:</strong> el piloto rojo se prende si existe un hostil &le;500u (<code>computeLandingThreat</code>). No podrás iniciar la secuencia hasta que quede apagado.</li>
-          <li><strong>Secuencia:</strong> con verde encendido y rojo apagado, pulsa <kbd>Enter</kbd> para ejecutar <code>startLandingSequence</code> (approach &rarr; glide &rarr; fade). El despegue usa <code>startTakeoffSequence</code> para revertir los pasos.</li>
+          <li><strong>Velocidad:</strong> baja a 5u/s o menos; el HUD central te dirá cuándo estás dentro del margen.</li>
+          <li><strong>Distancia:</strong> acércate hasta quedar a 50u de la superficie sin atravesar la capa de choque.</li>
+          <li><strong>Orientación:</strong> mantén la nariz casi paralela al terreno (±60°) para que la nave no clave el morro.</li>
+          <li><strong>Estabilidad:</strong> mantén velocidad, distancia y orientación durante unos 3 segundos hasta que se ilumine el piloto verde “Landing”.</li>
+          <li><strong>Amenazas:</strong> si el piloto rojo “Threat” se enciende es porque hay un hostil a menos de 500u; elimínalo o aléjate antes de continuar.</li>
+          <li><strong>Confirmación:</strong> con verde encendido y rojo apagado pulsa <kbd>Enter</kbd> para ejecutar la secuencia automática (approach → glide → fade) o reinicia con la misma tecla para despegar.</li>
         </ul>
-        <p>Mientras estás en estado <em>landed</em> el HUD abre el Landing Panel:</p>
+        <p>Una vez en tierra el panel de aterrizaje te permite:</p>
         <ul>
-          <li><strong>Descanso / Intel:</strong> botones que ejecutan acciones como Rest o Registrar anomalías; los efectos (cordura, salud, logs) se reflejan en <code>LandingEventResult</code>.</li>
-          <li><strong>Exploración:</strong> Búsqueda de artefactos, void mass, civilizaciones o lesser beings. Cada acción consume narrativa desde los JSON de <code>LandingNarrativeService</code>.</li>
-          <li><strong>Diplomacia:</strong> Desbloquea misiones raciales, sobornos, submisiones y rituales de visión que generan <em>Clue Tokens</em> (tiers minor/major/final) antes de entregar el objetivo.</li>
-          <li><strong>Memoria:</strong> Completar la misión racial otorga el porcentaje indicado en la tabla (≈80% total) y cambia el planeta a estado Ally.</li>
+          <li><strong>Descansar o sanar:</strong> recupera salud, cordura o memoria según el tipo de campamento.</li>
+          <li><strong>Registrar anomalías:</strong> genera entradas de intel, busca artefactos o recolecta void mass si el bioma lo permite.</li>
+          <li><strong>Interactuar con habitantes:</strong> desbloquea misiones raciales, obtiene pistas y sube diplomacia hasta convertir el planeta en aliado.</li>
+          <li><strong>Rearmar la tripulación:</strong> repone recursos personales antes de volver al espacio.</li>
         </ul>
       </section>
     </div>

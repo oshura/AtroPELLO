@@ -161,8 +161,8 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
               <span>Zoom In/Out</span>
             </div>
           </div>
-          <p class="note camera-note">Resize the browser or detach the canvas whenever you want—the resize-aware pipeline recalculates the cockpit camera, viewport and HUD/reticle alignment in the next frame so nothing stretches.</p>
-          <p class="note camera-note">Los modos externos 0 y 7 ahora incorporan un <em>intent offset</em>: cuando mantienes <kbd>W/S/A/D/Q/E</kbd> la cámara se desplaza o banca ligeramente en esa dirección, y al acelerar/frenar con <kbd>+</kbd>/<kbd>-</kbd> sólo cambia la distancia hacia la nave sin girar el ángulo. Todo vuelve suave a su ancla al soltar las teclas. El HUD interno (modo 8) y la cámara 9 permanecen sin cambios.</p>
+          <p class="note camera-note">Puedes redimensionar la ventana o sacar el canvas cuando quieras: la cámara y el HUD se reajustan al instante, sin estirar la imagen.</p>
+          <p class="note camera-note">Las cámaras externas ahora aplican un ligero <em>intent offset</em>: al mantener <kbd>W/S/A/D/Q/E</kbd> la vista se desplaza o banca en esa dirección, y al acelerar/frenar con <kbd>+</kbd>/<kbd>-</kbd> sólo varía la distancia a la nave. Todo vuelve suave a su ancla al soltar las teclas. La vista interior y la cinemática se mantienen fijas.</p>
 
           <div class="control-group">
             <h3>Interface</h3>
@@ -184,7 +184,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             </div>
           </div>
         </div>
-        <p class="note interface-note">Map, Grimoire and Inventory toggles now comparten un cooldown común de 500&nbsp;ms para evitar dobles aperturas accidentales. Puedes cerrar y reabrir cualquiera casi al instante, pero el motor ignora inputs repetidos dentro de esa ventana para que el focus del cursor no se rompa.</p>
+        <p class="note interface-note">Map, Grimoire e Inventory comparten un cooldown común de 500&nbsp;ms para evitar dobles aperturas accidentales. Puedes cerrar y reabrir cualquiera casi al instante, pero la interfaz descarta pulsaciones repetidas dentro de esa ventana para que el cursor no se rompa.</p>
       </section>
 
       <section class="hud-marquee">
@@ -226,7 +226,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <p class="note">Se emiten automáticamente al iniciar sesión o tras reconstruir el HUD para dejar claro el estado de emergencia inicial.</p>
           </div>
         </div>
-        <p class="note marquee-note">Queue is throttled, deduped per event type and capped to keep the scroll readable. Expect a ~1.2s grace period after respawn before void energy starts draining again.</p>
+        <p class="note marquee-note">El feed filtra duplicados y limita la velocidad del scroll para que siempre puedas leer los avisos. Tras cada respawn hay un respiro de ~1.2&nbsp;s antes de que la Energía del Vacío vuelva a bajar.</p>
         <p class="note marquee-note">Cada alerta completa una única vuelta en el panel antes de caducar y el scroll aplica compensación de FPS bajos para que los textos no avancen a golpes incluso cuando el juego corre a 32&nbsp;FPS. El panel se mantiene discreto cuando no hay cola y se ilumina con un halo verde intenso en cuanto vuelve a emitir mensajes.</p>
       </section>
 
@@ -239,7 +239,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <li>Performance upgrades (better thrusters, reinforced hull)</li>
           <li>Specialized builds (explorer, combat, speed racer)</li>
         </ul>
-        <p class="note">Current implementation: Single ship model with all components. Code architecture supports component swapping system.</p>
+        <p class="note">Por ahora existe un único modelo con todos los módulos instalados; las próximas versiones permitirán intercambiarlos de forma oficial.</p>
       </section>
     </div>
   `,
