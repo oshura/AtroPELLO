@@ -7,8 +7,8 @@ import { Router } from '@angular/router';
   standalone: true,
   imports: [CommonModule],
   template: `
-    <div class="wiki-float-stack">
-      @if (showBackButton) {
+    @if (showBackButton) {
+      <div class="wiki-back-stack">
         <button
           type="button"
           class="wiki-back-btn"
@@ -18,8 +18,10 @@ import { Router } from '@angular/router';
           <span class="icon">↩</span>
           <span class="label">{{ backLabel }}</span>
         </button>
-      }
+      </div>
+    }
 
+    <div class="wiki-close-wrap">
       <button
         type="button"
         class="wiki-close-btn"
@@ -33,19 +35,23 @@ import { Router } from '@angular/router';
   styles: [`
     :host {
       position: fixed;
-      top: 80px;
-      right: 24px;
+      top: 32px;
+      left: 0;
+      right: 0;
       z-index: 9998;
       display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
       pointer-events: none;
+      padding: 0 32px;
     }
 
-    .wiki-float-stack {
+    .wiki-back-stack,
+    .wiki-close-wrap {
+      pointer-events: auto;
       display: flex;
       flex-direction: column;
       gap: 12px;
-      align-items: flex-end;
-      pointer-events: auto;
     }
 
     .wiki-close-btn {
@@ -135,8 +141,8 @@ import { Router } from '@angular/router';
 
     @media (max-width: 960px) {
       :host {
-        top: 64px;
-        right: 16px;
+        top: 24px;
+        padding: 0 16px;
       }
 
       .wiki-back-btn {
@@ -160,7 +166,7 @@ export class WikiCloseComponent {
   @Output() clicked = new EventEmitter<void>();
   @Input() showBackButton = true;
   @Input() backTarget: string | string[] | null = '/wiki';
-  @Input() backLabel = 'Back to Wiki';
+  @Input() backLabel = 'Back';
   @Input() backAriaLabel = 'Go back to the wiki index';
   @Output() backClicked = new EventEmitter<void>();
 

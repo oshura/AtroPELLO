@@ -31,7 +31,6 @@ interface ExperienceEventRow {
     <app-wiki-close></app-wiki-close>
     <div class="wiki-page">
       <header class="page-header">
-        <a routerLink="/wiki" class="back-link">← Back to Wiki</a>
         <h1>📦 Panel de Inventario</h1>
         <p class="lead">
           Referencia rápida para entender qué muestra cada columna del inventario (tecla <kbd>I</kbd>), cómo se calculan las
@@ -169,13 +168,6 @@ interface ExperienceEventRow {
 
     .page-header {
       margin-bottom: 2rem;
-    }
-
-    .back-link {
-      color: #7dd3fc;
-      text-decoration: none;
-      display: inline-block;
-      margin-bottom: 1rem;
     }
 
     .page-header h1 {
@@ -326,7 +318,7 @@ export class InventoryWikiComponent implements OnInit {
   panelSections: PanelSection[] = [
     {
       title: 'Perfil del piloto',
-      summary: 'Columna izquierda (35% del ancho)',
+      summary: 'Columna izquierda del panel',
       bullets: [
         'Muestra nombre, nivel y barras de Salud, Memoria y Experiencia (esta última como valor actual / cap).',
         'Incluye la cuadrícula de cordura: casillas activas, reservadas por glifos y bloqueadas por falta de tope.',
@@ -335,7 +327,7 @@ export class InventoryWikiComponent implements OnInit {
     },
     {
       title: 'Módulos de nave',
-      summary: 'Columna central (40%) con tarjetas por slot',
+      summary: 'Columna central con tarjetas por slot',
       bullets: [
         'Orden fijo: Cabina, Reactor, Alas, Fuselaje, Escudo, Bahía de drones y Bahía auxiliar.',
         'Cada tarjeta combina la descripción del manifiesto con datos dinámicos (por ejemplo, empuje/top speed del Reactor).',

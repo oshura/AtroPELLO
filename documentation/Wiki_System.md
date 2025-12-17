@@ -36,7 +36,7 @@
 
 ## Flujo de navegación
 1. `WikiNavigationService.setLastRoute(url)` se invoca en cada `ngOnInit` de las páginas para recordar dónde estaba el usuario.
-2. El enlace “BACK TO GAME >>” simplemente navega a `/` (el juego reanuda input al cerrar la wiki).
+2. El control flotante fijo mantiene **Back** en la esquina superior izquierda y **✕** en la esquina superior derecha (ambos visibles sobre el contenido). El primero vuelve al índice de la wiki y el segundo cierra la vista (navega a `/`). No dupliques enlaces “← Back to Wiki” dentro del contenido.
 3. Mantén esta llamada en nuevas páginas y evita redirecciones manuales.
 
 ## Checklist de nuevas entradas

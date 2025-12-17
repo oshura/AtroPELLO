@@ -11,7 +11,6 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
     <app-wiki-close></app-wiki-close>
     <div class="wiki-page">
       <header class="page-header">
-        <a routerLink="/wiki" class="back-link">← Back to Wiki</a>
         <h1>🚀 Spaceship</h1>
       </header>
 
@@ -261,19 +260,6 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
 
     .page-header {
       margin-bottom: 2rem;
-    }
-
-    .back-link {
-      color: #00ff41;
-      text-decoration: none;
-      font-size: 1rem;
-      display: inline-block;
-      margin-bottom: 1rem;
-      transition: opacity 0.3s;
-    }
-
-    .back-link:hover {
-      opacity: 0.7;
     }
 
     .page-header h1 {
