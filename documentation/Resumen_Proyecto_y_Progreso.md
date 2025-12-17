@@ -48,6 +48,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 - HUD y UI
   - `HUDManager`: genera el HUD en un canvas 2D y lo sube a una textura WebGL; incluye elementos como brújula, velocímetro, barras y panel de target.
   - Panel de marquee con scroll suavizado por delta-time y compensador automático para hardware de 32 FPS; cada mensaje completa su vuelta configurada y se elimina de la cola para evitar spam.
+  - El HUD conserva una pila LIFO con las 10 alertas más recientes y permite reinyectar la última con <kbd>Backspace</kbd>; la repetición se muestra una sola vuelta y vuelve a la pila automáticamente.
   - Cooldown unificado para paneles diegéticos: `PANEL_REOPEN_COOLDOWN_MS = 500 ms` en `GameEngine` reemplaza los literales anteriores y aplica la misma ventana para volver a abrir mapa, grimorio e inventario sin bloquear al usuario más de medio segundo.
   - Sistema de retícula: `ReticleManager` (detección 3D→2D, estados y rendering), se actualiza y renderiza en cada frame.
   - Retícula de vector de vuelo: el `GameEngine` proyecta el vector forward real de la nave sobre el viewport y entrega el estado a un overlay Canvas2D independiente del HUD. `FlightVectorReticle` se reutiliza para pintar la cruz directamente sobre la pantalla principal, se oculta al abrir paneles diegéticos (mapa/grimorio/inventario), se atenúa cerca de los bordes y escala con la velocidad actual; cuando existan armas pasará automáticamente al modo "combat" para servir como punto de mira.

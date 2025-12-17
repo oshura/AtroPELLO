@@ -1,7 +1,7 @@
 /*********  PENDING ***********/
 
  - Linterna.
- 
+
  - Wiki solo funcional no develop.
 
  - Landing menus o pensar bien el juego de landing:

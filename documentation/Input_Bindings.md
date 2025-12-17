@@ -40,6 +40,11 @@
 - `PanelEventCoordinator` (`src/app/game/services/ui/panel-event-coordinator.service.ts`) y `SpellIOCoordinator` bloquean eventos cuando el motor lo requiere (por ejemplo durante cantos de hechizos o mientras un panel UI toma control del puntero).
 - Cuando el inventario abre, el motor llama a `updateInventoryPointerBinding()` y `updateCanvasCursor()` para mostrar el cursor del sistema y asegurar que la rueda/clicks se enrutan al panel.
 
+## Repetición del marquee del HUD
+- El `HUDManager` mantiene una pila LIFO con los últimos 10 mensajes que completaron su vuelta en la marquesina.
+- Al pulsar <kbd>Backspace</kbd> (si no hay inputs enfocados) se hace `pop` del último mensaje y se vuelve a encolar con un único loop y prioridad máxima, de modo que aparece inmediatamente.
+- Cuando esa repetición termina, el mensaje se `push` de nuevo en la pila, por lo que puedes escucharlo otra vez siempre que haya completado al menos un ciclo.
+
 ## Targeting y otros listeners
 - El sistema de targeting (`src/app/game/targeting/core/InputHandler.ts`) instala listeners **sobre el canvas** (no globales) para capturar movimientos del mouse, clicks y teclas personalizadas (por defecto `Escape` para soltar target y `T` con/ sin `Shift` para ciclar). También agrega un listener global para `cycleNextKey` para que la navegación continúe aunque el canvas pierda foco.
 - Estas teclas conviven con los bindings principales porque el motor deshabilita inputs sólo cuando `GameInputHandler` está apagado o cuando `SpellIOCoordinator` marca `panelInputsLocked`.

@@ -33,11 +33,20 @@ interface HudMarqueeEventConfig {
   loops?: number;
 }
 
+interface MarqueeHistoryEntry {
+  type: HudMarqueeEventType;
+  message: string;
+  timestamp: number;
+}
+
 const HUD_MARQUEE_DEFAULT_CONFIG: HudMarqueeEventConfig = {
   throttleMs: 1200,
   priority: 5,
   loops: 1,
 };
+
+const HUD_MARQUEE_HISTORY_LIMIT = 10;
+const HUD_MARQUEE_REPLAY_PRIORITY = 0;
 
 const HUD_MARQUEE_EVENT_CONFIG: Record<HudMarqueeEventType, HudMarqueeEventConfig> = {
   [HudMarqueeEventType.RESPAWN]: { throttleMs: 2000, priority: 1 },
@@ -76,6 +85,7 @@ export class HUDManager {
   private targetPanel: TargetPanel;
   private landingIndicators = { landingReady: false, threatActive: false };
   private marqueeEntries: QueuedMarqueeEntry[] = [];
+  private marqueeHistory: MarqueeHistoryEntry[] = [];
   private marqueeLastEmit = new Map<HudMarqueeEventType, number>();
   private lastMarqueeUpdateMs: number | null = null;
   
@@ -304,6 +314,11 @@ export class HUDManager {
           event.preventDefault();
           this.toggleDebugCanvas();
           break;
+        case 'Backspace':
+          if (this.tryReplayMarqueeHistory()) {
+            event.preventDefault();
+          }
+          break;
       }
     });
 
@@ -407,6 +422,7 @@ export class HUDManager {
       return;
     }
     this.marqueeEntries.splice(entryIndex, 1);
+    this.recordMarqueeHistory(entry);
     this.syncMarqueePanel();
   }
 
@@ -453,6 +469,35 @@ export class HUDManager {
 
   private nowMs(): number {
     return typeof performance !== 'undefined' ? performance.now() : Date.now();
+  }
+
+  private recordMarqueeHistory(entry: QueuedMarqueeEntry): void {
+    if (!entry?.message) {
+      return;
+    }
+    this.marqueeHistory.push({
+      type: entry.type,
+      message: entry.message,
+      timestamp: this.nowMs(),
+    });
+    if (this.marqueeHistory.length > HUD_MARQUEE_HISTORY_LIMIT) {
+      const excess = this.marqueeHistory.length - HUD_MARQUEE_HISTORY_LIMIT;
+      this.marqueeHistory.splice(0, excess);
+    }
+  }
+
+  private tryReplayMarqueeHistory(): boolean {
+    const replayEntry = this.marqueeHistory.pop();
+    if (!replayEntry) {
+      return false;
+    }
+    this.emitMarqueeEvent(replayEntry.type, replayEntry.message, {
+      force: true,
+      allowDuplicate: true,
+      loops: 1,
+      priorityOverride: HUD_MARQUEE_REPLAY_PRIORITY,
+    });
+    return true;
   }
 
   /**

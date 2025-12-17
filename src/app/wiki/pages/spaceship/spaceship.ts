@@ -256,6 +256,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         </div>
         <p class="note marquee-note">El feed filtra duplicados y limita la velocidad del scroll para que siempre puedas leer los avisos. Tras cada respawn hay un respiro de ~1.2&nbsp;s antes de que la Energía del Vacío vuelva a bajar.</p>
         <p class="note marquee-note">Cada alerta completa una única vuelta antes de caducar; cuando no hay cola la marquesina se atenúa y vuelve a iluminarse en cuanto llega un mensaje nuevo.</p>
+        <p class="note marquee-note">El HUD guarda una pila con las últimas 10 alertas emitidas. Pulsa <kbd>Backspace</kbd> para recuperar la más reciente: se repite una sola vuelta, vuelve a entrar en la pila y deja paso al siguiente mensaje pendiente.</p>
       </section>
 
       <section class="customization tbd-section">
