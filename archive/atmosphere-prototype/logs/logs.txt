@@ -1,0 +1,62 @@
+[12:24:51.606Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Scene snapshot refreshed 
+Object { reason: "initialize", planetId: "planet-venus", paletteHorizon: (3) […] }
+chunk-WE6S67IR.js:142:23
+[12:24:51.607Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Active landing planet sync requested 
+Object { source: "boundary-refresh", planetId: "planet-venus", hasPlanet: true }
+chunk-WE6S67IR.js:142:23
+[12:24:51.607Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Boundary snapshot refreshed 
+Object { reason: "initialize", planetId: "planet-venus", landingEnabled: true, groundRadius: 384, domeRadius: 530.8 }
+chunk-WE6S67IR.js:142:23
+[12:24:51.618Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Terrain regenerated 
+Object { reason: "initialize", planetId: "planet-venus", landingEnabled: true, lodMeshes: 3, groundRadius: 384 }
+chunk-WE6S67IR.js:142:23
+[12:24:51.620Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Scene snapshot refreshed 
+Object { reason: "landing:fade-in", planetId: "planet-venus", paletteHorizon: (3) […] }
+chunk-WE6S67IR.js:142:23
+[12:24:51.620Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Active landing planet sync requested 
+Object { source: "boundary-refresh", planetId: "planet-venus", hasPlanet: true }
+chunk-WE6S67IR.js:142:23
+[12:24:51.620Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Boundary snapshot refreshed 
+Object { reason: "landing:fade-in", planetId: "planet-venus", landingEnabled: true, groundRadius: 384, domeRadius: 530.8 }
+chunk-WE6S67IR.js:142:23
+[12:24:51.629Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Terrain regenerated 
+Object { reason: "landing:fade-in", planetId: "planet-venus", landingEnabled: true, lodMeshes: 3, groundRadius: 384 }
+chunk-WE6S67IR.js:142:23
+[12:24:51.629Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Landing fade-in telemetry 
+Object { reason: "landing:fade-in", planetId: "planet-venus", shipDistance: 364.2445923211373, distanceMinusGround: -19.755407678862696, groundRadius: 384, domeRadius: 530.8, hudPose: {…}, payloadHasSurfacePoint: true, payloadHasSurfaceNormal: true, payloadRadius: 360, … }
+chunk-WE6S67IR.js:142:23
+Navega a http://localhost:4200/
+Navega a http://localhost:4200/
+[vite] connecting... client:733:9
+[vite] connected. client:827:12
+NG0505: Angular hydration was requested on the client, but there was no serialized information present in the server response, thus hydration was not enabled. Make sure the `provideClientHydration()` is included into the list of providers in the server part of the application configuration. Find more at https://v20.angular.dev/errors/NG0505 chunk-CRFM4M2Y.js:14652:13
+Se ha impedido que un AudioContext se inicie automáticamente. Debe crearse o reanudarse después de un gesto del usuario en la página. main.js:1583:16
+Angular is running in development mode. chunk-CRFM4M2Y.js:14648:13
+NG0913: An image with src http://localhost:4200/assets/Wiki.png is the Largest Contentful Paint (LCP) element but was given a "loading" value of "lazy", which can negatively impact application loading performance. This warning can be addressed by changing the loading value of the LCP image to "eager", or by using the NgOptimizedImage directive's prioritization utilities. For more information about addressing or disabling this warning, see https://angular.dev/errors/NG0913. Find more at https://v20.angular.dev/errors/NG0913 chunk-CRFM4M2Y.js:24831:11
+[19:41:43.217Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Scene snapshot refreshed 
+Object { reason: "initialize", planetId: "planet-venus", paletteHorizon: (3) […] }
+chunk-WE6S67IR.js:142:23
+[19:41:43.218Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Active landing planet sync requested 
+Object { source: "boundary-refresh", planetId: "planet-venus", hasPlanet: true }
+chunk-WE6S67IR.js:142:23
+[19:41:43.218Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Boundary snapshot refreshed 
+Object { reason: "initialize", planetId: "planet-venus", landingEnabled: true, groundRadius: 384, domeRadius: 530.8 }
+chunk-WE6S67IR.js:142:23
+[19:41:43.232Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Terrain regenerated 
+Object { reason: "initialize", planetId: "planet-venus", landingEnabled: true, lodMeshes: 3, groundRadius: 384 }
+chunk-WE6S67IR.js:142:23
+[19:41:43.234Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Scene snapshot refreshed 
+Object { reason: "landing:fade-in", planetId: "planet-venus", paletteHorizon: (3) […] }
+chunk-WE6S67IR.js:142:23
+[19:41:43.234Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Active landing planet sync requested 
+Object { source: "boundary-refresh", planetId: "planet-venus", hasPlanet: true }
+chunk-WE6S67IR.js:142:23
+[19:41:43.234Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Boundary snapshot refreshed 
+Object { reason: "landing:fade-in", planetId: "planet-venus", landingEnabled: true, groundRadius: 384, domeRadius: 530.8 }
+chunk-WE6S67IR.js:142:23
+[19:41:43.242Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Terrain regenerated 
+Object { reason: "landing:fade-in", planetId: "planet-venus", landingEnabled: true, lodMeshes: 3, groundRadius: 384 }
+chunk-WE6S67IR.js:142:23
+[19:41:43.242Z][DEBUG][ATMOSPHERE_DIAGNOSTICS] Landing fade-in telemetry 
+Object { reason: "landing:fade-in", planetId: "planet-venus", shipDistance: 384.6971029633761, distanceMinusGround: 0.6971029633760963, groundRadius: 384, domeRadius: 530.8, hudPose: {…}, payloadHasSurfacePoint: true, payloadHasSurfaceNormal: true, payloadRadius: 360, … }
+chunk-WE6S67IR.js:142:23

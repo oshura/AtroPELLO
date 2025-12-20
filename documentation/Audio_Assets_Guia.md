@@ -24,8 +24,10 @@ Esto crea los siguientes ficheros:
 - SFX
   - `sfx_thruster.wav` (3s, motor continuo mono)
   - `sfx_passby.wav` (1.5s, barrido tipo whoosh mono)
+  - `sfx_passby_air.wav` (1.2s, estela de aire previa al stall)
   - `ui_select.wav` (0.25s, click corto mono)
   - `sfx_spell_chant.wav` (2s, dron preparatorio)
+  - `sfx_stall.wav` (loop 2s, sirena de pérdida de sustentación)
 - VOZ
   - `voice_narrator_sample.wav` (3s, dron placeholder)
 - MÚSICA
@@ -86,6 +88,12 @@ await audio.load('music_explore_a', manifest.music_explore_a);
 ```
 
 El motor ya reproduce `sfx_thruster` y música de escena (`music_*`) cuando inicias la partida.
+
+## Alertas atmosféricas (dic 2025)
+
+- `sfx_passby_air` sirve como cue previo al stall cuando el modo atmosférico detecta velocidad crítica; se reproduce en loop suave (bus `sfx`, volumen 0.4) y se corta automáticamente al recuperar velocidad o al entrar al stall real.
+- `sfx_stall` es el loop principal de emergencia. Se dispara al entrar en stall, reemplaza el cue anterior y mantiene activo el borde rojo brillante de la brújula hasta que la nave recupera sustentación o aterriza.
+- Ambos ficheros residen en `src/app/assets/audio/` y se precargan desde el manifiesto, por lo que basta con invocar `audio.play('sfx_passby_air', ...)` / `audio.play('sfx_stall', ...)` desde los controladores de vuelo.
 
 ## Consejos de mezcla
 
