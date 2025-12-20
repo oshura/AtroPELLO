@@ -1,6 +1,7 @@
 {
   "sfx_thruster": "/assets/audio/sfx_thruster.wav",
   "sfx_passby": "/assets/audio/sfx_passby.wav",
+  "sfx_passby_air": "/assets/audio/sfx_passby_air.wav",
   "ui_select": "/assets/audio/ui_select.wav",
   "music_menu": "/assets/audio/music_menu.wav",
   "music_entree": "/assets/audio/Entree.wav",
@@ -27,5 +28,6 @@
   "ui_map_close": "/assets/audio/MapOff.wav",
   "ui_select_glyph": "/assets/audio/select-glifo.wav",
   "ui_drag_glyph": "/assets/audio/DragGlyph.wav",
-  "ui_drop_glyph": "/assets/audio/DropGlyph.wav"
+  "ui_drop_glyph": "/assets/audio/DropGlyph.wav",
+  "sfx_stall": "/assets/audio/sfx_stall.wav"
 }
