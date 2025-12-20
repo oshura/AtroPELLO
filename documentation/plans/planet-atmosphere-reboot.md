@@ -4,19 +4,26 @@
 Volver a implementar el modo atmosférico apoyándonos en el motor espacial existente, limitando la escena a dos esferas estáticas (suelo y cielo) y reusando el comportamiento/controles del `GameEngine`. Solo añadiremos las reglas específicas de atmósfera (gravedad gradual, sonidos de aire, detección automática de aterrizaje/despegue) y las animaciones ya disponibles.
 
 ## Pasos
-- [ ] **Aislar prototipos anteriores**
-  - [ ] Copiar la versión actual de `src/app/game/modes` y cualquier documentación auxiliar a una carpeta de archivo (p. ej. `archive/atmosphere-prototype/`).
-  - [ ] Realizar rollback del resto del repositorio para volver al estado estable pre-prototipo.
-- [ ] **Escena atmosférica mínima**
-  - [ ] Crear un módulo que, tras el `landing:fade-out`, monte una escena 3D con solo dos esferas concéntricas (suelo y cielo) y texturas básicas derivadas de la paleta del planeta.
-  - [ ] Posicionar la nave en la altitud inicial suministrada por el landing context y mantener el `GameEngine` original activo (HUD, bindings, físicas base).
+- [x] **Aislar prototipos anteriores**
+  - [x] Copiar la versión actual de `src/app/game/modes` y cualquier documentación auxiliar a una carpeta de archivo (p. ej. `archive/atmosphere-prototype/`).
+  - [x] Realizar rollback del resto del repositorio para volver al estado estable pre-prototipo.
+- [x] **Escena atmosférica mínima**
+  - [x] _Análisis_: revisar `GameEngine` (secciones landing/takeoff) y `CleanCode_Arquitectura.md` para confirmar los puntos de integración y las dependencias permitidas.
+  - [x] Crear `src/app/game/atmosphere/AtmosphereSceneManager.ts` con la inicialización WebGL (buffers de dos esferas, shader simple con colores de planeta según `LandingApproachContext`).
+  - [x] Introducir `AtmosphereSceneState` en `GameEngine` (bandera + payload) para activar/desactivar el render mínimo sin tocar HUD/inputs.
+  - [x] Posicionar la nave según el contexto (`surfacePoint + normal * altitudeInicial`) y mantener todos los subsistemas activos.
+  - [x] **MEJORA**: Añadir heightmap procedural al suelo con 3 octavas de noise (montes y valles visibles con ~8% de desplazamiento radial).
+  - [x] Conectar activación automática tras fade out de `LandingSequenceAnimation` mediante `enterAtmosphereScene()`.
+  - [x] Conectar limpieza automática al completar takeoff mediante `exitAtmosphereScene()`.
 - [ ] **Reglas de vuelo y física**
-  - [ ] Reutilizar la física del modo espacial para los inputs y mover la nave igual que en el sistema solar.
-  - [ ] Añadir la fuerza gravitatoria suave cuando la velocidad cae por debajo de los umbrales definidos y registrar telemetría.
-  - [ ] Integrar los SFX de aire/stall existentes y asegurar que se disparan desde el mismo subsistema que en espacio.
+  - [ ] Confirmar en `GameEngine` cómo se aplican actualmente thrust y frenado para enganchar ahí la detección de baja velocidad.
+  - [ ] Añadir una rutina `applyAtmosphereGravity()` que solo actúe cuando el modo atmosférico esté activo y la velocidad sea inferior a los umbrales definidos en `Sistema_Landing_Narrativa.md`.
+  - [ ] Integrar los SFX de aire/stall reutilizando el `AudioEngineService` existente y los IDs `sfx_passby_air` / `sfx_stall`.
 - [ ] **Aterrizaje y despegue**
-  - [ ] Reusar la lógica de aterrizaje existente (camara fija + tracking + polvo) al detectar colisión con la esfera del suelo o al cumplir las normas de touchdown.
-  - [ ] Detectar salida por la esfera del cielo para relanzar la animación de takeoff y restaurar la escena completa del sistema solar.
+  - [ ] Exponer un detector de colisión simple entre la nave y la esfera de suelo (radio configurable) que reaproveche `handleLandingTouchdown` para abrir el diálogo.
+  - [ ] Conectar el umbral de altura sobre la esfera del cielo con la animación de takeoff existente, restaurando el renderer del sistema solar y limpiando el estado atmosférico.
+  - [ ] Añadir polvo/cámara fija usando los componentes ya presentes en la secuencia de aterrizaje (solo disparar cuando `landingContext.autoLand === true`).
 - [ ] **Documentación y QA**
-  - [ ] Actualizar wiki y documentación técnica con la nueva arquitectura simplificada.
-  - [ ] Ejecutar `npm run build` y checklist QA (descenso, vuelo bajo, salida por cielo, aterrizaje manual y automático).
+  - [ ] Actualizar Wiki (`/src/app/wiki/pages/spaceship` y `documentation/Resumen_Proyecto_y_Progreso.md`) describiendo el flujo simplificado.
+  - [ ] Registrar las pruebas manuales (descenso, vuelo bajo, salida por cielo, aterrizaje manual y auto) en la bitácora QA.
+  - [ ] Ejecutar `npm run build` tras cada fase completada.

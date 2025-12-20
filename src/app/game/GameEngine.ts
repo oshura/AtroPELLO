@@ -87,6 +87,7 @@ import { Vector3 } from '../types/game.types';
 import { LesserBeingController } from './services/lesser-beings/lesser-being-controller';
 import { LesserBeingSpawner } from './services/lesser-beings/lesser-being-spawner';
 import { LesserBeingCombatService, LesserBeingProjectileView } from './services/lesser-beings/lesser-being-combat.service';
+import { AtmosphereSceneActivationOptions, AtmosphereSceneManager, AtmosphereSceneState } from './atmosphere/AtmosphereSceneManager';
 
 interface AuxiliaryAbilityRuntime {
   id: string;
@@ -258,6 +259,18 @@ export class GameEngine {
   private precisionLatchActive: boolean = false;
   private precastChantDurationMs: number | null = null;
   private sunExposureTimerMs: number = 0;
+  private atmosphereSceneManager: AtmosphereSceneManager | null = null;
+  private atmosphereSceneState: AtmosphereSceneState = {
+    active: false,
+    context: null,
+    center: { x: 0, y: 0, z: 0 },
+    groundRadius: 0,
+    skyRadius: 0,
+    groundColor: new Float32Array([0.32, 0.32, 0.32]),
+    skyColor: new Float32Array([0.05, 0.08, 0.18]),
+    entryAltitude: 0,
+    lastUpdatedMs: 0,
+  };
   private readonly SUN_DAMAGE_INTERVAL_MS: number = 5000;
   private readonly SUN_DAMAGE_THRESHOLD: number = 3000;
   private readonly SUN_DAMAGE_STEP_DISTANCE: number = 100;
@@ -823,6 +836,7 @@ export class GameEngine {
     this.takeoffSequenceActive = false;
     const resolvedContext = context ?? this.landingTouchdownContext;
     if (outcome === 'completed') {
+      this.exitAtmosphereScene();
       try { this.gameState.setActiveLandingPlanet?.(null); } catch {}
       this.landingTouchdownContext = null;
       this.clearLandedShipAttachment();
@@ -842,24 +856,25 @@ export class GameEngine {
 
   private handleLandingTouchdown(context: LandingApproachContext): void {
     const enrichedContext = this.enrichLandingContext(context);
-    this.parkShipAtPlanetCore(enrichedContext);
+    this.enterAtmosphereScene(enrichedContext);
     this.landingTouchdownContext = enrichedContext;
     this.registerPlanetLandingVisit(context.planetId);
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing touchdown registered', {
       planetId: context.planetId,
       planetName: context.planetName
     });
-    try {
-      const gameComponent = (globalThis as any).GameComponentInstance;
-      if (gameComponent && typeof gameComponent.openLandingPanel === 'function') {
-        gameComponent.openLandingPanel(enrichedContext);
-        return;
-      }
-    } catch (error) {
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Landing panel open failed', error);
-    }
-    const label = context.planetName ? `Aterrizaje completado: ${context.planetName}` : 'Aterrizaje completado';
-    try { this.showPlaceholderText(`${label} (panel no disponible)`, 2200); } catch {}
+    // Panel deshabilitado temporalmente para visualizar escena atmosférica
+    // try {
+    //   const gameComponent = (globalThis as any).GameComponentInstance;
+    //   if (gameComponent && typeof gameComponent.openLandingPanel === 'function') {
+    //     gameComponent.openLandingPanel(enrichedContext);
+    //     return;
+    //   }
+    // } catch (error) {
+    //   this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Landing panel open failed', error);
+    // }
+    const label = context.planetName ? `Aterrizaje en ${context.planetName}` : 'Aterrizaje completado';
+    try { this.showPlaceholderText(`${label} - Escena atmosférica activa`, 3000); } catch {}
   }
 
   private registerPlanetLandingVisit(planetId?: string | null): void {
@@ -1106,6 +1121,111 @@ export class GameEngine {
     this.lastShipPos = { ...this.spaceship.position };
   }
 
+  public enterAtmosphereScene(context: LandingApproachContext, options?: Partial<AtmosphereSceneActivationOptions>): void {
+    if (!context) {
+      return;
+    }
+    const now = performance?.now?.() ?? Date.now();
+    const center = this.resolvePlanetCenterFromContext(context) ?? { x: 0, y: 0, z: 0 };
+    const entryAltitude = Math.max(
+      150,
+      options?.entryAltitude ?? (Number.isFinite(context.distanceToSurface) ? context.distanceToSurface : 420)
+    );
+    const groundRadius = Math.max(50, options?.groundRadius ?? context.radius ?? 900);
+    const skyPadding = options?.skyPadding ?? 600;
+    const skyRadius = Math.max(groundRadius + 100, options?.skyRadius ?? (groundRadius + skyPadding));
+    const palette = this.deriveAtmospherePalette(context);
+    const contextClone: LandingApproachContext = {
+      ...context,
+      surfacePoint: context.surfacePoint ? { ...context.surfacePoint } : context.surfacePoint,
+      surfaceNormal: context.surfaceNormal ? { ...context.surfaceNormal } : context.surfaceNormal,
+      planetCenter: context.planetCenter ? { ...context.planetCenter } : context.planetCenter,
+    };
+    this.atmosphereSceneState = {
+      active: true,
+      context: contextClone,
+      center,
+      groundRadius,
+      skyRadius,
+      groundColor: palette.ground,
+      skyColor: palette.sky,
+      entryAltitude,
+      lastUpdatedMs: now,
+    };
+    this.applyAtmosphereEntryPosition(contextClone, entryAltitude);
+  }
+
+  public exitAtmosphereScene(): void {
+    if (!this.atmosphereSceneState.active) {
+      return;
+    }
+    this.atmosphereSceneState = this.createDefaultAtmosphereSceneState();
+  }
+
+  private applyAtmosphereEntryPosition(context: LandingApproachContext, altitude: number): void {
+    if (!this.spaceship) {
+      return;
+    }
+    const normal = context.surfaceNormal ? this.normalize(context.surfaceNormal) : { x: 0, y: 1, z: 0 };
+    let surfacePoint = context.surfacePoint ? { ...context.surfacePoint } : null;
+    if (!surfacePoint) {
+      const center = this.resolvePlanetCenterFromContext(context);
+      if (center) {
+        surfacePoint = {
+          x: center.x + normal.x * context.radius,
+          y: center.y + normal.y * context.radius,
+          z: center.z + normal.z * context.radius,
+        };
+      }
+    }
+    if (!surfacePoint) {
+      surfacePoint = { x: 0, y: 0, z: 0 };
+    }
+    const entry = {
+      x: surfacePoint.x + normal.x * altitude,
+      y: surfacePoint.y + normal.y * altitude,
+      z: surfacePoint.z + normal.z * altitude,
+    };
+    this.placeShipAtPosition(entry);
+  }
+
+  private deriveAtmospherePalette(context: LandingApproachContext): { ground: Float32Array; sky: Float32Array } {
+    const type = context.planetType;
+    const palette = (() => {
+      switch (type) {
+        case PlanetType.Tierra:
+          return { ground: [0.32, 0.44, 0.29], sky: [0.24, 0.44, 0.72] };
+        case PlanetType.Gaseous:
+          return { ground: [0.24, 0.30, 0.52], sky: [0.12, 0.18, 0.42] };
+        case PlanetType.Giant:
+          return { ground: [0.58, 0.42, 0.26], sky: [0.36, 0.20, 0.50] };
+        case PlanetType.Ringed:
+          return { ground: [0.40, 0.32, 0.28], sky: [0.22, 0.18, 0.38] };
+        case PlanetType.Dwarf:
+          return { ground: [0.55, 0.55, 0.60], sky: [0.30, 0.32, 0.50] };
+        case PlanetType.Protoplanet:
+          return { ground: [0.42, 0.36, 0.30], sky: [0.26, 0.28, 0.36] };
+        default:
+          return { ground: [0.38, 0.33, 0.30], sky: [0.08, 0.12, 0.24] };
+      }
+    })();
+    return {
+      ground: new Float32Array(palette.ground),
+      sky: new Float32Array(palette.sky),
+    };
+  }
+
+  private isAtmosphereSceneActive(): boolean {
+    return !!(this.atmosphereSceneState?.active && this.atmosphereSceneState.context);
+  }
+
+  private renderAtmosphereScene(): void {
+    if (!this.atmosphereSceneManager || !this.camera) {
+      return;
+    }
+    this.atmosphereSceneManager.render(this.atmosphereSceneState, this.camera);
+  }
+
   private clearLandedShipAttachment(): void {
     this.landedShipAttachment = null;
   }
@@ -1324,6 +1444,7 @@ export class GameEngine {
         this.logger.log(LogLevel.ERROR, LogCategory.SHADERS, 'No se pudieron inicializar los shaders');
         return false;
       }
+      this.atmosphereSceneManager = new AtmosphereSceneManager(this.gl, this.shaderManager);
 
       // Inicializar gestor de texturas
       this.textureManager = new TextureManager(this.gl);
@@ -5132,221 +5253,16 @@ export class GameEngine {
     // Color base por defecto de asteroides (si no se establece luego)
     this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4]));
 
-  // Renderizar asteroides del cluster con shader estándar
-  this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4])); // Color gris-marrón rocoso
-
-    // Renderizar objetos de clusters o proxy según LOD
-  // Asegurar blending para soportar opacidades en fades
-  this.gl.enable(this.gl.BLEND);
-  this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
-
-  if (this.USE_INSTANCING && this.instancedRenderer) {
-      // Gather batches
-      const smalls: GameObject[] = [];
-      const supers: GameObject[] = [];
-      this.asteroidClusterService.getClusters().forEach(c => {
-        // Skip clusters farther than 20,000u from the ship (no render / no account)
-        const dxS = c.center.x - this.spaceship.position.x;
-        const dyS = c.center.y - this.spaceship.position.y;
-        const dzS = c.center.z - this.spaceship.position.z;
-        const distShip = Math.hypot(dxS, dyS, dzS);
-        if (distShip > 20000) return;
-        // Cluster-level frustum/distance culling (skip entire cluster if not visible)
-        if (!this.isClusterVisible(c, 5000, TargetType.CLUSTER)) {
-          return;
-        }
-        // Si estamos en modo proxy y hay representante, renderizarlo sin fade
-        if (c.lodMode === 'proxy' && c.representativeId) {
-          const rep = c.objects.find(o => o.id === c.representativeId);
-          if (rep) {
-            // Asegurar opacidad completa para el representante
-            (rep as any).renderOpacity = 1.0;
-            if ((rep as unknown as GameObject)?.getType?.() === GameObjectType.SUPER_ASTEROID) supers.push(rep);
-            else smalls.push(rep);
-          }
-        } else if (c.proxy && (c.lodMode === 'proxy' || (c.fade && c.fade.target === 'members'))) {
-          // Si no hay representante, usar el proxy visual
-          this.shaderManager.setLitOpacity((c.proxy as any).renderOpacity ?? 1.0);
-          this.renderObject(c.proxy);
-        }
-        // Miembros: instanciar si lod 'full' o si estamos fadeando hacia proxy
-        const shouldRenderMembers = c.lodMode === 'full' || (c.fade && c.fade.target === 'proxy');
-        if (shouldRenderMembers) {
-          for (const o of c.objects) {
-            // Evitar duplicar el representante si ya se añadió explícitamente
-            if (c.lodMode === 'proxy' && c.representativeId && o.id === c.representativeId) continue;
-            if ((o as unknown as GameObject)?.getType?.() === GameObjectType.SUPER_ASTEROID) supers.push(o);
-            else smalls.push(o);
-          }
-        }
-      });
-      // Append ephemeral asteroids (always smalls)
-      if (this.ephemeralAsteroids.length) {
-        for (const a of this.ephemeralAsteroids) {
-          if (a.isActive()) smalls.push(a);
-        }
-      }
-      // Append independent asteroids (always smalls)
-      if (this.gameState.independentAsteroids.length) {
-        for (const a of this.gameState.independentAsteroids) {
-          if (a.isActive()) smalls.push(a);
-        }
-      }
-      this.instancedRenderer.renderBatches(
-        smalls,
-        supers,
-        this.camera.viewMatrix,
-        this.camera.projectionMatrix,
-        this.lightDirection,
-        this.lightColor,
-        this.ambientColor,
-        this.ambientStrength,
-        new Float32Array([0.6, 0.5, 0.4])
-      );
-      // Tras instancing, reforzar estado lit y limpiar divisores/atributos
-      this.resetGLForLitDraw();
-      this.shaderManager.useLitProgram();
-      this.shaderManager.setLighting(
-        this.lightDirection,
-        this.lightColor,
-        this.ambientColor,
-        this.ambientStrength
-      );
-    } else {
-      this.asteroidClusterService.getClusters().forEach(c => {
-        // Skip clusters farther than 20,000u from the ship (no render / no account)
-        const dxS = c.center.x - this.spaceship.position.x;
-        const dyS = c.center.y - this.spaceship.position.y;
-        const dzS = c.center.z - this.spaceship.position.z;
-        const distShip = Math.hypot(dxS, dyS, dzS);
-        if (distShip > 20000) return;
-        // Cluster-level frustum/distance culling (skip entire cluster if not visible)
-        if (!this.isClusterVisible(c, 4000, TargetType.CLUSTER)) {
-          return;
-        }
-        // Proxy si existe y relevante, salvo que tengamos un representante
-        if (!c.representativeId && c.proxy && (c.lodMode === 'proxy' || (c.fade && c.fade.target === 'members'))) {
-          this.shaderManager.setLitOpacity((c.proxy as any).renderOpacity ?? 1.0);
-          this.renderObject(c.proxy);
-        }
-        // Miembros si corresponde
-        const shouldRenderMembers = c.lodMode === 'full' || (c.fade && c.fade.target === 'proxy') || (c.lodMode === 'proxy' && !!c.representativeId);
-        if (shouldRenderMembers) {
-          c.objects.forEach(o => {
-            // Evitar doble render del representante (no instanciado) en proxy
-            if (c.lodMode === 'proxy' && c.representativeId && o.id === c.representativeId) return;
-            this.shaderManager.setLitOpacity((o as any).renderOpacity ?? 1.0);
-            this.renderObject(o);
-          });
-          // Render explícito del representante en no instanciado si aplica
-          if (c.lodMode === 'proxy' && c.representativeId) {
-            const rep = c.objects.find(o => o.id === c.representativeId);
-            if (rep) {
-              this.shaderManager.setLitOpacity(1.0);
-              this.renderObject(rep);
-            }
-          }
-        }
-      });
-      // Render ephemeral asteroids in non-instanced path
-      if (this.ephemeralAsteroids.length) {
-        for (const a of this.ephemeralAsteroids) {
-          if (a.isActive()) {
-            this.shaderManager.setLitOpacity(1.0);
-            this.renderObject(a);
-          }
-        }
-      }
-      // Render independent asteroids in non-instanced path
-      if (this.gameState.independentAsteroids.length) {
-        for (const a of this.gameState.independentAsteroids) {
-          if (a.isActive()) {
-            this.shaderManager.setLitOpacity(1.0);
-            this.renderObject(a);
-          }
-        }
-      }
-    }
-
-    let deferredProjectileViews: LesserBeingProjectileView[] | null = null;
-    let projectilePassTime = 0;
-
-    if (this.lesserBeings.length) {
-      for (const being of this.lesserBeings) {
-        if (!being.active || !being.visible) {
-          continue;
-        }
-        const opacity = typeof (being as any).renderOpacity === 'number' ? (being as any).renderOpacity : 1.0;
-        this.shaderManager.setLitOpacity(opacity);
-        this.shaderManager.setLitColor(this.lesserBeingBaseColor);
-        this.renderObject(being);
-      }
-      this.shaderManager.setLitOpacity(1.0);
-      if (this.lesserBeingRenderer) {
-        try {
-          const timeNow = (performance.now() || 0) / 1000;
-          this.lesserBeingRenderer.render(
-            this.lesserBeings,
-            this.camera.viewMatrix,
-            this.camera.projectionMatrix,
-            timeNow
-          );
-          const projectileViews = this.lesserBeingCombat?.getActiveProjectiles();
-          if (projectileViews?.length) {
-            deferredProjectileViews = projectileViews;
-            projectilePassTime = timeNow;
-          }
-        } catch (e) {
-          this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer render falló', e);
-        }
-      }
+    const isAtmosphereScene = this.isAtmosphereSceneActive();
+    if (isAtmosphereScene) {
+      this.renderAtmosphereScene();
       restoreLitProgram();
+    } else {
+      this.renderDefaultSolarScene(restoreLitProgram);
     }
 
-  // Renderizar planetas después de asteroides
-  this.renderPlanets();
-
-  if (this.lesserBeingRenderer?.hasDeferredTentacles?.()) {
-    try {
-      this.lesserBeingRenderer.renderDeferredTentacles(
-        this.camera.viewMatrix,
-        this.camera.projectionMatrix
-      );
-    } catch (e) {
-      this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer tentacles falló post-planetas', e);
-    }
-    restoreLitProgram();
-  }
-
-  if (deferredProjectileViews?.length && this.lesserBeingRenderer) {
-    try {
-      this.lesserBeingRenderer.renderProjectiles(
-        deferredProjectileViews,
-        this.camera.viewMatrix,
-        this.camera.projectionMatrix,
-        projectilePassTime || (performance.now() || 0) / 1000
-      );
-    } catch (e) {
-      this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer renderProjectiles falló post-planetas', e);
-    }
-    restoreLitProgram();
-  }
-  // Render portals (halo encapsulado en PortalRenderer)
-  try {
-    const portalRenderer = this.portalRenderer;
-    if (portalRenderer) {
-      portalRenderer.render(this.gameState.portals, this.camera.viewMatrix, this.camera.projectionMatrix, (performance.now() || 0) / 1000);
-    }
-  } catch {}
-
-  // Renderizar outlines avanzados (FASE 4) sobre la escena
-  this.renderOutlineSystem();
-
-  // STEP 5: Renderizar nuevo outliner 2D bajo HUD y Mapa
-  this.renderTargetOutline2D();
-
-  // Render overlays de animaciones (fade) sobre outlines
-  this.animationManager.render(this);
+    // Render overlays de animaciones (fade) sobre outlines
+    this.animationManager.render(this);
 
   // Renderizar overlay de mapa del sistema o el grimorio si están activados (opacos, reemplazan HUD)
   if (this.systemPanel && this.systemPanel.isEnabled()) {
@@ -5575,6 +5491,211 @@ export class GameEngine {
       this.overlayRenderer.drawVignette([1, 0, 0], Math.min(0.85, this.impactVignetteLevel), 0.58, 0.4);
     }
   } catch {}
+  }
+
+  private renderDefaultSolarScene(restoreLitProgram: () => void): void {
+    if (!this.gl) {
+      return;
+    }
+
+    // Renderizar objetos de clusters o proxy según LOD
+    this.gl.enable(this.gl.BLEND);
+    this.gl.blendFunc(this.gl.SRC_ALPHA, this.gl.ONE_MINUS_SRC_ALPHA);
+
+    if (this.USE_INSTANCING && this.instancedRenderer) {
+      const smalls: GameObject[] = [];
+      const supers: GameObject[] = [];
+      this.asteroidClusterService.getClusters().forEach(c => {
+        const dxS = c.center.x - this.spaceship.position.x;
+        const dyS = c.center.y - this.spaceship.position.y;
+        const dzS = c.center.z - this.spaceship.position.z;
+        const distShip = Math.hypot(dxS, dyS, dzS);
+        if (distShip > 20000) return;
+        if (!this.isClusterVisible(c, 5000, TargetType.CLUSTER)) {
+          return;
+        }
+        if (c.lodMode === 'proxy' && c.representativeId) {
+          const rep = c.objects.find(o => o.id === c.representativeId);
+          if (rep) {
+            (rep as any).renderOpacity = 1.0;
+            if ((rep as unknown as GameObject)?.getType?.() === GameObjectType.SUPER_ASTEROID) supers.push(rep);
+            else smalls.push(rep);
+          }
+        } else if (c.proxy && (c.lodMode === 'proxy' || (c.fade && c.fade.target === 'members'))) {
+          this.shaderManager.setLitOpacity((c.proxy as any).renderOpacity ?? 1.0);
+          this.renderObject(c.proxy);
+        }
+        const shouldRenderMembers = c.lodMode === 'full' || (c.fade && c.fade.target === 'proxy');
+        if (shouldRenderMembers) {
+          for (const o of c.objects) {
+            if (c.lodMode === 'proxy' && c.representativeId && o.id === c.representativeId) continue;
+            if ((o as unknown as GameObject)?.getType?.() === GameObjectType.SUPER_ASTEROID) supers.push(o);
+            else smalls.push(o);
+          }
+        }
+      });
+      if (this.ephemeralAsteroids.length) {
+        for (const a of this.ephemeralAsteroids) {
+          if (a.isActive()) smalls.push(a);
+        }
+      }
+      if (this.gameState.independentAsteroids.length) {
+        for (const a of this.gameState.independentAsteroids) {
+          if (a.isActive()) smalls.push(a);
+        }
+      }
+      this.instancedRenderer.renderBatches(
+        smalls,
+        supers,
+        this.camera.viewMatrix,
+        this.camera.projectionMatrix,
+        this.lightDirection,
+        this.lightColor,
+        this.ambientColor,
+        this.ambientStrength,
+        new Float32Array([0.6, 0.5, 0.4])
+      );
+      this.resetGLForLitDraw();
+      this.shaderManager.useLitProgram();
+      this.shaderManager.setLighting(
+        this.lightDirection,
+        this.lightColor,
+        this.ambientColor,
+        this.ambientStrength
+      );
+    } else {
+      this.asteroidClusterService.getClusters().forEach(c => {
+        const dxS = c.center.x - this.spaceship.position.x;
+        const dyS = c.center.y - this.spaceship.position.y;
+        const dzS = c.center.z - this.spaceship.position.z;
+        const distShip = Math.hypot(dxS, dyS, dzS);
+        if (distShip > 20000) return;
+        if (!this.isClusterVisible(c, 4000, TargetType.CLUSTER)) {
+          return;
+        }
+        if (!c.representativeId && c.proxy && (c.lodMode === 'proxy' || (c.fade && c.fade.target === 'members'))) {
+          this.shaderManager.setLitOpacity((c.proxy as any).renderOpacity ?? 1.0);
+          this.renderObject(c.proxy);
+        }
+        const shouldRenderMembers = c.lodMode === 'full' || (c.fade && c.fade.target === 'proxy') || (c.lodMode === 'proxy' && !!c.representativeId);
+        if (shouldRenderMembers) {
+          c.objects.forEach(o => {
+            if (c.lodMode === 'proxy' && c.representativeId && o.id === c.representativeId) return;
+            this.shaderManager.setLitOpacity((o as any).renderOpacity ?? 1.0);
+            this.renderObject(o);
+          });
+          if (c.lodMode === 'proxy' && c.representativeId) {
+            const rep = c.objects.find(o => o.id === c.representativeId);
+            if (rep) {
+              this.shaderManager.setLitOpacity(1.0);
+              this.renderObject(rep);
+            }
+          }
+        }
+      });
+      if (this.ephemeralAsteroids.length) {
+        for (const a of this.ephemeralAsteroids) {
+          if (a.isActive()) {
+            this.shaderManager.setLitOpacity(1.0);
+            this.renderObject(a);
+          }
+        }
+      }
+      if (this.gameState.independentAsteroids.length) {
+        for (const a of this.gameState.independentAsteroids) {
+          if (a.isActive()) {
+            this.shaderManager.setLitOpacity(1.0);
+            this.renderObject(a);
+          }
+        }
+      }
+    }
+
+    let deferredProjectileViews: LesserBeingProjectileView[] | null = null;
+    let projectilePassTime = 0;
+
+    if (this.lesserBeings.length) {
+      for (const being of this.lesserBeings) {
+        if (!being.active || !being.visible) {
+          continue;
+        }
+        const opacity = typeof (being as any).renderOpacity === 'number' ? (being as any).renderOpacity : 1.0;
+        this.shaderManager.setLitOpacity(opacity);
+        this.shaderManager.setLitColor(this.lesserBeingBaseColor);
+        this.renderObject(being);
+      }
+      this.shaderManager.setLitOpacity(1.0);
+      if (this.lesserBeingRenderer) {
+        try {
+          const timeNow = (performance.now() || 0) / 1000;
+          this.lesserBeingRenderer.render(
+            this.lesserBeings,
+            this.camera.viewMatrix,
+            this.camera.projectionMatrix,
+            timeNow
+          );
+          const projectileViews = this.lesserBeingCombat?.getActiveProjectiles();
+          if (projectileViews?.length) {
+            deferredProjectileViews = projectileViews;
+            projectilePassTime = timeNow;
+          }
+        } catch (e) {
+          this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer render falló', e);
+        }
+      }
+      restoreLitProgram();
+    }
+
+    this.renderPlanets();
+
+    if (this.lesserBeingRenderer?.hasDeferredTentacles?.()) {
+      try {
+        this.lesserBeingRenderer.renderDeferredTentacles(
+          this.camera.viewMatrix,
+          this.camera.projectionMatrix
+        );
+      } catch (e) {
+        this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer tentacles falló post-planetas', e);
+      }
+      restoreLitProgram();
+    }
+
+    if (deferredProjectileViews?.length && this.lesserBeingRenderer) {
+      try {
+        this.lesserBeingRenderer.renderProjectiles(
+          deferredProjectileViews,
+          this.camera.viewMatrix,
+          this.camera.projectionMatrix,
+          projectilePassTime || (performance.now() || 0) / 1000
+        );
+      } catch (e) {
+        this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer renderProjectiles falló post-planetas', e);
+      }
+      restoreLitProgram();
+    }
+    try {
+      const portalRenderer = this.portalRenderer;
+      if (portalRenderer) {
+        portalRenderer.render(this.gameState.portals, this.camera.viewMatrix, this.camera.projectionMatrix, (performance.now() || 0) / 1000);
+      }
+    } catch {}
+
+    this.renderOutlineSystem();
+    this.renderTargetOutline2D();
+  }
+
+  private createDefaultAtmosphereSceneState(): AtmosphereSceneState {
+    return {
+      active: false,
+      context: null,
+      center: { x: 0, y: 0, z: 0 },
+      groundRadius: 0,
+      skyRadius: 0,
+      groundColor: new Float32Array([0.32, 0.32, 0.32]),
+      skyColor: new Float32Array([0.05, 0.08, 0.18]),
+      entryAltitude: 0,
+      lastUpdatedMs: 0,
+    };
   }
 
   /** Crea 9 planetas en órbitas elípticas concéntricas en el plano XZ
@@ -9360,6 +9481,12 @@ export class GameEngine {
         this.voidCocoonShieldGeometry = null;
       }
     }
+
+    if (this.atmosphereSceneManager) {
+      this.atmosphereSceneManager.dispose();
+      this.atmosphereSceneManager = null;
+    }
+    this.atmosphereSceneState = this.createDefaultAtmosphereSceneState();
     
   this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'GameEngine cleaned up');
   }
