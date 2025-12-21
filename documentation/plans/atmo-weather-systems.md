@@ -55,7 +55,10 @@
     - [x] 3.2c — Inyectar jitter/temblor en la cámara atmosférica (offsets + ruido suave) sincronizado con `turbulenceCurrent`, reusando `driftOffset` para mover el encuadre.
     - [x] 3.2d — Exponer telemetría (visibilidad, intensidad de turbulencia, drift aplicado) al HUD/QA snapshot y registrar logs de depuración para testeo.
     - [x] 3.2e — Ejecutar `npm run build` y documentar resultados tras completar la etapa.
-  - [ ] 3.3 — Disparar feedback audiovisual por evento (selección de loops `AudioEngineService`, volumen de impactos, hooks hacia partículas/neblina adicional) reutilizando los cues definidos en `AtmosphereWeatherService`.
+  - [x] 3.3 — Disparar feedback audiovisual por evento (selección de loops `AudioEngineService`, volumen de impactos, hooks hacia partículas/neblina adicional) reutilizando los cues definidos en `AtmosphereWeatherService`.
+    - [x] Activar el nuevo bus `weather` con loops persistentes por evento y relámpagos oportunistas basados en `lightningChance`.
+    - [x] Reducir automáticamente el volumen de impactos (`sfx_collision_*`, Void Cocoon y golpes atmosféricos) usando `impactVolumeMultiplier` para que las turbulencias atenúen los choques.
+    - [x] Enrutar snapshots de precipitación hacia `ParticleEffectsService.updateWeatherPrecipitation()` para inyectar lluvia/polvo con deriva alineada a la nave.
 - [x] Registrar hooks para pausar eventos al salir de la escena y reanudarlos si se vuelve a entrar rápidamente.
 
 ### Fase 4 — Gameplay & física

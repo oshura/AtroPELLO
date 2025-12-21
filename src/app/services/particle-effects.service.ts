@@ -3,8 +3,10 @@ import { WebGLService } from './webgl.service';
 import { ShaderManager } from '../game/ShaderManager';
 import { Spaceship } from '../game/game-objects/Spaceship';
 import { Camera } from '../game/Camera';
-import { vec3, quat } from 'gl-matrix';
+import { vec3 } from 'gl-matrix';
 import { LoggingService, LogCategory, LogLevel } from './logging.service';
+import { Vector3 } from '../types/game.types';
+import { PrecipitationType } from '../game/atmosphere/AtmosphereWeatherService';
 
 export interface ParticleEffect {
   position: { x: number; y: number; z: number };
@@ -21,6 +23,23 @@ export interface DebrisParticle {
   brightness: number;
   life: number; // 0.0 to 1.0, decays over time
   maxLife: number; // tiempo inicial de vida
+}
+
+interface WeatherParticle {
+  position: Vector3;
+  velocity: Vector3;
+  size: number;
+  color: { r: number; g: number; b: number };
+  life: number;
+  maxLife: number;
+}
+
+export interface WeatherPrecipitationConfig {
+  type: PrecipitationType;
+  intensity: number;
+  driftVector: Vector3;
+  upVector: Vector3;
+  forwardVector: Vector3;
 }
 
 /**
@@ -61,6 +80,11 @@ export class ParticleEffectsService {
   // Destruction debris particles (explosion remnants)
   private destructionDebris: DebrisParticle[] = [];
   private maxDebrisParticles = 500; // límite para rendimiento
+
+  // Weather precipitation particles (rain/dust sheets)
+  private weatherParticles: WeatherParticle[] = [];
+  private weatherParticleAccum: number = 0;
+  private readonly maxWeatherParticles = 160;
 
   constructor(private webglService: WebGLService, private logger: LoggingService) {}
 
@@ -274,6 +298,53 @@ export class ParticleEffectsService {
   }
 
   /**
+   * Weather precipitation (rain/dust) particles that streak across the canopy.
+   */
+  public updateWeatherPrecipitation(
+    spaceship: Spaceship,
+    deltaTime: number,
+    config: WeatherPrecipitationConfig | null,
+  ): void {
+    if (!spaceship) {
+      return;
+    }
+    const drift = config?.driftVector ?? { x: 0, y: 0, z: 0 };
+    const normalizedUp = config?.upVector ? this.normalize(config.upVector) : { x: 0, y: 1, z: 0 };
+    const gravityDir = { x: -normalizedUp.x, y: -normalizedUp.y, z: -normalizedUp.z };
+    const gravity = config?.type === 'rain' ? 26 : 9;
+
+    // Update existing particles
+    const updated: WeatherParticle[] = [];
+    for (const particle of this.weatherParticles) {
+      particle.position.x += (particle.velocity.x + drift.x) * deltaTime;
+      particle.position.y += (particle.velocity.y + drift.y) * deltaTime;
+      particle.position.z += (particle.velocity.z + drift.z) * deltaTime;
+      particle.velocity.x += gravityDir.x * gravity * deltaTime;
+      particle.velocity.y += gravityDir.y * gravity * deltaTime;
+      particle.velocity.z += gravityDir.z * gravity * deltaTime;
+      particle.life -= deltaTime;
+      if (particle.life > 0) {
+        updated.push(particle);
+      }
+    }
+    this.weatherParticles = updated;
+
+    if (!config || config.type === 'none' || config.intensity <= 0) {
+      this.weatherParticleAccum = 0;
+      return;
+    }
+
+    const spawnRate = config.type === 'rain' ? 95 : 60;
+    this.weatherParticleAccum += spawnRate * Math.max(0.05, config.intensity) * deltaTime;
+    const basis = this.computeShipBasis(spaceship, config);
+
+    while (this.weatherParticleAccum >= 1 && this.weatherParticles.length < this.maxWeatherParticles) {
+      this.spawnWeatherParticle(spaceship, config, basis);
+      this.weatherParticleAccum -= 1;
+    }
+  }
+
+  /**
    * Genera nuevas partículas de propulsión
    */
   private generateThrusterParticles(spaceship: Spaceship, intensity: number, deltaTime: number): void {
@@ -300,6 +371,49 @@ export class ParticleEffectsService {
 
       this.thrusterParticles.push(particle);
     }
+  }
+
+  private spawnWeatherParticle(
+    spaceship: Spaceship,
+    config: WeatherPrecipitationConfig,
+    basis: { forward: Vector3; right: Vector3; up: Vector3 },
+  ): void {
+    const upLift = config.type === 'rain' ? 5 + Math.random() * 2 : 2 + Math.random() * 1.5;
+    const forwardOffset = config.type === 'rain' ? 4 + Math.random() * 4 : 2 + Math.random() * 6;
+    const lateralOffset = (Math.random() * 2 - 1) * (config.type === 'rain' ? 2 : 4);
+    const verticalOffset = (Math.random() * 1.5 - 0.75);
+
+    const spawnPos: Vector3 = {
+      x: spaceship.position.x + basis.forward.x * forwardOffset + basis.right.x * lateralOffset + basis.up.x * upLift,
+      y: spaceship.position.y + basis.forward.y * forwardOffset + basis.right.y * lateralOffset + basis.up.y * upLift,
+      z: spaceship.position.z + basis.forward.z * forwardOffset + basis.right.z * lateralOffset + basis.up.z * upLift,
+    };
+    spawnPos.x += basis.up.x * verticalOffset;
+    spawnPos.y += basis.up.y * verticalOffset;
+    spawnPos.z += basis.up.z * verticalOffset;
+
+    const alongForward = config.type === 'rain' ? 2.5 + Math.random() * 1.5 : 6 + Math.random() * 4;
+    const downward = config.type === 'rain' ? 15 + Math.random() * 6 : 5 + Math.random() * 3;
+    const lateralSpeed = (Math.random() * 2 - 1) * (config.type === 'rain' ? 0.8 : 2.2);
+
+    const velocity: Vector3 = {
+      x: basis.forward.x * alongForward - basis.up.x * downward + basis.right.x * lateralSpeed,
+      y: basis.forward.y * alongForward - basis.up.y * downward + basis.right.y * lateralSpeed,
+      z: basis.forward.z * alongForward - basis.up.z * downward + basis.right.z * lateralSpeed,
+    };
+
+    const maxLife = config.type === 'rain' ? 0.9 + Math.random() * 0.4 : 1.4 + Math.random() * 0.8;
+    const particle: WeatherParticle = {
+      position: spawnPos,
+      velocity,
+      size: config.type === 'rain' ? 0.06 + Math.random() * 0.05 : 0.16 + Math.random() * 0.08,
+      color: config.type === 'rain'
+        ? { r: 0.55 + Math.random() * 0.1, g: 0.7 + Math.random() * 0.1, b: 0.9 + Math.random() * 0.05 }
+        : { r: 0.78 + Math.random() * 0.05, g: 0.58 + Math.random() * 0.07, b: 0.32 + Math.random() * 0.05 },
+      life: maxLife,
+      maxLife,
+    };
+    this.weatherParticles.push(particle);
   }
 
   /**
@@ -409,6 +523,12 @@ export class ParticleEffectsService {
       this.destructionDebris.forEach(debris => {
         this.renderDebrisParticle(debris, camera);
       });
+    }
+
+    if (this.weatherParticles.length) {
+      for (const particle of this.weatherParticles) {
+        this.renderWeatherParticle(particle, camera);
+      }
     }
 
     // Renderizar partículas del thruster
@@ -609,6 +729,76 @@ export class ParticleEffectsService {
     gl.disableVertexAttribArray(colorLocation);
   }
 
+  private renderWeatherParticle(particle: WeatherParticle, camera: Camera): void {
+    if (!this.gl || !this.shaderManager || !this.particleVertexBuffer) {
+      return;
+    }
+    const gl = this.gl;
+    const lifeRatio = Math.max(0, particle.life / particle.maxLife);
+    const edge = lifeRatio * 0.35;
+    const head = lifeRatio;
+    const colors = new Float32Array([
+      particle.color.r * edge, particle.color.g * edge, particle.color.b * edge,
+      particle.color.r * edge, particle.color.g * edge, particle.color.b * edge,
+      particle.color.r * head, particle.color.g * head, particle.color.b * head,
+      particle.color.r * edge, particle.color.g * edge, particle.color.b * edge,
+      particle.color.r * head, particle.color.g * head, particle.color.b * head,
+      particle.color.r * head, particle.color.g * head, particle.color.b * head,
+    ]);
+
+    if (!this.particleColorBuffer) {
+      this.particleColorBuffer = gl.createBuffer();
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer!);
+    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+
+    const program = this.shaderManager.basicProgram!;
+    const positionLocation = this.shaderManager.basicAttributes['position'];
+    const colorLocation = this.shaderManager.basicAttributes['color'];
+
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVertexBuffer);
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
+    gl.enableVertexAttribArray(colorLocation);
+    gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+
+    const dir = this.normalize(particle.velocity);
+    let widthAxis = this.cross(dir, camera.up);
+    if (this.vectorLength(widthAxis) < 1e-3) {
+      widthAxis = this.cross(dir, { x: 0, y: 1, z: 0 });
+    }
+    if (this.vectorLength(widthAxis) < 1e-3) {
+      widthAxis = { x: 1, y: 0, z: 0 };
+    }
+    widthAxis = this.normalize(widthAxis);
+    const lengthAxis = this.normalize(dir);
+    const normal = this.normalize(this.cross(widthAxis, lengthAxis));
+
+    const widthScale = Math.max(0.02, particle.size * 0.7);
+    const lengthScale = particle.size * 10;
+
+    const modelMatrix = new Float32Array(16);
+    this.createIdentityMatrix(modelMatrix);
+    modelMatrix[0] = widthAxis.x * widthScale;
+    modelMatrix[1] = widthAxis.y * widthScale;
+    modelMatrix[2] = widthAxis.z * widthScale;
+    modelMatrix[4] = -lengthAxis.x * lengthScale;
+    modelMatrix[5] = -lengthAxis.y * lengthScale;
+    modelMatrix[6] = -lengthAxis.z * lengthScale;
+    modelMatrix[8] = normal.x * widthScale;
+    modelMatrix[9] = normal.y * widthScale;
+    modelMatrix[10] = normal.z * widthScale;
+    modelMatrix[12] = particle.position.x;
+    modelMatrix[13] = particle.position.y;
+    modelMatrix[14] = particle.position.z;
+
+    this.shaderManager.setBasicMatrices(modelMatrix, camera.viewMatrix, camera.projectionMatrix);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.disableVertexAttribArray(positionLocation);
+    gl.disableVertexAttribArray(colorLocation);
+  }
+
   private respawnAmbientParticleAhead(d: { position: {x:number;y:number;z:number}; size:number; brightness:number }, spaceship: Spaceship): void {
     const forward = this.normalize({
       x: spaceship.forwardDirection.x,
@@ -668,6 +858,43 @@ export class ParticleEffectsService {
   private cross(a: {x:number;y:number;z:number}, b: {x:number;y:number;z:number}): {x:number;y:number;z:number} { return { x: a.y*b.z - a.z*b.y, y: a.z*b.x - a.x*b.z, z: a.x*b.y - a.y*b.x }; }
   private normalize(v: {x:number;y:number;z:number}): {x:number;y:number;z:number} { const l = Math.hypot(v.x, v.y, v.z) || 1; return { x: v.x/l, y: v.y/l, z: v.z/l }; }
 
+  private computeShipBasis(
+    spaceship: Spaceship,
+    config: WeatherPrecipitationConfig,
+  ): { forward: Vector3; right: Vector3; up: Vector3 } {
+    let forward = config.forwardVector ? this.normalize(config.forwardVector) : this.normalize(spaceship.forwardDirection);
+    if (this.vectorLength(forward) < 1e-3) {
+      forward = { x: 0, y: 0, z: 1 };
+    }
+
+    let up = config.upVector ? this.normalize(config.upVector) : null;
+
+    const orientation = typeof spaceship.getOrientationQuaternion === 'function'
+      ? spaceship.getOrientationQuaternion()
+      : null;
+    if (orientation) {
+      const upVec = vec3.create();
+      vec3.transformQuat(upVec, vec3.fromValues(0, 1, 0), orientation);
+      up = this.normalize({ x: upVec[0], y: upVec[1], z: upVec[2] });
+    }
+
+    if (!up || this.vectorLength(up) < 1e-3) {
+      up = { x: 0, y: 1, z: 0 };
+    }
+
+    let right = this.normalize(this.cross(forward, up));
+    if (this.vectorLength(right) < 1e-3) {
+      const fallbackUp = Math.abs(forward.y) < 0.98 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+      right = this.normalize(this.cross(forward, fallbackUp));
+    }
+    if (this.vectorLength(right) < 1e-3) {
+      right = { x: 1, y: 0, z: 0 };
+    }
+
+    const correctedUp = this.normalize(this.cross(right, forward));
+    return { forward, right, up: correctedUp };
+  }
+
   /**
    * Crea matriz identidad
    */
@@ -719,6 +946,8 @@ export class ParticleEffectsService {
     this.thrusterParticles = [];
     this.destructionDebris = [];
     this.ambientDust = [];
+    this.weatherParticles = [];
+    this.weatherParticleAccum = 0;
     this.gl = null;
     this.shaderManager = null;
     

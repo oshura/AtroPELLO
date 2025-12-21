@@ -161,3 +161,13 @@ Vale, ¡plan, que esto es bastante complejo, y a correr!
  SPECIES_SCAN 1/3
  CREATURE_SCAN 1/3
  
+ Atmosfera sounds:
+  "sfx_stall": "/assets/audio/sfx_stall.wav",
+  "sfx_autoland_touchdown": "/assets/audio/Landing.wav",
+  "sfx_thruster_atmo": "/assets/audio/Airthrust.wav",
+  "sfx_weather_rain": "/assets/audio/sfx_passby_air.wav",
+  "sfx_weather_fog": "/assets/audio/sfx_longdark.wav",
+  "sfx_weather_dust": "/assets/audio/running-on-metal.wav",
+  "sfx_weather_thunder": "/assets/audio/sfx_collision_heavy.wav",
+  "sfx_weather_meteor": "/assets/audio/sfx_whoosh.wav"
+ 

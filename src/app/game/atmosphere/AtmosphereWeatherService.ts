@@ -3,7 +3,7 @@ import { LandingApproachContext } from '../types/landing.types';
 import { Vector3 } from '../../types/game.types';
 import { PlanetType } from '../game-objects';
 
-type PrecipitationType = 'none' | 'rain' | 'dust';
+export type PrecipitationType = 'none' | 'rain' | 'dust';
 
 export type AtmosphereWeatherEventType =
   | 'clear'
@@ -186,7 +186,7 @@ export class AtmosphereWeatherService {
         visibilityMultiplier: 0.55,
         turbulenceStrength: 0.25,
         driftStrength: 0.08,
-        impactVolumeMultiplier: 0.85,
+        impactVolumeMultiplier: 0.7,
         audioCue: 'sfx_weather_fog',
       },
       {
@@ -197,7 +197,7 @@ export class AtmosphereWeatherService {
         visibilityMultiplier: 0.7,
         turbulenceStrength: 0.3,
         driftStrength: 0.1,
-        impactVolumeMultiplier: 0.75,
+        impactVolumeMultiplier: 0.55,
         audioCue: 'sfx_weather_rain',
         precipitation: 'rain',
       },
@@ -209,7 +209,7 @@ export class AtmosphereWeatherService {
         visibilityMultiplier: 0.65,
         turbulenceStrength: 0.55,
         driftStrength: 0.18,
-        impactVolumeMultiplier: 0.6,
+        impactVolumeMultiplier: 0.25,
         audioCue: 'sfx_weather_thunder',
         precipitation: 'rain',
         lightningChance: 0.35,
@@ -222,7 +222,7 @@ export class AtmosphereWeatherService {
         visibilityMultiplier: 0.5,
         turbulenceStrength: 0.45,
         driftStrength: 0.22,
-        impactVolumeMultiplier: 0.7,
+        impactVolumeMultiplier: 0.4,
         audioCue: 'sfx_weather_dust',
         precipitation: 'dust',
       },
@@ -234,7 +234,7 @@ export class AtmosphereWeatherService {
         visibilityMultiplier: 0.9,
         turbulenceStrength: 0.35,
         driftStrength: 0.12,
-        impactVolumeMultiplier: 0.65,
+        impactVolumeMultiplier: 0.55,
         audioCue: 'sfx_weather_meteor',
       },
     ];

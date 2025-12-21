@@ -4,7 +4,7 @@ import { AudioDebugService } from './audio-debug.service';
 import { GameLogger } from '../../game/utils/GameLogger';
 import { LogCategory, LogLevel } from '../logging.service';
 
-export type AudioBus = 'master' | 'music' | 'sfx' | 'voice' | 'ui' | 'ambience';
+export type AudioBus = 'master' | 'music' | 'sfx' | 'voice' | 'ui' | 'ambience' | 'weather';
 
 export interface PlayOptions {
   loop?: boolean;
@@ -62,10 +62,11 @@ export class AudioEngineService {
     this.master.connect(this.ctx.destination);
   // Defaults: music quieter by default (30%), sfx at unity, ui/voice near unity
   this.buses.music = this.makeBus(0.3);
-  this.buses.sfx = this.makeBus(1.0);
+    this.buses.sfx = this.makeBus(1.0);
     this.buses.voice = this.makeBus(1.0);
     this.buses.ui = this.makeBus(0.9);
   this.buses.ambience = this.makeBus(0.6);
+    this.buses.weather = this.makeBus(0.75);
     // Chain buses to master
     Object.values(this.buses).forEach(b => b.connect(this.master));
     // Safe defaults for listener (facing -Z)

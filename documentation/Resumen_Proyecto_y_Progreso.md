@@ -84,6 +84,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - `MusicDirectorService`: escenas musicales con crossfades y ducking temporal.
   - Integración: `GameEngine.enableAudio()` desbloquea audio en el primer gesto y arranca música; por frame se actualiza el oyente a partir de la cámara y el thruster se modula con el estado de la nave.
   - El controlador de thruster ahora puede reconstruirse en caliente con los dos loops disponibles: `sfx_thruster` (loop espacial clásico) y `sfx_thruster_atmo` (Airthrust). `GameEngine.requestThrusterClip()` conmuta automáticamente entre ambos al entrar o salir de la escena atmosférica, manteniendo los fades suaves al pausar/desbloquear audio.
+  - Eventos climáticos ahora tienen bus dedicado: `updateAtmosphereAudio()` arma el bus `weather`, reproduce los loops definidos en `AtmosphereWeatherService` (niebla, lluvia, tormenta, polvo, meteoritos), lanza relámpagos pseudo-aleatorios según `lightningChance` y atenúa automáticamente los SFX de impacto con `impactVolumeMultiplier` mientras dura la turbulencia.
 
 - Autenticación y Cloud Saves (nuevo en TO³)
   - `AuthService`, `AuthIntegrationService`, `AuthReturnService` y `SessionCookieService` fueron portados desde la landing. El header muestra el botón “Iniciar Sesión” real, badge con `displayName()` y opción de logout (`src/app/components/header`).

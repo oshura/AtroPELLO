@@ -2,7 +2,7 @@ import { Injectable } from '@angular/core';
 import { AudioEngineService } from '../services/audio/audio-engine.service';
 import { MusicDirectorService, MusicScene } from '../services/audio/music-director.service';
 import { WebGLService } from '../services/webgl.service';
-import { ParticleEffectsService } from '../services/particle-effects.service';
+import { ParticleEffectsService, WeatherPrecipitationConfig } from '../services/particle-effects.service';
 import { GameObject } from './GameObject';
 import { LesserBeingBase } from './game-objects/lesser-beings/lesser-being-base';
 // Import all GameObjects from centralized barrel export
@@ -359,6 +359,9 @@ export class GameEngine {
   private atmosphereAirRushHandle: ReturnType<AudioEngineService['play']> | null = null;
   private atmosphereStallHandle: ReturnType<AudioEngineService['play']> | null = null;
   private atmosphereAutoLandingCueHandle: ReturnType<AudioEngineService['play']> | null = null;
+  private weatherAudioHandle: ReturnType<AudioEngineService['play']> | null = null;
+  private weatherAudioCue: string | null = null;
+  private weatherLightningCooldownMs: number = 0;
   private readonly SUN_DAMAGE_INTERVAL_MS: number = 5000;
   private readonly SUN_DAMAGE_THRESHOLD: number = 3000;
   private readonly SUN_DAMAGE_STEP_DISTANCE: number = 100;
@@ -1447,6 +1450,7 @@ export class GameEngine {
     }
     this.atmosphereWeatherSnapshot = null;
     this.resetWeatherEffectsState();
+    this.stopWeatherAudioLoop();
   }
 
   private updateAtmosphereWeather(deltaTime: number): void {
@@ -1573,6 +1577,14 @@ export class GameEngine {
         break;
     }
     return this.clamp(factor, MIN, MAX + 0.05);
+  }
+
+  private getWeatherImpactVolumeScale(): number {
+    if (!this.isAtmosphereSceneActive()) {
+      return 1;
+    }
+    const value = this.atmosphereWeatherEffects?.impactVolumeMultiplier ?? 1;
+    return this.clamp(value, 0.1, 1.2);
   }
 
   private computeAtmosphereForceAltitudeFactor(altitude?: number): number {
@@ -1788,6 +1800,34 @@ export class GameEngine {
     }
   }
 
+  private updateWeatherParticles(deltaTime: number): void {
+    if (!this.particleEffects || !this.spaceship) {
+      return;
+    }
+    if (!this.isAtmosphereSceneActive()) {
+      this.particleEffects.updateWeatherPrecipitation(this.spaceship, deltaTime, null);
+      return;
+    }
+    const snapshot = this.atmosphereWeatherSnapshot;
+    if (!snapshot || snapshot.precipitation === 'none') {
+      this.particleEffects.updateWeatherPrecipitation(this.spaceship, deltaTime, null);
+      return;
+    }
+    const up = this.computeAtmosphereUpVector() ?? { x: 0, y: 1, z: 0 };
+    let forward = this.normalize({ ...this.spaceship.forwardDirection });
+    if (this.vectorLength(forward) < 1e-3) {
+      forward = { x: 0, y: 0, z: 1 };
+    }
+    const config: WeatherPrecipitationConfig = {
+      type: snapshot.precipitation,
+      intensity: this.clamp(snapshot.intensity ?? 0, 0.05, 1),
+      driftVector: snapshot.driftVector ?? this.ZERO_VECTOR,
+      upVector: up,
+      forwardVector: forward,
+    };
+    this.particleEffects.updateWeatherPrecipitation(this.spaceship, deltaTime, config);
+  }
+
   private lerpScalar(a: number, b: number, t: number): number {
     if (t <= 0) {
       return a;
@@ -1820,6 +1860,7 @@ export class GameEngine {
       this.atmosphereStallHandle.stop(150);
       this.atmosphereStallHandle = null;
     }
+    this.stopWeatherAudioLoop();
     // Limpiar indicador visual de stall en el HUD
     if (this.hudManager) {
       this.hudManager.setStallWarning(false);
@@ -2122,7 +2163,8 @@ export class GameEngine {
       const desired = heavy ? 'sfx_collision_heavy' : 'sfx_collision_light';
       const clip = this.audio.has(desired) ? desired : (this.audio.has('sfx_collision_light') ? 'sfx_collision_light' : null);
       if (clip) {
-        const volume = Math.max(0.25, Math.min(0.9, 0.35 + (impactSpeed / this.ATMOSPHERE_GROUND_DAMAGE_SPEED_MAX) * 0.4));
+        const baseVolume = Math.max(0.25, Math.min(0.9, 0.35 + (impactSpeed / this.ATMOSPHERE_GROUND_DAMAGE_SPEED_MAX) * 0.4));
+        const volume = Math.min(1, baseVolume * this.getWeatherImpactVolumeScale());
         try { this.audio.play(clip, { bus: 'sfx', volume, fadeInMs: 0 }); } catch {}
       }
     }
@@ -3966,7 +4008,7 @@ export class GameEngine {
   // Actualizar audio atmosférico después del update para tener la velocidad correcta
   if (this.isAtmosphereSceneActive()) {
     this.updateAtmosphereWeather(deltaTime);
-    this.updateAtmosphereAudio();
+    this.updateAtmosphereAudio(deltaTime);
     this.detectAtmosphereGroundCollision();
     this.maybeTriggerAtmosphereAutoTakeoff();
   } else if (this.atmosphereGroundContactActive) {
@@ -4307,6 +4349,7 @@ export class GameEngine {
   this.particleEffects.updateAmbientDust(this.spaceship, deltaTime);
     this.particleEffects.updateThrusterEffect(this.spaceship, deltaTime);
     this.particleEffects.updateDestructionDebris(this.camera, deltaTime);
+    this.updateWeatherParticles(deltaTime);
 
     // Update active spell beams
     this.updateAnchoringPulseBeam(deltaTime);
@@ -5328,7 +5371,8 @@ export class GameEngine {
         const heavy = dmg >= 80;
         const desired = heavy ? 'sfx_collision_heavy' : 'sfx_collision_light';
         const clip = this.audio.has(desired) ? desired : (heavy ? 'sfx_whoosh' : 'ui_select');
-        const vol = Math.max(0.2, Math.min(0.9, 0.25 + dmg / 180));
+        const baseVolume = Math.max(0.2, Math.min(0.9, 0.25 + dmg / 180));
+        const vol = Math.min(1, baseVolume * this.getWeatherImpactVolumeScale());
         this.audio.play(clip, { bus: 'sfx', volume: vol, fadeInMs: 0 });
       } else if (!this.audioUnlocked) {
         this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Collision sound skipped - audio not unlocked');
@@ -7162,8 +7206,13 @@ export class GameEngine {
    * - Alta velocidad (>2.5): sfx_passby_air (aire silbando)
    * - Baja velocidad (<0.8): sfx_stall loop (pérdida de sustentación)
    */
-  private updateAtmosphereAudio(): void {
-    if (!this.spaceship || !this.audio || !this.atmosphereSceneState.active) {
+  private updateAtmosphereAudio(deltaTime: number): void {
+    if (!this.audio) {
+      this.stopWeatherAudioLoop();
+      return;
+    }
+    if (!this.spaceship || !this.atmosphereSceneState.active) {
+      this.stopWeatherAudioLoop();
       return;
     }
 
@@ -7206,6 +7255,60 @@ export class GameEngine {
     if (this.hudManager) {
       this.hudManager.setStallWarning(stallActive);
     }
+
+    this.updateWeatherAudioLoop(deltaTime);
+  }
+
+  private updateWeatherAudioLoop(deltaTime: number): void {
+    if (!this.audio || !this.spaceship || !this.isAtmosphereSceneActive()) {
+      this.stopWeatherAudioLoop();
+      return;
+    }
+    const snapshot = this.atmosphereWeatherSnapshot;
+    const cue = snapshot?.audioCue ?? null;
+    const intensity = snapshot ? this.clamp(snapshot.intensity ?? 0, 0, 1) : 0;
+    if (!snapshot || !cue || intensity <= 0.01 || !this.audio.has(cue)) {
+      this.stopWeatherAudioLoop();
+      return;
+    }
+
+    if (!this.weatherAudioHandle || !this.weatherAudioHandle.isPlaying() || this.weatherAudioCue !== cue) {
+      try { this.weatherAudioHandle?.stop(200); } catch {}
+      this.weatherAudioHandle = this.audio.play(cue, {
+        loop: true,
+        bus: 'weather',
+        volume: 0,
+        fadeInMs: 200,
+      });
+      this.weatherAudioCue = cue;
+    }
+
+    const targetVolume = 0.12 + intensity * 0.55;
+    if (this.weatherAudioHandle) {
+      this.weatherAudioHandle.setVolume(targetVolume);
+    }
+
+    this.weatherLightningCooldownMs = Math.max(0, this.weatherLightningCooldownMs - deltaTime * 1000);
+    const lightningChance = snapshot.lightningChance ?? 0;
+    if (lightningChance > 0 && this.weatherLightningCooldownMs <= 0 && this.audio.has('sfx_weather_thunder')) {
+      const triggerProbability = lightningChance * Math.max(0.1, intensity) * deltaTime;
+      if (Math.random() < triggerProbability) {
+        this.audio.play('sfx_weather_thunder', {
+          bus: 'weather',
+          volume: 0.4 + intensity * 0.5,
+        });
+        this.weatherLightningCooldownMs = 2200 + Math.random() * 2600;
+      }
+    }
+  }
+
+  private stopWeatherAudioLoop(): void {
+    if (this.weatherAudioHandle) {
+      try { this.weatherAudioHandle.stop(200); } catch {}
+      this.weatherAudioHandle = null;
+    }
+    this.weatherAudioCue = null;
+    this.weatherLightningCooldownMs = 0;
   }
 
   private primeAtmosphereAirRushCue(): void {
@@ -10703,7 +10806,8 @@ export class GameEngine {
     try {
       if (this.audio) {
         const clip = this.audio.has('sfx_collision_light') ? 'sfx_collision_light' : 'sfx_whoosh';
-        this.audio.play(clip, { bus: 'sfx', volume: 0.55 });
+        const vol = Math.min(1, 0.55 * this.getWeatherImpactVolumeScale());
+        this.audio.play(clip, { bus: 'sfx', volume: vol });
       }
     } catch {}
   }
