@@ -19,10 +19,10 @@ Volver a implementar el modo atmosférico apoyándonos en el motor espacial exis
   - [x] Confirmar en `GameEngine` cómo se aplican actualmente thrust y frenado para enganchar ahí la detección de baja velocidad.
   - [x] Añadir una rutina `applyAtmosphereGravity()` que solo actúe cuando el modo atmosférico esté activo y la velocidad sea inferior a los umbrales definidos en `Sistema_Landing_Narrativa.md`.
   - [x] Integrar los SFX de aire/stall reutilizando el `AudioEngineService` existente y los IDs `sfx_passby_air` / `sfx_stall`.
-- [ ] **Instrumentación HUD atmosférica**
-  - [ ] Revisar `calculateAtmosphereAttitude()` y `Compass` midiendo derivadas de pitch/roll en vuelo real para identificar por qué el horizonte artificial sigue desfasado.
-  - [ ] Ajustar el pipeline (normal planetaria → actitud → shader) garantizando interpolaciones suaves y sin offsets; documentar el cálculo final en `Wiki_System.md`.
-  - [ ] Reejecutar/actualizar las pruebas unitarias del horizonte y añadir un caso de regresión que cubra banking agresivo + transición a vuelo nivelado.
+- [x] **Instrumentación HUD atmosférica**
+  - [x] Revisar `calculateAtmosphereAttitude()` y `Compass` midiendo derivadas de pitch/roll en vuelo real para identificar por qué el horizonte artificial sigue desfasado.
+  - [x] Ajustar el pipeline (normal planetaria → actitud → shader) garantizando interpolaciones suaves y sin offsets; documentar el cálculo final en `Wiki_System.md`.
+  - [x] Reejecutar/actualizar las pruebas unitarias del horizonte y añadir un caso de regresión que cubra banking agresivo + transición a vuelo nivelado.
 - [ ] **Texturizado procedimental del suelo atmosférico**
   - [ ] Definir la paleta y patrones base tomando como referencia el contexto del planeta (`LandingApproachContext`) y documentar el shading esperado.
   - [ ] Implementar sampling procedimental (noise en 2 capas + máscara de biomas) dentro de `AtmosphereSceneManager` para que el suelo deje de ser un color plano.

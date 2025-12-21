@@ -214,17 +214,6 @@ export class HUDManager {
     } else {
       this.compass.setAtmosphereMode(false);
     }
-  // Activar horizonte artificial en modo atmosférico
-  if (gameData.atmosphereMode) {
-    this.compass.setAtmosphereMode(
-      true,
-      gameData.pitch,
-      gameData.roll,
-      gameData.altitudeAboveGround ?? 0
-    );
-  } else {
-    this.compass.setAtmosphereMode(false);
-  }
     
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
   // Determinar si el rito de velocidad está activo (hasta 200%)

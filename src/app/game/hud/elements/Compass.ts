@@ -18,6 +18,8 @@ export class Compass {
   private pitch: number = 0; // degrees
   private roll: number = 0; // degrees
   private altitudeAboveGround: number = 0; // units
+  private readonly horizonBlend: number = 0.18;
+  private readonly altitudeBlend: number = 0.25;
   
   constructor() {}
 
@@ -47,10 +49,26 @@ export class Compass {
    * Activa modo horizonte artificial para vuelo atmosférico
    */
   public setAtmosphereMode(active: boolean, pitch: number = 0, roll: number = 0, altitudeAboveGround: number = 0): void {
-    this.atmosphereMode = active;
-    this.pitch = pitch;
-    this.roll = roll;
-    this.altitudeAboveGround = altitudeAboveGround;
+    if (!active) {
+      this.atmosphereMode = false;
+      return;
+    }
+
+    const normalizedPitch = this.clamp(pitch, -90, 90);
+    const normalizedRoll = this.normalizeSignedAngle(roll);
+    const normalizedAltitude = Math.max(0, altitudeAboveGround);
+
+    if (!this.atmosphereMode) {
+      this.pitch = normalizedPitch;
+      this.roll = normalizedRoll;
+      this.altitudeAboveGround = normalizedAltitude;
+    } else {
+      this.pitch = this.lerp(this.pitch, normalizedPitch, this.horizonBlend);
+      this.roll = this.lerpAngle(this.roll, normalizedRoll, this.horizonBlend);
+      this.altitudeAboveGround = this.lerp(this.altitudeAboveGround, normalizedAltitude, this.altitudeBlend);
+    }
+
+    this.atmosphereMode = true;
   }
 
   public render(ctx: CanvasRenderingContext2D, position: { x: number; y: number }): void {
@@ -347,6 +365,21 @@ export class Compass {
 
   private normalizeSignedAngle(value: number): number {
     return ((value % 360) + 540) % 360 - 180;
+  }
+
+  private lerp(current: number, target: number, alpha: number): number {
+    const t = Math.max(0, Math.min(1, alpha));
+    return current + (target - current) * t;
+  }
+
+  private lerpAngle(current: number, target: number, alpha: number): number {
+    const t = Math.max(0, Math.min(1, alpha));
+    const delta = this.normalizeSignedAngle(target - current);
+    return this.normalizeSignedAngle(current + delta * t);
+  }
+
+  private clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
   }
 
   // Helpers

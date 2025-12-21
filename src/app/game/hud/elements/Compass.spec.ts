@@ -20,4 +20,18 @@ describe('Compass', () => {
 
     expect(debug.atmosphereMode).toBeFalse();
   });
+
+  it('smooths successive atmosphere updates to avoid jitter', () => {
+    const compass = new Compass();
+    compass.setAtmosphereMode(true, 0, 0, 0);
+    compass.setAtmosphereMode(true, 40, 120, 800);
+    const debug = compass.getDebugInfo();
+
+    expect(debug.atmospherePitch).toBeGreaterThan(0);
+    expect(debug.atmospherePitch).toBeLessThan(40);
+    expect(debug.atmosphereRoll).toBeGreaterThan(0);
+    expect(debug.atmosphereRoll).toBeLessThan(120);
+    expect(debug.altitudeAboveGround).toBeGreaterThan(0);
+    expect(debug.altitudeAboveGround).toBeLessThan(800);
+  });
 });
