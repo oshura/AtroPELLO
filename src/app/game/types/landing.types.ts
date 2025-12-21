@@ -25,6 +25,8 @@ export interface LandingApproachContext {
   lastUpdatedMs: number;
   planetIntel?: LandingPlanetIntel;
   probabilityOfLifePct?: number;
+  /** Flag set when the touchdown was auto-triggered by a soft contact in la atmósfera */
+  autoLand?: boolean;
 }
 
 /** Result of the landing readiness evaluation shown on the HUD. */

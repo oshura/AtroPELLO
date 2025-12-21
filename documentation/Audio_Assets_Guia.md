@@ -22,7 +22,9 @@ pwsh -File .\scripts\audio\generate-placeholders.ps1
 Esto crea los siguientes ficheros:
 
 - SFX
-  - `sfx_thruster.wav` (3s, motor continuo mono)
+  - `sfx_thruster.wav` (loop espacial clásico, grave, mapeado como `sfx_thruster`)
+  - `Airthrust.wav` (loop atmosférico mono para el thruster, mapeado como `sfx_thruster_atmo`)
+  - `Landing.wav` (1.1s, swell cinematográfico usado en el cue `sfx_autoland_touchdown`)
   - `sfx_passby.wav` (1.5s, barrido tipo whoosh mono)
   - `sfx_passby_air.wav` (1.2s, estela de aire previa al stall)
   - `ui_select.wav` (0.25s, click corto mono)
@@ -93,7 +95,9 @@ El motor ya reproduce `sfx_thruster` y música de escena (`music_*`) cuando inic
 
 - `sfx_passby_air` sirve como cue previo al stall cuando el modo atmosférico detecta velocidad crítica; se reproduce en loop suave (bus `sfx`, volumen 0.4) y se corta automáticamente al recuperar velocidad o al entrar al stall real.
 - `sfx_stall` es el loop principal de emergencia. Se dispara al entrar en stall, reemplaza el cue anterior y mantiene activo el borde rojo brillante de la brújula hasta que la nave recupera sustentación o aterriza.
-- Ambos ficheros residen en `src/app/assets/audio/` y se precargan desde el manifiesto, por lo que basta con invocar `audio.play('sfx_passby_air', ...)` / `audio.play('sfx_stall', ...)` desde los controladores de vuelo.
+- `Landing.wav` registrado como `sfx_autoland_touchdown` se dispara junto a la cámara bloqueada y el burst de polvo al realizar un auto-landing suave; si el clip no está disponible, el motor vuelve a `sfx_collision_light`/`sfx_passby_air` como respaldo.
+- `sfx_thruster` vs `sfx_thruster_atmo`: el `GameEngine` alterna automáticamente el loop base (`sfx_thruster.wav`) y el loop atmosférico (`Airthrust.wav`) al entrar/salir de la escena atmosférica mediante `requestThrusterClip()`, manteniendo el mismo controlador de aceleración.
+- Todos estos cues atmosféricos residen en `src/app/assets/audio/` y se precargan desde el manifiesto, por lo que basta con invocar `audio.play('sfx_passby_air', ...)`, `audio.play('sfx_stall', ...)`, `audio.play('sfx_autoland_touchdown', ...)` o dejar que el controlador de thruster resuelva el loop correspondiente.
 
 ## Consejos de mezcla
 

@@ -23,19 +23,26 @@ Volver a implementar el modo atmosférico apoyándonos en el motor espacial exis
   - [x] Revisar `calculateAtmosphereAttitude()` y `Compass` midiendo derivadas de pitch/roll en vuelo real para identificar por qué el horizonte artificial sigue desfasado.
   - [x] Ajustar el pipeline (normal planetaria → actitud → shader) garantizando interpolaciones suaves y sin offsets; documentar el cálculo final en `Wiki_System.md`.
   - [x] Reejecutar/actualizar las pruebas unitarias del horizonte y añadir un caso de regresión que cubra banking agresivo + transición a vuelo nivelado.
-- [ ] **Texturizado procedimental del suelo atmosférico**
-  - [ ] Definir la paleta y patrones base tomando como referencia el contexto del planeta (`LandingApproachContext`) y documentar el shading esperado.
-  - [ ] Implementar sampling procedimental (noise en 2 capas + máscara de biomas) dentro de `AtmosphereSceneManager` para que el suelo deje de ser un color plano.
-  - [ ] Sincronizar la textura del suelo con el horizonte artificial para evitar popping visual y validar el resultado en QA visual (capturas WebGL).
-- [ ] **Impulso inicial tras landing fade-out**
-  - [ ] Añadir hook en `enterAtmosphereScene()` (o equivalente) que aplique una aceleración inicial de 3u justo tras el fade-out de la animación de aterrizaje.
-  - [ ] Confirmar que el impulso respeta los límites actuales de `thrust`/`maxSpeed` y que el HUD no dispara alarmas de stall.
-  - [ ] Registrar la nueva regla en `Resumen_Proyecto_y_Progreso.md` y en la wiki para que QA la tenga presente.
-- [ ] **Aterrizaje y despegue**
-  - [ ] Exponer un detector de colisión simple entre la nave y la esfera de suelo (radio configurable) que reaproveche `handleLandingTouchdown` para abrir el diálogo.
-  - [ ] Conectar el umbral de altura sobre la esfera del cielo con la animación de takeoff existente, restaurando el renderer del sistema solar y limpiando el estado atmosférico.
-  - [ ] Añadir polvo/cámara fija usando los componentes ya presentes en la secuencia de aterrizaje (solo disparar cuando `landingContext.autoLand === true`).
-- [ ] **Documentación y QA**
-  - [ ] Actualizar Wiki (`/src/app/wiki/pages/spaceship` y `documentation/Resumen_Proyecto_y_Progreso.md`) describiendo el flujo simplificado.
-  - [ ] Registrar las pruebas manuales (descenso, vuelo bajo, salida por cielo, aterrizaje manual y auto) en la bitácora QA.
-  - [ ] Ejecutar `npm run build` tras cada fase completada.
+- [x] **Texturizado procedimental del suelo atmosférico**
+  - [x] Definir la paleta y patrones base tomando como referencia el contexto del planeta (`LandingApproachContext`) y documentar el shading esperado.
+  - [x] Implementar sampling procedimental (noise en 2 capas + máscara de biomas) dentro de `AtmosphereSceneManager` para que el suelo deje de ser un color plano.
+  - [x] Sincronizar la textura del suelo con el horizonte artificial para evitar popping visual y validar el resultado en QA visual (capturas WebGL).
+- [x] **Impulso inicial tras landing fade-out**
+  - [x] Añadir hook en `enterAtmosphereScene()` (o equivalente) que aplique una aceleración inicial de 3u justo tras el fade-out de la animación de aterrizaje.
+  - [x] Confirmar que el impulso respeta los límites actuales de `thrust`/`maxSpeed` y que el HUD no dispara alarmas de stall.
+  - [x] Registrar la nueva regla en `Resumen_Proyecto_y_Progreso.md` y en la wiki para que QA la tenga presente.
+- [x] **Aterrizaje y despegue**
+  - [x] Silenciar la música de exploración durante la escena atmosférica para priorizar los SFX.
+  - [x] Exponer un detector de colisión simple entre la nave y la esfera de suelo (radio configurable) que reaproveche `handleLandingTouchdown` para abrir el diálogo.
+  - [ ] **Autolanding asistido en superficie**
+    - [x] Respetar las condiciones actuales del piloto verde de landing (proximidad ≤50u, velocidad ≤5u/s, alineación ±60°) para marcar `landingStatus.ready` mientras estamos en la escena atmosférica.
+    - [x] Cuando la colisión con el suelo ocurra con velocidad en el eje de la gravedad < 1u, registrar `landingContext.autoLand = true` y disparar el mismo flujo que si el piloto hubiera pulsado <kbd>Enter</kbd> (autoland asistido).
+    - [x] En ambos casos (secuencia solar→atmósfera o autolanding por colisión suave) fijar la cámara atmosférica en modo "locked to ground" con tracking de la nave hasta que su velocidad lateral sea ~0, mostrar el contacto y lanzar el SFX/VFX de polvo.
+  - [ ] **Takeoff atmosférico → espacio**
+    - [x] Mantener el control libre mientras la nave asciende manualmente; si la altitud supera 1000u sobre el suelo del planeta, iniciar automáticamente la `TakeoffSequence` existente (`GameEngine.maybeTriggerAtmosphereAutoTakeoff()` → `startTakeoffSequence()`), restaurar el renderer del sistema solar y limpiar el estado atmosférico al completarse.
+    - [x] Garantizar que el piloto pueda iniciar la secuencia manualmente desde el panel (como hoy) y que ambos caminos compartan la lógica de audio, HUD y desbloqueo de daños (ambos pasan por `startTakeoffSequence()` / `notifyTakeoffSequenceFinished()`).
+  - [x] Añadir polvo/cámara fija usando los componentes ya presentes en la secuencia de aterrizaje (solo disparar cuando `landingContext.autoLand === true` y durante la cámara bloqueada).
+- [x] **Documentación y QA**
+  - [x] Actualizar Wiki (`/src/app/wiki/pages/spaceship` y `documentation/Resumen_Proyecto_y_Progreso.md`) describiendo el flujo simplificado.
+  - [x] Registrar las pruebas manuales (descenso, vuelo bajo, salida por cielo, aterrizaje manual y auto) en la bitácora QA.
+  - [x] Ejecutar `npm run build` tras cada fase completada.

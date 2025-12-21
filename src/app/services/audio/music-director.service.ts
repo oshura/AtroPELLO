@@ -62,6 +62,10 @@ export class MusicDirectorService {
     this.current = { scene, handle: nextHandle };
   }
 
+  public getCurrentScene(): MusicScene {
+    return this.current.scene;
+  }
+
   public stop(fadeMs = 800) {
     if (this.current.handle) this.current.handle.stop(fadeMs);
     this.current = { scene: 'silence', handle: null };

@@ -29,5 +29,7 @@
   "ui_select_glyph": "/assets/audio/select-glifo.wav",
   "ui_drag_glyph": "/assets/audio/DragGlyph.wav",
   "ui_drop_glyph": "/assets/audio/DropGlyph.wav",
-  "sfx_stall": "/assets/audio/sfx_stall.wav"
+  "sfx_stall": "/assets/audio/sfx_stall.wav",
+  "sfx_autoland_touchdown": "/assets/audio/Landing.wav",
+  "sfx_thruster_atmo": "/assets/audio/Airthrust.wav"
 }

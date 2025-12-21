@@ -1,6 +1,6 @@
 import { Injectable } from '@angular/core';
 import { AudioEngineService } from '../services/audio/audio-engine.service';
-import { MusicDirectorService } from '../services/audio/music-director.service';
+import { MusicDirectorService, MusicScene } from '../services/audio/music-director.service';
 import { WebGLService } from '../services/webgl.service';
 import { ParticleEffectsService } from '../services/particle-effects.service';
 import { GameObject } from './GameObject';
@@ -87,7 +87,8 @@ import { Vector3 } from '../types/game.types';
 import { LesserBeingController } from './services/lesser-beings/lesser-being-controller';
 import { LesserBeingSpawner } from './services/lesser-beings/lesser-being-spawner';
 import { LesserBeingCombatService, LesserBeingProjectileView } from './services/lesser-beings/lesser-being-combat.service';
-import { AtmosphereSceneActivationOptions, AtmosphereSceneManager, AtmosphereSceneState } from './atmosphere/AtmosphereSceneManager';
+import { AtmosphereGroundPalette, AtmosphereSceneActivationOptions, AtmosphereSceneManager, AtmosphereSceneState } from './atmosphere/AtmosphereSceneManager';
+import { AtmosphereWeatherService, AtmosphereWeatherSnapshot } from './atmosphere/AtmosphereWeatherService';
 import { calculateAtmosphereAttitude } from './utils/atmosphere-attitude.util';
 
 interface AuxiliaryAbilityRuntime {
@@ -124,6 +125,15 @@ interface HardcoreDeathContext {
   ageYears?: number;
   metadata?: Record<string, unknown>;
   message?: string;
+}
+
+interface LandingTouchdownOptions {
+  /** Avoid reconfiguring the atmosphere scene when the ship already transitioned */
+  skipAtmosphereScene?: boolean;
+  /** Skip opening the landing panel (used while showcasing the atmosphere scene) */
+  skipLandingPanel?: boolean;
+  /** Defer landing panel display to allow the auto-landing FX to breathe */
+  deferLandingPanelMs?: number;
 }
 
 interface CanvasResizeMetrics {
@@ -165,6 +175,7 @@ export class GameEngine {
   private inventorySelection: InventorySelection | null = null;
   private inventoryHoverKey: string | null = null;
   public overlayRenderer: ScreenOverlayRenderer | null = null;
+  private atmosphereEntryFadeRemainingMs: number = 0;
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   public voidJumpActive: boolean = false;
   public collisionsDisabled: boolean = false;
@@ -223,6 +234,19 @@ export class GameEngine {
   private readonly LANDING_THREAT_RADIUS = 500;
   private readonly LANDING_APPROACH_ALERT_DISTANCE = 300;
   private readonly LANDING_APPROACH_RESET_DISTANCE = 380;
+  private readonly ATMOSPHERE_POST_LANDING_IMPULSE = 3;
+  private readonly ATMOSPHERE_ENTRY_FADE_MS = 1900;
+  private readonly ATMOSPHERE_AUTO_TAKEOFF_ALTITUDE = 1000;
+  private readonly ATMOSPHERE_GROUND_COLLISION_PADDING = 45;
+  private readonly ATMOSPHERE_AUTO_LAND_VERTICAL_SPEED_MAX = 1;
+  private readonly ATMOSPHERE_AUTO_LAND_RELEASE_SPEED = 0.4;
+  private readonly ATMOSPHERE_AUTO_LAND_CAMERA_BACK_OFFSET = 32;
+  private readonly ATMOSPHERE_AUTO_LAND_CAMERA_UP_OFFSET = 8;
+  private readonly ATMOSPHERE_AUTO_LAND_CAMERA_TARGET_LIFT = 3;
+  private readonly ATMOSPHERE_AUTO_LAND_CAMERA_MIN_HOLD_MS = 900;
+  private readonly ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS = 2000;
+  private readonly SPACE_THRUSTER_CLIP = 'sfx_thruster';
+  private readonly ATMOSPHERE_THRUSTER_CLIP = 'sfx_thruster_atmo';
   private landingApproachAnnouncements: Map<string, number> = new Map();
   private readonly GLYPH_SCAN_RANGE = 500;
   private readonly PORTAL_CONCORD_RANGE = 500;
@@ -234,6 +258,12 @@ export class GameEngine {
   // Central logger
   public readonly logger: LoggingService;
   public _targetDetailsCache: Record<string, any> = {};
+  private atmosphereAutoLandingCameraActive = false;
+  private atmosphereAutoLandingCameraPrevMode: CameraMode | null = null;
+  private atmosphereAutoLandingCameraNormal: Vector3 | null = null;
+  private atmosphereAutoLandingContactPoint: Vector3 | null = null;
+  private atmosphereAutoLandingCameraStartedAt = 0;
+  private atmosphereAutoLandingDustTriggered = false;
   
   // HUD health update throttle (update every 250ms instead of every frame)
   private lastHealthUpdateTime: number = 0;
@@ -242,10 +272,14 @@ export class GameEngine {
   // Audio
   private audio: AudioEngineService | null = null;
   private music: MusicDirectorService | null = null;
+  private musicSceneBeforeAtmosphere: MusicScene | null = null;
+  private atmosphereMusicSuppressed: boolean = false;
   private thrusterCtl: ReturnType<AudioEngineService['createThrusterController']> | null = null;
   private audioUnlocked: boolean = false;
   private deathInProgress: boolean = false; // Prevents audio updates during death fade-out
   private audioSilencedForPause: boolean = false;
+  private desiredThrusterClip: string = this.SPACE_THRUSTER_CLIP;
+  private currentThrusterClip: string = this.SPACE_THRUSTER_CLIP;
   // Doppler cues (near fly-bys)
   private dopplerEnabled: boolean = true;
   private dopplerCues: Map<string, { cue: ReturnType<AudioEngineService['createDopplerCue']>; started: number }>
@@ -260,6 +294,7 @@ export class GameEngine {
   private precisionLatchActive: boolean = false;
   private precastChantDurationMs: number | null = null;
   private sunExposureTimerMs: number = 0;
+  private pendingLandingPanelTimer: ReturnType<typeof setTimeout> | null = null;
   // Atmosphere scene management
   private atmosphereSceneManager: AtmosphereSceneManager | null = null;
   private atmosphereSceneState: AtmosphereSceneState = {
@@ -268,14 +303,22 @@ export class GameEngine {
     center: { x: 0, y: 0, z: 0 },
     groundRadius: 0,
     skyRadius: 0,
+    groundCollisionRadius: 0,
     groundColor: new Float32Array([0.32, 0.32, 0.32]),
     skyColor: new Float32Array([0.05, 0.08, 0.18]),
+    groundPalette: this.createFallbackGroundPalette(),
+    groundPaletteKey: 'atmo-ground-default',
     entryAltitude: 0,
     lastUpdatedMs: 0,
   };
+  private atmosphereGroundContactActive: boolean = false;
+  private atmosphereAutoTakeoffArmed: boolean = false;
+  private atmosphereWeather: AtmosphereWeatherService | null = null;
+  private atmosphereWeatherSnapshot: AtmosphereWeatherSnapshot | null = null;
   // Atmosphere audio SFX
   private atmosphereAirRushHandle: ReturnType<AudioEngineService['play']> | null = null;
   private atmosphereStallHandle: ReturnType<AudioEngineService['play']> | null = null;
+  private atmosphereAutoLandingCueHandle: ReturnType<AudioEngineService['play']> | null = null;
   private readonly SUN_DAMAGE_INTERVAL_MS: number = 5000;
   private readonly SUN_DAMAGE_THRESHOLD: number = 3000;
   private readonly SUN_DAMAGE_STEP_DISTANCE: number = 100;
@@ -464,6 +507,7 @@ export class GameEngine {
     this.lesserBeingController = new LesserBeingController(this);
     this.lesserBeingSpawner = new LesserBeingSpawner(this);
     this.lesserBeingCombat = new LesserBeingCombatService(this);
+    this.atmosphereWeather = new AtmosphereWeatherService();
   }
 
   /**
@@ -623,6 +667,11 @@ export class GameEngine {
       return { ready: false, context: null };
     }
 
+    const now = performance.now();
+    if (this.isAtmosphereSceneActive() && this.atmosphereSceneState.context) {
+      return this.computeAtmosphereLandingStatus(now);
+    }
+
     const shipPos = this.spaceship.position;
     let bestPlanet: Planet | null = null;
     let bestDistance = Number.POSITIVE_INFINITY;
@@ -669,7 +718,6 @@ export class GameEngine {
     const meetsAlignment = Math.abs(alignmentDot) <= this.LANDING_ALIGNMENT_MAX_DOT;
     const meetsAll = meetsDistance && meetsSpeed && meetsAlignment;
 
-    const now = performance.now();
     if (!meetsAll) {
       this.landingCandidateStartMs = null;
       this.landingCandidatePlanetId = null;
@@ -703,6 +751,56 @@ export class GameEngine {
     };
 
     return { ready, context };
+  }
+
+  private computeAtmosphereLandingStatus(now: number): LandingStatus {
+    if (!this.spaceship || !this.atmosphereSceneState.context) {
+      return { ready: false, context: null };
+    }
+    const context = this.atmosphereSceneState.context;
+    const altitude = this.computeAltitudeAboveGround();
+    const relativeSpeed = Math.abs(this.spaceship.currentSpeed);
+    const meetsDistance = altitude <= this.LANDING_DISTANCE_THRESHOLD;
+    const meetsSpeed = relativeSpeed <= this.LANDING_SPEED_THRESHOLD;
+    const normal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
+    const forward = this.normalize({ ...this.spaceship.forwardDirection });
+    const alignmentDot = forward.x * normal.x + forward.y * normal.y + forward.z * normal.z;
+    const meetsAlignment = Math.abs(alignmentDot) <= this.LANDING_ALIGNMENT_MAX_DOT;
+    const meetsAll = meetsDistance && meetsSpeed && meetsAlignment;
+
+    if (!meetsAll) {
+      this.landingCandidateStartMs = null;
+      this.landingCandidatePlanetId = null;
+    } else {
+      if (this.landingCandidatePlanetId !== context.planetId) {
+        this.landingCandidatePlanetId = context.planetId;
+        this.landingCandidateStartMs = now;
+      } else if (this.landingCandidateStartMs == null) {
+        this.landingCandidateStartMs = now;
+      }
+    }
+
+    const ready = Boolean(
+      meetsAll &&
+      this.landingCandidateStartMs !== null &&
+      now - this.landingCandidateStartMs >= this.LANDING_READY_HOLD_MS
+    );
+
+    const surfacePoint = context.surfacePoint ?? this.resolveLandingContactPoint(context);
+    const planetCenter = context.planetCenter ?? this.resolvePlanetCenterFromContext(context);
+
+    const statusContext: LandingStatus['context'] = {
+      ...context,
+      surfacePoint,
+      surfaceNormal: normal,
+      planetCenter: planetCenter ?? surfacePoint,
+      distanceToSurface: altitude,
+      relativeSpeed,
+      alignmentDot,
+      lastUpdatedMs: now,
+    };
+
+    return { ready, context: statusContext };
   }
 
   private computeLandingThreat(availableTargets: ITargetable[]): LandingThreatState {
@@ -814,7 +912,7 @@ export class GameEngine {
     try { this.gameState.setLandingStatus(resetStatus); } catch {}
     if (outcome === 'landed' && context) {
       this.setLandingDamageSuppressed(true, 'landing-touchdown');
-      this.handleLandingTouchdown(context);
+      this.handleLandingTouchdown(context, { skipLandingPanel: true });
     } else {
       this.clearLandedShipAttachment();
       this.landingTouchdownContext = null;
@@ -859,27 +957,75 @@ export class GameEngine {
     }
   }
 
-  private handleLandingTouchdown(context: LandingApproachContext): void {
+  private handleLandingTouchdown(context: LandingApproachContext, options?: LandingTouchdownOptions): void {
+    if (!context) {
+      return;
+    }
+    this.clearPendingLandingPanelTimer();
     const enrichedContext = this.enrichLandingContext(context);
-    this.enterAtmosphereScene(enrichedContext);
+    if (!options?.skipAtmosphereScene) {
+      this.enterAtmosphereScene(enrichedContext);
+    }
+    this.applyAtmosphereLandingImpulse();
     this.landingTouchdownContext = enrichedContext;
+    if (enrichedContext.autoLand) {
+      this.startAtmosphereAutoLandingCamera(enrichedContext);
+    } else {
+      this.stopAtmosphereAutoLandingCamera();
+    }
     this.registerPlanetLandingVisit(context.planetId);
+    this.atmosphereAutoTakeoffArmed = true;
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing touchdown registered', {
       planetId: context.planetId,
-      planetName: context.planetName
+      planetName: context.planetName,
+      skipPanel: !!options?.skipLandingPanel,
+      skipAtmosphereScene: !!options?.skipAtmosphereScene,
     });
-    // Panel deshabilitado temporalmente para visualizar escena atmosférica
-    // try {
-    //   const gameComponent = (globalThis as any).GameComponentInstance;
-    //   if (gameComponent && typeof gameComponent.openLandingPanel === 'function') {
-    //     gameComponent.openLandingPanel(enrichedContext);
-    //     return;
-    //   }
-    // } catch (error) {
-    //   this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Landing panel open failed', error);
-    // }
+
+    let panelManaged = false;
+    if (!options?.skipLandingPanel) {
+      const deferMs = options?.deferLandingPanelMs ?? (enrichedContext.autoLand ? this.ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS : 0);
+      panelManaged = this.openLandingPanelWithDelay(enrichedContext, deferMs);
+    }
+
+    if (panelManaged) {
+      return;
+    }
+
     const label = context.planetName ? `Aterrizaje en ${context.planetName}` : 'Aterrizaje completado';
     try { this.showPlaceholderText(`${label} - Escena atmosférica activa`, 3000); } catch {}
+  }
+
+  private tryOpenLandingPanel(context: LandingApproachContext): boolean {
+    try {
+      const gameComponent = (globalThis as any).GameComponentInstance;
+      if (gameComponent && typeof gameComponent.openLandingPanel === 'function') {
+        gameComponent.openLandingPanel(context);
+        return true;
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Landing panel open failed', error);
+    }
+    return false;
+  }
+
+  private openLandingPanelWithDelay(context: LandingApproachContext, delayMs: number): boolean {
+    if (delayMs <= 0) {
+      return this.tryOpenLandingPanel(context);
+    }
+    const timer = setTimeout(() => {
+      this.pendingLandingPanelTimer = null;
+      this.tryOpenLandingPanel(context);
+    }, delayMs);
+    this.pendingLandingPanelTimer = timer;
+    return true;
+  }
+
+  private clearPendingLandingPanelTimer(): void {
+    if (this.pendingLandingPanelTimer !== null) {
+      clearTimeout(this.pendingLandingPanelTimer);
+      this.pendingLandingPanelTimer = null;
+    }
   }
 
   private registerPlanetLandingVisit(planetId?: string | null): void {
@@ -932,6 +1078,7 @@ export class GameEngine {
   }
 
   public startTakeoffSequence(): boolean {
+    this.stopAtmosphereAutoLandingCamera();
     if (!this.landingTouchdownContext) {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff requested without landing context');
       try { this.showPlaceholderText('DESPEGUE BLOQUEADO - SIN PLANETA', 2000); } catch {}
@@ -946,6 +1093,7 @@ export class GameEngine {
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Takeoff already in progress');
       return true;
     }
+    this.atmosphereAutoTakeoffArmed = false;
     if (!this.animationManager.startTakeoffSequence(this, this.landingTouchdownContext)) {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff animation rejected (busy)');
       try { this.showPlaceholderText('DESPEGUE BLOQUEADO - SISTEMA OCUPADO', 2200); } catch {}
@@ -1130,6 +1278,7 @@ export class GameEngine {
     if (!context) {
       return;
     }
+    this.requestThrusterClip(this.ATMOSPHERE_THRUSTER_CLIP);
     const now = performance?.now?.() ?? Date.now();
     const center = this.resolvePlanetCenterFromContext(context) ?? { x: 0, y: 0, z: 0 };
     // Altitud de entrada escalada x5 para coincidir con groundRadius aumentado
@@ -1143,6 +1292,11 @@ export class GameEngine {
     const groundRadius = baseRadius * 5;
     const skyPadding = options?.skyPadding ?? 3000; // 600 * 5
     const skyRadius = Math.max(groundRadius + 500, options?.skyRadius ?? (groundRadius + skyPadding));
+    const collisionPadding = Math.max(0, options?.groundCollisionPadding ?? this.ATMOSPHERE_GROUND_COLLISION_PADDING);
+    const groundCollisionRadius = Math.max(
+      groundRadius,
+      options?.groundCollisionRadius ?? (groundRadius + collisionPadding)
+    );
     const palette = this.deriveAtmospherePalette(context);
     const contextClone: LandingApproachContext = {
       ...context,
@@ -1156,22 +1310,105 @@ export class GameEngine {
       center,
       groundRadius,
       skyRadius,
+      groundCollisionRadius,
       groundColor: palette.ground,
       skyColor: palette.sky,
+      groundPalette: palette.groundPalette,
+      groundPaletteKey: palette.paletteKey,
       entryAltitude,
       lastUpdatedMs: now,
     };
+    this.configureAtmosphereWeather(this.atmosphereSceneState);
+    this.atmosphereGroundContactActive = false;
+    this.silenceMusicForAtmosphere();
+    this.atmosphereEntryFadeRemainingMs = this.ATMOSPHERE_ENTRY_FADE_MS;
+    this.primeAtmosphereAirRushCue();
     this.applyAtmosphereEntryPosition(contextClone, entryAltitude, groundRadius);
+  }
+
+  private applyAtmosphereLandingImpulse(): void {
+    if (!this.spaceship || !this.atmosphereSceneState.active) {
+      return;
+    }
+    const maxSpeed = Math.max(0, this.spaceship.maxSpeed ?? 0);
+    const impulse = Math.min(this.ATMOSPHERE_POST_LANDING_IMPULSE, maxSpeed);
+    if (impulse <= 0) {
+      return;
+    }
+    const nextTarget = Math.max(this.spaceship.targetSpeed, impulse);
+    this.spaceship.targetSpeed = Math.min(maxSpeed, nextTarget);
+    if (this.spaceship.currentSpeed < impulse) {
+      this.spaceship.currentSpeed = impulse;
+    }
+    this.spaceship.thrusterState = ThrusterState.ACCELERATING;
+    this.spaceship.isThrusting = true;
+
+    const forward = this.normalize({ ...this.spaceship.forwardDirection });
+    if (forward.x || forward.y || forward.z) {
+      this.spaceship.velocity.x = forward.x * this.spaceship.currentSpeed;
+      this.spaceship.velocity.y = forward.y * this.spaceship.currentSpeed;
+      this.spaceship.velocity.z = forward.z * this.spaceship.currentSpeed;
+    }
+
+    try {
+      this.hudManager?.setStallWarning(false);
+    } catch {}
   }
 
   public exitAtmosphereScene(): void {
     if (!this.atmosphereSceneState.active) {
       return;
     }
+    this.requestThrusterClip(this.SPACE_THRUSTER_CLIP);
+    this.clearPendingLandingPanelTimer();
     // Detener todos los SFX atmosféricos
     this.stopAtmosphereAudio();
+    this.restoreMusicAfterAtmosphere();
+    this.stopAtmosphereAutoLandingCamera();
     // Limpiar estado
     this.atmosphereSceneState = this.createDefaultAtmosphereSceneState();
+    this.resetAtmosphereWeather();
+    this.atmosphereEntryFadeRemainingMs = 0;
+    this.atmosphereGroundContactActive = false;
+    this.atmosphereAutoTakeoffArmed = false;
+  }
+
+  private configureAtmosphereWeather(state: AtmosphereSceneState): void {
+    if (!this.atmosphereWeather) {
+      this.atmosphereWeather = new AtmosphereWeatherService();
+    }
+    const now = performance?.now?.() ?? Date.now();
+    try {
+      this.atmosphereWeather.configureForScene(state, now);
+      this.atmosphereWeatherSnapshot = this.atmosphereWeather.getSnapshot();
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Weather controller configuration failed', { error });
+      this.atmosphereWeatherSnapshot = null;
+    }
+  }
+
+  private resetAtmosphereWeather(): void {
+    try {
+      this.atmosphereWeather?.reset();
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Weather controller reset failed', { error });
+    }
+    this.atmosphereWeatherSnapshot = null;
+  }
+
+  private updateAtmosphereWeather(deltaTime: number): void {
+    if (!this.atmosphereWeather || !this.isAtmosphereSceneActive()) {
+      this.atmosphereWeatherSnapshot = null;
+      return;
+    }
+    const now = performance?.now?.() ?? Date.now();
+    const altitude = this.computeAltitudeAboveGround();
+    try {
+      this.atmosphereWeather.update(now, deltaTime, altitude);
+      this.atmosphereWeatherSnapshot = this.atmosphereWeather.getSnapshot();
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Weather controller update failed', { error });
+    }
   }
 
   /**
@@ -1189,6 +1426,49 @@ export class GameEngine {
     // Limpiar indicador visual de stall en el HUD
     if (this.hudManager) {
       this.hudManager.setStallWarning(false);
+    }
+  }
+
+  private silenceMusicForAtmosphere(): void {
+    if (this.atmosphereMusicSuppressed) {
+      return;
+    }
+    this.atmosphereMusicSuppressed = true;
+    if (!this.music) {
+      return;
+    }
+    try {
+      if (!this.musicSceneBeforeAtmosphere && typeof this.music.getCurrentScene === 'function') {
+        this.musicSceneBeforeAtmosphere = this.music.getCurrentScene();
+      }
+      const maybePromise = this.music.setScene('silence', 700);
+      if (maybePromise && typeof maybePromise.catch === 'function') {
+        maybePromise.catch(err => {
+          this.logger.log(LogLevel.WARN, LogCategory.MUSIC, 'Failed to silence music for atmosphere scene', err);
+        });
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.MUSIC, 'Music silence request failed', error);
+    }
+  }
+
+  private restoreMusicAfterAtmosphere(): void {
+    const wasSuppressed = this.atmosphereMusicSuppressed;
+    const targetScene: MusicScene = this.musicSceneBeforeAtmosphere ?? 'exploration';
+    this.atmosphereMusicSuppressed = false;
+    this.musicSceneBeforeAtmosphere = null;
+    if (!wasSuppressed || !this.music) {
+      return;
+    }
+    try {
+      const maybePromise = this.music.setScene(targetScene, 900);
+      if (maybePromise && typeof maybePromise.catch === 'function') {
+        maybePromise.catch(err => {
+          this.logger.log(LogLevel.WARN, LogCategory.MUSIC, 'Failed to restore music after atmosphere scene', { targetScene, err });
+        });
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.MUSIC, 'Music restore request failed', { targetScene, error });
     }
   }
 
@@ -1219,34 +1499,497 @@ export class GameEngine {
     this.placeShipAtPosition(entry);
   }
 
-  private deriveAtmospherePalette(context: LandingApproachContext): { ground: Float32Array; sky: Float32Array } {
-    const type = context.planetType;
-    const palette = (() => {
-      switch (type) {
-        case PlanetType.Tierra:
-          return { ground: [0.32, 0.44, 0.29], sky: [0.24, 0.44, 0.72] };
-        case PlanetType.Gaseous:
-          return { ground: [0.24, 0.30, 0.52], sky: [0.12, 0.18, 0.42] };
-        case PlanetType.Giant:
-          return { ground: [0.58, 0.42, 0.26], sky: [0.36, 0.20, 0.50] };
-        case PlanetType.Ringed:
-          return { ground: [0.40, 0.32, 0.28], sky: [0.22, 0.18, 0.38] };
-        case PlanetType.Dwarf:
-          return { ground: [0.55, 0.55, 0.60], sky: [0.30, 0.32, 0.50] };
-        case PlanetType.Protoplanet:
-          return { ground: [0.42, 0.36, 0.30], sky: [0.26, 0.28, 0.36] };
-        default:
-          return { ground: [0.38, 0.33, 0.30], sky: [0.08, 0.12, 0.24] };
-      }
-    })();
+  private detectAtmosphereGroundCollision(): void {
+    if (!this.spaceship || !this.isAtmosphereSceneActive()) {
+      this.atmosphereGroundContactActive = false;
+      return;
+    }
+    const state = this.atmosphereSceneState;
+    if (!state.context) {
+      this.atmosphereGroundContactActive = false;
+      return;
+    }
+    const dx = this.spaceship.position.x - state.center.x;
+    const dy = this.spaceship.position.y - state.center.y;
+    const dz = this.spaceship.position.z - state.center.z;
+    const distFromCenter = Math.hypot(dx, dy, dz);
+    const shipRadius = Math.max(0, this.spaceship.boundingSphere?.radius ?? 0);
+    const collisionRadius = Math.max(state.groundCollisionRadius || state.groundRadius, 0) + shipRadius;
+    const isColliding = distFromCenter <= collisionRadius;
+
+    if (this.landingSequenceActive || this.takeoffSequenceActive) {
+      this.atmosphereGroundContactActive = isColliding;
+      return;
+    }
+
+    if (isColliding && !this.atmosphereGroundContactActive) {
+      this.onAtmosphereGroundCollision();
+    }
+
+    this.atmosphereGroundContactActive = isColliding;
+  }
+
+  private onAtmosphereGroundCollision(): void {
+    const context = this.landingTouchdownContext ?? this.atmosphereSceneState.context;
+    if (!context) {
+      return;
+    }
+    const normal = context.surfaceNormal ? this.normalize(context.surfaceNormal) : this.deriveLandingNormalFromContext(context);
+    if (!this.landingStatus.ready) {
+      return;
+    }
+    if (!this.shouldAutoLandFromCollision(normal)) {
+      return;
+    }
+    const payload: LandingApproachContext = { ...context, autoLand: true };
+    this.handleLandingTouchdown(payload, {
+      skipAtmosphereScene: true,
+      deferLandingPanelMs: this.ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS,
+    });
+  }
+
+  private tryTriggerAtmosphereAutoLandingFromInput(): boolean {
+    if (!this.isAtmosphereSceneActive()) {
+      return false;
+    }
+    if (this.landingSequenceActive || this.takeoffSequenceActive) {
+      return false;
+    }
+    if (this.atmosphereAutoLandingCameraActive) {
+      return true;
+    }
+    if (!this.landingStatus.ready || !this.landingStatus.context) {
+      return false;
+    }
+    const payload: LandingApproachContext = {
+      ...this.landingStatus.context,
+      autoLand: true,
+    };
+    this.handleLandingTouchdown(payload, {
+      skipAtmosphereScene: true,
+      deferLandingPanelMs: this.ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS,
+    });
+    return true;
+  }
+
+  private maybeTriggerAtmosphereAutoTakeoff(): void {
+    if (!this.atmosphereAutoTakeoffArmed) {
+      return;
+    }
+    if (!this.isAtmosphereSceneActive()) {
+      return;
+    }
+    if (this.landingSequenceActive || this.takeoffSequenceActive) {
+      return;
+    }
+    if (!this.landingTouchdownContext) {
+      return;
+    }
+    const altitude = this.computeAltitudeAboveGround();
+    if (!Number.isFinite(altitude) || altitude < this.ATMOSPHERE_AUTO_TAKEOFF_ALTITUDE) {
+      return;
+    }
+    this.atmosphereAutoTakeoffArmed = false;
+    const started = this.startTakeoffSequence();
+    if (started) {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Auto takeoff triggered by altitude threshold', {
+        altitude,
+        threshold: this.ATMOSPHERE_AUTO_TAKEOFF_ALTITUDE,
+      });
+    } else {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Auto takeoff attempt failed', {
+        altitude,
+        threshold: this.ATMOSPHERE_AUTO_TAKEOFF_ALTITUDE,
+      });
+    }
+  }
+
+  private updateAtmosphereAutoLandingCamera(_deltaTime: number): void {
+    if (!this.atmosphereAutoLandingCameraActive) {
+      return;
+    }
+    if (!this.camera || !this.spaceship) {
+      this.stopAtmosphereAutoLandingCamera();
+      return;
+    }
+    const context = this.landingTouchdownContext;
+    if (!context?.autoLand) {
+      this.stopAtmosphereAutoLandingCamera();
+      return;
+    }
+    const normalSource = context.surfaceNormal ?? this.atmosphereAutoLandingCameraNormal ?? this.deriveLandingNormalFromContext(context);
+    const normal = this.normalize(normalSource);
+    this.atmosphereAutoLandingCameraNormal = normal;
+    this.applyAtmosphereAutoLandingCameraPose(normal);
+    if (this.shouldReleaseAtmosphereAutoLandingCamera(normal)) {
+      this.stopAtmosphereAutoLandingCamera();
+    }
+  }
+
+  private shouldAutoLandFromCollision(normal: Vector3): boolean {
+    if (!this.spaceship) {
+      return false;
+    }
+    const velocity = this.spaceship.velocity || { x: 0, y: 0, z: 0 };
+    const verticalSpeed = this.dotProduct(velocity, normal);
+    return Math.abs(verticalSpeed) <= this.ATMOSPHERE_AUTO_LAND_VERTICAL_SPEED_MAX;
+  }
+
+  private shouldReleaseAtmosphereAutoLandingCamera(normal: Vector3): boolean {
+    const now = performance?.now?.() ?? Date.now();
+    if ((now - this.atmosphereAutoLandingCameraStartedAt) < this.ATMOSPHERE_AUTO_LAND_CAMERA_MIN_HOLD_MS) {
+      return false;
+    }
+    const lateralSpeed = this.computeLateralSpeedRelativeToNormal(normal);
+    return lateralSpeed <= this.ATMOSPHERE_AUTO_LAND_RELEASE_SPEED;
+  }
+
+  private startAtmosphereAutoLandingCamera(context: LandingApproachContext): void {
+    if (!this.camera || !this.spaceship) {
+      return;
+    }
+    const normal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
+    const contactPoint = this.resolveLandingContactPoint(context);
+    const now = performance?.now?.() ?? Date.now();
+    if (!this.atmosphereAutoLandingCameraActive) {
+      this.atmosphereAutoLandingCameraPrevMode = this.camera.getCurrentMode?.() ?? null;
+      const seedPos = { x: this.camera.position.x, y: this.camera.position.y, z: this.camera.position.z };
+      const seedTarget = { x: this.camera.target.x, y: this.camera.target.y, z: this.camera.target.z };
+      const seedUp = { x: this.camera.up.x, y: this.camera.up.y, z: this.camera.up.z };
+      try {
+        this.camera.setCameraMode(CameraMode.MANUAL);
+        this.camera.seedManualTransform?.(seedPos, seedTarget, seedUp);
+      } catch {}
+    } else if (this.camera.getCurrentMode?.() !== CameraMode.MANUAL) {
+      try { this.camera.setCameraMode(CameraMode.MANUAL); } catch {}
+    }
+    this.atmosphereAutoLandingCameraActive = true;
+    this.atmosphereAutoLandingCameraStartedAt = now;
+    this.atmosphereAutoLandingCameraNormal = normal;
+    this.atmosphereAutoLandingContactPoint = contactPoint;
+    this.atmosphereAutoLandingDustTriggered = false;
+    this.applyAtmosphereAutoLandingCameraPose(normal);
+    this.triggerAtmosphereAutoLandingDust(contactPoint, normal);
+  }
+
+  private stopAtmosphereAutoLandingCamera(): void {
+    if (!this.atmosphereAutoLandingCameraActive) {
+      return;
+    }
+    this.atmosphereAutoLandingCameraActive = false;
+    this.atmosphereAutoLandingCameraNormal = null;
+    this.atmosphereAutoLandingContactPoint = null;
+    this.atmosphereAutoLandingDustTriggered = false;
+    this.stopAtmosphereAutoLandingCue();
+    const prevMode = this.atmosphereAutoLandingCameraPrevMode;
+    this.atmosphereAutoLandingCameraPrevMode = null;
+    if (this.camera && prevMode !== null) {
+      try { this.camera.setCameraMode(prevMode); } catch {}
+    }
+  }
+
+  private applyAtmosphereAutoLandingCameraPose(normal: Vector3): void {
+    if (!this.camera || !this.spaceship) {
+      return;
+    }
+    const forward = this.normalize(this.spaceship.forwardDirection || normal);
+    let tangent = this.projectOntoPlane(forward, normal);
+    if (this.vectorLength(tangent) < 1e-3) {
+      tangent = this.buildPerpendicularGroundDirection(normal);
+    } else {
+      tangent = this.normalize(tangent);
+    }
+    const shipPos = this.spaceship.position;
+    const cameraPos = {
+      x: shipPos.x - tangent.x * this.ATMOSPHERE_AUTO_LAND_CAMERA_BACK_OFFSET + normal.x * this.ATMOSPHERE_AUTO_LAND_CAMERA_UP_OFFSET,
+      y: shipPos.y - tangent.y * this.ATMOSPHERE_AUTO_LAND_CAMERA_BACK_OFFSET + normal.y * this.ATMOSPHERE_AUTO_LAND_CAMERA_UP_OFFSET,
+      z: shipPos.z - tangent.z * this.ATMOSPHERE_AUTO_LAND_CAMERA_BACK_OFFSET + normal.z * this.ATMOSPHERE_AUTO_LAND_CAMERA_UP_OFFSET,
+    };
+    const target = {
+      x: shipPos.x + normal.x * this.ATMOSPHERE_AUTO_LAND_CAMERA_TARGET_LIFT,
+      y: shipPos.y + normal.y * this.ATMOSPHERE_AUTO_LAND_CAMERA_TARGET_LIFT,
+      z: shipPos.z + normal.z * this.ATMOSPHERE_AUTO_LAND_CAMERA_TARGET_LIFT,
+    };
+    try {
+      this.camera.seedManualTransform?.(cameraPos, target, normal);
+      this.camera.markDirty();
+    } catch {}
+  }
+
+  private computeLateralSpeedRelativeToNormal(normal: Vector3): number {
+    if (!this.spaceship) {
+      return 0;
+    }
+    const velocity = this.spaceship.velocity || { x: 0, y: 0, z: 0 };
+    const verticalComponent = this.dotProduct(velocity, normal);
+    const lateral = {
+      x: velocity.x - normal.x * verticalComponent,
+      y: velocity.y - normal.y * verticalComponent,
+      z: velocity.z - normal.z * verticalComponent,
+    };
+    return this.vectorLength(lateral);
+  }
+
+  private buildPerpendicularGroundDirection(normal: Vector3): Vector3 {
+    const reference = Math.abs(normal.y) < 0.9 ? { x: 0, y: 1, z: 0 } : { x: 1, y: 0, z: 0 };
+    const perpendicular = this.crossProduct(normal, reference);
+    const length = this.vectorLength(perpendicular);
+    if (length < 1e-4) {
+      return { x: 1, y: 0, z: 0 };
+    }
     return {
-      ground: new Float32Array(palette.ground),
-      sky: new Float32Array(palette.sky),
+      x: perpendicular.x / length,
+      y: perpendicular.y / length,
+      z: perpendicular.z / length,
     };
   }
 
-  private isAtmosphereSceneActive(): boolean {
+  private deriveLandingNormalFromContext(context: LandingApproachContext): Vector3 {
+    if (context.surfaceNormal) {
+      return this.normalize(context.surfaceNormal);
+    }
+    const center = this.resolvePlanetCenterFromContext(context);
+    const surface = context.surfacePoint ?? center;
+    if (center && surface) {
+      return this.normalize({
+        x: surface.x - center.x,
+        y: surface.y - center.y,
+        z: surface.z - center.z,
+      });
+    }
+    return { x: 0, y: 1, z: 0 };
+  }
+
+  private resolveLandingContactPoint(context: LandingApproachContext): Vector3 {
+    if (context.surfacePoint) {
+      return { ...context.surfacePoint };
+    }
+    const center = this.resolvePlanetCenterFromContext(context);
+    const normal = this.normalize(context.surfaceNormal ?? { x: 0, y: 1, z: 0 });
+    const radius = Number.isFinite(context.radius) ? context.radius : 0;
+    if (center) {
+      return {
+        x: center.x + normal.x * radius,
+        y: center.y + normal.y * radius,
+        z: center.z + normal.z * radius,
+      };
+    }
+    return {
+      x: normal.x * radius,
+      y: normal.y * radius,
+      z: normal.z * radius,
+    };
+  }
+
+  private triggerAtmosphereAutoLandingDust(contactPoint: Vector3, normal: Vector3): void {
+    if (this.atmosphereAutoLandingDustTriggered) {
+      return;
+    }
+    this.atmosphereAutoLandingDustTriggered = true;
+    if (this.particleEffects) {
+      const spawnPoint = {
+        x: contactPoint.x + normal.x * 2,
+        y: contactPoint.y + normal.y * 2,
+        z: contactPoint.z + normal.z * 2,
+      };
+      this.particleEffects.createDestructionDebris(spawnPoint, 0.8, { r: 0.72, g: 0.62, b: 0.5 });
+    }
+    if (this.audio) {
+      this.startAtmosphereAutoLandingCue();
+    }
+  }
+
+  private startAtmosphereAutoLandingCue(): void {
+    if (!this.audio) {
+      return;
+    }
+    // Prefer the dedicated cue and reset any previous playback so the swell matches the new touchdown
+    if (this.audio.has('sfx_autoland_touchdown')) {
+      try { this.atmosphereAutoLandingCueHandle?.stop(80); } catch {}
+      this.atmosphereAutoLandingCueHandle = this.audio.play('sfx_autoland_touchdown', {
+        volume: 0.78,
+        bus: 'sfx',
+        fadeInMs: 30,
+      });
+      if (this.atmosphereAutoLandingCueHandle) {
+        return;
+      }
+    }
+    let fallback: string | null = null;
+    if (this.audio.has('sfx_collision_light')) {
+      fallback = 'sfx_collision_light';
+    } else if (this.audio.has('sfx_passby_air')) {
+      fallback = 'sfx_passby_air';
+    }
+    if (fallback) {
+      try { this.audio.play(fallback, { bus: 'sfx', volume: 0.55 }); } catch {}
+    }
+  }
+
+  private stopAtmosphereAutoLandingCue(fadeOutMs: number = 140): void {
+    if (!this.atmosphereAutoLandingCueHandle) {
+      return;
+    }
+    try { this.atmosphereAutoLandingCueHandle.stop(fadeOutMs); } catch {}
+    this.atmosphereAutoLandingCueHandle = null;
+  }
+
+  private deriveAtmospherePalette(context: LandingApproachContext): {
+    ground: Float32Array;
+    sky: Float32Array;
+    groundPalette: AtmosphereGroundPalette;
+    paletteKey: string;
+  } {
+    const descriptor = this.getPlanetPaletteDescriptor(context.planetType);
+    const palette = {
+      lowlands: new Float32Array(descriptor.palette.lowlands),
+      highlands: new Float32Array(descriptor.palette.highlands),
+      dunes: new Float32Array(descriptor.palette.dunes),
+      polar: new Float32Array(descriptor.palette.polar),
+      strata: new Float32Array(descriptor.palette.strata),
+      valleys: new Float32Array(descriptor.palette.valleys),
+      plains: new Float32Array(descriptor.palette.plains),
+      midlands: new Float32Array(descriptor.palette.midlands),
+      peaks: new Float32Array(descriptor.palette.peaks),
+    } satisfies AtmosphereGroundPalette;
+    return {
+      ground: new Float32Array(descriptor.ground),
+      sky: new Float32Array(descriptor.sky),
+      groundPalette: palette,
+      paletteKey: `${context.planetId ?? 'unknown'}|${descriptor.key}`,
+    };
+  }
+
+  private getPlanetPaletteDescriptor(type?: PlanetType) {
+    switch (type) {
+      case PlanetType.Tierra:
+        return {
+          key: 'tierra',
+          ground: [0.32, 0.44, 0.29],
+          sky: [0.24, 0.44, 0.72],
+          palette: {
+            lowlands: [0.30, 0.40, 0.28],
+            highlands: [0.50, 0.56, 0.38],
+            dunes: [0.58, 0.47, 0.32],
+            polar: [0.86, 0.90, 0.96],
+            strata: [0.42, 0.52, 0.34],
+            valleys: [0.18, 0.32, 0.18],
+            plains: [0.32, 0.45, 0.29],
+            midlands: [0.48, 0.58, 0.38],
+            peaks: [0.76, 0.80, 0.74],
+          },
+        };
+      case PlanetType.Gaseous:
+        return {
+          key: 'gaseous',
+          ground: [0.24, 0.30, 0.52],
+          sky: [0.12, 0.18, 0.42],
+          palette: {
+            lowlands: [0.20, 0.26, 0.40],
+            highlands: [0.38, 0.42, 0.66],
+            dunes: [0.52, 0.48, 0.74],
+            polar: [0.64, 0.74, 0.96],
+            strata: [0.30, 0.34, 0.60],
+            valleys: [0.16, 0.20, 0.36],
+            plains: [0.24, 0.32, 0.48],
+            midlands: [0.36, 0.44, 0.62],
+            peaks: [0.70, 0.78, 0.94],
+          },
+        };
+      case PlanetType.Giant:
+        return {
+          key: 'giant',
+          ground: [0.58, 0.42, 0.26],
+          sky: [0.36, 0.20, 0.50],
+          palette: {
+            lowlands: [0.44, 0.30, 0.18],
+            highlands: [0.72, 0.52, 0.36],
+            dunes: [0.82, 0.60, 0.40],
+            polar: [0.94, 0.82, 0.70],
+            strata: [0.52, 0.32, 0.26],
+            valleys: [0.42, 0.24, 0.14],
+            plains: [0.58, 0.36, 0.22],
+            midlands: [0.74, 0.48, 0.30],
+            peaks: [0.90, 0.66, 0.42],
+          },
+        };
+      case PlanetType.Ringed:
+        return {
+          key: 'ringed',
+          ground: [0.40, 0.32, 0.28],
+          sky: [0.22, 0.18, 0.38],
+          palette: {
+            lowlands: [0.32, 0.26, 0.22],
+            highlands: [0.54, 0.46, 0.38],
+            dunes: [0.68, 0.52, 0.36],
+            polar: [0.82, 0.78, 0.72],
+            strata: [0.48, 0.38, 0.32],
+            valleys: [0.30, 0.22, 0.20],
+            plains: [0.44, 0.34, 0.30],
+            midlands: [0.58, 0.46, 0.38],
+            peaks: [0.78, 0.68, 0.60],
+          },
+        };
+      case PlanetType.Dwarf:
+        return {
+          key: 'dwarf',
+          ground: [0.44, 0.28, 0.22],
+          sky: [0.28, 0.22, 0.38],
+          palette: {
+            lowlands: [0.46, 0.30, 0.26],
+            highlands: [0.74, 0.50, 0.38],
+            dunes: [0.78, 0.48, 0.32],
+            polar: [0.90, 0.72, 0.62],
+            strata: [0.64, 0.38, 0.28],
+            valleys: [0.28, 0.14, 0.12],
+            plains: [0.46, 0.24, 0.18],
+            midlands: [0.62, 0.38, 0.26],
+            peaks: [0.86, 0.62, 0.42],
+          },
+        };
+      case PlanetType.Protoplanet:
+        return {
+          key: 'protoplanet',
+          ground: [0.42, 0.36, 0.30],
+          sky: [0.26, 0.28, 0.36],
+          palette: {
+            lowlands: [0.34, 0.28, 0.24],
+            highlands: [0.52, 0.44, 0.36],
+            dunes: [0.60, 0.48, 0.32],
+            polar: [0.70, 0.66, 0.60],
+            strata: [0.44, 0.32, 0.28],
+            valleys: [0.28, 0.22, 0.18],
+            plains: [0.42, 0.32, 0.24],
+            midlands: [0.55, 0.42, 0.32],
+            peaks: [0.74, 0.58, 0.44],
+          },
+        };
+      default:
+        return {
+          key: 'default',
+          ground: [0.38, 0.33, 0.30],
+          sky: [0.08, 0.12, 0.24],
+          palette: {
+            lowlands: [0.32, 0.28, 0.24],
+            highlands: [0.48, 0.42, 0.36],
+            dunes: [0.58, 0.46, 0.34],
+            polar: [0.78, 0.78, 0.82],
+            strata: [0.44, 0.36, 0.30],
+            valleys: [0.30, 0.24, 0.22],
+            plains: [0.44, 0.34, 0.28],
+            midlands: [0.58, 0.44, 0.34],
+            peaks: [0.78, 0.64, 0.54],
+          },
+        };
+    }
+  }
+
+  public isAtmosphereSceneActive(): boolean {
     return !!(this.atmosphereSceneState?.active && this.atmosphereSceneState.context);
+  }
+
+  public isAtmosphereMusicSuppressed(): boolean {
+    return this.atmosphereMusicSuppressed;
   }
 
   /**
@@ -1270,6 +2013,23 @@ export class GameEngine {
       return;
     }
     this.atmosphereSceneManager.render(this.atmosphereSceneState, this.camera);
+  }
+
+  private renderAtmosphereEntryFadeOverlay(): void {
+    if (!this.overlayRenderer) {
+      return;
+    }
+    if (this.atmosphereEntryFadeRemainingMs <= 0 || this.ATMOSPHERE_ENTRY_FADE_MS <= 0) {
+      return;
+    }
+    const alpha = Math.max(
+      0,
+      Math.min(1, this.atmosphereEntryFadeRemainingMs / this.ATMOSPHERE_ENTRY_FADE_MS)
+    );
+    if (alpha <= 0) {
+      return;
+    }
+    this.overlayRenderer.drawSolid([0, 0, 0], alpha);
   }
 
   private clearLandedShipAttachment(): void {
@@ -2104,7 +2864,7 @@ export class GameEngine {
     try {
       if (this.audio) {
         this.audio.ensureContext();
-        this.thrusterCtl = this.audio.createThrusterController('sfx_thruster');
+        this.applyRequestedThrusterClip();
       }
     } catch {}
   }
@@ -2405,6 +3165,7 @@ export class GameEngine {
       const ok = await this.audio.unlock();
       this.audioUnlocked = ok;
       this.logger.log(LogLevel.INFO, LogCategory.AUDIO, `🔊 Audio unlocked: ${ok}, audioUnlocked flag: ${this.audioUnlocked}`);
+      this.applyRequestedThrusterClip();
       // Don't change music scene here - let caller decide which scene to play
       // Start always-on ambience loop (logdark) once unlocked
       try { if (ok) this.audio.startAmbientLoop('sfx_logdark'); } catch {}
@@ -2435,6 +3196,40 @@ export class GameEngine {
       }
     } catch (e) {
       this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Failed to toggle paused audio mix', e);
+    }
+  }
+
+  private requestThrusterClip(clip: string): void {
+    if (this.desiredThrusterClip === clip) {
+      return;
+    }
+    this.desiredThrusterClip = clip;
+    if (this.audio) {
+      this.applyRequestedThrusterClip();
+    } else {
+      this.currentThrusterClip = clip;
+    }
+  }
+
+  private applyRequestedThrusterClip(): void {
+    if (!this.audio) {
+      return;
+    }
+    if (this.thrusterCtl && this.currentThrusterClip === this.desiredThrusterClip) {
+      return;
+    }
+    try { this.thrusterCtl?.stop(120); } catch {}
+    try {
+      this.thrusterCtl = this.audio.createThrusterController(this.desiredThrusterClip);
+      this.currentThrusterClip = this.desiredThrusterClip;
+      if (this.audioUnlocked) {
+        this.thrusterCtl?.start(0.0);
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.AUDIO, 'Thruster controller rebuild failed', {
+        clip: this.desiredThrusterClip,
+        error,
+      });
     }
   }
 
@@ -2610,6 +3405,13 @@ export class GameEngine {
       return;
     }
 
+    if (this.atmosphereEntryFadeRemainingMs > 0) {
+      this.atmosphereEntryFadeRemainingMs = Math.max(
+        0,
+        this.atmosphereEntryFadeRemainingMs - deltaTime * 1000
+      );
+    }
+
     this.updateAgeAndSurvivability(deltaTime);
     // Activar suavizado de alta velocidad durante void jump / gate rite transit
     try {
@@ -2632,8 +3434,14 @@ export class GameEngine {
   this.spaceship.update(deltaTime);
   // Actualizar audio atmosférico después del update para tener la velocidad correcta
   if (this.isAtmosphereSceneActive()) {
+    this.updateAtmosphereWeather(deltaTime);
     this.updateAtmosphereAudio();
+    this.detectAtmosphereGroundCollision();
+    this.maybeTriggerAtmosphereAutoTakeoff();
+  } else if (this.atmosphereGroundContactActive) {
+    this.atmosphereGroundContactActive = false;
   }
+  this.updateAtmosphereAutoLandingCamera(deltaTime);
   this.maintainLandedShipAttachment();
   this.handleSunProximityDamage(deltaTime);
 
@@ -4780,6 +5588,18 @@ export class GameEngine {
     return Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
   }
 
+  private dotProduct(a: Vector3, b: Vector3): number {
+    return a.x * b.x + a.y * b.y + a.z * b.z;
+  }
+
+  private crossProduct(a: Vector3, b: Vector3): Vector3 {
+    return {
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x,
+    };
+  }
+
   /**
    * Full solar system respawn (called from death dialog "Restart" button)
    */
@@ -5539,6 +6359,10 @@ export class GameEngine {
     }
   } catch {}
 
+  try {
+    this.renderAtmosphereEntryFadeOverlay();
+  } catch {}
+
   // Draw red impact vignette last (on top)
   try {
     if (this.overlayRenderer && this.impactVignetteLevel > 0) {
@@ -5770,12 +6594,23 @@ export class GameEngine {
     }
 
     // Factor de intensidad: máxima (1.0) cerca de la superficie, decae hacia el límite del cielo
-    const maxHeight = skyRadius - groundRadius;
-    const heightFactor = 1.0 - Math.pow(altitude / maxHeight, 1.5); // Exponencial suave
-
-    // Gravedad base aumentada para escala x5 (ajustable según sensación de juego)
-    const GRAVITY_BASE = 12.0; // unidades/s² - Caída notable sin ser excesiva
-    const gravityMagnitude = GRAVITY_BASE * heightFactor;
+    const maxHeight = Math.max(1, skyRadius - groundRadius);
+    const MIN_FALL_RATE = 1.0; // unidades/segundo a 1000u de altura (o punto máximo disponible)
+    const MAX_FALL_RATE = 3.0; // unidades/segundo cerca del suelo (≈1u de altura)
+    const lowReference = 1;
+    const highReference = Math.max(lowReference + 1, Math.min(1000, maxHeight));
+    const interiorRange = Math.max(1, highReference - lowReference);
+    const clampedAltitude = Math.min(Math.max(altitude, lowReference), highReference);
+    const descentProgress = 1 - (clampedAltitude - lowReference) / interiorRange;
+    const easedProgress = Math.pow(Math.max(0, Math.min(1, descentProgress)), 0.85);
+    const innerFallRate = MIN_FALL_RATE + (MAX_FALL_RATE - MIN_FALL_RATE) * easedProgress;
+    const aboveReference = Math.max(0, altitude - highReference);
+    const outerRange = Math.max(1, maxHeight - highReference);
+    const outerFalloff = outerRange <= 0 ? 1 : 1 - Math.min(1, aboveReference / outerRange);
+    const gravityPerSecond = innerFallRate * outerFalloff;
+    if (gravityPerSecond <= 0) {
+      return;
+    }
 
     // Dirección: hacia el centro (normalizada)
     const dirX = -dx / distFromCenter;
@@ -5784,7 +6619,7 @@ export class GameEngine {
 
     // Acumular la fuerza gravitatoria en externalForces (se integrará en spaceship.update)
     // Convertir aceleración (unidades/s²) a velocidad (unidades/s) multiplicando por deltaTime
-    const velocityChange = gravityMagnitude * deltaTime;
+    const velocityChange = gravityPerSecond * deltaTime;
     this.spaceship.externalForces.x += dirX * velocityChange;
     this.spaceship.externalForces.y += dirY * velocityChange;
     this.spaceship.externalForces.z += dirZ * velocityChange;
@@ -5841,6 +6676,20 @@ export class GameEngine {
     }
   }
 
+  private primeAtmosphereAirRushCue(): void {
+    if (!this.audio || !this.atmosphereSceneState.active) {
+      return;
+    }
+    if (this.atmosphereAirRushHandle && this.atmosphereAirRushHandle.isPlaying()) {
+      return;
+    }
+    this.atmosphereAirRushHandle = this.audio.play('sfx_passby_air', {
+      volume: 0.4,
+      bus: 'sfx',
+      loop: false,
+    });
+  }
+
   private createDefaultAtmosphereSceneState(): AtmosphereSceneState {
     return {
       active: false,
@@ -5848,10 +6697,27 @@ export class GameEngine {
       center: { x: 0, y: 0, z: 0 },
       groundRadius: 0,
       skyRadius: 0,
+      groundCollisionRadius: 0,
       groundColor: new Float32Array([0.32, 0.32, 0.32]),
       skyColor: new Float32Array([0.05, 0.08, 0.18]),
+      groundPalette: this.createFallbackGroundPalette(),
+      groundPaletteKey: 'atmo-ground-default',
       entryAltitude: 0,
       lastUpdatedMs: 0,
+    };
+  }
+
+  private createFallbackGroundPalette(): AtmosphereGroundPalette {
+    return {
+      lowlands: new Float32Array([0.32, 0.32, 0.32]),
+      highlands: new Float32Array([0.48, 0.44, 0.38]),
+      dunes: new Float32Array([0.55, 0.42, 0.30]),
+      polar: new Float32Array([0.82, 0.86, 0.92]),
+      strata: new Float32Array([0.40, 0.36, 0.30]),
+      valleys: new Float32Array([0.30, 0.26, 0.24]),
+      plains: new Float32Array([0.44, 0.34, 0.30]),
+      midlands: new Float32Array([0.58, 0.46, 0.36]),
+      peaks: new Float32Array([0.76, 0.66, 0.54]),
     };
   }
 
@@ -7492,6 +8358,9 @@ export class GameEngine {
     }
 
     if (normalized === 'enter') {
+      if (this.tryTriggerAtmosphereAutoLandingFromInput()) {
+        return;
+      }
       if (this.tryStartLandingSequence()) {
         return;
       }
@@ -9643,6 +10512,7 @@ export class GameEngine {
       this.atmosphereSceneManager.dispose();
       this.atmosphereSceneManager = null;
     }
+    this.restoreMusicAfterAtmosphere();
     this.atmosphereSceneState = this.createDefaultAtmosphereSceneState();
     
   this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'GameEngine cleaned up');

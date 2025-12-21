@@ -94,7 +94,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
               <li>Ambient space dust realigns with ship orientation after takeoff/portal jumps, so the parallax cloud never collapses into a single plane.</li>
               <li>Forward acceleration only (reverse via rotation)</li>
             </ul>
-            <p><strong>Audio:</strong> Continuous loop with real-time volume/pitch modulation. Thruster sound fades in/out smoothly with throttle input.</p>
+            <p><strong>Audio:</strong> El modo espacial conserva el loop clásico <code>sfx_thruster</code> (grave y mecánico) mientras que, al entrar en atmósfera, la lógica de <code>GameEngine.requestThrusterClip()</code> cambia al loop <em>Airthrust.wav</em> registrado como <code>sfx_thruster_atmo</code>. Ambos se modulan con el mismo throttle y se reconstruyen sin pops cuando desbloqueas el audio, así el swap ocurre en caliente justo al cruzar el límite del bioma.</p>
             <p class="tbd">Future: Different thruster types with efficiency/power trade-offs (TBD)</p>
           </div>
         </div>
@@ -272,6 +272,46 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <p class="note hud-atmo-note">Cobertura de pruebas: el utilitario matemático verifica nivelado, nariz arriba/abajo, roll ±90° e inversión completa. El propio componente Compass confirma que el modo atmosférico sincroniza pitch/roll/altitud.</p>
       </section>
 
+      <section class="atmo-layers">
+        <h2>🪨 Estratos y detalle de superficie</h2>
+        <ul>
+          <li><strong>Cuatro zonas cromáticas:</strong> Cada planeta mezcla valle, planicie, media montaña y picos, con tonos propios (Mercurio ahora usa óxidos rojizos). El relieve de la esfera decide qué zona domina y las transiciones se suavizan para evitar escalones.</li>
+          <li><strong>Micro relieve dinámico:</strong> Al bajar de 600&nbsp;u el terreno añade extrusión extra (hasta 8&nbsp;% sobre el relief base) y ruido de color sincronizado, lo que proporciona grietas y cantos afilados cuando vuelas rasante.</li>
+          <li><strong>Niebla azul sobre el suelo:</strong> Por debajo de 300&nbsp;u el domo del cielo interpola hacia un azul muy claro usando una curva cúbica continua (sin cuantización), simulando dispersión de luz en la baja atmósfera sin perder el tono base del planeta.</li>
+        </ul>
+        <p class="note atmo-layers-note">El detalle adicional solo se activa cuando la cámara está cerca del suelo, así la escena mantiene el rendimiento original mientras orbitas a gran altura.</p>
+      </section>
+
+      <section class="atmo-impulse">
+        <h2>⏩ Empuje automático tras aterrizar</h2>
+        <p>Al terminar el fade-out de <code>LandingSequence</code> y entrar en la escena atmosférica, la nave recibe un empuje inicial controlado antes de que recuperes el mando completo.</p>
+        <ul>
+          <li><strong>Hook dedicado:</strong> <code>GameEngine.applyAtmosphereLandingImpulse()</code> corre justo después de <code>enterAtmosphereScene()</code> y solo cuando hay touchdown válido.</li>
+          <li><strong>3u garantizadas:</strong> El sistema fija <code>currentSpeed</code>/<code>targetSpeed</code> en 3&nbsp;unidades (clamp automático al <code>maxSpeed</code> vigente) y recalcula la velocidad en el vector forward real.</li>
+          <li><strong>HUD sin sobresaltos:</strong> El thruster pasa a <em>ACCELERATING</em> y el HUD fuerza <code>stallWarning = false</code>, así no aparece la alarma roja justo después de aterrizar.</li>
+          <li><strong>Fade-in suave:</strong> La escena atmosférica se abre con un overlay negro de 1.9&nbsp;s que se desvanece mediante <code>ScreenOverlayRenderer</code> mientras <code>sfx_passby_air</code> ya está sonando, ocultando el corte entre el fade-out de la animación y el render WebGL.</li>
+          <li><strong>Silencio intencional:</strong> El <em>MusicDirector</em> memoriza la pista previa y obliga la escena <code>silence</code> durante todo el descenso; el panel de aterrizaje detecta la bandera y no reproduce <code>music_landing</code> hasta que abandones la atmósfera.</li>
+          <li><strong>Touchdown físico:</strong> El motor calcula la distancia al centro del planeta y, cuando el casco intersecta la esfera de suelo (radio configurable), vuelve a invocar <code>handleLandingTouchdown()</code> para abrir el panel real de aterrizaje sin recrear la escena atmosférica.</li>
+          <li><strong>Despegue automático:</strong> Después de tocar tierra puedes ascender manualmente; al cruzar los 1000&nbsp;u sobre la superficie el juego arma <code>maybeTriggerAtmosphereAutoTakeoff()</code>, dispara la misma <em>TakeoffSequence</em> del sistema solar y te devuelve al renderer espacial sin atajos raros.</li>
+          <li><strong>Auto-landing suave:</strong> Si entras en contacto con el suelo a <em>&lt; 1&nbsp;u</em> en el eje de gravedad, el motor marca <code>landingContext.autoLand</code>, reaprovecha el mismo flujo de touchdown y bloquea la cámara en modo manual “locked to ground” mientras sigue a la nave hasta que la velocidad lateral cae &lt; 0.4&nbsp;u. El bloqueo lanza un estallido corto de polvo (mismo pipeline de <code>ParticleEffectsService</code>) y dispara el swell <code>Landing.wav</code> (<code>sfx_autoland_touchdown</code>) sincronizado con la cámara, así el aterrizaje físico luce y suena igual que la secuencia cinematográfica aunque hayas frenado manualmente.</li>
+          <li><strong>Piloto verde intacto:</strong> En modo atmósfera la lógica de <em>landing ready</em> reutiliza los mismos márgenes del espacio (≤50&nbsp;u de la superficie, ≤5&nbsp;u/s y ±60°). Solo cuando mantienes la nave estable durante 3&nbsp;s el indicador verde vuelve a encenderse y, dentro de la escena atmosférica, pulsar <kbd>Enter</kbd> dispara el auto-landing asistido (cámara bloqueada + polvo + <code>Landing.wav</code>) en vez de abrir el panel al instante. Fuera de atmósfera el atajo vuelve al flujo espacial tradicional.</li>
+          <li><strong>Toma el control enseguida:</strong> Puedes seguir acelerando con <span class="key-cluster"><kbd>+</kbd><span class="key-sep">/</span><kbd>=</kbd></span> o frenar con <span class="key-cluster"><kbd>-</kbd><span class="key-sep">/</span><kbd>_</kbd></span>; el impulso solo abre la ventana inicial para maniobrar.</li>
+        </ul>
+        <p class="note atmo-impulse-note">QA: con el HUD de depuración puedes observar que <code>currentSpeed</code> nunca cae por debajo de 0.8u durante los primeros segundos, por lo que el loop de <code>sfx_stall</code> no se activa tras el aterrizaje.</p>
+      </section>
+
+      <section class="atmo-flow">
+        <h2>🧭 Flujo simplificado en atmósfera</h2>
+        <ol>
+          <li><strong>Descenso asistido:</strong> Tras el fade-out de <code>LandingSequence</code> aparece un overlay negro de 1.9&nbsp;s mientras <code>sfx_passby_air</code> toma el control y la música queda silenciada; la nave entra en escena con posición alineada a la normal del planeta.</li>
+          <li><strong>Vuelo bajo controlado:</strong> El impulso automático fija 3&nbsp;u de velocidad y evita el <em>stall</em>; puedes mantenerte entre 20-80&nbsp;u de altura mientras el horizonte artificial reporta pitch/roll/altitud en tiempo real.</li>
+          <li><strong>Aterrizaje manual:</strong> Si estabilizas la nave (≤50&nbsp;u de la superficie, ≤5&nbsp;u/s y ±60°) durante 3&nbsp;s el piloto verde vuelve a encenderse; en ese estado puedes presionar <kbd>Enter</kbd> para iniciar el auto-landing asistido (cámara, polvo y swell) y, tras el retardo de 2&nbsp;s, el panel se abre con el payload espacial.</li>
+          <li><strong>Auto-landing suave:</strong> Cuando el toque con el suelo llega con componente vertical &lt;1&nbsp;u, el motor marca <code>landingContext.autoLand</code>, bloquea la cámara al terreno, lanza polvo y registra el touchdown sin intervención manual.</li>
+          <li><strong>Salida por cielo:</strong> Puedes despegar manualmente y, al cruzar los 1000&nbsp;u sobre el suelo, <code>maybeTriggerAtmosphereAutoTakeoff()</code> ejecuta la secuencia completa, restaura música/renderer y deja la nave de vuelta en el sistema solar. También puedes iniciar el despegue desde el panel tradicional.</li>
+        </ol>
+        <p class="note atmo-flow-note">Toda la telemetría del HUD permanece activa durante el ciclo completo, así que puedes cambiar de cámara, usar el Grimorio o registrar datos de QA sin abandonar la escena.</p>
+      </section>
+
       <section class="customization tbd-section">
         <h2>🔧 Customization (TBD)</h2>
         <p>The ship is designed with modularity in mind. Future updates will allow:</p>
@@ -397,6 +437,67 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
 
     .component-card.tbd-component h3 {
       color: #ffaa00;
+    }
+
+    .atmo-impulse {
+      margin-top: 2rem;
+      padding: 1.75rem;
+      border: 1px solid rgba(0, 255, 65, 0.35);
+      border-radius: 10px;
+      background: linear-gradient(135deg, rgba(0, 255, 65, 0.08), rgba(0, 50, 30, 0.65));
+      box-shadow: inset 0 0 25px rgba(0, 255, 65, 0.05);
+    }
+
+    .atmo-impulse h2 {
+      color: #00ff41;
+      margin-bottom: 1rem;
+    }
+
+    .atmo-impulse ul {
+      margin: 1rem 0;
+      padding-left: 1.25rem;
+      line-height: 1.6;
+    }
+
+    .atmo-impulse li {
+      margin-bottom: 0.5rem;
+      color: #e2ffe2;
+    }
+
+    .atmo-impulse-note {
+      margin-top: 1rem;
+      font-size: 0.95rem;
+      color: #8ef0b5;
+    }
+
+    .atmo-flow {
+      margin-top: 2rem;
+      padding: 1.75rem;
+      border: 1px solid rgba(0, 255, 65, 0.35);
+      border-radius: 10px;
+      background: linear-gradient(120deg, rgba(0, 20, 15, 0.85), rgba(0, 255, 65, 0.08));
+      box-shadow: inset 0 0 25px rgba(0, 255, 65, 0.05);
+    }
+
+    .atmo-flow h2 {
+      color: #00ff41;
+      margin-bottom: 1rem;
+    }
+
+    .atmo-flow ol {
+      margin: 0;
+      padding-left: 1.5rem;
+      line-height: 1.7;
+      color: #d1ffea;
+    }
+
+    .atmo-flow li {
+      margin-bottom: 0.75rem;
+    }
+
+    .atmo-flow-note {
+      margin-top: 1rem;
+      color: #8ef0b5;
     }
 
     .component-details p {
@@ -538,6 +639,32 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
     .hud-atmo-note {
       display: block;
       margin-top: 1rem;
+    }
+
+    .atmo-layers {
+      margin-top: 2rem;
+      padding: 1.5rem;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 255, 65, 0.25);
+      background: rgba(0, 255, 65, 0.03);
+    }
+
+    .atmo-layers h2 {
+      color: #00ff41;
+      margin-top: 0;
+    }
+
+    .atmo-layers ul {
+      margin: 1rem 0;
+      padding-left: 1.5rem;
+      line-height: 1.8;
+      color: #cfe9d7;
+    }
+
+    .atmo-layers-note {
+      display: block;
+      margin-top: 1rem;
+      color: #8ef0b5;
     }
 
     .customization {

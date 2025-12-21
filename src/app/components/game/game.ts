@@ -112,6 +112,10 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
       if (!engine) {
         return;
       }
+      if (typeof engine.isAtmosphereMusicSuppressed === 'function' && engine.isAtmosphereMusicSuppressed()) {
+        this.logger.debug(LogCategory.MUSIC, 'Landing music suppressed by atmosphere scene', { active });
+        return;
+      }
       const music = (engine as any)?.music;
       if (!music) {
         return;

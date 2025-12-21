@@ -28,6 +28,17 @@ interface Planet {
         <p>Explore the planets of the Human Solar System and learn about the various planetary types you'll encounter.</p>
       </section>
 
+      <section class="atmosphere-visuals">
+        <h2>🌀 Atmosphere Mode Terrain</h2>
+        <p>Cuando entras en modo atmosférico el planeta deja de ser un color plano: la esfera del suelo usa un heightmap procedural y una paleta por tipo de planeta para generar biomas reconocibles.</p>
+        <ul>
+          <li><strong>Paletas específicas:</strong> cada tipo (Tierra, gigante gaseoso, anillado, etc.) define colores propios para valles, crestas, dunas y casquetes polares.</li>
+          <li><strong>Ruido en dos capas:</strong> el relieve principal desplaza la malla mientras que una segunda capa traza vetas y bandas, creando desiertos, fracturas o hielo según el bioma.</li>
+          <li><strong>Polar caps y dunas:</strong> las zonas con |latitud| alta recibe mezcla con la paleta polar y las zonas bajas mezclan con tonos de duna para dar sensación de arena o brea.</li>
+          <li><strong>Sincronizado con el HUD:</strong> el horizonte artificial utiliza la misma normal y altura que generan estas texturas, así no se produce popping cuando el pitch cambia tras la animación de landing.</li>
+        </ul>
+      </section>
+
       <div class="planet-types">
         <h2>Planetary Types</h2>
         
@@ -156,6 +167,27 @@ interface Planet {
       font-size: 2.5rem;
       margin: 0;
       text-shadow: 0 0 10px #00ff41;
+    }
+
+    .atmosphere-visuals {
+      margin: 2rem 0 3rem;
+      padding: 1.5rem 2rem;
+      border: 1px solid rgba(0, 255, 65, 0.3);
+      border-radius: 8px;
+      background: rgba(0, 255, 65, 0.05);
+      box-shadow: 0 10px 50px rgba(0, 0, 0, 0.35);
+    }
+
+    .atmosphere-visuals h2 {
+      margin-top: 0;
+      color: #00ff41;
+    }
+
+    .atmosphere-visuals ul {
+      margin: 1rem 0 0;
+      padding-left: 1.25rem;
+      line-height: 1.6;
+      color: #d5f5d5;
     }
 
     .intro {
