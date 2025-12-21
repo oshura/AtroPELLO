@@ -15,10 +15,22 @@ Volver a implementar el modo atmosférico apoyándonos en el motor espacial exis
   - [x] **MEJORA**: Añadir heightmap procedural al suelo con 3 octavas de noise (montes y valles visibles con ~8% de desplazamiento radial).
   - [x] Conectar activación automática tras fade out de `LandingSequenceAnimation` mediante `enterAtmosphereScene()`.
   - [x] Conectar limpieza automática al completar takeoff mediante `exitAtmosphereScene()`.
-- [ ] **Reglas de vuelo y física**
-  - [ ] Confirmar en `GameEngine` cómo se aplican actualmente thrust y frenado para enganchar ahí la detección de baja velocidad.
-  - [ ] Añadir una rutina `applyAtmosphereGravity()` que solo actúe cuando el modo atmosférico esté activo y la velocidad sea inferior a los umbrales definidos en `Sistema_Landing_Narrativa.md`.
-  - [ ] Integrar los SFX de aire/stall reutilizando el `AudioEngineService` existente y los IDs `sfx_passby_air` / `sfx_stall`.
+- [x] **Reglas de vuelo y física**
+  - [x] Confirmar en `GameEngine` cómo se aplican actualmente thrust y frenado para enganchar ahí la detección de baja velocidad.
+  - [x] Añadir una rutina `applyAtmosphereGravity()` que solo actúe cuando el modo atmosférico esté activo y la velocidad sea inferior a los umbrales definidos en `Sistema_Landing_Narrativa.md`.
+  - [x] Integrar los SFX de aire/stall reutilizando el `AudioEngineService` existente y los IDs `sfx_passby_air` / `sfx_stall`.
+- [ ] **Instrumentación HUD atmosférica**
+  - [ ] Revisar `calculateAtmosphereAttitude()` y `Compass` midiendo derivadas de pitch/roll en vuelo real para identificar por qué el horizonte artificial sigue desfasado.
+  - [ ] Ajustar el pipeline (normal planetaria → actitud → shader) garantizando interpolaciones suaves y sin offsets; documentar el cálculo final en `Wiki_System.md`.
+  - [ ] Reejecutar/actualizar las pruebas unitarias del horizonte y añadir un caso de regresión que cubra banking agresivo + transición a vuelo nivelado.
+- [ ] **Texturizado procedimental del suelo atmosférico**
+  - [ ] Definir la paleta y patrones base tomando como referencia el contexto del planeta (`LandingApproachContext`) y documentar el shading esperado.
+  - [ ] Implementar sampling procedimental (noise en 2 capas + máscara de biomas) dentro de `AtmosphereSceneManager` para que el suelo deje de ser un color plano.
+  - [ ] Sincronizar la textura del suelo con el horizonte artificial para evitar popping visual y validar el resultado en QA visual (capturas WebGL).
+- [ ] **Impulso inicial tras landing fade-out**
+  - [ ] Añadir hook en `enterAtmosphereScene()` (o equivalente) que aplique una aceleración inicial de 3u justo tras el fade-out de la animación de aterrizaje.
+  - [ ] Confirmar que el impulso respeta los límites actuales de `thrust`/`maxSpeed` y que el HUD no dispara alarmas de stall.
+  - [ ] Registrar la nueva regla en `Resumen_Proyecto_y_Progreso.md` y en la wiki para que QA la tenga presente.
 - [ ] **Aterrizaje y despegue**
   - [ ] Exponer un detector de colisión simple entre la nave y la esfera de suelo (radio configurable) que reaproveche `handleLandingTouchdown` para abrir el diálogo.
   - [ ] Conectar el umbral de altura sobre la esfera del cielo con la animación de takeoff existente, restaurando el renderer del sistema solar y limpiando el estado atmosférico.

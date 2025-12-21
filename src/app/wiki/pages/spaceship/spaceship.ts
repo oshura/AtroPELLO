@@ -259,6 +259,18 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <p class="note marquee-note">El HUD guarda una pila con las últimas 10 alertas emitidas. Pulsa <kbd>Backspace</kbd> para recuperar la más reciente: se repite una sola vuelta, vuelve a entrar en la pila y deja paso al siguiente mensaje pendiente.</p>
       </section>
 
+      <section class="hud-atmosphere">
+        <h2>🌀 Horizonte artificial atmosférico</h2>
+        <p>Cuando activas el modo atmosférico la brújula se convierte en un horizonte artificial completo. Divide el disco en cielo y suelo, proyecta las líneas de pitch y roll y añade un altímetro digital que mide la altura real sobre la superficie del planeta activo.</p>
+        <ul>
+          <li><strong>Normal planetaria precisa:</strong> La nave calcula su actitud comparando los ejes <em>forward/right/up</em> con la normal exacta desde el centro planetario; así, nariz abajo significa que la línea del horizonte sube incluso si la cámara compensa la gravedad.</li>
+          <li><strong>Pitch y roll desacoplados:</strong> El pitch se limita a ±90° y usa la proyección horizontal del vector forward, mientras que el roll se obtiene con <code>atan2</code> del eje right frente al eje up, evitando saltos al cruzar ±180°.</li>
+          <li><strong>Altímetro integrado:</strong> El contador verde se alimenta del radio real del planeta y se clampa a cero cuando rozas el suelo. Marca puntos clave para aterrizajes manuales.</li>
+          <li><strong>Telemetría QA:</strong> El panel de debug de la brújula ahora expone <em>atmosphereMode</em>, pitch, roll y altitud para auditar vuelos atmosféricos sin depender de capturas.</li>
+        </ul>
+        <p class="note hud-atmo-note">Cobertura de pruebas: el utilitario matemático verifica nivelado, nariz arriba/abajo, roll ±90° e inversión completa. El propio componente Compass confirma que el modo atmosférico sincroniza pitch/roll/altitud.</p>
+      </section>
+
       <section class="customization tbd-section">
         <h2>🔧 Customization (TBD)</h2>
         <p>The ship is designed with modularity in mind. Future updates will allow:</p>
@@ -496,6 +508,35 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
     .marquee-note {
       margin-top: 1.5rem;
       display: inline-block;
+    }
+
+    .hud-atmosphere {
+      margin-top: 2rem;
+      padding: 1.75rem;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 255, 65, 0.25);
+      background: rgba(0, 255, 65, 0.03);
+    }
+
+    .hud-atmosphere h2 {
+      color: #00ff41;
+      margin-top: 0;
+    }
+
+    .hud-atmosphere ul {
+      margin: 1rem 0;
+      padding-left: 1.5rem;
+      line-height: 1.8;
+    }
+
+    .hud-atmosphere li {
+      margin-bottom: 0.5rem;
+      color: #cfe9d7;
+    }
+
+    .hud-atmo-note {
+      display: block;
+      margin-top: 1rem;
     }
 
     .customization {

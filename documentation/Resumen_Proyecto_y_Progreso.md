@@ -55,6 +55,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - Overlays/Paneles: `SolarSystemPanel` (mapa top-down), sistema de diálogos modales (`src/app/components/modal/`).
   - Debug: Overlay de datos de la nave (F1) vía servicios en `services/debug`. Tecla F1 mapea al toggle del overlay desde `components/game/game.ts`.
   - El footer expone ahora «Third Party Licenses», que abre `/third-party-licenses/` (estático en `public/third-party-licenses`) con la tabla de dependencias y enlaces directos a los textos MIT/Apache/0BSD almacenados en `public/third-party-licenses/licenses/`.
+  - Horizonte artificial atmosférico: `calculateAtmosphereAttitude()` (util nuevo en `game/utils`) deriva pitch/roll usando la normal planetaria y alimenta al `Compass` cuando `atmosphereMode` está activo. El instrumento muestra cielo/suelo correctos, altímetro digital (altura sobre el radio terrestre) y expone `atmosphereMode/pitch/roll/altitude` en `getDebugInfo()` para QA.
 
 - SEO e indexación
   - `src/index.html` ahora incluye título semántico, descripción, canonical `https://to3.atropello-games.es/`, etiquetas Open Graph/Twitter y JSON-LD (`VideoGame` + `SoftwareApplication`) apuntando a la build WebGL.

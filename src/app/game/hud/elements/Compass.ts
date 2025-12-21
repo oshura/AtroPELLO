@@ -13,6 +13,11 @@ export class Compass {
   // Optional countdown overlay (timed spell or effect)
   private countdown: CompassCountdownPayload | null = null;
   private precisionActive: boolean = false;
+  // Atmosphere mode: artificial horizon
+  private atmosphereMode: boolean = false;
+  private pitch: number = 0; // degrees
+  private roll: number = 0; // degrees
+  private altitudeAboveGround: number = 0; // units
   
   constructor() {}
 
@@ -38,24 +43,156 @@ export class Compass {
     this.precisionActive = !!active;
   }
 
+  /**
+   * Activa modo horizonte artificial para vuelo atmosférico
+   */
+  public setAtmosphereMode(active: boolean, pitch: number = 0, roll: number = 0, altitudeAboveGround: number = 0): void {
+    this.atmosphereMode = active;
+    this.pitch = pitch;
+    this.roll = roll;
+    this.altitudeAboveGround = altitudeAboveGround;
+  }
+
   public render(ctx: CanvasRenderingContext2D, position: { x: number; y: number }): void {
     ctx.save();
     ctx.translate(position.x, position.y);
     
-    this.drawCompassRing(ctx);
-    this.drawDirectionMarkers(ctx);
-    // Mostrar solo información del target si existe; si no, no marcar nada
-    if (this.targetInfo) {
-      this.drawTargetNeedle(ctx);
-    }
-    // Draw optional countdown overlay inside the ring, top-center with margin
-    if (this.countdown && this.countdown.seconds > 0) {
-      this.drawCountdown(ctx, this.countdown);
-    }
-    if (this.precisionActive) {
-      this.drawPrecisionOverlay(ctx);
+    // Modo horizonte artificial o brújula normal
+    if (this.atmosphereMode) {
+      this.drawArtificialHorizon(ctx);
+    } else {
+      this.drawCompassRing(ctx);
+      this.drawDirectionMarkers(ctx);
+      // Mostrar solo información del target si existe; si no, no marcar nada
+      if (this.targetInfo) {
+        this.drawTargetNeedle(ctx);
+      }
+      // Draw optional countdown overlay inside the ring, top-center with margin
+      if (this.countdown && this.countdown.seconds > 0) {
+        this.drawCountdown(ctx, this.countdown);
+      }
+      if (this.precisionActive) {
+        this.drawPrecisionOverlay(ctx);
+      }
     }
     
+    ctx.restore();
+  }
+
+  /**
+   * Dibuja horizonte artificial para vuelo atmosférico
+   */
+  private drawArtificialHorizon(ctx: CanvasRenderingContext2D): void {
+    ctx.save();
+    
+    // Aplicar roll (horizonte se inclina en sentido contrario a la nave)
+    ctx.rotate((-this.roll * Math.PI) / 180);
+    
+    // Calcular desplazamiento vertical basado en pitch (nariz arriba => horizonte baja)
+    const pitchOffset = (this.pitch / 90) * this.radius; // ±90° = ±radius completo
+    
+    // Clip circular
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.clip();
+    
+    // Cielo (azul, parte superior)
+    ctx.fillStyle = '#4A90E2';
+    ctx.fillRect(-this.radius, -this.radius, this.radius * 2, this.radius + pitchOffset);
+    
+    // Suelo (marrón, parte inferior)
+    ctx.fillStyle = '#8B6914';
+    ctx.fillRect(-this.radius, pitchOffset, this.radius * 2, this.radius * 2);
+    
+    // Línea del horizonte
+    ctx.strokeStyle = '#FFFFFF';
+    ctx.lineWidth = 2;
+    ctx.shadowColor = '#FFFFFF';
+    ctx.shadowBlur = 4;
+    ctx.beginPath();
+    ctx.moveTo(-this.radius, pitchOffset);
+    ctx.lineTo(this.radius, pitchOffset);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+    
+    // Marcas de pitch cada 10° (líneas horizontales)
+    ctx.strokeStyle = '#FFFFFF80';
+    ctx.lineWidth = 1;
+    for (let angle = -60; angle <= 60; angle += 10) {
+      if (angle === 0) continue; // Ya dibujamos el horizonte
+      const offset = (angle / 90) * this.radius;
+      const lineLen = Math.abs(angle) % 30 === 0 ? 30 : 20;
+      ctx.beginPath();
+      ctx.moveTo(-lineLen, pitchOffset + offset);
+      ctx.lineTo(lineLen, pitchOffset + offset);
+      ctx.stroke();
+      
+      // Etiquetas de ángulo
+      if (Math.abs(angle) % 30 === 0) {
+        ctx.font = '10px monospace';
+        ctx.fillStyle = '#FFFFFF';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(Math.abs(angle).toString(), 0, pitchOffset + offset);
+      }
+    }
+    
+    ctx.restore();
+    
+    // Marcador central (nave fija)
+    ctx.save();
+    ctx.strokeStyle = '#00FF00';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#00FF00';
+    ctx.shadowBlur = 6;
+    // Cruz central
+    ctx.beginPath();
+    ctx.moveTo(-20, 0);
+    ctx.lineTo(-5, 0);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(20, 0);
+    ctx.lineTo(5, 0);
+    ctx.stroke();
+    // Punto central
+    ctx.fillStyle = '#00FF00';
+    ctx.beginPath();
+    ctx.arc(0, 0, 3, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    
+    // Altímetro (texto sobre el horizonte)
+    ctx.save();
+    ctx.fillStyle = '#00FF00';
+    ctx.strokeStyle = '#000000';
+    ctx.lineWidth = 3;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = '#00FF00';
+    ctx.shadowBlur = 8;
+    const altValue = Math.max(0, Math.round(this.altitudeAboveGround));
+    const altText = `${altValue}`;
+    ctx.save();
+    ctx.translate(0, -this.radius + 22);
+    ctx.scale(1, 1.5); // estirar verticalmente
+    ctx.font = 'bold 26px "Space Mono", monospace';
+    ctx.strokeText(altText, 0, 0);
+    ctx.fillText(altText, 0, 0);
+    ctx.restore();
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    
+    // Borde del instrumento
+    ctx.save();
+    ctx.strokeStyle = '#00FFFF';
+    ctx.lineWidth = 3;
+    ctx.shadowColor = '#00FFFF';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.arc(0, 0, this.radius, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
     ctx.restore();
   }
 
@@ -194,6 +331,10 @@ export class Compass {
       headingNormalized: Math.round(this.heading),
       radius: this.radius,
       hasTarget: !!this.targetInfo,
+      atmosphereMode: this.atmosphereMode,
+      atmospherePitch: this.pitch,
+      atmosphereRoll: this.roll,
+      altitudeAboveGround: this.altitudeAboveGround,
       countdown: this.countdown,
       targetInfo: this.targetInfo ? {
         targetId: this.targetInfo.target.id,

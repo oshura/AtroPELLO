@@ -84,6 +84,8 @@ export class HUDManager {
   private marqueePanel: MarqueePanel;
   private targetPanel: TargetPanel;
   private landingIndicators = { landingReady: false, threatActive: false };
+  private stallWarningActive: boolean = false; // Track stall state for threat blink
+  private stallBlinkTimer: number = 0; // Acumulador para parpadeo cada 1s
   private marqueeEntries: QueuedMarqueeEntry[] = [];
   private marqueeHistory: MarqueeHistoryEntry[] = [];
   private marqueeLastEmit = new Map<HudMarqueeEventType, number>();
@@ -175,6 +177,11 @@ export class HUDManager {
     precisionModeActive?: boolean;
     // Optional: portal traversal cooldown seconds remaining
     portalCooldownSec?: number | null; // ignored (wireframe removed)
+    // Atmosphere-specific instruments
+    atmosphereMode?: boolean;
+    atmospherePitch?: number | null;
+    atmosphereRoll?: number | null;
+    altitudeAboveGround?: number;
   }): void {
     // Actualizar elementos individuales
     if (typeof gameData.maxSpeed === 'number' && !Number.isNaN(gameData.maxSpeed)) {
@@ -193,10 +200,31 @@ export class HUDManager {
     if (gameData.position) {
       targetInfo = this.targetingSystem.getTargetInfo(gameData.position, gameData.orientation);
     }
-  this.compass.update(gameData.heading, targetInfo);
-  // Timed spell countdown overlay routed to compass
-  this.compass.setCountdown(gameData.compassCountdown ?? null);
-  this.compass.setPrecisionMode(gameData.precisionModeActive ?? false);
+    this.compass.update(gameData.heading, targetInfo);
+    // Timed spell countdown overlay routed to compass
+    this.compass.setCountdown(gameData.compassCountdown ?? null);
+    this.compass.setPrecisionMode(gameData.precisionModeActive ?? false);
+    if (gameData.atmosphereMode) {
+      this.compass.setAtmosphereMode(
+        true,
+        gameData.atmospherePitch ?? gameData.pitch,
+        gameData.atmosphereRoll ?? gameData.roll,
+        gameData.altitudeAboveGround ?? 0
+      );
+    } else {
+      this.compass.setAtmosphereMode(false);
+    }
+  // Activar horizonte artificial en modo atmosférico
+  if (gameData.atmosphereMode) {
+    this.compass.setAtmosphereMode(
+      true,
+      gameData.pitch,
+      gameData.roll,
+      gameData.altitudeAboveGround ?? 0
+    );
+  } else {
+    this.compass.setAtmosphereMode(false);
+  }
     
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
   // Determinar si el rito de velocidad está activo (hasta 200%)
@@ -243,6 +271,12 @@ export class HUDManager {
       this.hudOpacity = eased;
       if (k >= 1) { this.hudFadeActive = false; this.hudOpacity = 1; }
     }
+    // Actualizar timer de parpadeo para stall warning (ciclo de 1s)
+    if (this.stallWarningActive) {
+      this.stallBlinkTimer += deltaTime;
+    } else {
+      this.stallBlinkTimer = 0;
+    }
   }
 
   // === Target Panel Public API ===
@@ -256,6 +290,13 @@ export class HUDManager {
     }
   }
   public clearTargetPanel() { this.targetPanel.clear(); }
+
+  /**
+   * Actualiza el estado de stall warning para parpadeo del threat light
+   */
+  public setStallWarning(active: boolean): void {
+    this.stallWarningActive = active;
+  }
 
   /**
    * Debug: Mostrar información de estado en consola (F1)
@@ -695,9 +736,11 @@ export class HUDManager {
       glowColor: 'rgba(34,197,94,0.45)',
       radius: 10
     });
+    // Threat light: parpadea cada 1s cuando hay stall warning
+    const threatBlink = this.stallWarningActive && (Math.floor(this.stallBlinkTimer) % 2 === 0);
     this.drawPilotLight(ctx, threatPilotX, pilotY, {
       label: 'Threat',
-      active: this.landingIndicators.threatActive,
+      active: this.landingIndicators.threatActive || threatBlink,
       onColor: '#ef4444',
       offColor: '#2c0f0f',
       glowColor: 'rgba(239,68,68,0.45)',

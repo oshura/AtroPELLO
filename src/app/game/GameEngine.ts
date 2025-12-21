@@ -88,6 +88,7 @@ import { LesserBeingController } from './services/lesser-beings/lesser-being-con
 import { LesserBeingSpawner } from './services/lesser-beings/lesser-being-spawner';
 import { LesserBeingCombatService, LesserBeingProjectileView } from './services/lesser-beings/lesser-being-combat.service';
 import { AtmosphereSceneActivationOptions, AtmosphereSceneManager, AtmosphereSceneState } from './atmosphere/AtmosphereSceneManager';
+import { calculateAtmosphereAttitude } from './utils/atmosphere-attitude.util';
 
 interface AuxiliaryAbilityRuntime {
   id: string;
@@ -259,6 +260,7 @@ export class GameEngine {
   private precisionLatchActive: boolean = false;
   private precastChantDurationMs: number | null = null;
   private sunExposureTimerMs: number = 0;
+  // Atmosphere scene management
   private atmosphereSceneManager: AtmosphereSceneManager | null = null;
   private atmosphereSceneState: AtmosphereSceneState = {
     active: false,
@@ -271,6 +273,9 @@ export class GameEngine {
     entryAltitude: 0,
     lastUpdatedMs: 0,
   };
+  // Atmosphere audio SFX
+  private atmosphereAirRushHandle: ReturnType<AudioEngineService['play']> | null = null;
+  private atmosphereStallHandle: ReturnType<AudioEngineService['play']> | null = null;
   private readonly SUN_DAMAGE_INTERVAL_MS: number = 5000;
   private readonly SUN_DAMAGE_THRESHOLD: number = 3000;
   private readonly SUN_DAMAGE_STEP_DISTANCE: number = 100;
@@ -1127,13 +1132,17 @@ export class GameEngine {
     }
     const now = performance?.now?.() ?? Date.now();
     const center = this.resolvePlanetCenterFromContext(context) ?? { x: 0, y: 0, z: 0 };
-    const entryAltitude = Math.max(
+    // Altitud de entrada escalada x5 para coincidir con groundRadius aumentado
+    const baseAltitude = Math.max(
       150,
       options?.entryAltitude ?? (Number.isFinite(context.distanceToSurface) ? context.distanceToSurface : 420)
     );
-    const groundRadius = Math.max(50, options?.groundRadius ?? context.radius ?? 900);
-    const skyPadding = options?.skyPadding ?? 600;
-    const skyRadius = Math.max(groundRadius + 100, options?.skyRadius ?? (groundRadius + skyPadding));
+    const entryAltitude = baseAltitude * 5;
+    // Escala atmosférica aumentada x5 para mejor sensación de espacio
+    const baseRadius = Math.max(50, options?.groundRadius ?? context.radius ?? 900);
+    const groundRadius = baseRadius * 5;
+    const skyPadding = options?.skyPadding ?? 3000; // 600 * 5
+    const skyRadius = Math.max(groundRadius + 500, options?.skyRadius ?? (groundRadius + skyPadding));
     const palette = this.deriveAtmospherePalette(context);
     const contextClone: LandingApproachContext = {
       ...context,
@@ -1152,31 +1161,52 @@ export class GameEngine {
       entryAltitude,
       lastUpdatedMs: now,
     };
-    this.applyAtmosphereEntryPosition(contextClone, entryAltitude);
+    this.applyAtmosphereEntryPosition(contextClone, entryAltitude, groundRadius);
   }
 
   public exitAtmosphereScene(): void {
     if (!this.atmosphereSceneState.active) {
       return;
     }
+    // Detener todos los SFX atmosféricos
+    this.stopAtmosphereAudio();
+    // Limpiar estado
     this.atmosphereSceneState = this.createDefaultAtmosphereSceneState();
   }
 
-  private applyAtmosphereEntryPosition(context: LandingApproachContext, altitude: number): void {
+  /**
+   * Detiene todos los efectos de audio atmosféricos activos
+   */
+  private stopAtmosphereAudio(): void {
+    if (this.atmosphereAirRushHandle && this.atmosphereAirRushHandle.isPlaying()) {
+      this.atmosphereAirRushHandle.stop(150);
+      this.atmosphereAirRushHandle = null;
+    }
+    if (this.atmosphereStallHandle && this.atmosphereStallHandle.isPlaying()) {
+      this.atmosphereStallHandle.stop(150);
+      this.atmosphereStallHandle = null;
+    }
+    // Limpiar indicador visual de stall en el HUD
+    if (this.hudManager) {
+      this.hudManager.setStallWarning(false);
+    }
+  }
+
+  private applyAtmosphereEntryPosition(context: LandingApproachContext, altitude: number, groundRadius: number): void {
     if (!this.spaceship) {
       return;
     }
     const normal = context.surfaceNormal ? this.normalize(context.surfaceNormal) : { x: 0, y: 1, z: 0 };
+    // Recalcular surfacePoint usando groundRadius escalado (no el radius original del contexto)
     let surfacePoint = context.surfacePoint ? { ...context.surfacePoint } : null;
-    if (!surfacePoint) {
-      const center = this.resolvePlanetCenterFromContext(context);
-      if (center) {
-        surfacePoint = {
-          x: center.x + normal.x * context.radius,
-          y: center.y + normal.y * context.radius,
-          z: center.z + normal.z * context.radius,
-        };
-      }
+    const center = this.resolvePlanetCenterFromContext(context);
+    if (center) {
+      // Usar groundRadius para posicionar correctamente sobre la esfera escalada
+      surfacePoint = {
+        x: center.x + normal.x * groundRadius,
+        y: center.y + normal.y * groundRadius,
+        z: center.z + normal.z * groundRadius,
+      };
     }
     if (!surfacePoint) {
       surfacePoint = { x: 0, y: 0, z: 0 };
@@ -1217,6 +1247,22 @@ export class GameEngine {
 
   private isAtmosphereSceneActive(): boolean {
     return !!(this.atmosphereSceneState?.active && this.atmosphereSceneState.context);
+  }
+
+  /**
+   * Calcula la altitud sobre el suelo (no sobre el centro del planeta)
+   */
+  private computeAltitudeAboveGround(): number {
+    if (!this.spaceship || !this.isAtmosphereSceneActive()) {
+      return 0;
+    }
+    const center = this.atmosphereSceneState.center;
+    const groundRadius = this.atmosphereSceneState.groundRadius;
+    const dx = this.spaceship.position.x - center.x;
+    const dy = this.spaceship.position.y - center.y;
+    const dz = this.spaceship.position.z - center.z;
+    const distFromCenter = Math.hypot(dx, dy, dz);
+    return Math.max(0, distFromCenter - groundRadius);
   }
 
   private renderAtmosphereScene(): void {
@@ -2579,7 +2625,15 @@ export class GameEngine {
 
   // Capture ship position before integration for portal plane crossing tests
   try { this.lastShipPos = { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z }; } catch {}
+  // Aplicar gravedad atmosférica ANTES del update de la nave para que se integre correctamente
+  if (this.isAtmosphereSceneActive()) {
+    this.applyAtmosphereGravity(deltaTime);
+  }
   this.spaceship.update(deltaTime);
+  // Actualizar audio atmosférico después del update para tener la velocidad correcta
+  if (this.isAtmosphereSceneActive()) {
+    this.updateAtmosphereAudio();
+  }
   this.maintainLandedShipAttachment();
   this.handleSunProximityDamage(deltaTime);
 
@@ -5682,6 +5736,109 @@ export class GameEngine {
 
     this.renderOutlineSystem();
     this.renderTargetOutline2D();
+  }
+
+  /**
+   * Aplica gravedad atmosférica hacia el centro de la esfera de suelo
+   * La intensidad aumenta a medida que la nave se acerca a la superficie
+   */
+  private applyAtmosphereGravity(deltaTime: number): void {
+    if (!this.spaceship || !this.atmosphereSceneState.active || !this.atmosphereSceneState.context) {
+      return;
+    }
+    const center = this.atmosphereSceneState.center;
+    const groundRadius = this.atmosphereSceneState.groundRadius;
+    const skyRadius = this.atmosphereSceneState.skyRadius;
+
+    // Vector desde el centro hasta la nave
+    const dx = this.spaceship.position.x - center.x;
+    const dy = this.spaceship.position.y - center.y;
+    const dz = this.spaceship.position.z - center.z;
+    const distFromCenter = Math.hypot(dx, dy, dz);
+
+    // Evitar división por cero
+    if (distFromCenter < 1e-6) {
+      return;
+    }
+
+    // Altura sobre la superficie (distFromCenter - groundRadius)
+    const altitude = distFromCenter - groundRadius;
+
+    // La gravedad solo actúa dentro de la atmósfera (entre groundRadius y skyRadius)
+    if (altitude < 0 || altitude > (skyRadius - groundRadius)) {
+      return;
+    }
+
+    // Factor de intensidad: máxima (1.0) cerca de la superficie, decae hacia el límite del cielo
+    const maxHeight = skyRadius - groundRadius;
+    const heightFactor = 1.0 - Math.pow(altitude / maxHeight, 1.5); // Exponencial suave
+
+    // Gravedad base aumentada para escala x5 (ajustable según sensación de juego)
+    const GRAVITY_BASE = 12.0; // unidades/s² - Caída notable sin ser excesiva
+    const gravityMagnitude = GRAVITY_BASE * heightFactor;
+
+    // Dirección: hacia el centro (normalizada)
+    const dirX = -dx / distFromCenter;
+    const dirY = -dy / distFromCenter;
+    const dirZ = -dz / distFromCenter;
+
+    // Acumular la fuerza gravitatoria en externalForces (se integrará en spaceship.update)
+    // Convertir aceleración (unidades/s²) a velocidad (unidades/s) multiplicando por deltaTime
+    const velocityChange = gravityMagnitude * deltaTime;
+    this.spaceship.externalForces.x += dirX * velocityChange;
+    this.spaceship.externalForces.y += dirY * velocityChange;
+    this.spaceship.externalForces.z += dirZ * velocityChange;
+  }
+
+  /**
+   * Actualiza los efectos de audio atmosféricos según la velocidad de la nave
+   * - Alta velocidad (>2.5): sfx_passby_air (aire silbando)
+   * - Baja velocidad (<0.8): sfx_stall loop (pérdida de sustentación)
+   */
+  private updateAtmosphereAudio(): void {
+    if (!this.spaceship || !this.audio || !this.atmosphereSceneState.active) {
+      return;
+    }
+
+    const speed = this.spaceship.currentSpeed;
+    const HIGH_SPEED_THRESHOLD = 2.5;  // Umbral para aire silbando
+    const LOW_SPEED_THRESHOLD = 0.8;   // Umbral para stall warning
+
+    // === AIR RUSH (alta velocidad) ===
+    if (speed > HIGH_SPEED_THRESHOLD) {
+      // Reproducir aire silbando si no está activo
+      if (!this.atmosphereAirRushHandle || !this.atmosphereAirRushHandle.isPlaying()) {
+        this.atmosphereAirRushHandle = this.audio.play('sfx_passby_air', {
+          volume: 0.4,
+          bus: 'sfx',
+          loop: false, // one-shot de 1.2s
+        });
+      }
+    }
+
+    // === STALL WARNING (baja velocidad) ===
+    const stallActive = speed < LOW_SPEED_THRESHOLD;
+    if (stallActive) {
+      // Iniciar loop de stall si no está activo
+      if (!this.atmosphereStallHandle || !this.atmosphereStallHandle.isPlaying()) {
+        this.atmosphereStallHandle = this.audio.play('sfx_stall', {
+          volume: 0.5,
+          bus: 'sfx',
+          loop: true,
+        });
+      }
+    } else {
+      // Detener stall si la velocidad sube
+      if (this.atmosphereStallHandle && this.atmosphereStallHandle.isPlaying()) {
+        this.atmosphereStallHandle.stop(200); // fade out suave
+        this.atmosphereStallHandle = null;
+      }
+    }
+    
+    // Actualizar indicador visual de stall en el HUD
+    if (this.hudManager) {
+      this.hudManager.setStallWarning(stallActive);
+    }
   }
 
   private createDefaultAtmosphereSceneState(): AtmosphereSceneState {
@@ -9670,13 +9827,23 @@ export class GameEngine {
     });
 
     // Obtener datos del juego para el HUD
-    const velocityMagnitude = Math.sqrt(
-      this.spaceship.velocity.x ** 2 + 
-      this.spaceship.velocity.y ** 2 + 
-      this.spaceship.velocity.z ** 2
-    );
+    // En modo atmosférico, usar solo currentSpeed (forward) para evitar parpadeo por gravedad
+    const velocityMagnitude = this.isAtmosphereSceneActive() 
+      ? this.spaceship.currentSpeed
+      : Math.sqrt(
+          this.spaceship.velocity.x ** 2 + 
+          this.spaceship.velocity.y ** 2 + 
+          this.spaceship.velocity.z ** 2
+        );
 
     const orientationBasis: OrientationBasis = this.spaceship.getOrientationBasis();
+    const atmosphereOrientation = this.isAtmosphereSceneActive()
+      ? calculateAtmosphereAttitude({
+          shipBasis: orientationBasis,
+          shipPosition: { ...this.spaceship.position },
+          planetCenter: this.atmosphereSceneState.center,
+        })
+      : null;
     const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
     const speedPctExtended = (this.spaceship.currentSpeed / Math.max(1e-6, baseMax)) * 100; // 0..200 when jumping/rite
     const riteActive = !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && now < this.speedRiteUntilMs);
@@ -9716,6 +9883,11 @@ export class GameEngine {
       compassCountdown: this.getCompassCountdownPayload(now),
       precisionModeActive: this.isPrecisionRotationActive(),
       // Portal cooldown HUD removido (no se expone)
+      // Atmosphere mode: artificial horizon + altimeter
+      atmosphereMode: this.isAtmosphereSceneActive(),
+      altitudeAboveGround: this.computeAltitudeAboveGround(),
+      atmospherePitch: atmosphereOrientation?.pitch ?? null,
+      atmosphereRoll: atmosphereOrientation?.roll ?? null,
     };
 
     // Sincronizar el target actual del sistema de retícula con el HUD

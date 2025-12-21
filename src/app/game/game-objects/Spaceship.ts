@@ -64,6 +64,9 @@ export class Spaceship extends GameObject {
   private driftVelocity: Vector3 = { x: 0, y: 0, z: 0 }; // velocidad constante en mundo (10% de la anterior)
   private voidEnergyResumeTimeout: ReturnType<typeof setTimeout> | null = null;
   
+  // Fuerzas externas (gravedad, vientos, etc.) que se suman al velocity
+  public externalForces: Vector3 = { x: 0, y: 0, z: 0 };
+  
   // Capacidad de carga (HUD de cargamento)
   public cargoCapacityMax: number = 10;
   public cargoCapacityCurrent: number = 0;
@@ -503,6 +506,15 @@ export class Spaceship extends GameObject {
       this.smoothedVelocity.y = this.velocity.y;
       this.smoothedVelocity.z = this.velocity.z;
     }
+
+    // Aplicar fuerzas externas acumuladas (gravedad atmosférica, etc.)
+    this.velocity.x += this.externalForces.x;
+    this.velocity.y += this.externalForces.y;
+    this.velocity.z += this.externalForces.z;
+    // Resetear para el próximo frame
+    this.externalForces.x = 0;
+    this.externalForces.y = 0;
+    this.externalForces.z = 0;
   }
 
   /**

@@ -68,3 +68,10 @@ Descomponeremos el desarrollo en fases claras que puedan retomarse en cualquier 
 - [ ] Fase 5 completada
 - [ ] Fase 6 completada
 - [ ] Fase 7 completada
+
+## Instrumentación HUD atmosférica (fase 4 detalle)
+- [x] Análisis matemático: documentar las inconsistencias actuales del horizonte artificial comparando los vectores forward/right/up con la normal planetaria real y registrar escenarios límite (inversión, nariz abajo, alabeo completo).
+- [x] Refactorizar el cálculo de pitch/roll atmosférico en un util independiente reutilizable por GameEngine y HUD, garantizando ortonormalización y manejo de centros planetarios arbitrarios.
+- [x] Ajustar el renderizado del horizonte y la telemetría del Compass para consumir los nuevos valores, incluyendo depuración visible (altitud, flags) para QA.
+- [x] Añadir pruebas unitarias que cubran los escenarios documentados (nivelado, nariz arriba/abajo, alabeo ±90°, inversión) y asegurar que el componente HUD cae en modo horizonte con datos consistentes.
+- [x] Ejecutar `npm run build`, validar resultados en la wiki (/wiki) y actualizar la documentación correspondiente.
