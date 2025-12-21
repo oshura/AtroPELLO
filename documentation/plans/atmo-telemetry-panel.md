@@ -22,23 +22,27 @@
 
 ## Fases y checklist
 1. **Análisis detallado del pipeline actual**
-   - [ ] Revisar cómo `GameEngine` reúne datos de planeta/telemetría y cómo alimenta `HUDManager`/`TargetPanel`.
-   - [ ] Identificar la información mínima necesaria del contexto planetario para renderizar el nuevo panel (nombre, tipo, intel, altitud, etc.).
+   - [x] Revisar cómo `GameEngine` reúne datos de planeta/telemetría y cómo alimenta `HUDManager`/`TargetPanel`.
+   - [x] Identificar la información mínima necesaria del contexto planetario para renderizar el nuevo panel (nombre, tipo, intel, altitud, etc.).
+
+   **Notas 21-dic-2025**
+   - `GameEngine.update()` empaqueta la telemetría atmosférica en `atmosphereTelemetrySnapshot` (visibilidad, turbulencia, drift vector, lift, estabilidad, evento) y la envía a `HUDManager.update()` como `gameData.atmosphereTelemetry`. El `HUDManager` simplemente reenvía esta carga a `Compass.setAtmosphereTelemetry()`, que la dibuja en el horizonte artificial; el `TargetPanel` ocupa todo el bloque central inferior y se alimenta con `hudManager.updateTargetPanel()` cada vez que `AdaptiveTargeting` cambia de objetivo.
+   - Para un panel dedicado necesitamos combinar: (a) `LandingApproachContext` de `atmosphereSceneState.context` (nombre/tipo/visitas/intel y radios para derivados), (b) `AtmosphereWeatherSnapshot` para describir el evento activo (tipo, intensidad, ETA, precipitación, lightning chance) y (c) `atmosphereTelemetrySnapshot` para los números en vivo (visibilidad normalizada, turbulencia ajustada por altitud, drift vector/magnitud, estabilidad resultante, liftPerSecond). Ese payload será la base de un nuevo tipo `AtmosphereTelemetryPanelState` que incluya metainformación adicional útil en HUD: altitud actual sobre suelo, distancia a superficie capturada por landing context y las etiquetas de bioma/evento.
 
 2. **Diseño de datos y tipos**
-   - [ ] Extender/crear tipos HUD para describir `AtmosphereTelemetryPanelState` (telemetría + datos de planeta).
-   - [ ] Actualizar `GameEngine` para compilar el nuevo payload cuando `isAtmosphereSceneActive()` y propagarlo en `HUDManager.update`.
+   - [x] Extender/crear tipos HUD para describir `AtmosphereTelemetryPanelState` (telemetría + datos de planeta).
+   - [x] Actualizar `GameEngine` para compilar el nuevo payload cuando `isAtmosphereSceneActive()` y propagarlo en `HUDManager.update`.
 
 3. **Implementación del panel y routing en HUD**
-   - [ ] Crear el nuevo elemento (p.ej. `AtmosphereTelemetryPanel`) con layout visual adaptado al área del TargetPanel.
-   - [ ] Actualizar `HUDManager` para instanciar/renderizar el panel, alternando con `TargetPanel` según el modo (atmosfera vs espacio) y recibiendo datos mediante setters.
-   - [ ] Ajustar `renderToTexture` para dibujar el panel correcto y asegurar que la altura/anchura del bloque central siguen alineadas con las barras de velocidad.
+   - [x] Crear el nuevo elemento (p.ej. `AtmosphereTelemetryPanel`) con layout visual adaptado al área del TargetPanel.
+   - [x] Actualizar `HUDManager` para instanciar/renderizar el panel, alternando con `TargetPanel` según el modo (atmosfera vs espacio) y recibiendo datos mediante setters.
+   - [x] Ajustar `renderToTexture` para dibujar el panel correcto y asegurar que la altura/anchura del bloque central siguen alineadas con las barras de velocidad.
 
 4. **Depuración de `Compass` y limpieza de telemetría antigua**
-   - [ ] Eliminar `setAtmosphereTelemetry` y campos asociados en `Compass`; mover cualquier lógica de debug requerida al nuevo panel o a un servicio dedicado.
-   - [ ] Revisar llamadas existentes para evitar referencias rotas.
+   - [x] Eliminar `setAtmosphereTelemetry` y campos asociados en `Compass`; mover cualquier lógica de debug requerida al nuevo panel o a un servicio dedicado.
+   - [x] Revisar llamadas existentes para evitar referencias rotas.
 
 5. **Documentación, wiki y pruebas**
-   - [ ] Actualizar la wiki de la nave (sección HUD/atmósfera) y cualquier documentación relevante describiendo el nuevo panel.
-   - [ ] Ejecutar `npm run build` y adjuntar resultado.
-   - [ ] Marcar plan como completado (o eliminar) una vez entregado.
+   - [x] Actualizar la wiki de la nave (sección HUD/atmósfera) y cualquier documentación relevante describiendo el nuevo panel.
+   - [x] Ejecutar `npm run build` y adjuntar resultado.
+   - [x] Marcar plan como completado (o eliminar) una vez entregado.

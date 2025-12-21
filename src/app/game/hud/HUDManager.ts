@@ -12,8 +12,9 @@ import { MarqueePanel } from './elements/MarqueePanel';
 import { TargetingSystem, TargetInfo } from '../types/targeting.types';
 import { OrientationBasis } from '../targeting/compass-direction.util';
 import { TargetPanel, TargetPanelState, Relation } from './elements/TargetPanel';
+import { AtmosphereTelemetryPanel } from './elements/AtmosphereTelemetryPanel';
 import { LandingIndicatorsSnapshot } from '../types/landing.types';
-import { AtmosphereTelemetryPayload, CompassCountdownPayload, HudMarqueeEventOptions, HudMarqueeEventType } from '../types/hud.types';
+import { AtmosphereTelemetryPanelState, CompassCountdownPayload, HudMarqueeEventOptions, HudMarqueeEventType } from '../types/hud.types';
 
 interface QueuedMarqueeEntry {
   id: string;
@@ -83,6 +84,7 @@ export class HUDManager {
   private cargoGauge: CargoGauge;
   private marqueePanel: MarqueePanel;
   private targetPanel: TargetPanel;
+  private telemetryPanel: AtmosphereTelemetryPanel;
   private landingIndicators = { landingReady: false, threatActive: false };
   private stallWarningActive: boolean = false; // Track stall state for threat blink
   private stallBlinkTimer: number = 0; // Acumulador para parpadeo cada 1s
@@ -115,6 +117,7 @@ export class HUDManager {
     this.cargoGauge = new CargoGauge();
     this.marqueePanel = new MarqueePanel();
   this.targetPanel = new TargetPanel();
+  this.telemetryPanel = new AtmosphereTelemetryPanel();
     GameLogger.debug(LogCategory.HUD, 'Elementos HUD creados');
     
     // Inicializar sistema de targeting
@@ -153,6 +156,7 @@ export class HUDManager {
   
   // Sistema de targeting
   private targetingSystem: TargetingSystem;
+  private telemetryPanelActive: boolean = false;
 
   public update(gameData: {
     velocity: number;
@@ -182,7 +186,7 @@ export class HUDManager {
     atmospherePitch?: number | null;
     atmosphereRoll?: number | null;
     altitudeAboveGround?: number;
-    atmosphereTelemetry?: AtmosphereTelemetryPayload | null;
+    atmosphereTelemetryPanel?: AtmosphereTelemetryPanelState | null;
   }): void {
     // Actualizar elementos individuales
     if (typeof gameData.maxSpeed === 'number' && !Number.isNaN(gameData.maxSpeed)) {
@@ -215,7 +219,9 @@ export class HUDManager {
     } else {
       this.compass.setAtmosphereMode(false);
     }
-    this.compass.setAtmosphereTelemetry(gameData.atmosphereTelemetry ?? null);
+    const telemetryPanelState = gameData.atmosphereMode ? (gameData.atmosphereTelemetryPanel ?? null) : null;
+    this.telemetryPanelActive = !!telemetryPanelState;
+    this.telemetryPanel.setData(telemetryPanelState ?? null);
     
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
   // Determinar si el rito de velocidad está activo (hasta 200%)
@@ -915,7 +921,12 @@ export class HUDManager {
   const panelX = centerX - panelWidth / 2;
   const panelYOffset = 100; // bajar un poco más el panel
   const panelY = centerY - panelHeight / 2 + panelYOffset;
-  this.targetPanel.render(ctx, panelX, panelY, panelWidth, panelHeight);
+  const showTelemetryPanel = this.telemetryPanelActive && this.telemetryPanel.hasData();
+  if (showTelemetryPanel) {
+    this.telemetryPanel.render(ctx, panelX, panelY, panelWidth, panelHeight);
+  } else {
+    this.targetPanel.render(ctx, panelX, panelY, panelWidth, panelHeight);
+  }
 
     // === VELOCITY BARS ===
     // Alinear su base con la base del panel de targets y usar misma altura

@@ -1,3 +1,5 @@
+import { PrecipitationType } from '../atmosphere/AtmosphereWeatherService';
+
 export interface CompassCountdownPayload {
   /** Seconds remaining for the active timed effect */
   seconds: number;
@@ -42,4 +44,37 @@ export interface AtmosphereTelemetryPayload {
   eventType: string;
   stability: AtmosphereStabilityLabel;
   liftPerSecond: number;
+}
+
+export interface AtmosphereTelemetryPanelPlanetInfo {
+  id: string;
+  name: string;
+  typeLabel?: string;
+  visited?: boolean;
+  inhabitantsDisplay?: string;
+  lesserBeingDisplay?: string;
+  probabilityOfLifePct?: number;
+}
+
+export interface AtmosphereTelemetryPanelWeatherInfo {
+  label: string;
+  eventType: string;
+  intensity: number;
+  precipitation: PrecipitationType;
+  lightningChance: number;
+  etaMs: number;
+  startedAtMs: number;
+}
+
+export interface AtmosphereTelemetryPanelState {
+  planet: AtmosphereTelemetryPanelPlanetInfo;
+  altitudeAboveGround: number;
+  distanceToSurface: number;
+  telemetry: AtmosphereTelemetryPayload;
+  weather: AtmosphereTelemetryPanelWeatherInfo | null;
+  driftHeadingDeg: number;
+  driftPitchDeg: number;
+  liftPerSecond: number;
+  warnings: string[];
+  timestamp: number;
 }
