@@ -48,7 +48,16 @@ export class Header implements OnDestroy {
   }
 
   protected isSaveDisabled(): boolean {
-    return !this.auth.authenticated() || this.saves.loading() || this.saves.saving();
+    if (!this.auth.authenticated()) {
+      return true;
+    }
+    if (this.saves.loading() || this.saves.saving()) {
+      return true;
+    }
+    if (this.saves.isAtmosphereLocked()) {
+      return true;
+    }
+    return false;
   }
 
   async onSaveGameClick(): Promise<void> {

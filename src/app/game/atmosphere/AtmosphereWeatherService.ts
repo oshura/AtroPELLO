@@ -3,7 +3,7 @@ import { LandingApproachContext } from '../types/landing.types';
 import { Vector3 } from '../../types/game.types';
 import { PlanetType } from '../game-objects';
 
-export type PrecipitationType = 'none' | 'rain' | 'dust';
+export type PrecipitationType = 'none' | 'rain' | 'dust' | 'meteor';
 
 export type AtmosphereWeatherEventType =
   | 'clear'
@@ -35,6 +35,52 @@ interface AtmosphereWeatherEventState {
   driftVector: Vector3;
 }
 
+interface AtmosphereLayerDefinition {
+  id: string;
+  label: string;
+  minAltitude: number;
+  maxAltitude: number;
+  durationRangeMs: [number, number];
+}
+
+interface LayerRuntimeState {
+  definition: AtmosphereLayerDefinition;
+  currentEvent: AtmosphereWeatherEventState | null;
+  snapshot: AtmosphereWeatherSnapshot;
+  nextEventArmMs: number;
+}
+
+const DEFAULT_LAYER_DEFINITIONS: AtmosphereLayerDefinition[] = [
+  {
+    id: 'surface',
+    label: 'Capa superficial',
+    minAltitude: -Infinity,
+    maxAltitude: 420,
+    durationRangeMs: [80000, 120000],
+  },
+  {
+    id: 'low',
+    label: 'Capa baja',
+    minAltitude: 420,
+    maxAltitude: 1500,
+    durationRangeMs: [90000, 130000],
+  },
+  {
+    id: 'mid',
+    label: 'Capa media',
+    minAltitude: 1500,
+    maxAltitude: 2600,
+    durationRangeMs: [100000, 140000],
+  },
+  {
+    id: 'upper',
+    label: 'Capa superior',
+    minAltitude: 2600,
+    maxAltitude: Infinity,
+    durationRangeMs: [90000, 140000],
+  },
+];
+
 export interface AtmosphereWeatherSnapshot {
   eventType: AtmosphereWeatherEventType;
   intensity: number;
@@ -47,34 +93,35 @@ export interface AtmosphereWeatherSnapshot {
   lightningChance: number;
   startedAtMs: number;
   etaMs: number;
+  layerId: string;
+  layerLabel: string;
+  layerBounds: { min: number; max: number };
 }
 
 export class AtmosphereWeatherService {
-  private currentEvent: AtmosphereWeatherEventState | null = null;
   private snapshot: AtmosphereWeatherSnapshot | null = null;
-  private eventPool: AtmosphereWeatherEventDefinition[] = [];
   private rngSeed: number = 1;
-  private nextEventArmMs: number = 0;
   private sceneContext: AtmosphereSceneState | null = null;
   private marsSevereMode: boolean = false;
+  private layerStates: Map<string, LayerRuntimeState> = new Map();
+  private activeLayerId: string | null = null;
+  private readonly layerDefinitions: AtmosphereLayerDefinition[] = DEFAULT_LAYER_DEFINITIONS;
 
   public configureForScene(scene: AtmosphereSceneState, nowMs: number = this.getTime()): void {
     this.sceneContext = scene;
     this.marsSevereMode = this.isMarsContext(scene.context);
     this.rngSeed = this.computeSeed(scene.context);
-    this.eventPool = this.buildEventPool(scene.context);
-    this.currentEvent = null;
     this.snapshot = null;
-    this.nextEventArmMs = nowMs;
-    this.pickNextEvent(nowMs);
+    this.activeLayerId = null;
+    this.initializeLayerStates(nowMs);
   }
 
   public reset(): void {
     this.sceneContext = null;
-    this.currentEvent = null;
     this.snapshot = null;
-    this.eventPool = [];
     this.marsSevereMode = false;
+    this.layerStates.clear();
+    this.activeLayerId = null;
   }
 
   public update(nowMs: number, deltaSeconds: number, altitude: number): void {
@@ -82,32 +129,137 @@ export class AtmosphereWeatherService {
       this.snapshot = null;
       return;
     }
-    if (!this.currentEvent || nowMs >= this.currentEvent.startedAtMs + this.currentEvent.durationMs) {
-      if (nowMs >= this.nextEventArmMs) {
-        this.pickNextEvent(nowMs);
-      }
+    if (!this.layerStates.size) {
+      this.initializeLayerStates(nowMs);
     }
-    if (!this.currentEvent) {
-      this.snapshot = this.buildBaselineSnapshot(nowMs);
+    const activeLayer = this.resolveLayerForAltitude(altitude);
+    this.activeLayerId = activeLayer.id;
+    for (const state of this.layerStates.values()) {
+      const sampleAltitude = state.definition.id === activeLayer.id
+        ? altitude
+        : this.resolveLayerSampleAltitude(state.definition);
+      this.updateLayerState(state, nowMs, sampleAltitude);
+    }
+    const activeState = this.layerStates.get(activeLayer.id);
+    this.snapshot = activeState?.snapshot ?? this.buildBaselineSnapshot(nowMs, activeLayer);
+  }
+
+  public getSnapshot(): AtmosphereWeatherSnapshot | null {
+    return this.snapshot;
+  }
+
+  private initializeLayerStates(nowMs: number): void {
+    this.layerStates.clear();
+    for (const definition of this.layerDefinitions) {
+      this.layerStates.set(definition.id, {
+        definition,
+        currentEvent: null,
+        snapshot: this.buildBaselineSnapshot(nowMs, definition),
+        nextEventArmMs: nowMs,
+      });
+    }
+  }
+
+  private updateLayerState(state: LayerRuntimeState, nowMs: number, altitude: number): void {
+    const expired = !state.currentEvent || nowMs >= state.currentEvent.startedAtMs + state.currentEvent.durationMs;
+    if (expired && nowMs >= state.nextEventArmMs) {
+      state.currentEvent = this.pickNextLayerEvent(state.definition, nowMs);
+      const [cooldownMin, cooldownMax] = this.getEventCooldownRange();
+      const cooldown = this.randomRange(cooldownMin, cooldownMax);
+      state.nextEventArmMs = state.currentEvent
+        ? state.currentEvent.startedAtMs + state.currentEvent.durationMs + cooldown
+        : nowMs + cooldown;
+    }
+    if (!state.currentEvent) {
+      state.snapshot = this.buildBaselineSnapshot(nowMs, state.definition);
       return;
     }
-    const elapsed = nowMs - this.currentEvent.startedAtMs;
-    const life = this.currentEvent.durationMs > 0 ? this.clamp(elapsed / this.currentEvent.durationMs, 0, 1) : 1;
-    const fadeIn = this.clamp(elapsed / 2000, 0, 1);
-    const fadeOut = life > 0.85 ? 1 - this.clamp((life - 0.85) / 0.15, 0, 1) : 1;
-    const altitudeFactor = altitude <= 0 ? 1 : this.clamp(1 - altitude / 2500, 0.25, 1);
-    const intensity = this.clamp(fadeIn * fadeOut * altitudeFactor, 0, 1);
+    state.snapshot = this.buildSnapshotFromEvent(state.currentEvent, nowMs, altitude, state.definition);
+  }
 
-    const def = this.currentEvent.definition;
+  private pickNextLayerEvent(layer: AtmosphereLayerDefinition, nowMs: number): AtmosphereWeatherEventState | null {
+    const pool = this.buildEventPool(this.sceneContext?.context ?? null, layer);
+    if (!pool.length) {
+      return null;
+    }
+    const selected = this.selectEventDefinition(pool);
+    if (!selected) {
+      return null;
+    }
+    const [layerMin, layerMax] = layer.durationRangeMs;
+    const duration = this.randomRange(layerMin, layerMax);
+    const drift = this.buildDriftVector(selected.driftStrength);
+    return {
+      definition: selected,
+      durationMs: duration,
+      startedAtMs: nowMs,
+      driftVector: drift,
+    };
+  }
+
+  private selectEventDefinition(pool: AtmosphereWeatherEventDefinition[]): AtmosphereWeatherEventDefinition | null {
+    const totalWeight = pool.reduce((acc, def) => acc + Math.max(def.weight, 0), 0);
+    if (totalWeight <= 0) {
+      return null;
+    }
+    const roll = this.seededRandom() * totalWeight;
+    let accum = 0;
+    for (const def of pool) {
+      accum += Math.max(def.weight, 0);
+      if (roll <= accum) {
+        return def;
+      }
+    }
+    return pool[pool.length - 1] ?? null;
+  }
+
+  private resolveLayerForAltitude(altitude: number): AtmosphereLayerDefinition {
+    const value = Number.isFinite(altitude) ? altitude : 0;
+    for (const def of this.layerDefinitions) {
+      const min = Number.isFinite(def.minAltitude) ? def.minAltitude : -Infinity;
+      const max = Number.isFinite(def.maxAltitude) ? def.maxAltitude : Infinity;
+      if (value >= min && value < max) {
+        return def;
+      }
+    }
+    return this.layerDefinitions[this.layerDefinitions.length - 1];
+  }
+
+  private resolveLayerSampleAltitude(definition: AtmosphereLayerDefinition): number {
+    const min = Number.isFinite(definition.minAltitude) ? definition.minAltitude : 0;
+    const max = Number.isFinite(definition.maxAltitude) ? definition.maxAltitude : min + 200;
+    if (!Number.isFinite(definition.minAltitude)) {
+      return Math.min(max - 50, max);
+    }
+    if (!Number.isFinite(definition.maxAltitude)) {
+      return min + 200;
+    }
+    return (min + max) / 2;
+  }
+
+  private buildSnapshotFromEvent(
+    state: AtmosphereWeatherEventState,
+    nowMs: number,
+    altitude: number,
+    layer: AtmosphereLayerDefinition,
+  ): AtmosphereWeatherSnapshot {
+    const elapsed = nowMs - state.startedAtMs;
+    const life = state.durationMs > 0 ? this.clamp(elapsed / state.durationMs, 0, 1) : 1;
+    const fadeIn = this.clamp(elapsed / 2000, 0, 1);
+    const fadeOutStart = 0.9;
+    const fadeOut = life > fadeOutStart ? 1 - this.clamp((life - fadeOutStart) / (1 - fadeOutStart), 0, 1) : 1;
+    const altitudeFactor = this.computeLayerPresenceFactor(layer, altitude);
+    const intensity = this.clamp(fadeIn * fadeOut * altitudeFactor, 0, 1);
+    const def = state.definition;
     const visibility = this.lerp(1, def.visibilityMultiplier, intensity);
     const turbulence = def.turbulenceStrength * intensity;
     const driftVector: Vector3 = {
-      x: this.currentEvent.driftVector.x * intensity,
-      y: this.currentEvent.driftVector.y * intensity,
-      z: this.currentEvent.driftVector.z * intensity,
+      x: state.driftVector.x * intensity,
+      y: state.driftVector.y * intensity,
+      z: state.driftVector.z * intensity,
     };
     const impactVolume = this.lerp(1, def.impactVolumeMultiplier, intensity);
-    this.snapshot = {
+    return {
       eventType: def.type,
       intensity,
       visibilityMultiplier: visibility,
@@ -117,46 +269,33 @@ export class AtmosphereWeatherService {
       audioCue: def.audioCue ?? null,
       precipitation: def.precipitation ?? 'none',
       lightningChance: (def.lightningChance ?? 0) * intensity,
-      startedAtMs: this.currentEvent.startedAtMs,
-      etaMs: Math.max(0, this.currentEvent.startedAtMs + this.currentEvent.durationMs - nowMs),
+      startedAtMs: state.startedAtMs,
+      etaMs: Math.max(0, state.startedAtMs + state.durationMs - nowMs),
+      layerId: layer.id,
+      layerLabel: layer.label,
+      layerBounds: { min: layer.minAltitude, max: layer.maxAltitude },
     };
   }
 
-  public getSnapshot(): AtmosphereWeatherSnapshot | null {
-    return this.snapshot;
+  private computeLayerPresenceFactor(layer: AtmosphereLayerDefinition, altitude: number): number {
+    if (!Number.isFinite(altitude)) {
+      return 1;
+    }
+    const min = Number.isFinite(layer.minAltitude) ? layer.minAltitude : -Infinity;
+    const max = Number.isFinite(layer.maxAltitude) ? layer.maxAltitude : Infinity;
+    if (altitude < min) {
+      return this.clamp(1 - (min - altitude) / 400, 0.2, 1);
+    }
+    if (altitude > max) {
+      return this.clamp(1 - (altitude - max) / 600, 0.2, 1);
+    }
+    return 1;
   }
 
-  private pickNextEvent(nowMs: number): void {
-    if (!this.eventPool.length) {
-      this.currentEvent = null;
-      this.snapshot = this.buildBaselineSnapshot(nowMs);
-      this.nextEventArmMs = nowMs + 15000;
-      return;
-    }
-    const totalWeight = this.eventPool.reduce((acc, def) => acc + Math.max(def.weight, 0), 0);
-    const roll = this.seededRandom() * totalWeight;
-    let accum = 0;
-    let selected = this.eventPool[0];
-    for (const def of this.eventPool) {
-      accum += Math.max(def.weight, 0);
-      if (roll <= accum) {
-        selected = def;
-        break;
-      }
-    }
-    const duration = this.randomRange(selected.minDurationMs, selected.maxDurationMs);
-    const drift = this.buildDriftVector(selected.driftStrength);
-    this.currentEvent = {
-      definition: selected,
-      durationMs: duration,
-      startedAtMs: nowMs,
-      driftVector: drift,
-    };
-    const [cooldownMin, cooldownMax] = this.getEventCooldownRange();
-    this.nextEventArmMs = nowMs + duration + this.randomRange(cooldownMin, cooldownMax);
-  }
-
-  private buildEventPool(context: LandingApproachContext | null): AtmosphereWeatherEventDefinition[] {
+  private buildEventPool(
+    context: LandingApproachContext | null,
+    layer?: AtmosphereLayerDefinition,
+  ): AtmosphereWeatherEventDefinition[] {
     const base: AtmosphereWeatherEventDefinition[] = [
       {
         type: 'clear',
@@ -236,6 +375,7 @@ export class AtmosphereWeatherService {
         driftStrength: 0.12,
         impactVolumeMultiplier: 0.55,
         audioCue: 'sfx_weather_meteor',
+        precipitation: 'meteor',
       },
     ];
     const type = context?.planetType;
@@ -279,12 +419,57 @@ export class AtmosphereWeatherService {
         }
         return def;
       });
-      return severePool.length ? severePool : base;
+      const weightedSevere = this.applyLayerWeighting(severePool.length ? severePool : base, layer);
+      return weightedSevere;
     }
-    return base;
+    return this.applyLayerWeighting(base, layer);
   }
 
-  private buildBaselineSnapshot(nowMs: number): AtmosphereWeatherSnapshot {
+  private applyLayerWeighting(
+    pool: AtmosphereWeatherEventDefinition[],
+    layer?: AtmosphereLayerDefinition,
+  ): AtmosphereWeatherEventDefinition[] {
+    if (!layer) {
+      return pool.map(def => ({ ...def }));
+    }
+    return pool.map(def => ({
+      ...def,
+      weight: def.weight * this.getLayerWeightMultiplier(def.type, layer),
+    }));
+  }
+
+  private getLayerWeightMultiplier(type: AtmosphereWeatherEventType, layer: AtmosphereLayerDefinition): number {
+    switch (layer.id) {
+      case 'surface':
+        if (type === 'clear') return 1.45;
+        if (type === 'dust_storm') return 1.25;
+        if (type === 'rain') return 1.2;
+        if (type === 'meteor_shower') return 0.4;
+        return 1;
+      case 'low':
+        if (type === 'thunderstorm') return 1.2;
+        if (type === 'rain') return 1.1;
+        if (type === 'meteor_shower') return 0.6;
+        return 1;
+      case 'mid':
+        if (type === 'thunderstorm') return 1.4;
+        if (type === 'meteor_shower') return 1.35;
+        if (type === 'dust_storm') return 0.7;
+        if (type === 'clear') return 0.85;
+        return 1;
+      case 'upper':
+        if (type === 'meteor_shower') return 1.8;
+        if (type === 'thunderstorm') return 1.3;
+        if (type === 'rain') return 0.4;
+        if (type === 'dust_storm') return 0.5;
+        return 1;
+      default:
+        return 1;
+    }
+  }
+
+  private buildBaselineSnapshot(nowMs: number, layer?: AtmosphereLayerDefinition): AtmosphereWeatherSnapshot {
+    const resolvedLayer = layer ?? this.layerDefinitions[0];
     if (this.marsSevereMode) {
       return {
         eventType: 'dust_storm',
@@ -298,6 +483,9 @@ export class AtmosphereWeatherService {
         lightningChance: 0,
         startedAtMs: nowMs,
         etaMs: 0,
+        layerId: resolvedLayer.id,
+        layerLabel: resolvedLayer.label,
+        layerBounds: { min: resolvedLayer.minAltitude, max: resolvedLayer.maxAltitude },
       };
     }
     return {
@@ -312,6 +500,9 @@ export class AtmosphereWeatherService {
       lightningChance: 0,
       startedAtMs: nowMs,
       etaMs: 0,
+      layerId: resolvedLayer.id,
+      layerLabel: resolvedLayer.label,
+      layerBounds: { min: resolvedLayer.minAltitude, max: resolvedLayer.maxAltitude },
     };
   }
 
@@ -329,7 +520,15 @@ export class AtmosphereWeatherService {
   }
 
   private isSevereWeatherEvent(def: AtmosphereWeatherEventDefinition): boolean {
-    return def.type !== 'clear' && (def.turbulenceStrength >= 0.3 || def.visibilityMultiplier <= 0.7 || def.precipitation === 'rain' || def.precipitation === 'dust');
+    return (
+      def.type !== 'clear' && (
+        def.turbulenceStrength >= 0.3 ||
+        def.visibilityMultiplier <= 0.7 ||
+        def.precipitation === 'rain' ||
+        def.precipitation === 'dust' ||
+        def.precipitation === 'meteor'
+      )
+    );
   }
 
   private buildDriftVector(strength: number): Vector3 {

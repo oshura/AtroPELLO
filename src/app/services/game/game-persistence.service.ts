@@ -20,6 +20,7 @@ import { RespawnAnchorMetadata } from '../../game/types/respawn.types';
 import { CloudSavesSessionBridgeService } from '../../libs/cloud-saves/cloud-saves-session-bridge.service';
 import {
   LoadGameInProgressError,
+  SaveGameAtmosphereRestrictedError,
   SaveGameCaptureError,
   SaveGameEngineUnavailableError,
   SaveGameInProgressError,
@@ -81,6 +82,9 @@ export class GamePersistenceService {
   async saveGame(options?: SaveGameCaptureOptions): Promise<SaveGamePayload> {
     const resolved = this.resolveOptions(options);
     this.ensureNotBusy(resolved.reason);
+    if (this.gameState.isAtmosphereLockActive()) {
+      throw new SaveGameAtmosphereRestrictedError();
+    }
     this.captureInProgress = true;
 
     const systemId = this.universeState.getActiveSystemId();

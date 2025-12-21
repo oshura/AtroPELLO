@@ -6,6 +6,7 @@ import { GamePersistenceService, LoadGameResult } from '../../services/game/game
 import { SaveGamePayload } from '../../game/types/save-game.types';
 import {
   LoadGameInProgressError,
+  SaveGameAtmosphereRestrictedError,
   SaveGameCaptureError,
   SaveGameEngineUnavailableError,
   SaveGameInProgressError,
@@ -30,6 +31,7 @@ export class CloudSavesService {
   private readonly errorState = signal<string | null>(null);
   private readonly tokenState = signal<string | null>(null);
   private readonly savingState = signal(false);
+  private readonly atmosphereLockedState = signal(false);
 
   readonly slots: Signal<CloudSaveSlotRef[]> = this.masterSlotsState.asReadonly();
   readonly characterSlots: Signal<CloudSaveSlotRef[]> = computed(() => this.filterSlotsByCharacter(this.masterSlotsState()));
@@ -45,6 +47,10 @@ export class CloudSavesService {
   private autoLoadPerformed = false;
 
   constructor() {
+    this.atmosphereLockedState.set(this.gameState.isAtmosphereLockActive());
+    this.gameState.atmosphereLock$.subscribe((locked) => {
+      this.atmosphereLockedState.set(locked);
+    });
     void this.refreshToken().then(() => {
       if (this.tokenState()) {
         void this.bootstrapFromSession();
@@ -263,6 +269,12 @@ export class CloudSavesService {
     return this.mapErrorToMessage(error, context);
   }
 
+  isAtmosphereLocked(): boolean {
+    return this.atmosphereLockedState();
+  }
+
+  readonly atmosphereLocked = this.atmosphereLockedState.asReadonly();
+
   private buildSlotMetadata(
     payload: SaveGamePayload,
     overrides?: Partial<CloudSaveSlotMetadata> | null
@@ -381,6 +393,9 @@ export class CloudSavesService {
   }
 
   private mapErrorToMessage(error: unknown, context: CloudSaveErrorContext): string {
+    if (error instanceof SaveGameAtmosphereRestrictedError) {
+      return 'No puedes guardar mientras la nave esté dentro de una atmósfera. Despega para continuar.';
+    }
     if (error instanceof SaveGameSchemaVersionMismatchError) {
       return 'La partida usa un esquema incompatible con esta build. Actualiza el cliente antes de volver a intentarlo.';
     }

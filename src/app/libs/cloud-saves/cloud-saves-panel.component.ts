@@ -1,4 +1,4 @@
-import { Component, Input, computed, effect, signal } from '@angular/core';
+import { Component, Input, Signal, computed, effect, signal } from '@angular/core';
 import { DatePipe, JsonPipe, NgFor, NgIf } from '@angular/common';
 import { CloudSavesService, CloudSlotLoadResult } from './cloud-saves.service';
 import { CloudSaveSlotData, CloudSaveSlotMetadata, CloudSaveSlotRef } from './cloud-saves.models';
@@ -24,6 +24,7 @@ export interface CloudSavesPanelCopy {
   ruleSingleSlot: string;
   selectionHint: string;
   viewAllWarning: string;
+  lockWarning: string;
   metadataHeading: string;
   metadataSystem: string;
   metadataAnchor: string;
@@ -54,6 +55,7 @@ export const DEFAULT_CLOUD_SAVES_COPY: CloudSavesPanelCopy = {
   ruleSingleSlot: 'Every pilot begins with a single slot. Spells or ship modules can grant more.',
   selectionHint: 'Select a slot to enable save/load/delete.',
   viewAllWarning: 'Viewing all saves disables the save action to avoid overwriting other pilots.',
+  lockWarning: 'Atmospheric flight detected. Leave the atmosphere to enable manual saves.',
   metadataHeading: 'Runtime metadata',
   metadataSystem: 'System',
   metadataAnchor: 'Anchor',
@@ -82,8 +84,10 @@ export class CloudSavesPanelComponent {
   protected selectedSlotIndex = signal<number | null>(null);
   protected viewAll = signal(false);
   protected displayedSlots = computed(() => (this.viewAll() ? this.saves.slots() : this.saves.characterSlots()));
+  protected readonly atmosphereLocked: Signal<boolean>;
 
   constructor(protected readonly saves: CloudSavesService) {
+    this.atmosphereLocked = this.saves.atmosphereLocked;
     effect(() => {
       const slots = this.displayedSlots();
       const current = this.selectedSlotIndex();
@@ -126,6 +130,9 @@ export class CloudSavesPanelComponent {
 
   protected isSaveDisabled(): boolean {
     if (!this.saves.hasSession() || this.isBusy()) {
+      return true;
+    }
+    if (this.saves.isAtmosphereLocked()) {
       return true;
     }
     if (this.viewAll()) {

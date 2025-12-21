@@ -50,5 +50,6 @@
 - La página `/wiki/spaceship` documenta ahora el pipeline completo del horizonte artificial: la normal planetaria se obtiene con `calculateAtmosphereAttitude()`, se filtra en el HUD (Compass) y termina pintándose en WebGL/Canvas con interpolación suave para evitar saltos.
 - Si se modifica la instrumentación (nuevos filtros, rangos o colores) hay que tocar tanto la lógica del HUD como el bloque de la wiki para que QA tenga la misma referencia visual que en el juego.
 - Cualquier mejora futura debe mencionar qué parte del pipeline cambia (cálculo matemático, sincronización con `HUDManager`, shader/pintado) y enlazar el commit correspondiente para facilitar regresiones.
+- 21 Dic 2025: Añadidas notas en `/wiki/glyphs` y `/wiki/game-rules` explicando que Void Jump, Respawn Sigillum y los guardados quedan bloqueados mientras la escena atmosférica esté activa.
 
 Actualizado: Diciembre 2025.

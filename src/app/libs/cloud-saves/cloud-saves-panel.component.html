@@ -32,6 +32,9 @@
     <p *ngIf="requiresSelection() && selectedSlotIndex() === null" class="cloud-panel__hint">
       {{ copy.selectionHint }}
     </p>
+    <p *ngIf="atmosphereLocked()" class="cloud-panel__warning">
+      {{ copy.lockWarning }}
+    </p>
 
     <div *ngIf="displayedSlots().length; else emptySlots" class="cloud-panel__slots" [class.cloud-panel__slots--view-all]="viewAll()">
       <article

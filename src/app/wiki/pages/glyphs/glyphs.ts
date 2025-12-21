@@ -367,7 +367,7 @@ export class GlyphsWikiComponent implements OnInit {
       sanityTemp: 2,
       sanityReserve: 4,
       voidEnergy: '0u',
-      requirements: ['Objetivo válido y a > 4000u.', 'Animaciones libres.'],
+      requirements: ['Objetivo válido y a > 4000u.', 'Animaciones libres.', 'Solo disponible fuera de atmósferas activas.'],
       description: 'Herramienta de escape fiable. Si el objetivo no es válido, verás un aviso y conservarás tus recursos.',
       notes: 'El flash muestra al Elder God dueño del sistema (Cthulhu/Azathoth/Yog-Sothoth/Cthugha) y congela brevemente los controles antes del salto.'
     },

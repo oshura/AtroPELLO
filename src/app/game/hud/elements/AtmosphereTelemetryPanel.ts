@@ -197,52 +197,66 @@ export class AtmosphereTelemetryPanel {
       return;
     }
     const { weather, telemetry, driftHeadingDeg, driftPitchDeg } = this.state;
+    const padding = 12;
+    const innerX = x + padding;
+    const innerWidth = Math.max(0, width - padding * 2);
 
     ctx.save();
     ctx.fillStyle = 'rgba(4, 12, 32, 0.35)';
     ctx.fillRect(x, y, width, height);
 
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
     ctx.fillStyle = 'rgba(125,211,252,0.95)';
     ctx.font = '28px "Space Mono", monospace';
     const label = weather?.label ?? 'Sin evento activo';
-    ctx.fillText(label, x, y);
+    ctx.fillText(label, innerX, y);
 
     ctx.font = '18px "Space Mono", monospace';
     ctx.fillStyle = 'rgba(203,213,225,0.9)';
     const eta = weather ? this.formatEta(weather.etaMs) : '—';
-    ctx.fillText(`ETA ${eta}`, x, y + 26);
+    ctx.fillText(`ETA ${eta}`, innerX, y + 26);
 
-    const infoY = y + 54;
+    if (weather) {
+      const minAlt = Number.isFinite(weather.layerBounds.min) ? Math.round(weather.layerBounds.min) : 0;
+      const maxAlt = Number.isFinite(weather.layerBounds.max) ? Math.round(weather.layerBounds.max) : Infinity;
+      const maxLabel = Number.isFinite(maxAlt) ? `${maxAlt}u` : '∞';
+      ctx.font = '16px "Space Mono", monospace';
+      ctx.fillStyle = 'rgba(148,163,184,0.9)';
+      ctx.fillText(`Capa ${weather.layerLabel} • ${minAlt}u-${maxLabel}`, innerX, y + 48);
+    }
+
+    const infoY = y + (weather ? 74 : 54);
     const infoHeight = 120;
     ctx.strokeStyle = 'rgba(45,212,191,0.45)';
-    ctx.strokeRect(x, infoY, width, infoHeight);
+    ctx.strokeRect(innerX, infoY, innerWidth, infoHeight);
 
     ctx.font = '18px "Space Mono", monospace';
     ctx.fillStyle = 'rgba(148,163,184,0.9)';
-    ctx.fillText(`Evento: ${weather?.eventType ?? 'clear'}`, x + 8, infoY + 8);
-    ctx.fillText(`Precipitación: ${weather?.precipitation ?? 'none'}`, x + 8, infoY + 34);
-    ctx.fillText(`Rayos: ${(weather?.lightningChance ?? 0).toFixed(2)}`, x + 8, infoY + 60);
-    ctx.fillText(`Intensidad: ${(weather?.intensity ?? 0).toFixed(2)}`, x + 8, infoY + 86);
+    ctx.fillText(`Evento: ${weather?.eventType ?? 'clear'}`, innerX + 8, infoY + 8);
+    ctx.fillText(`Precipitación: ${weather?.precipitation ?? 'none'}`, innerX + 8, infoY + 34);
+    ctx.fillText(`Rayos: ${(weather?.lightningChance ?? 0).toFixed(2)}`, innerX + 8, infoY + 60);
+    ctx.fillText(`Intensidad: ${(weather?.intensity ?? 0).toFixed(2)}`, innerX + 8, infoY + 86);
 
     const driftCardY = infoY + infoHeight + 16;
     ctx.strokeStyle = 'rgba(59,130,246,0.45)';
-    ctx.strokeRect(x, driftCardY, width, 110);
+    ctx.strokeRect(innerX, driftCardY, innerWidth, 110);
     ctx.fillStyle = 'rgba(59,130,246,0.85)';
     ctx.font = '20px "Space Mono", monospace';
-    ctx.fillText('Vector de deriva', x + 8, driftCardY + 6);
+    ctx.fillText('Vector de deriva', innerX + 8, driftCardY + 6);
     ctx.font = '16px "Space Mono", monospace';
     ctx.fillStyle = 'rgba(203,213,225,0.9)';
-    ctx.fillText(`Heading ${driftHeadingDeg.toFixed(0)}°`, x + 8, driftCardY + 34);
-    ctx.fillText(`Pitch ${driftPitchDeg.toFixed(0)}°`, x + 8, driftCardY + 56);
-    ctx.fillText(`Magnitud ${telemetry.drift.magnitude.toFixed(2)}u/s`, x + 8, driftCardY + 78);
+    ctx.fillText(`Heading ${driftHeadingDeg.toFixed(0)}°`, innerX + 8, driftCardY + 34);
+    ctx.fillText(`Pitch ${driftPitchDeg.toFixed(0)}°`, innerX + 8, driftCardY + 56);
+    ctx.fillText(`Magnitud ${telemetry.drift.magnitude.toFixed(2)}u/s`, innerX + 8, driftCardY + 78);
 
-    const meterWidth = width - 12;
+    const meterWidth = innerWidth;
     const metricsY = driftCardY + 130;
     this.drawMeter(ctx, {
       label: 'Drift horizontal',
       value: Math.hypot(telemetry.drift.x, telemetry.drift.z),
       unit: 'u/s',
-      x,
+      x: innerX,
       y: metricsY,
       width: meterWidth,
       height: 28,
@@ -254,7 +268,7 @@ export class AtmosphereTelemetryPanel {
       label: 'Drift vertical',
       value: Math.abs(telemetry.drift.y),
       unit: 'u/s',
-      x,
+      x: innerX,
       y: metricsY + 40,
       width: meterWidth,
       height: 28,

@@ -347,6 +347,10 @@ export class GrimoirePanel {
     }
   }
 
+  public getSpellState(spellType: SpellType): SpellState {
+    return this.spellStates.get(spellType) ?? SpellState.AVAILABLE;
+  }
+
   private getGlyphRadius(placement: GlyphPlacement): number {
     const scale = Number.isFinite(placement.s) ? placement.s : 1;
     return placement.r * (scale ?? 1);

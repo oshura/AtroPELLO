@@ -42,3 +42,10 @@ export class LoadGameInProgressError extends Error {
     this.name = 'LoadGameInProgressError';
   }
 }
+
+export class SaveGameAtmosphereRestrictedError extends SaveGameCaptureError {
+  constructor() {
+    super('Save capture blocked while the ship remains within an atmosphere.');
+    this.name = 'SaveGameAtmosphereRestrictedError';
+  }
+}

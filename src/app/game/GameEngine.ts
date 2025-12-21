@@ -39,7 +39,7 @@ import { GrimoirePanel } from './hud/GrimoirePanel';
 import { InventoryPanel } from './hud/InventoryPanel';
 import { PanelCursorOverlay } from './hud/utils/panel-cursor-overlay';
 import { FlightVectorReticleOverlay } from './hud/utils/flight-vector-reticle-overlay';
-import { SpellType, getSpellSanityCost } from './types/spell.types';
+import { SpellType, SpellState, getSpellSanityCost } from './types/spell.types';
 import { RespawnAnchorMetadata } from './types/respawn.types';
 import { GameStartContext, PlayerResetState } from './types/universe-state.types';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
@@ -148,6 +148,14 @@ interface CanvasResizeMetrics {
   pixelWidth?: number;
   pixelHeight?: number;
   devicePixelRatio?: number;
+}
+
+interface ShipKineticsSnapshot {
+  velocity: Vector3;
+  currentSpeed: number;
+  targetSpeed: number;
+  thrusterState: ThrusterState;
+  isThrusting: boolean;
 }
 
 export interface AtmosphereWeatherEffectsState {
@@ -278,6 +286,11 @@ export class GameEngine {
   private landingApproachAnnouncements: Map<string, number> = new Map();
   private readonly GLYPH_SCAN_RANGE = 500;
   private readonly PORTAL_CONCORD_RANGE = 500;
+  private readonly ATMOSPHERE_LOCKED_SPELLS: SpellType[] = [
+    SpellType.LONGJUMP,
+    SpellType.RESPAWN_SIGILLUM,
+  ];
+  private readonly atmosphereSpellStateBackup = new Map<SpellType, SpellState>();
   private readonly RESPAWN_VOID_ENERGY_PAUSE_MS = 1200; // give void energy a brief grace period after respawn
   private readonly HAZARD_EXIT_GAP_MS = 4500;
   private hazardLastDamageMs: Map<string, number> = new Map();
@@ -1281,6 +1294,60 @@ export class GameEngine {
     this.lastShipPos = { ...this.spaceship.position };
   }
 
+  private captureShipKineticsSnapshot(): ShipKineticsSnapshot | null {
+    if (!this.spaceship) {
+      return null;
+    }
+    return {
+      velocity: { ...this.spaceship.velocity },
+      currentSpeed: Number.isFinite(this.spaceship.currentSpeed) ? this.spaceship.currentSpeed : 0,
+      targetSpeed: Number.isFinite(this.spaceship.targetSpeed) ? this.spaceship.targetSpeed : 0,
+      thrusterState: this.spaceship.thrusterState ?? ThrusterState.IDLE,
+      isThrusting: !!this.spaceship.isThrusting,
+    };
+  }
+
+  private restoreShipKineticsSnapshot(
+    snapshot: ShipKineticsSnapshot | null,
+    options?: { ensureForwardVelocity?: boolean },
+  ): void {
+    if (!snapshot || !this.spaceship) {
+      return;
+    }
+    const maxSpeed = Math.max(0, this.spaceship.maxSpeed ?? snapshot.targetSpeed ?? snapshot.currentSpeed ?? 0);
+    const desiredSpeed = this.clamp(Math.max(snapshot.currentSpeed ?? 0, snapshot.targetSpeed ?? 0), 0, maxSpeed);
+    let velocity = { ...snapshot.velocity };
+    const magnitude = Math.hypot(velocity.x, velocity.y, velocity.z);
+    const rebuildForward = options?.ensureForwardVelocity || magnitude < 0.05;
+    if (desiredSpeed <= 0) {
+      velocity = { x: 0, y: 0, z: 0 };
+    } else if (rebuildForward) {
+      const forward = this.normalize({ ...this.spaceship.forwardDirection });
+      if (forward.x || forward.y || forward.z) {
+        velocity = {
+          x: forward.x * desiredSpeed,
+          y: forward.y * desiredSpeed,
+          z: forward.z * desiredSpeed,
+        };
+      } else {
+        velocity = { x: 0, y: 0, z: 0 };
+      }
+    } else {
+      const scale = desiredSpeed > 0 && magnitude > 0 ? desiredSpeed / magnitude : 0;
+      velocity = {
+        x: velocity.x * scale,
+        y: velocity.y * scale,
+        z: velocity.z * scale,
+      };
+    }
+    this.spaceship.velocity = velocity;
+    this.spaceship.currentSpeed = desiredSpeed;
+    const snapshotTarget = Number.isFinite(snapshot.targetSpeed) ? snapshot.targetSpeed : desiredSpeed;
+    this.spaceship.targetSpeed = this.clamp(Math.max(desiredSpeed, snapshotTarget), 0, maxSpeed);
+    this.spaceship.thrusterState = snapshot.thrusterState ?? this.spaceship.thrusterState;
+    this.spaceship.isThrusting = snapshot.isThrusting;
+  }
+
   private bindShipToPlanet(context: LandingApproachContext, anchor: Vector3): void {
     if (!context.planetId) {
       this.clearLandedShipAttachment();
@@ -1343,6 +1410,7 @@ export class GameEngine {
       return;
     }
     this.requestThrusterClip(this.ATMOSPHERE_THRUSTER_CLIP);
+    this.setAtmosphereActionLock(true);
     const now = performance?.now?.() ?? Date.now();
     const center = this.resolvePlanetCenterFromContext(context) ?? { x: 0, y: 0, z: 0 };
     // Altitud de entrada escalada x5 para coincidir con groundRadius aumentado
@@ -1387,7 +1455,9 @@ export class GameEngine {
     this.silenceMusicForAtmosphere();
     this.atmosphereEntryFadeRemainingMs = this.ATMOSPHERE_ENTRY_FADE_MS;
     this.primeAtmosphereAirRushCue();
+    const entryKinetics = this.captureShipKineticsSnapshot();
     this.applyAtmosphereEntryPosition(contextClone, entryAltitude, groundRadius);
+    this.restoreShipKineticsSnapshot(entryKinetics, { ensureForwardVelocity: true });
   }
 
   private applyAtmosphereLandingImpulse(): void {
@@ -1423,6 +1493,7 @@ export class GameEngine {
     if (!this.atmosphereSceneState.active) {
       return;
     }
+    this.setAtmosphereActionLock(false);
     this.requestThrusterClip(this.SPACE_THRUSTER_CLIP);
     this.clearPendingLandingPanelTimer();
     // Detener todos los SFX atmosféricos
@@ -1461,6 +1532,36 @@ export class GameEngine {
     this.atmosphereWeatherSnapshot = null;
     this.resetWeatherEffectsState();
     this.stopWeatherAudioLoop();
+  }
+
+  private setAtmosphereActionLock(active: boolean): void {
+    try {
+      this.gameState.setAtmosphereLockActive(active);
+    } catch {}
+    this.syncAtmosphereSpellLocks(active);
+  }
+
+  private syncAtmosphereSpellLocks(active: boolean): void {
+    if (!this.grimoirePanel) {
+      if (!active) {
+        this.atmosphereSpellStateBackup.clear();
+      }
+      return;
+    }
+    if (active) {
+      for (const spell of this.ATMOSPHERE_LOCKED_SPELLS) {
+        if (!this.atmosphereSpellStateBackup.has(spell)) {
+          this.atmosphereSpellStateBackup.set(spell, this.grimoirePanel.getSpellState(spell));
+        }
+        this.grimoirePanel.setSpellState(spell, SpellState.LOCKED);
+      }
+      return;
+    }
+    for (const spell of this.ATMOSPHERE_LOCKED_SPELLS) {
+      const previous = this.atmosphereSpellStateBackup.get(spell) ?? SpellState.AVAILABLE;
+      this.grimoirePanel.setSpellState(spell, previous);
+    }
+    this.atmosphereSpellStateBackup.clear();
   }
 
   private updateAtmosphereWeather(deltaTime: number): void {
@@ -1923,6 +2024,9 @@ export class GameEngine {
           lightningChance: weather.lightningChance,
           etaMs: weather.etaMs,
           startedAtMs: weather.startedAtMs,
+          layerId: weather.layerId,
+          layerLabel: weather.layerLabel,
+          layerBounds: weather.layerBounds ?? { min: 0, max: Infinity },
         }
       : null;
 
@@ -2101,9 +2205,9 @@ export class GameEngine {
     };
 
     this.particleEffects.spawnLightningStrike(topPoint, surfacePoint, {
-      thickness: 0.55 + strength * 0.4,
-      duration: 0.22 + strength * 0.3,
-      jitterSegments: 6 + Math.floor(strength * 3),
+      thickness: 0.75 + strength * 0.55,
+      duration: 0.25 + strength * 0.35,
+      jitterSegments: 7 + Math.floor(strength * 4),
     });
 
     this.weatherLightningFlashAlpha = Math.min(1, 0.55 + strength * 0.5);
@@ -3155,6 +3259,9 @@ export class GameEngine {
     this.grimoirePanel = new GrimoirePanel(this.gl, this.audio, 1024, 1024);
     this.grimoirePanel.setEnabled(false);
     this.syncGrimoireLayoutFromState('engine-init');
+    if (this.gameState.isAtmosphereLockActive()) {
+      this.syncAtmosphereSpellLocks(true);
+    }
   } catch (e) {
     this.logger.log(LogLevel.WARN, LogCategory.HUD, 'GrimoirePanel initialization failed', e);
     this.grimoirePanel = null;
@@ -10372,6 +10479,10 @@ export class GameEngine {
       try { this.showPlaceholderText('NO SPACESHIP.', 2000); } catch {}
       return false;
     }
+    if (this.gameState.isAtmosphereLockActive()) {
+      try { this.showPlaceholderText('VOID JUMP BLOQUEADO\nSal de la atmósfera primero', 2200); } catch {}
+      return false;
+    }
     if (!target) {
       try { this.showPlaceholderText('TARGET SELECTION REQUIRED.', 2000); } catch {}
       return false;
@@ -10903,6 +11014,10 @@ export class GameEngine {
   private castRespawnSigillum(): boolean {
     if (!this.spaceship) {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Respawn Sigillum blocked: ship unavailable');
+      return false;
+    }
+    if (this.gameState.isAtmosphereLockActive()) {
+      try { this.showPlaceholderText('RESPAWN SIGILLUM BLOQUEADO\nSolo disponible en sistema solar', 2400); } catch {}
       return false;
     }
     const context = this.landingTouchdownContext ?? null;

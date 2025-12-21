@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { Subject, Observable } from 'rxjs';
+import { Subject, Observable, BehaviorSubject } from 'rxjs';
 import { LoggingService, LogLevel, LogCategory } from '../logging.service';
 import { GameObject } from '../../game/GameObject';
 import { Asteroid } from '../../game/game-objects/Asteroid';
@@ -275,6 +275,8 @@ export class GameStateStore {
    * Los servicios pueden subscribirse para reaccionar a mutaciones.
    */
   private readonly _stateChanged$ = new Subject<GameStateChangeEvent>();
+  private readonly atmosphereLockState = new BehaviorSubject<boolean>(false);
+  public readonly atmosphereLock$: Observable<boolean> = this.atmosphereLockState.asObservable();
   
   /**
    * Observable de cambios de estado.
@@ -388,6 +390,18 @@ export class GameStateStore {
 
   public getCloudSaveSlotCount(): number {
     return this.cloudSaveSlotIndexes.length;
+  }
+
+  public setAtmosphereLockActive(active: boolean): void {
+    const next = !!active;
+    if (next === this.atmosphereLockState.value) {
+      return;
+    }
+    this.atmosphereLockState.next(next);
+  }
+
+  public isAtmosphereLockActive(): boolean {
+    return this.atmosphereLockState.value;
   }
 
   public getRespawnAnchor(): RespawnAnchorMetadata | null {
@@ -1413,6 +1427,7 @@ export class GameStateStore {
     this.collisionCooldowns.clear();
     this.mapIdToTarget.clear();
     this.dopplerCues.clear();
+    this.setAtmosphereLockActive(false);
     
     this._notifyChange({ type: 'state-reset' });
     

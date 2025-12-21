@@ -32,6 +32,8 @@ interface WeatherParticle {
   color: { r: number; g: number; b: number };
   life: number;
   maxLife: number;
+  variant: PrecipitationType;
+  glow: number;
 }
 
 interface LightningStrike {
@@ -99,7 +101,7 @@ export class ParticleEffectsService {
   // Weather precipitation particles (rain/dust sheets)
   private weatherParticles: WeatherParticle[] = [];
   private weatherParticleAccum: number = 0;
-  private readonly maxWeatherParticles = 160;
+  private readonly maxWeatherParticles = 280;
   private lightningStrikes: LightningStrike[] = [];
   private readonly maxLightningStrikes = 6;
 
@@ -325,36 +327,57 @@ export class ParticleEffectsService {
     if (!spaceship) {
       return;
     }
+    const type = config?.type ?? 'none';
     const drift = config?.driftVector ?? { x: 0, y: 0, z: 0 };
     const intensity = Math.max(0, config?.intensity ?? 0);
     const normalizedUp = config?.upVector ? this.normalize(config.upVector) : { x: 0, y: 1, z: 0 };
     const gravityDir = { x: -normalizedUp.x, y: -normalizedUp.y, z: -normalizedUp.z };
-    const baseGravity = config?.type === 'rain' ? 18 : 6;
-    const gravity = baseGravity * (0.6 + intensity * 1.4);
+    const baseGravity = type === 'rain' ? 18 : (type === 'dust' ? 6 : type === 'meteor' ? 2.4 : 6);
+    const gravity = baseGravity * (0.65 + intensity * 1.35);
 
     // Update existing particles
     const updated: WeatherParticle[] = [];
     for (const particle of this.weatherParticles) {
-      particle.position.x += (particle.velocity.x + drift.x) * deltaTime;
-      particle.position.y += (particle.velocity.y + drift.y) * deltaTime;
-      particle.position.z += (particle.velocity.z + drift.z) * deltaTime;
-      particle.velocity.x += gravityDir.x * gravity * deltaTime;
-      particle.velocity.y += gravityDir.y * gravity * deltaTime;
-      particle.velocity.z += gravityDir.z * gravity * deltaTime;
+      const variant = particle.variant;
+      if (typeof particle.glow !== 'number') {
+        particle.glow = 0;
+      }
+      const driftScale = variant === 'meteor' ? 0.35 : 1;
+      const gravityScale = variant === 'meteor' ? 0.12 : (variant === 'dust' ? 0.65 : 1);
+      particle.position.x += (particle.velocity.x + drift.x * driftScale) * deltaTime;
+      particle.position.y += (particle.velocity.y + drift.y * driftScale) * deltaTime;
+      particle.position.z += (particle.velocity.z + drift.z * driftScale) * deltaTime;
+      particle.velocity.x += gravityDir.x * gravity * gravityScale * deltaTime;
+      particle.velocity.y += gravityDir.y * gravity * gravityScale * deltaTime;
+      particle.velocity.z += gravityDir.z * gravity * gravityScale * deltaTime;
       particle.life -= deltaTime;
+      particle.glow = Math.max(0, particle.glow - deltaTime * (variant === 'meteor' ? 0.35 : 0.7));
       if (particle.life > 0) {
         updated.push(particle);
       }
     }
     this.weatherParticles = updated;
 
-    if (!config || config.type === 'none' || config.intensity <= 0) {
+    if (!config || type === 'none' || intensity <= 0) {
       this.weatherParticleAccum = 0;
       return;
     }
 
-    const spawnRateBase = config.type === 'rain' ? 140 : 90;
-    const spawnRate = spawnRateBase * (0.3 + config.intensity * 0.9);
+    let spawnRateBase = 110;
+    switch (type) {
+      case 'rain':
+        spawnRateBase = 220;
+        break;
+      case 'dust':
+        spawnRateBase = 150;
+        break;
+      case 'meteor':
+        spawnRateBase = 55;
+        break;
+      default:
+        spawnRateBase = 110;
+    }
+    const spawnRate = spawnRateBase * (0.35 + intensity * 1.15);
     this.weatherParticleAccum += spawnRate * deltaTime;
     const basis = this.computeShipBasis(spaceship, config);
 
@@ -432,21 +455,51 @@ export class ParticleEffectsService {
     basis: { forward: Vector3; right: Vector3; up: Vector3 },
   ): void {
     const intensity = Math.max(0.05, config.intensity);
-    const nearCameraProbability = 0.25 + intensity * 0.35;
+    const variant = config.type;
+    let nearCameraProbability = 0.25 + intensity * 0.35;
+    switch (variant) {
+      case 'dust':
+        nearCameraProbability = 0.3 + intensity * 0.4;
+        break;
+      case 'meteor':
+        nearCameraProbability = 0.12 + intensity * 0.22;
+        break;
+      default:
+        nearCameraProbability = 0.28 + intensity * 0.32;
+    }
     const nearCameraSpawn = Math.random() < nearCameraProbability;
 
-    const forwardOffset = config.type === 'rain'
-      ? (nearCameraSpawn ? 1.8 + Math.random() * 2.5 : 5 + Math.random() * 6)
-      : (nearCameraSpawn ? 1 + Math.random() * 2.5 : 3 + Math.random() * 9);
-    const upLift = config.type === 'rain'
-      ? (nearCameraSpawn ? 3 + Math.random() * 2 : 5 + Math.random() * 3)
-      : (nearCameraSpawn ? 0.8 + Math.random() * 1.5 : 2.4 + Math.random() * 2.5);
-    const lateralSpread = config.type === 'rain' ? 2.4 : 4.6;
+    let forwardOffset = 4 + Math.random() * 4;
+    let upLift = 2 + Math.random() * 2;
+    let lateralSpread = 3;
+    let verticalSpread = 1.3;
+    switch (variant) {
+      case 'rain':
+        forwardOffset = nearCameraSpawn ? 2 + Math.random() * 3 : 6 + Math.random() * 8;
+        upLift = nearCameraSpawn ? 3 + Math.random() * 2.5 : 6 + Math.random() * 3.5;
+        lateralSpread = 2.6;
+        verticalSpread = nearCameraSpawn ? 0.8 : 1.3;
+        break;
+      case 'dust':
+        forwardOffset = nearCameraSpawn ? 1.6 + Math.random() * 2.5 : 4.5 + Math.random() * 8;
+        upLift = nearCameraSpawn ? 1.1 + Math.random() * 1.6 : 3 + Math.random() * 2.6;
+        lateralSpread = 5.2;
+        verticalSpread = nearCameraSpawn ? 1.2 : 2.4;
+        break;
+      case 'meteor':
+        forwardOffset = nearCameraSpawn ? 5 + Math.random() * 4 : 14 + Math.random() * 12;
+        upLift = nearCameraSpawn ? 12 + Math.random() * 6 : 22 + Math.random() * 18;
+        lateralSpread = 6.2;
+        verticalSpread = nearCameraSpawn ? 2.4 : 4.6;
+        break;
+      default:
+        break;
+    }
     const lateralOffset = (Math.random() * 2 - 1) * (nearCameraSpawn ? lateralSpread * 0.45 : lateralSpread);
-    const verticalOffset = (Math.random() * 2 - 1) * (nearCameraSpawn ? 0.6 : 1.5);
+    const verticalOffset = (Math.random() * 2 - 1) * verticalSpread;
 
     const closeJitter = nearCameraSpawn ? this.randomPerpendicularVector(basis.forward) : { x: 0, y: 0, z: 0 };
-    const closeJitterScale = nearCameraSpawn ? (0.4 + intensity * 0.4) : 0;
+    const closeJitterScale = nearCameraSpawn ? (variant === 'meteor' ? 0.25 : 0.4 + intensity * 0.4) : 0;
 
     const spawnPos: Vector3 = {
       x: spaceship.position.x + basis.forward.x * forwardOffset + basis.right.x * lateralOffset + basis.up.x * (upLift + verticalOffset)
@@ -457,13 +510,29 @@ export class ParticleEffectsService {
         + closeJitter.z * closeJitterScale,
     };
 
-    const alongForward = config.type === 'rain'
-      ? 2.8 + Math.random() * 1.8
-      : 6.4 + Math.random() * 4.2;
-    const downward = (config.type === 'rain' ? 16 + Math.random() * 7 : 6 + Math.random() * 4)
-      * (nearCameraSpawn ? 0.7 : 1.0);
-    const lateralSpeed = (Math.random() * 2 - 1) * (config.type === 'rain' ? 1.1 : 2.4)
-      * (nearCameraSpawn ? 0.45 : 1.0);
+    let alongForward = 4 + Math.random() * 3;
+    let downward = 8 + Math.random() * 4;
+    let lateralSpeedRange = 1.6;
+    switch (variant) {
+      case 'rain':
+        alongForward = 3 + Math.random() * 2.2;
+        downward = (18 + Math.random() * 8) * (nearCameraSpawn ? 0.7 : 1);
+        lateralSpeedRange = 1.2;
+        break;
+      case 'dust':
+        alongForward = 5.5 + Math.random() * 4;
+        downward = (7 + Math.random() * 4) * (nearCameraSpawn ? 0.55 : 0.75);
+        lateralSpeedRange = 2.8;
+        break;
+      case 'meteor':
+        alongForward = 10 + Math.random() * 6;
+        downward = (5 + Math.random() * 4) * (nearCameraSpawn ? 0.9 : 1.1);
+        lateralSpeedRange = 1.4;
+        break;
+      default:
+        break;
+    }
+    const lateralSpeed = (Math.random() * 2 - 1) * lateralSpeedRange * (nearCameraSpawn ? 0.55 : 1);
 
     const velocity: Vector3 = {
       x: basis.forward.x * alongForward - basis.up.x * downward + basis.right.x * lateralSpeed,
@@ -471,25 +540,47 @@ export class ParticleEffectsService {
       z: basis.forward.z * alongForward - basis.up.z * downward + basis.right.z * lateralSpeed,
     };
 
-    const maxLife = config.type === 'rain'
-      ? 0.75 + Math.random() * 0.45 + (nearCameraSpawn ? 0.15 : 0)
-      : 1.2 + Math.random() * 0.8 + intensity * 0.35;
-
-    const rainColorBase = { r: 0.58 + Math.random() * 0.08, g: 0.72 + Math.random() * 0.08, b: 0.92 + Math.random() * 0.04 };
-    const dustColorBase = { r: 0.74 + Math.random() * 0.05, g: 0.57 + Math.random() * 0.07, b: 0.36 + Math.random() * 0.04 };
-    const color = config.type === 'rain'
-      ? rainColorBase
-      : dustColorBase;
-
-    if (nearCameraSpawn) {
-      color.r = Math.min(1, color.r + (config.type === 'rain' ? 0.06 : 0.08));
-      color.g = Math.min(1, color.g + (config.type === 'rain' ? 0.04 : 0.06));
-      color.b = Math.min(1, color.b + (config.type === 'rain' ? 0.1 : 0.04));
+    let maxLife = 1.1 + Math.random() * 0.6;
+    let color = { r: 0.7, g: 0.7, b: 0.8 };
+    let size = 0.12;
+    let glow = 0.25;
+    if (variant === 'rain') {
+      maxLife = 0.8 + Math.random() * 0.5 + (nearCameraSpawn ? 0.2 : 0);
+      color = {
+        r: 0.56 + Math.random() * 0.08,
+        g: 0.72 + Math.random() * 0.08,
+        b: 0.92 + Math.random() * 0.06,
+      };
+      size = (0.05 + Math.random() * 0.05 + intensity * 0.03) * (nearCameraSpawn ? 0.95 : 1.15);
+      glow = 0.3 + intensity * 0.25;
+    } else if (variant === 'dust') {
+      maxLife = 1.35 + Math.random() * 0.9 + intensity * 0.35;
+      color = {
+        r: 0.78 + Math.random() * 0.05,
+        g: 0.58 + Math.random() * 0.07,
+        b: 0.38 + Math.random() * 0.04,
+      };
+      size = (0.22 + Math.random() * 0.09 + intensity * 0.14) * (nearCameraSpawn ? 1.4 : 1);
+      glow = 0.18 + intensity * 0.15;
+    } else if (variant === 'meteor') {
+      maxLife = 1.4 + Math.random() * 0.6 + intensity * 0.4;
+      color = {
+        r: 0.98,
+        g: 0.74 + Math.random() * 0.09,
+        b: 0.46 + Math.random() * 0.08,
+      };
+      size = (0.24 + Math.random() * 0.08 + intensity * 0.18) * (nearCameraSpawn ? 1.25 : 1);
+      glow = 1.15 + intensity * 0.55;
     }
 
-    const size = config.type === 'rain'
-      ? (0.05 + Math.random() * 0.04 + intensity * 0.03) * (nearCameraSpawn ? 0.85 : 1)
-      : (0.18 + Math.random() * 0.08 + intensity * 0.12) * (nearCameraSpawn ? 1.35 : 1);
+    if (nearCameraSpawn) {
+      const boost = variant === 'rain' ? { r: 0.06, g: 0.04, b: 0.08 } : (variant === 'dust'
+        ? { r: 0.08, g: 0.07, b: 0.04 }
+        : { r: 0.12, g: 0.08, b: 0.02 });
+      color.r = Math.min(1, color.r + boost.r);
+      color.g = Math.min(1, color.g + boost.g);
+      color.b = Math.min(1, color.b + boost.b);
+    }
 
     const particle: WeatherParticle = {
       position: spawnPos,
@@ -498,6 +589,8 @@ export class ParticleEffectsService {
       color,
       life: maxLife,
       maxLife,
+      variant,
+      glow,
     };
     this.weatherParticles.push(particle);
   }
@@ -827,8 +920,10 @@ export class ParticleEffectsService {
     }
     const gl = this.gl;
     const lifeRatio = Math.max(0, particle.life / particle.maxLife);
-    const edge = lifeRatio * 0.35;
-    const head = lifeRatio;
+    const variant = particle.variant ?? 'rain';
+    const glowBoost = 1 + particle.glow * (variant === 'meteor' ? 1.35 : 0.75);
+    const head = lifeRatio * glowBoost * (variant === 'meteor' ? 1.4 : 1);
+    const edge = head * 0.35;
     const colors = new Float32Array([
       particle.color.r * edge, particle.color.g * edge, particle.color.b * edge,
       particle.color.r * edge, particle.color.g * edge, particle.color.b * edge,
@@ -867,8 +962,15 @@ export class ParticleEffectsService {
     const lengthAxis = this.normalize(dir);
     const normal = this.normalize(this.cross(widthAxis, lengthAxis));
 
-    const widthScale = Math.max(0.02, particle.size * 0.7);
-    const lengthScale = particle.size * 10;
+    let widthScale = Math.max(0.02, particle.size * 0.7);
+    let lengthScale = particle.size * 10;
+    if (variant === 'dust') {
+      widthScale = Math.max(0.04, particle.size * 0.95);
+      lengthScale = particle.size * 7.5;
+    } else if (variant === 'meteor') {
+      widthScale = Math.max(0.12, particle.size * 1.5);
+      lengthScale = particle.size * 22;
+    }
 
     const modelMatrix = new Float32Array(16);
     this.createIdentityMatrix(modelMatrix);
@@ -895,9 +997,8 @@ export class ParticleEffectsService {
     if (!this.gl || !this.shaderManager || !this.particleVertexBuffer) {
       return;
     }
-    const gl = this.gl;
     const fade = Math.max(0, strike.remaining / strike.duration);
-    const glowScale = 0.75 + fade * 0.9;
+    const glowScale = 0.85 + fade * 1.1;
 
     for (let i = 0; i < strike.path.length - 1; i++) {
       const start = strike.path[i];
@@ -928,55 +1029,106 @@ export class ParticleEffectsService {
         z: (start.z + end.z) * 0.5,
       };
 
-      const widthScale = strike.thickness * glowScale;
+      const baseWidth = Math.max(0.3, strike.thickness * glowScale);
       const lengthScale = length;
+      const headIntensity = Math.min(2.3, 1 + fade * 1.5);
+      const edgeIntensity = headIntensity * 0.45;
+      const auraHead = headIntensity * 0.55;
+      const auraEdge = auraHead * 0.4;
 
-      const headIntensity = Math.min(1.6, 0.8 + fade * 1.4);
-      const edgeIntensity = headIntensity * 0.35;
-      const colors = new Float32Array([
-        strike.color.r * edgeIntensity, strike.color.g * edgeIntensity, strike.color.b * edgeIntensity,
-        strike.color.r * edgeIntensity, strike.color.g * edgeIntensity, strike.color.b * edgeIntensity,
-        strike.color.r * headIntensity, strike.color.g * headIntensity, strike.color.b * headIntensity,
-        strike.color.r * edgeIntensity, strike.color.g * edgeIntensity, strike.color.b * edgeIntensity,
-        strike.color.r * headIntensity, strike.color.g * headIntensity, strike.color.b * headIntensity,
-        strike.color.r * headIntensity, strike.color.g * headIntensity, strike.color.b * headIntensity,
-      ]);
-
-      if (!this.particleColorBuffer) {
-        this.particleColorBuffer = gl.createBuffer();
-      }
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer!);
-      gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
-
-      const positionLocation = this.shaderManager.basicAttributes['position'];
-      const colorLocation = this.shaderManager.basicAttributes['color'];
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVertexBuffer);
-      gl.enableVertexAttribArray(positionLocation);
-      gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
-      gl.enableVertexAttribArray(colorLocation);
-      gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
-
-      const modelMatrix = new Float32Array(16);
-      this.createIdentityMatrix(modelMatrix);
-      modelMatrix[0] = widthAxis.x * widthScale;
-      modelMatrix[1] = widthAxis.y * widthScale;
-      modelMatrix[2] = widthAxis.z * widthScale;
-      modelMatrix[4] = dir.x * lengthScale;
-      modelMatrix[5] = dir.y * lengthScale;
-      modelMatrix[6] = dir.z * lengthScale;
-      modelMatrix[8] = normal.x * widthScale;
-      modelMatrix[9] = normal.y * widthScale;
-      modelMatrix[10] = normal.z * widthScale;
-      modelMatrix[12] = midpoint.x;
-      modelMatrix[13] = midpoint.y;
-      modelMatrix[14] = midpoint.z;
-
-      this.shaderManager.setBasicMatrices(modelMatrix, camera.viewMatrix, camera.projectionMatrix);
-      gl.drawArrays(gl.TRIANGLES, 0, 6);
-      gl.disableVertexAttribArray(positionLocation);
-      gl.disableVertexAttribArray(colorLocation);
+      this.drawLightningSegment(
+        midpoint,
+        widthAxis,
+        normal,
+        dir,
+        baseWidth * 1.85,
+        lengthScale,
+        strike.color,
+        auraHead,
+        auraEdge,
+        camera,
+      );
+      this.drawLightningSegment(
+        midpoint,
+        widthAxis,
+        normal,
+        dir,
+        baseWidth,
+        lengthScale,
+        strike.color,
+        headIntensity,
+        edgeIntensity,
+        camera,
+      );
     }
+  }
+
+  private drawLightningSegment(
+    midpoint: Vector3,
+    widthAxis: Vector3,
+    normal: Vector3,
+    dir: Vector3,
+    widthScale: number,
+    lengthScale: number,
+    color: { r: number; g: number; b: number },
+    headIntensity: number,
+    edgeIntensity: number,
+    camera: Camera,
+  ): void {
+    if (!this.gl || !this.shaderManager || !this.particleVertexBuffer) {
+      return;
+    }
+    const gl = this.gl;
+    if (!this.particleColorBuffer) {
+      this.particleColorBuffer = gl.createBuffer();
+    }
+    const colors = this.buildLightningColorBuffer(color, headIntensity, edgeIntensity);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer!);
+    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+
+    const positionLocation = this.shaderManager.basicAttributes['position'];
+    const colorLocation = this.shaderManager.basicAttributes['color'];
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVertexBuffer);
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
+    gl.enableVertexAttribArray(colorLocation);
+    gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+
+    const modelMatrix = new Float32Array(16);
+    this.createIdentityMatrix(modelMatrix);
+    modelMatrix[0] = widthAxis.x * widthScale;
+    modelMatrix[1] = widthAxis.y * widthScale;
+    modelMatrix[2] = widthAxis.z * widthScale;
+    modelMatrix[4] = dir.x * lengthScale;
+    modelMatrix[5] = dir.y * lengthScale;
+    modelMatrix[6] = dir.z * lengthScale;
+    modelMatrix[8] = normal.x * widthScale;
+    modelMatrix[9] = normal.y * widthScale;
+    modelMatrix[10] = normal.z * widthScale;
+    modelMatrix[12] = midpoint.x;
+    modelMatrix[13] = midpoint.y;
+    modelMatrix[14] = midpoint.z;
+
+    this.shaderManager.setBasicMatrices(modelMatrix, camera.viewMatrix, camera.projectionMatrix);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+    gl.disableVertexAttribArray(positionLocation);
+    gl.disableVertexAttribArray(colorLocation);
+  }
+
+  private buildLightningColorBuffer(
+    color: { r: number; g: number; b: number },
+    headIntensity: number,
+    edgeIntensity: number,
+  ): Float32Array {
+    return new Float32Array([
+      color.r * edgeIntensity, color.g * edgeIntensity, color.b * edgeIntensity,
+      color.r * edgeIntensity, color.g * edgeIntensity, color.b * edgeIntensity,
+      color.r * headIntensity, color.g * headIntensity, color.b * headIntensity,
+      color.r * edgeIntensity, color.g * edgeIntensity, color.b * edgeIntensity,
+      color.r * headIntensity, color.g * headIntensity, color.b * headIntensity,
+      color.r * headIntensity, color.g * headIntensity, color.b * headIntensity,
+    ]);
   }
 
   private respawnAmbientParticleAhead(d: { position: {x:number;y:number;z:number}; size:number; brightness:number }, spaceship: Spaceship): void {

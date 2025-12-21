@@ -180,6 +180,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
             <li><strong>Sin Sigillum:</strong> reapareces en el ancla humano “Trail Entry”, lejos del sol y con todos los instrumentos recomenzados.</li>
             <li><strong>Con Sigillum:</strong> vuelves exactamente al punto que sellaste, con planeta, órbita y portales tal y como estaban cuando grabaste el símbolo.</li>
           </ul>
+          <p><em>Importante:</em> no puedes grabar un nuevo Sigillum mientras estés dentro de una atmósfera. Despega o regresa al modo sistema solar para habilitar el rito.</p>
 
           <h3>Qué conserva un Sigillum</h3>
           <ul>
@@ -202,6 +203,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <ul>
             <li>Cada sistema tiene un patrono concreto (Cthulhu, Azathoth, etc.) que define qué seres pueden invadirlo.</li>
             <li>Cuando ejecutas Void Jump, el juego decide de antemano si habrá incursión y qué criatura aparecerá según el patrono vigente.</li>
+            <li>Los Void Jump quedan bloqueados durante secuencias atmosféricas para evitar errores de navegación: espera a estar en espacio abierto.</li>
             <li>Las Semillas y Vampiros comparan constantemente la distancia a tu nave con la de los planetas cercanos: si estás más cerca, la persecución es obligatoria.</li>
           </ul>
 

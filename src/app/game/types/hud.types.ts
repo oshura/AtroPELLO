@@ -64,6 +64,9 @@ export interface AtmosphereTelemetryPanelWeatherInfo {
   lightningChance: number;
   etaMs: number;
   startedAtMs: number;
+  layerId: string;
+  layerLabel: string;
+  layerBounds: { min: number; max: number };
 }
 
 export interface AtmosphereTelemetryPanelState {
