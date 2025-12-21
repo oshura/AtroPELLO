@@ -32,3 +32,14 @@ export interface HudMarqueeEventOptions {
   /** Override number of loops the message should stay visible (defaults to config) */
   loops?: number;
 }
+
+export type AtmosphereStabilityLabel = 'calm' | 'stable' | 'unstable' | 'descending';
+
+export interface AtmosphereTelemetryPayload {
+  visibility: number;
+  turbulence: number;
+  drift: { x: number; y: number; z: number; magnitude: number };
+  eventType: string;
+  stability: AtmosphereStabilityLabel;
+  liftPerSecond: number;
+}

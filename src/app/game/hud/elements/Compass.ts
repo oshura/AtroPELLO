@@ -1,5 +1,5 @@
 import { TargetInfo } from '../../types/targeting.types';
-import { CompassCountdownPayload } from '../../types/hud.types';
+import { AtmosphereTelemetryPayload, CompassCountdownPayload } from '../../types/hud.types';
 
 /**
  * Elemento HUD: Brújula con sistema de targeting
@@ -20,6 +20,7 @@ export class Compass {
   private altitudeAboveGround: number = 0; // units
   private readonly horizonBlend: number = 0.18;
   private readonly altitudeBlend: number = 0.25;
+  private atmosphereTelemetry: AtmosphereTelemetryPayload | null = null;
   
   constructor() {}
 
@@ -69,6 +70,17 @@ export class Compass {
     }
 
     this.atmosphereMode = true;
+  }
+
+  public setAtmosphereTelemetry(payload: AtmosphereTelemetryPayload | null): void {
+    if (!payload) {
+      this.atmosphereTelemetry = null;
+      return;
+    }
+    this.atmosphereTelemetry = {
+      ...payload,
+      drift: { ...payload.drift },
+    };
   }
 
   public render(ctx: CanvasRenderingContext2D, position: { x: number; y: number }): void {
@@ -353,6 +365,19 @@ export class Compass {
       atmospherePitch: this.pitch,
       atmosphereRoll: this.roll,
       altitudeAboveGround: this.altitudeAboveGround,
+      atmoDrift: this.atmosphereTelemetry?.drift.magnitude ?? 0,
+      atmoTurbulence: this.atmosphereTelemetry?.turbulence ?? 0,
+      atmoStability: this.atmosphereTelemetry?.stability ?? (this.atmosphereMode ? 'offline' : 'inactive'),
+      atmosphereTelemetry: this.atmosphereTelemetry
+        ? {
+            visibility: this.atmosphereTelemetry.visibility,
+            turbulence: this.atmosphereTelemetry.turbulence,
+            stability: this.atmosphereTelemetry.stability,
+            driftMagnitude: this.atmosphereTelemetry.drift.magnitude,
+            liftPerSecond: this.atmosphereTelemetry.liftPerSecond,
+            eventType: this.atmosphereTelemetry.eventType,
+          }
+        : null,
       countdown: this.countdown,
       targetInfo: this.targetInfo ? {
         targetId: this.targetInfo.target.id,

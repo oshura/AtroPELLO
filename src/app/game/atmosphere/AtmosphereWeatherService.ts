@@ -56,9 +56,11 @@ export class AtmosphereWeatherService {
   private rngSeed: number = 1;
   private nextEventArmMs: number = 0;
   private sceneContext: AtmosphereSceneState | null = null;
+  private marsSevereMode: boolean = false;
 
   public configureForScene(scene: AtmosphereSceneState, nowMs: number = this.getTime()): void {
     this.sceneContext = scene;
+    this.marsSevereMode = this.isMarsContext(scene.context);
     this.rngSeed = this.computeSeed(scene.context);
     this.eventPool = this.buildEventPool(scene.context);
     this.currentEvent = null;
@@ -72,6 +74,7 @@ export class AtmosphereWeatherService {
     this.currentEvent = null;
     this.snapshot = null;
     this.eventPool = [];
+    this.marsSevereMode = false;
   }
 
   public update(nowMs: number, deltaSeconds: number, altitude: number): void {
@@ -149,7 +152,8 @@ export class AtmosphereWeatherService {
       startedAtMs: nowMs,
       driftVector: drift,
     };
-    this.nextEventArmMs = nowMs + duration + this.randomRange(7000, 18000);
+    const [cooldownMin, cooldownMax] = this.getEventCooldownRange();
+    this.nextEventArmMs = nowMs + duration + this.randomRange(cooldownMin, cooldownMax);
   }
 
   private buildEventPool(context: LandingApproachContext | null): AtmosphereWeatherEventDefinition[] {
@@ -264,10 +268,38 @@ export class AtmosphereWeatherService {
         precipitation: 'dust',
       });
     }
+
+    if (this.isMarsContext(context)) {
+      const severePool = base.filter((def) => this.isSevereWeatherEvent(def)).map((def) => {
+        if (def.type === 'dust_storm' || def.type === 'thunderstorm') {
+          return { ...def, weight: def.weight + 1.2 };
+        }
+        if (def.type === 'rain') {
+          return { ...def, weight: def.weight + 0.8 };
+        }
+        return def;
+      });
+      return severePool.length ? severePool : base;
+    }
     return base;
   }
 
   private buildBaselineSnapshot(nowMs: number): AtmosphereWeatherSnapshot {
+    if (this.marsSevereMode) {
+      return {
+        eventType: 'dust_storm',
+        intensity: 0.35,
+        visibilityMultiplier: 0.65,
+        turbulenceStrength: 0.25,
+        driftVector: { x: 0, y: 0, z: 0 },
+        impactVolumeMultiplier: 0.8,
+        audioCue: 'sfx_weather_dust',
+        precipitation: 'dust',
+        lightningChance: 0,
+        startedAtMs: nowMs,
+        etaMs: 0,
+      };
+    }
     return {
       eventType: 'clear',
       intensity: 0,
@@ -281,6 +313,23 @@ export class AtmosphereWeatherService {
       startedAtMs: nowMs,
       etaMs: 0,
     };
+  }
+
+  private getEventCooldownRange(): [number, number] {
+    return this.marsSevereMode ? [0, 0] : [7000, 18000];
+  }
+
+  private isMarsContext(context: LandingApproachContext | null): boolean {
+    if (!context) {
+      return false;
+    }
+    const id = context.planetId?.toLowerCase() ?? '';
+    const name = context.planetName?.toLowerCase() ?? '';
+    return id.includes('mars') || name === 'mars' || name === 'marte';
+  }
+
+  private isSevereWeatherEvent(def: AtmosphereWeatherEventDefinition): boolean {
+    return def.type !== 'clear' && (def.turbulenceStrength >= 0.3 || def.visibilityMultiplier <= 0.7 || def.precipitation === 'rain' || def.precipitation === 'dust');
   }
 
   private buildDriftVector(strength: number): Vector3 {

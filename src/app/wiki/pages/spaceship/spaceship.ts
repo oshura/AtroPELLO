@@ -268,6 +268,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <li><strong>Filtro adaptativo:</strong> El Compass interpola los valores entrantes (pitch, roll y altitud) antes de dibujar, eliminando vibraciones cuando atraviesas turbulencias o justo al terminar la animación de aterrizaje.</li>
           <li><strong>Altímetro integrado:</strong> El contador verde se alimenta del radio real del planeta y se clampa a cero cuando rozas el suelo. Marca puntos clave para aterrizajes manuales.</li>
           <li><strong>Telemetría QA:</strong> El panel de debug de la brújula ahora expone <em>atmosphereMode</em>, pitch, roll y altitud para auditar vuelos atmosféricos sin depender de capturas.</li>
+          <li><strong>Vector y turbulencias:</strong> La misma telemetría muestra <code>atmoDrift</code> (deriva horizontal en u/s), <code>atmoTurbulence</code> (fuerza vertical filtrada) y el estado <em>atmoStability</em> que el auto-vector usa para decidir si sigue sosteniendo la nave o la deja caer para el touchdown.</li>
         </ul>
         <p class="note hud-atmo-note">Cobertura de pruebas: el utilitario matemático verifica nivelado, nariz arriba/abajo, roll ±90° e inversión completa. El propio componente Compass confirma que el modo atmosférico sincroniza pitch/roll/altitud.</p>
       </section>
@@ -282,6 +283,17 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <p class="note atmo-layers-note">El detalle adicional solo se activa cuando la cámara está cerca del suelo, así la escena mantiene el rendimiento original mientras orbitas a gran altura.</p>
       </section>
 
+      <section class="atmo-weather">
+        <h2>🌫️ Clima volumétrico</h2>
+        <ul>
+          <li><strong>Niebla estratificada:</strong> <code>AtmosphereSceneManager</code> dibuja un domo volumétrico que aumenta densidad conforme bajas de 900&nbsp;u y se refuerza según el evento del <code>AtmosphereWeatherService</code>. El color interpola entre el suelo del planeta y el tinte del clima (polvo, tormenta eléctrica o lluvia de meteoros).</li>
+          <li><strong>Nubes en capas:</strong> Dos shells adicionales orbitan el planeta: la capa baja se pega a 400&nbsp;u y se desplaza con ruido senoidal, mientras que la capa alta vive cerca del sky dome con velocidades más lentas. Cada una usa un shader procedural independiente, así el horizonte mantiene parallax aunque el planeta sea pequeño.</li>
+          <li><strong>Iluminación reactiva:</strong> El render atmosférico ajusta la luz ambiental entre 0.55 y 1.05&nbsp;x según la visibilidad del evento. Tormentas y densas neblinas atenúan el terreno, mientras que las lluvias de meteoros elevan la luz para resaltar los destellos.</li>
+          <li><strong>Toggles QA:</strong> Desde la consola puedes llamar a <code>Debug.Atmosphere.setFogEnabled(false)</code> o <code>Debug.Atmosphere.setCloudsEnabled(false)</code> para aislar capas durante capturas y mediciones de rendimiento.</li>
+        </ul>
+        <p class="note atmo-weather-note">Los shaders de clima comparten el mismo <code>WeatherLayerProgram</code>, así que las pruebas de QA pueden capturar estados deterministas alimentando la misma semilla de clima y registrando el timestamp usado en <code>timeMs</code>.</p>
+      </section>
+
       <section class="atmo-impulse">
         <h2>⏩ Empuje automático tras aterrizar</h2>
         <p>Al terminar el fade-out de <code>LandingSequence</code> y entrar en la escena atmosférica, la nave recibe un empuje inicial controlado antes de que recuperes el mando completo.</p>
@@ -294,10 +306,22 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <li><strong>Touchdown físico:</strong> El motor calcula la distancia al centro del planeta y, cuando el casco intersecta la esfera de suelo (radio configurable), vuelve a invocar <code>handleLandingTouchdown()</code> para abrir el panel real de aterrizaje sin recrear la escena atmosférica.</li>
           <li><strong>Despegue automático:</strong> Después de tocar tierra puedes ascender manualmente; al cruzar los 1000&nbsp;u sobre la superficie el juego arma <code>maybeTriggerAtmosphereAutoTakeoff()</code>, dispara la misma <em>TakeoffSequence</em> del sistema solar y te devuelve al renderer espacial sin atajos raros.</li>
           <li><strong>Auto-landing suave:</strong> Si entras en contacto con el suelo a <em>&lt; 1&nbsp;u</em> en el eje de gravedad, el motor marca <code>landingContext.autoLand</code>, reaprovecha el mismo flujo de touchdown y bloquea la cámara en modo manual “locked to ground” mientras sigue a la nave hasta que la velocidad lateral cae &lt; 0.4&nbsp;u. El bloqueo lanza un estallido corto de polvo (mismo pipeline de <code>ParticleEffectsService</code>) y dispara el swell <code>Landing.wav</code> (<code>sfx_autoland_touchdown</code>) sincronizado con la cámara, así el aterrizaje físico luce y suena igual que la secuencia cinematográfica aunque hayas frenado manualmente.</li>
+          <li><strong>Vector anti-stall:</strong> Mientras la escena atmosférica esté activa, <code>GameEngine.applyAtmosphereAutoVector()</code> calcula el peso efectivo de la nave (masa + gravedad local) y suma el empuje opuesto dentro de <code>Spaceship.externalForces</code>; si desciendes por debajo de 30&nbsp;u reduce el empuje para permitir el touchdown, pero entre 30-60&nbsp;u mantiene una deriva ascendente de ~1.2&nbsp;u/s y evita que la nave caiga en picada aun cuando sueltas el acelerador.</li>
           <li><strong>Piloto verde intacto:</strong> En modo atmósfera la lógica de <em>landing ready</em> reutiliza los mismos márgenes del espacio (≤50&nbsp;u de la superficie, ≤5&nbsp;u/s y ±60°). Solo cuando mantienes la nave estable durante 3&nbsp;s el indicador verde vuelve a encenderse y, dentro de la escena atmosférica, pulsar <kbd>Enter</kbd> dispara el auto-landing asistido (cámara bloqueada + polvo + <code>Landing.wav</code>) en vez de abrir el panel al instante. Fuera de atmósfera el atajo vuelve al flujo espacial tradicional.</li>
           <li><strong>Toma el control enseguida:</strong> Puedes seguir acelerando con <span class="key-cluster"><kbd>+</kbd><span class="key-sep">/</span><kbd>=</kbd></span> o frenar con <span class="key-cluster"><kbd>-</kbd><span class="key-sep">/</span><kbd>_</kbd></span>; el impulso solo abre la ventana inicial para maniobrar.</li>
         </ul>
         <p class="note atmo-impulse-note">QA: con el HUD de depuración puedes observar que <code>currentSpeed</code> nunca cae por debajo de 0.8u durante los primeros segundos, por lo que el loop de <code>sfx_stall</code> no se activa tras el aterrizaje.</p>
+      </section>
+
+      <section class="atmo-ground-impact">
+        <h2>🪂 Impactos contra el suelo atmosférico</h2>
+        <ul>
+          <li><strong>Rebote físico inmediato:</strong> Si golpeas el terreno sin cumplir las condiciones de auto-landing, <code>GameEngine.handleAtmosphereGroundImpact()</code> recoloca la nave justo encima de la superficie y refleja la velocidad vertical con un coeficiente de restitución de 0.28. El componente lateral se amortigua al 65&nbsp;% para que el rebote siga la pendiente en vez de rebotar como una pelota.</li>
+          <li><strong>Curva de daño escalonada:</strong> El impacto mide la velocidad vertical en el momento del golpe. Por debajo de 1&nbsp;u/s no hay daño, a partir de ahí la curva escala linealmente hasta 100&nbsp;u a 10&nbsp;u/s. Todo entra por la misma ruta de <code>applyShipDamage()</code>, así que los buff como el <em>Void Cocoon</em> pueden anularlo y la marquesina reporta «Impacto atmosférico» con la vida restante.</li>
+          <li><strong>Auto-landing sigue intacto:</strong> Mientras el componente vertical sea ≤1&nbsp;u/s y el estado <em>Landing Ready</em> esté activo, el choque vuelve a invocar el flujo de touchdown completo (cámara manual, polvo sincronizado y swell dedicado). Solo los impactos duros activan este rebote.</li>
+          <li><strong>Feedback audiovisual:</strong> Cada choque emite partículas de polvo reutilizando <code>ParticleEffectsService</code> y dispara el <code>sfx_collision_light</code> o <code>sfx_collision_heavy</code> según la velocidad, además de aumentar el vignette rojo para hacer evidente el golpe incluso si no hubo daño (por escudo o impacto menor).</li>
+        </ul>
+        <p class="note atmo-ground-impact-note">QA: la curva de daño queda acotada y reproducible—1u al rozar el suelo y 100u al caer a 10&nbsp;u/s—de modo que las pruebas de balance pueden repetir condiciones sabiendo exactamente qué castigo esperar.</p>
       </section>
 
       <section class="atmo-flow">

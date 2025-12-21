@@ -13,7 +13,7 @@ import { TargetingSystem, TargetInfo } from '../types/targeting.types';
 import { OrientationBasis } from '../targeting/compass-direction.util';
 import { TargetPanel, TargetPanelState, Relation } from './elements/TargetPanel';
 import { LandingIndicatorsSnapshot } from '../types/landing.types';
-import { CompassCountdownPayload, HudMarqueeEventOptions, HudMarqueeEventType } from '../types/hud.types';
+import { AtmosphereTelemetryPayload, CompassCountdownPayload, HudMarqueeEventOptions, HudMarqueeEventType } from '../types/hud.types';
 
 interface QueuedMarqueeEntry {
   id: string;
@@ -182,6 +182,7 @@ export class HUDManager {
     atmospherePitch?: number | null;
     atmosphereRoll?: number | null;
     altitudeAboveGround?: number;
+    atmosphereTelemetry?: AtmosphereTelemetryPayload | null;
   }): void {
     // Actualizar elementos individuales
     if (typeof gameData.maxSpeed === 'number' && !Number.isNaN(gameData.maxSpeed)) {
@@ -214,6 +215,7 @@ export class HUDManager {
     } else {
       this.compass.setAtmosphereMode(false);
     }
+    this.compass.setAtmosphereTelemetry(gameData.atmosphereTelemetry ?? null);
     
     this.navigationSphere.update(gameData.pitch, gameData.roll, gameData.heading);
   // Determinar si el rito de velocidad está activo (hasta 200%)

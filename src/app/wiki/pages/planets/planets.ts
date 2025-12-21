@@ -386,7 +386,8 @@ export class PlanetsWikiComponent implements OnInit {
       realDistance: '227.9 million km',
       scaledDistance: 5400,
       radius: 250,
-      description: 'The Red Planet. Ancient riverbeds and polar ice caps visible. Smaller than Earth, easier to land on. Often used as a navigation waypoint.'
+      description: 'The Red Planet. Ancient riverbeds and polar ice caps visible. Smaller than Earth, easier to land on. Often used as a navigation waypoint.',
+      special: 'Entrada atmosférica siempre con clima severo: turbulencias constantes, tormentas de polvo o lluvia ácida reducen la visibilidad y generan drift si no corriges manualmente.'
     },
     {
       name: 'Jupiter',

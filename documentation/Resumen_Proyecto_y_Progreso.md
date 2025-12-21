@@ -65,6 +65,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - Autolanding atmosférico suave: `GameEngine.onAtmosphereGroundCollision()` ahora mide el componente vertical de la velocidad al tocar suelo; si es <1 u marca `landingContext.autoLand`, reusa `handleLandingTouchdown()` y engancha una cámara manual “locked to ground” que fija la toma al suelo mientras sigue a la nave hasta que su velocidad lateral cae <0.4 u (o arranca un nuevo despegue). El cinemático dispara un burst de polvo reutilizando `ParticleEffectsService.createDestructionDebris()`, reproduce el swell `Landing.wav` (`sfx_autoland_touchdown`) y aplaza 2 s la apertura del panel mediante `openLandingPanelWithDelay()` para que el polvo y la cámara respiren antes de mostrar UI.
   - Piloto verde persistente en atmósfera: `computeLandingStatus()` detecta cuándo la escena atmosférica está activa y reutiliza los mismos límites (≤50 u, ≤5 u/s, ±60°) tomando la normal del planeta local. Así el HUD y `landingStatus.ready` se encienden tras 3 s de estabilidad aunque la nave ya esté dentro del bioma atmosférico; solo con esa bandera activa, pulsar <kbd>Enter</kbd> en atmósfera dispara el auto-landing asistido (cámara bloqueada + polvo + swell) antes de abrir el panel, mientras que fuera de atmósfera mantiene el flujo espacial clásico.
   - Detector de touchdown atmosférico: `GameEngine.detectAtmosphereGroundCollision()` calcula la distancia nave-centro vs. `groundCollisionRadius` (configurable mediante `AtmosphereSceneActivationOptions`) sumando el radio de la nave; al cruzarlo dispara `onAtmosphereGroundCollision()` que reusa `handleLandingTouchdown()` con `skipAtmosphereScene` para abrir el `LandingPanelComponent` real y registrar la visita, evitando duplicar lógica entre la secuencia cinematográfica y el aterrizaje físico.
+  - Rebote y daño contra el suelo: si la colisión no cumple los requisitos del auto-landing (<1 u/s vertical + `landingStatus.ready`), `handleAtmosphereGroundImpact()` recoloca la nave justo encima del suelo, refleja la velocidad vertical (restitución 0.28, amortiguación lateral 0.65) y aplica una curva de daño lineal entre 1 u (1 u/s) y 100 u (10 u/s). El HUD reporta «Impacto atmosférico», se generan partículas de polvo y se reproducen los SFX de colisión ligeros/pesados reutilizando el pipeline de partículas/audio existente.
   - Flujo atmosférico simplificado: tras completar `LandingSequence` la escena atmosférica aplica el empuje inicial (3u) y silencia la música; el piloto verde reaparece con los mismos márgenes del modo espacial y permite aterrizar manualmente o disparar `autoLand` si la colisión es suave (<1u). Mientras vuelas bajo, todo el HUD sigue activo y puedes despegar libremente; al superar 1000u `maybeTriggerAtmosphereAutoTakeoff()` inicia la secuencia de salida y `exitAtmosphereScene()` restaura el renderer espacial sin pasos adicionales.
 
 - SEO e indexación
@@ -179,7 +180,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 
 Nota: las pruebas manuales de carga desde la UI se programaron para la próxima sesión con payloads reales, una vez concluida la actualización de documentación y wiki.
 
-Actualizado: Febrero 2025.
+Actualizado: Diciembre 2025.
 
 ## Bitácora QA global
 

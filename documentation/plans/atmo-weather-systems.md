@@ -27,22 +27,35 @@
 - [x] Ajustar la gravedad atmosférica para que genere caídas de ~1u/s a 1000u de altura y hasta 3u/s cerca del suelo (1u de altura).
 
 ### Fase 1 — Investigación y arquitectura
-- [ ] Revisar documentación existente y anotar dependencias (HUD, audio, partículas, cámara manual).
+- [x] Revisar documentación existente y anotar dependencias (HUD, audio, partículas, cámara manual).
 - [x] Definir estructura del "WeatherController" (estado por escena atmosférica, timers, seeds por planeta, persistencia durante aterrizajes repetidos).
 - [x] Diseñar catálogo de eventos meteorológicos con parámetros: probabilidad por bioma, duración, intensidades de viento, efectos visuales/audio.
 
 ### Fase 2 — Rendering: fog + nubes
-- [ ] Extender `AtmosphereSceneManager` con niebla volumétrica (curva configurable por altitud + densidad extra según clima).
-- [ ] Implementar múltiples capas de nubes: 
-  - [ ] Capa alta (procedural + desplazamiento lento) proyectada en el sky dome.
-  - [ ] Capa baja (sprites/billboards o shell intermedio) para dar sensación de profundidad.
-- [ ] Agregar parámetros de iluminación (tintado del sol, occlusion) que dependan del evento actual.
-- [ ] Instrumentar toggles para QA (activar/desactivar fog/nubes por consola).
+- [x] Extender `AtmosphereSceneManager` con niebla volumétrica (curva configurable por altitud + densidad extra según clima).
+- [x] Implementar múltiples capas de nubes: 
+  - [x] Capa alta (procedural + desplazamiento lento) proyectada en el sky dome.
+  - [x] Capa baja (sprites/billboards o shell intermedio) para dar sensación de profundidad.
+- [x] Agregar parámetros de iluminación (tintado del sol, occlusion) que dependan del evento actual.
+- [x] Instrumentar toggles para QA (activar/desactivar fog/nubes por consola).
 
 ### Fase 3 — Simulación de clima y eventos
 - [x] Crear `AtmosphereWeatherService` (o módulo equivalente) que gestione eventos activos: lluvia, tormenta eléctrica, lluvia ácida/polvo, turbulencia seca.
 - [x] Implementar scheduler pseudo-aleatorio (semilla por planeta) que dispare eventos con cooldown mínimo y transiciones suaves.
 - [ ] Conectar cada evento con payload: visibilidad target, fuerza turbulencia, drift vector, partículas requeridas, cambios de audio.
+  - [x] 3.1 — Propagar `AtmosphereWeatherSnapshot` a un estado de efectos atmosféricos en `GameEngine` (visibilidad objetivo, factores de iluminación, drift acumulado, intensidad de turbulencia).
+  - [x] 3.1b — Configurar Marte para que siempre invoque eventos severos (sin periodos `clear`, priorizando turbulencias, lluvia y baja visibilidad).
+    - [x] Analizar `AtmosphereWeatherService` y documentar los cambios requeridos para detectar Marte.
+    - [x] Filtrar/ajustar el scheduler para que en Marte solo existan eventos con turbulencias o baja visibilidad, eliminando ventanas neutrales.
+    - [x] Actualizar la wiki/briefing de planetas con la advertencia de clima marciano persistente.
+    - [x] Ejecutar `npm run build` y adjuntar resultado al completar 3.1b.
+  - [x] 3.2 — Aplicar drift y turbulencia a la nave/cámara: integrar fuerzas suaves al velocity vector, jitter controlado según intensidad y exponer métricas para HUD/QA.
+    - [x] 3.2a — Revisar `applyAtmosphereGravity`, `Spaceship.externalForces` y `camera.update()` para definir puntos de inserción de fuerzas y jitter respetando `CleanCode_Arquitectura`.
+    - [x] 3.2b — Añadir helper en `GameEngine` que traduzca `AtmosphereWeatherEffectsState` en fuerzas de deriva y rafagas turbulentas aplicadas a `spaceship.externalForces`, con clamps por bioma y altitud.
+    - [x] 3.2c — Inyectar jitter/temblor en la cámara atmosférica (offsets + ruido suave) sincronizado con `turbulenceCurrent`, reusando `driftOffset` para mover el encuadre.
+    - [x] 3.2d — Exponer telemetría (visibilidad, intensidad de turbulencia, drift aplicado) al HUD/QA snapshot y registrar logs de depuración para testeo.
+    - [x] 3.2e — Ejecutar `npm run build` y documentar resultados tras completar la etapa.
+  - [ ] 3.3 — Disparar feedback audiovisual por evento (selección de loops `AudioEngineService`, volumen de impactos, hooks hacia partículas/neblina adicional) reutilizando los cues definidos en `AtmosphereWeatherService`.
 - [x] Registrar hooks para pausar eventos al salir de la escena y reanudarlos si se vuelve a entrar rápidamente.
 
 ### Fase 4 — Gameplay & física

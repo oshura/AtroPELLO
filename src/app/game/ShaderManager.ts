@@ -20,6 +20,7 @@ export class ShaderManager {
   public glowInstancedProgram: WebGLProgram | null = null;
   public unlitTexProgram: WebGLProgram | null = null;
   public stormShellProgram: WebGLProgram | null = null;
+  public weatherLayerProgram: WebGLProgram | null = null;
   public portalProgram: WebGLProgram | null = null;
   public eyeProgram: WebGLProgram | null = null; // 3D eye sphere shader
   public flameProgram: WebGLProgram | null = null; // upward flame billboard shader
@@ -60,6 +61,8 @@ export class ShaderManager {
   public unlitTexAttributes: { [key: string]: number } = {};
   public stormShellAttributes: { [key: string]: number } = {};
   public stormShellUniforms: { [key: string]: WebGLUniformLocation | null } = {};
+  public weatherLayerAttributes: { [key: string]: number } = {};
+  public weatherLayerUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   public portalAttributes: { [key: string]: number } = {};
   public portalUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   public eyeAttributes: { [key: string]: number } = {};
@@ -126,6 +129,12 @@ export class ShaderManager {
       this.getStormShellFragmentShader()
     );
 
+    // Programa genérico para capas de clima (niebla/nubes)
+    this.weatherLayerProgram = this.createProgram(
+      this.getWeatherLayerVertexShader(),
+      this.getWeatherLayerFragmentShader()
+    );
+
     // Programa del Portal (runas + ojo central)
     this.portalProgram = this.createProgram(
       this.getPortalVertexShader(),
@@ -173,6 +182,7 @@ export class ShaderManager {
   if (this.glowInstancedProgram) this.getGlowInstancedProgramLocations();
   if (this.unlitTexProgram) this.getUnlitTexProgramLocations();
   if (this.stormShellProgram) this.getStormShellProgramLocations();
+  if (this.weatherLayerProgram) this.getWeatherLayerProgramLocations();
   if (this.portalProgram) this.getPortalProgramLocations();
   if (this.eyeProgram) this.getEyeProgramLocations();
   if (this.flameProgram) this.getFlameProgramLocations();
@@ -459,6 +469,120 @@ export class ShaderManager {
     if (this.stormShellUniforms['shellScale']) gl.uniform1f(this.stormShellUniforms['shellScale'], shellScale);
     if (this.stormShellUniforms['colorBase']) gl.uniform3fv(this.stormShellUniforms['colorBase'], colorBase);
     if (this.stormShellUniforms['colorVein']) gl.uniform3fv(this.stormShellUniforms['colorVein'], colorVein);
+  }
+
+  // ===== Weather layer program (fog + cloud shells) =====
+  private getWeatherLayerVertexShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec3 a_position;
+    uniform mat4 u_modelMatrix;
+    uniform mat4 u_viewMatrix;
+    uniform mat4 u_projectionMatrix;
+    out vec3 v_objPos;
+    out vec2 v_uv;
+    void main(){
+      v_objPos = a_position;
+      float lon = atan(a_position.z, a_position.x);
+      float lat = asin(clamp(a_position.y, -1.0, 1.0));
+      v_uv = vec2(lon * 0.15915494309 + 0.5, lat * 0.31830988618 + 0.5);
+      vec4 world = u_modelMatrix * vec4(a_position, 1.0);
+      gl_Position = u_projectionMatrix * (u_viewMatrix * world);
+    }`;
+  }
+
+  private getWeatherLayerFragmentShader(): string {
+    return `#version 300 es
+    precision highp float;
+    in vec3 v_objPos;
+    in vec2 v_uv;
+    out vec4 fragColor;
+    uniform vec3 u_colorTop;
+    uniform vec3 u_colorBottom;
+    uniform float u_opacity;
+    uniform float u_intensity;
+    uniform float u_time;
+    uniform float u_noiseScale;
+    uniform float u_verticalFalloff;
+
+    float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float noise(vec2 p){
+      vec2 i = floor(p);
+      vec2 f = fract(p);
+      float a = hash(i);
+      float b = hash(i + vec2(1.0, 0.0));
+      float c = hash(i + vec2(0.0, 1.0));
+      float d = hash(i + vec2(1.0, 1.0));
+      vec2 u = f*f*(3.0-2.0*f);
+      return mix(a, b, u.x) + (c - a)*u.y*(1.0 - u.x) + (d - b)*u.x*u.y;
+    }
+
+    void main(){
+      float height = clamp(v_objPos.y * 0.5 + 0.5, 0.0, 1.0);
+      float falloff = pow(height, max(0.0001, u_verticalFalloff));
+      vec3 color = mix(u_colorBottom, u_colorTop, falloff);
+
+      float t = u_time * 0.05;
+      float baseNoise = noise(v_uv * u_noiseScale + vec2(t, -t * 0.35));
+      float ribbon = sin((v_uv.x * 6.28318 + v_uv.y * 3.0) + t * 2.0);
+      float pattern = mix(baseNoise, ribbon * 0.5 + 0.5, 0.35);
+
+      float alpha = u_opacity * u_intensity * mix(1.0, 0.25, falloff);
+      alpha *= 0.7 + 0.3 * pattern;
+      fragColor = vec4(color, clamp(alpha, 0.0, 1.0));
+    }`;
+  }
+
+  private getWeatherLayerProgramLocations(): void {
+    if (!this.gl || !this.weatherLayerProgram) return;
+    const gl = this.gl;
+    this.weatherLayerAttributes['position'] = gl.getAttribLocation(this.weatherLayerProgram, 'a_position');
+    this.weatherLayerUniforms['modelMatrix'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_modelMatrix');
+    this.weatherLayerUniforms['viewMatrix'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_viewMatrix');
+    this.weatherLayerUniforms['projectionMatrix'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_projectionMatrix');
+    this.weatherLayerUniforms['colorTop'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_colorTop');
+    this.weatherLayerUniforms['colorBottom'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_colorBottom');
+    this.weatherLayerUniforms['opacity'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_opacity');
+    this.weatherLayerUniforms['intensity'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_intensity');
+    this.weatherLayerUniforms['time'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_time');
+    this.weatherLayerUniforms['noiseScale'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_noiseScale');
+    this.weatherLayerUniforms['verticalFalloff'] = gl.getUniformLocation(this.weatherLayerProgram, 'u_verticalFalloff');
+  }
+
+  public useWeatherLayerProgram(): void {
+    if (this.gl && this.weatherLayerProgram) {
+      this.gl.useProgram(this.weatherLayerProgram);
+    }
+  }
+
+  public setWeatherLayerMatrices(model: Float32Array, view: Float32Array, proj: Float32Array): void {
+    if (!this.gl || !this.weatherLayerProgram) return;
+    const gl = this.gl;
+    if (this.weatherLayerUniforms['modelMatrix']) gl.uniformMatrix4fv(this.weatherLayerUniforms['modelMatrix'], false, model);
+    if (this.weatherLayerUniforms['viewMatrix']) gl.uniformMatrix4fv(this.weatherLayerUniforms['viewMatrix'], false, view);
+    if (this.weatherLayerUniforms['projectionMatrix']) gl.uniformMatrix4fv(this.weatherLayerUniforms['projectionMatrix'], false, proj);
+  }
+
+  public setWeatherLayerParams(params: {
+    time: number;
+    topColor: Float32Array;
+    bottomColor: Float32Array;
+    opacity: number;
+    intensity: number;
+    noiseScale: number;
+    verticalFalloff: number;
+  }): void {
+    if (!this.gl || !this.weatherLayerProgram) {
+      return;
+    }
+    const gl = this.gl;
+    if (this.weatherLayerUniforms['time']) gl.uniform1f(this.weatherLayerUniforms['time'], params.time);
+    if (this.weatherLayerUniforms['colorTop']) gl.uniform3fv(this.weatherLayerUniforms['colorTop'], params.topColor);
+    if (this.weatherLayerUniforms['colorBottom']) gl.uniform3fv(this.weatherLayerUniforms['colorBottom'], params.bottomColor);
+    if (this.weatherLayerUniforms['opacity']) gl.uniform1f(this.weatherLayerUniforms['opacity'], params.opacity);
+    if (this.weatherLayerUniforms['intensity']) gl.uniform1f(this.weatherLayerUniforms['intensity'], params.intensity);
+    if (this.weatherLayerUniforms['noiseScale']) gl.uniform1f(this.weatherLayerUniforms['noiseScale'], params.noiseScale);
+    if (this.weatherLayerUniforms['verticalFalloff']) gl.uniform1f(this.weatherLayerUniforms['verticalFalloff'], params.verticalFalloff);
   }
 
   // ===== Portal program =====
