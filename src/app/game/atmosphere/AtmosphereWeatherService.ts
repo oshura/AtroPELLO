@@ -81,6 +81,16 @@ const DEFAULT_LAYER_DEFINITIONS: AtmosphereLayerDefinition[] = [
   },
 ];
 
+const EVENT_LAYER_RULES: Record<AtmosphereWeatherEventType, ReadonlyArray<string>> = {
+  clear: ['surface', 'low', 'mid', 'upper'],
+  light_fog: ['surface', 'low', 'mid', 'upper'],
+  dense_fog: ['surface', 'low', 'mid', 'upper'],
+  rain: ['surface', 'low', 'mid'],
+  thunderstorm: ['surface', 'low', 'mid'],
+  dust_storm: ['surface', 'low'],
+  meteor_shower: ['upper'],
+};
+
 export interface AtmosphereWeatherSnapshot {
   eventType: AtmosphereWeatherEventType;
   intensity: number;
@@ -439,33 +449,40 @@ export class AtmosphereWeatherService {
   }
 
   private getLayerWeightMultiplier(type: AtmosphereWeatherEventType, layer: AtmosphereLayerDefinition): number {
+    if (!this.isEventAllowedInLayer(type, layer.id)) {
+      return 0;
+    }
     switch (layer.id) {
       case 'surface':
         if (type === 'clear') return 1.45;
-        if (type === 'dust_storm') return 1.25;
-        if (type === 'rain') return 1.2;
-        if (type === 'meteor_shower') return 0.4;
+        if (type === 'dust_storm') return 1.35;
+        if (type === 'light_fog' || type === 'dense_fog') return 1.1;
         return 1;
       case 'low':
-        if (type === 'thunderstorm') return 1.2;
-        if (type === 'rain') return 1.1;
-        if (type === 'meteor_shower') return 0.6;
+        if (type === 'dust_storm') return 1.35;
+        if (type === 'thunderstorm') return 1.25;
+        if (type === 'rain') return 1.15;
         return 1;
       case 'mid':
         if (type === 'thunderstorm') return 1.4;
-        if (type === 'meteor_shower') return 1.35;
-        if (type === 'dust_storm') return 0.7;
+        if (type === 'rain') return 1.2;
         if (type === 'clear') return 0.85;
         return 1;
       case 'upper':
-        if (type === 'meteor_shower') return 1.8;
-        if (type === 'thunderstorm') return 1.3;
-        if (type === 'rain') return 0.4;
-        if (type === 'dust_storm') return 0.5;
+        if (type === 'meteor_shower') return 1.9;
+        if (type === 'light_fog' || type === 'dense_fog') return 1.15;
         return 1;
       default:
         return 1;
     }
+  }
+
+  private isEventAllowedInLayer(type: AtmosphereWeatherEventType, layerId: string): boolean {
+    const allowedLayers = EVENT_LAYER_RULES[type];
+    if (!allowedLayers) {
+      return true;
+    }
+    return allowedLayers.includes(layerId);
   }
 
   private buildBaselineSnapshot(nowMs: number, layer?: AtmosphereLayerDefinition): AtmosphereWeatherSnapshot {
