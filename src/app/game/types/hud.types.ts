@@ -36,6 +36,7 @@ export interface HudMarqueeEventOptions {
 }
 
 export type AtmosphereStabilityLabel = 'calm' | 'stable' | 'unstable' | 'descending';
+export type AtmosphereTurbulenceSeverity = 'calm' | 'light' | 'moderate' | 'severe';
 
 export interface AtmosphereTelemetryPayload {
   visibility: number;
@@ -43,6 +44,7 @@ export interface AtmosphereTelemetryPayload {
   drift: { x: number; y: number; z: number; magnitude: number };
   eventType: string;
   stability: AtmosphereStabilityLabel;
+  turbulenceSeverity: AtmosphereTurbulenceSeverity;
   liftPerSecond: number;
 }
 

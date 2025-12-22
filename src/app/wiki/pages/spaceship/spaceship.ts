@@ -99,6 +99,26 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           </div>
         </div>
 
+        <div class="component-card">
+          <h3>🧰 Bahía auxiliar</h3>
+          <div class="component-details">
+            <p><strong>Modelo:</strong> Bahía Auxiliar Mk. I</p>
+            <p><strong>Descripción:</strong> Montura científica con dos sockets activos que exponen habilidades instantáneas mapeadas a la fila numérica.</p>
+            <p><strong>Slots actuales:</strong></p>
+            <ul>
+              <li><strong>1 — Escáner Auxiliar de Habitantes:</strong> revela civilizaciones y seres menores de planetas a &lt;500u y sincroniza la intel con el HUD.</li>
+              <li><strong>2 — Estabilizador Vectorial Atmosférico:</strong> cancela el auto-vector y amortigua turbulencias durante 6&nbsp;s, reduciendo drift/jitter al 20% y mostrando la alerta de autopilot suprimido.</li>
+            </ul>
+            <p><strong>Operativa:</strong></p>
+            <ul>
+              <li>Ambos sockets comparten la misma carcasa y HUD, pero mantienen cooldowns y telemetría independientes; el panel de Atmosphere muestra en vivo qué slot está activo y recalcula la escala de estabilidad.</li>
+              <li>El estabilizador fuerza un estado de control manual: deshabilita temporalmente el auto-vector, bloquea la inyección de lift y clava los mensajes <em>ATMOSPHERE AUTO-VECTOR SUPPRESSED</em> en la marquesina para que sepas que vuelves a pilotar a pulso.</li>
+              <li>Mientras dura la ventana de 6&nbsp;s, todas las sacudidas (drift lateral, turbulencia progresiva, jitter de cabina y carcasa) se atenúan al 20% para que puedas realinear la nariz o aterrizar; al expirar, el auto-vector retoma el control con una rampa suave.</li>
+            </ul>
+            <p><strong>Limitaciones:</strong> Cooldown independiente por módulo (8&nbsp;s para el escáner, 16&nbsp;s para el estabilizador). Los slots adicionales futuros reutilizarán las teclas 3/4 cuando la bahía se expanda.</p>
+          </div>
+        </div>
+
         <div class="component-card tbd-component">
           <h3>⚔️ Weapons (TBD)</h3>
           <div class="component-details">
@@ -221,6 +241,19 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
               <span>Cierra panel o limpia objetivo</span>
             </div>
           </div>
+
+          <div class="control-group">
+            <h3>Bahía auxiliar</h3>
+            <div class="control-item">
+              <kbd>1</kbd>
+              <span>Escáner Auxiliar de Habitantes (slot 1)</span>
+            </div>
+            <div class="control-item">
+              <kbd>2</kbd>
+              <span>Estabilizador Vectorial Atmosférico (slot 2)</span>
+            </div>
+            <p class="note">Los sockets comparten interfaz pero mantienen cooldowns independientes; si cambias los bindings en Opciones → Controles, el HUD actualiza las etiquetas al instante.</p>
+          </div>
         </div>
         <p class="note interface-note">Map, Grimoire e Inventory comparten un cooldown común de 500&nbsp;ms para evitar dobles aperturas accidentales. Puedes cerrar y reabrir cualquiera casi al instante, pero la interfaz descarta pulsaciones repetidas dentro de esa ventana para que el cursor no se rompa.</p>
       </section>
@@ -280,8 +313,10 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <li><strong>Datos del planeta activo:</strong> Usa el <code>LandingApproachContext</code> para mostrar nombre, tipo, probabilidad de vida, intel de habitantes/ser menor y si ya visitaste ese mundo. Las barras de altitud y distancia toman el radio del planeta para que la escala nunca cambie.</li>
           <li><strong>Clima vivo:</strong> El lado derecho escucha al <code>AtmosphereWeatherService</code>: evento en curso, intensidad, precipitación, probabilidad de rayos, capa activa y ETA con contador en segundos. Cada meteorología añade su propio tinte al panel y ahora se remaquetó con padding interno para que los datos se mantengan dentro de cada tarjeta.</li>
           <li><strong>Drift vector desglosado:</strong> Magnitud, heading y pitch del drift se derivan del snapshot de telemetría; los medidores horizontales/verticales se actualizan por frame y el panel resalta los avisos cuando cruzas umbrales de turbulencia o visibilidad crítica.</li>
+          <li><strong>Escala de turbulencias:</strong> El panel imprime la severidad (CALM/LIGHT/MODERATE/SEVERE) directamente debajo de la estabilidad y sincroniza los badges rosas cuando cruzas 0.4 y 0.75 de intensidad, dejando claro cuándo arrancarán las sacudidas de cámara.</li>
           <li><strong>Warnings contextualizados:</strong> Inestabilidad, lift degradado, visibilidad &lt;35&nbsp;% o descargas frecuentes entran como <em>badges</em> rosas en la columna izquierda, sincronizados con el auto-vector para que sepas cuándo prepararte para un touchdown forzado.</li>
           <li><strong>Compatibilidad total:</strong> Al salir de la atmósfera el TargetPanel recupera el espacio automáticamente y el sistema de targeting sigue recibiendo actualizaciones en segundo plano, así no pierdes tu selección al volver al vacío.</li>
+          <li><strong>HUD libre de filtros:</strong> Los tintes meteorológicos se aplican en la capa previa al HUD, de modo que la telemetría mantiene la misma paleta aun cuando llueven meteoros o el polvo tiñe toda la escena.</li>
         </ul>
         <p class="note hud-telemetry-note">QA puede capturar la telemetría en vídeo o texto: el panel se alimenta directamente del payload que también se loguea cada 10&nbsp;s en <code>LogCategory.GAME_LOOP</code>, por lo que cualquier discrepancia se puede correlacionar usando el timestamp renderizado.</p>
       </section>
@@ -306,7 +341,11 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <li><strong>Toggles QA:</strong> Desde la consola puedes llamar a <code>Debug.Atmosphere.setFogEnabled(false)</code> o <code>Debug.Atmosphere.setCloudsEnabled(false)</code> para aislar capas durante capturas y mediciones de rendimiento.</li>
           <li><strong>Loops y truenos dedicados:</strong> <code>GameEngine.updateAtmosphereAudio()</code> ahora ruta cada evento al bus <em>weather</em>, reproduce el loop correspondiente (lluvia, polvo, tormenta) y lanza relámpagos probabilísticos usando <code>lightningChance</code>, todo con ducking automático para no sobrecargar el resto de la mezcla.</li>
           <li><strong>Filtros y descargas sincronizadas:</strong> Cada evento meteorológico aplica su propio tinte sobre la cúpula (polvo ámbar, lluvia azulada, niebla gris, meteoros violáceos) y, cuando cae un rayo, la cámara recibe un flash blanco y un impulso extra de jitter. Los rayos nacen siguiendo la línea de visión real, ahora dibujan núcleo + halo con dos quads aditivos y conservan segmentos suficientes (≥7) para verse nítidos entre cielo y suelo.</li>
-          <li><strong>Precipitación dirigida:</strong> El snapshot atmosférico alimenta <code>ParticleEffectsService.updateWeatherPrecipitation()</code>, que incrementa spawn/tamaño y añade un tercer modo de meteoros con trazas incandescentes. La lluvia se apoya en el forward real de la cámara, el polvo se esparce con mayor amplitud cerca del HUD y los meteoros conservan su brillo incluso en capas altas; al salir de la atmósfera el servicio se limpia solo.</li>
+          <li><strong>Precipitación dirigida:</strong> El snapshot atmosférico alimenta <code>ParticleEffectsService.updateWeatherPrecipitation()</code>, que ahora recicla "seeds" ancladas a la nave y convierte cada gota/grano/braza en una estela tipo Void Jump. Las lluvias cruzan la marquesina como filamentos azulados, las tormentas de polvo dibujan trazos ámbar gruesos y las lluvias de meteoros dejan incandescentes detrás de la carlinga aunque vueles despacio. Todo sigue al jugador mezclando el forward de la nave con el drift del clima, y al salir de la atmósfera el servicio se limpia solo.</li>
+          <li><strong>Capa de partículas en primer plano:</strong> El render reorganizado pinta la lluvia/polvo/meteoritos después de la escena atmosférica, así los trazos siempre cortan delante de la cabina en lugar de quedar tapados por el suelo o las nubes. Incluso tras un respawn forzado, el motor desmonta el clima activo y vacía las partículas antes de volver al espacio.</li>
+          <li><strong>Fuerzas y sacudidas reforzadas:</strong> <code>applyAtmosphereWeatherForces()</code> escala el drift según altitud y turbulencia; a partir de 0.4 la tormenta añade bonus laterales visibles y, cuando supera 0.75, <code>applyAtmosphereCameraJitter()</code> lleva el jitter hasta 0.75&nbsp;u mientras empuja la cámara siguiendo el mismo vector de deriva.</li>
+          <li><strong>Turbulencia física en la nave:</strong> <code>applyAtmosphereShipJitter()</code> escucha el mismo payload y, cuando la intensidad supera 0.35, proyecta ruido senoidal sobre los ejes right/up/forward de la nave. Las fuerzas se inyectan directo en <code>Spaceship.externalForces</code>, se escalan con la altitud y acumulan sacudidas laterales+lift visibles si no corriges.</li>
+          <li><strong>Deriva progresiva acumulada:</strong> <code>applyAtmosphereProgressiveDrift()</code> empieza a sesgar el rumbo cuando <code>turbulenceCurrent</code> ≥ 0.45: calcula un vector lateral+lift, lo normaliza y aumenta su peso exponencialmente hasta que la tormenta cede. Si dejas de corregir, la nave termina siguiendo el drift del clima incluso aunque la cámara vuelva a la normalidad.</li>
         </ul>
         <p class="note atmo-weather-note">Los shaders de clima comparten el mismo <code>WeatherLayerProgram</code>, así que las pruebas de QA pueden capturar estados deterministas alimentando la misma semilla de clima y registrando el timestamp usado en <code>timeMs</code>.</p>
       </section>
@@ -316,14 +355,14 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <p>Al terminar el fade-out de <code>LandingSequence</code> y entrar en la escena atmosférica, la nave recibe un empuje inicial controlado antes de que recuperes el mando completo.</p>
         <ul>
           <li><strong>Hook dedicado:</strong> <code>GameEngine.applyAtmosphereLandingImpulse()</code> corre justo después de <code>enterAtmosphereScene()</code> y solo cuando hay touchdown válido.</li>
-          <li><strong>Velocidad preservada:</strong> <code>captureShipKineticsSnapshot()</code> guarda la velocidad real justo antes de teletransportar la nave y <code>restoreShipKineticsSnapshot()</code> la restituye en la atmósfera sin clamps a 3u; si llegas a 12u sigues en 12u, y solo se inyecta un boost ligero si estabas prácticamente detenido.</li>
+          <li><strong>Velocidad de entrada máxima:</strong> <code>captureShipKineticsSnapshot()</code> sigue guardando la orientación y el vector de velocidad, pero al entrar <code>enforceAtmosphereMaxEntrySpeed()</code> pisa <code>currentSpeed</code>/<code>targetSpeed</code> con el <code>maxSpeed</code> de la nave (10&nbsp;u por defecto), alinea el <em>forward</em> y pone el thruster en <em>ACCELERATING</em>, así el modo atmosférico arranca inmediatamente a tope.</li>
           <li><strong>HUD sin sobresaltos:</strong> El thruster pasa a <em>ACCELERATING</em> y el HUD fuerza <code>stallWarning = false</code>, así no aparece la alarma roja justo después de aterrizar.</li>
           <li><strong>Fade-in suave:</strong> La escena atmosférica se abre con un overlay negro de 1.9&nbsp;s que se desvanece mediante <code>ScreenOverlayRenderer</code> mientras <code>sfx_passby_air</code> ya está sonando, ocultando el corte entre el fade-out de la animación y el render WebGL.</li>
           <li><strong>Silencio intencional:</strong> El <em>MusicDirector</em> memoriza la pista previa y obliga la escena <code>silence</code> durante todo el descenso; el panel de aterrizaje detecta la bandera y no reproduce <code>music_landing</code> hasta que abandones la atmósfera.</li>
           <li><strong>Touchdown físico:</strong> El motor calcula la distancia al centro del planeta y, cuando el casco intersecta la esfera de suelo (radio configurable), vuelve a invocar <code>handleLandingTouchdown()</code> para abrir el panel real de aterrizaje sin recrear la escena atmosférica.</li>
           <li><strong>Despegue automático:</strong> Después de tocar tierra puedes ascender manualmente; al cruzar los 1000&nbsp;u sobre la superficie el juego arma <code>maybeTriggerAtmosphereAutoTakeoff()</code>, dispara la misma <em>TakeoffSequence</em> del sistema solar y te devuelve al renderer espacial sin atajos raros.</li>
           <li><strong>Auto-landing suave:</strong> Si entras en contacto con el suelo a <em>&lt; 1&nbsp;u</em> en el eje de gravedad, el motor marca <code>landingContext.autoLand</code>, reaprovecha el mismo flujo de touchdown y bloquea la cámara en modo manual “locked to ground” mientras sigue a la nave hasta que la velocidad lateral cae &lt; 0.4&nbsp;u. El bloqueo lanza un estallido corto de polvo (mismo pipeline de <code>ParticleEffectsService</code>) y dispara el swell <code>Landing.wav</code> (<code>sfx_autoland_touchdown</code>) sincronizado con la cámara, así el aterrizaje físico luce y suena igual que la secuencia cinematográfica aunque hayas frenado manualmente.</li>
-          <li><strong>Vector anti-stall:</strong> Mientras la escena atmosférica esté activa, <code>GameEngine.applyAtmosphereAutoVector()</code> calcula el peso efectivo de la nave (masa + gravedad local) y suma el empuje opuesto dentro de <code>Spaceship.externalForces</code>; si desciendes por debajo de 30&nbsp;u reduce el empuje para permitir el touchdown, pero entre 30-60&nbsp;u mantiene una deriva ascendente de ~1.2&nbsp;u/s y evita que la nave caiga en picada aun cuando sueltas el acelerador.</li>
+          <li><strong>Vector anti-stall:</strong> Mientras la escena atmosférica esté activa, <code>GameEngine.applyAtmosphereAutoVector()</code> calcula el peso efectivo de la nave (masa + gravedad local) y suma el empuje opuesto dentro de <code>Spaceship.externalForces</code>; si desciendes por debajo de 30&nbsp;u reduce el empuje para permitir el touchdown y, si tu velocidad cae por debajo de 0.5&nbsp;u/s, el empuje se clampa al 15&nbsp;% (~0.18&nbsp;u/s). Solo cuando superas 2.6&nbsp;u/s vuelve al 100&nbsp;% (~1.2&nbsp;u/s), así la gravedad vuelve a ganar si te quedas flotando.</li>
           <li><strong>Piloto verde intacto:</strong> En modo atmósfera la lógica de <em>landing ready</em> reutiliza los mismos márgenes del espacio (≤50&nbsp;u de la superficie, ≤5&nbsp;u/s y ±60°). Solo cuando mantienes la nave estable durante 3&nbsp;s el indicador verde vuelve a encenderse y, dentro de la escena atmosférica, pulsar <kbd>Enter</kbd> dispara el auto-landing asistido (cámara bloqueada + polvo + <code>Landing.wav</code>) en vez de abrir el panel al instante. Fuera de atmósfera el atajo vuelve al flujo espacial tradicional.</li>
           <li><strong>Toma el control enseguida:</strong> Puedes seguir acelerando con <span class="key-cluster"><kbd>+</kbd><span class="key-sep">/</span><kbd>=</kbd></span> o frenar con <span class="key-cluster"><kbd>-</kbd><span class="key-sep">/</span><kbd>_</kbd></span>; el impulso solo abre la ventana inicial para maniobrar.</li>
         </ul>
@@ -337,7 +376,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
           <li><strong>Curva de daño escalonada:</strong> El impacto mide la velocidad vertical en el momento del golpe. Por debajo de 1&nbsp;u/s no hay daño, a partir de ahí la curva escala linealmente hasta 100&nbsp;u a 10&nbsp;u/s. Todo entra por la misma ruta de <code>applyShipDamage()</code>, así que los buff como el <em>Void Cocoon</em> pueden anularlo y la marquesina reporta «Impacto atmosférico» con la vida restante.</li>
           <li><strong>Auto-landing sigue intacto:</strong> Mientras el componente vertical sea ≤1&nbsp;u/s y el estado <em>Landing Ready</em> esté activo, el choque vuelve a invocar el flujo de touchdown completo (cámara manual, polvo sincronizado y swell dedicado). Solo los impactos duros activan este rebote.</li>
           <li><strong>Feedback audiovisual:</strong> Cada choque emite partículas de polvo reutilizando <code>ParticleEffectsService</code> y dispara el <code>sfx_collision_light</code> o <code>sfx_collision_heavy</code> según la velocidad, además de aumentar el vignette rojo para hacer evidente el golpe incluso si no hubo daño (por escudo o impacto menor).</li>
-          <li><strong>Ducking según clima:</strong> Los mismos sonidos de impacto se mezclan con el multiplicador de <code>impactVolumeMultiplier</code>, así las tormentas fuertes reducen la pegada audible al 25&nbsp;% y dejan espacio para el loop meteorológico.</li>
+          <li><strong>Ducking según clima:</strong> Los mismos sonidos de impacto se mezclan con el multiplicador de <code>impactVolumeMultiplier</code>, así las tormentas fuertes reducen la pegada audible al 25&nbsp;% y dejan espacio para el loop meteorológico. Cuando el valor cae a 0.35 o menos, el HUD lanza la alerta «Absorción atmosférica» para recordarte que los choques están amortiguados.</li>
         </ul>
         <p class="note atmo-ground-impact-note">QA: la curva de daño queda acotada y reproducible—1u al rozar el suelo y 100u al caer a 10&nbsp;u/s—de modo que las pruebas de balance pueden repetir condiciones sabiendo exactamente qué castigo esperar.</p>
       </section>
@@ -347,7 +386,7 @@ import { WikiCloseComponent } from '../../components/wiki-close/wiki-close.compo
         <ol>
           <li><strong>Descenso asistido:</strong> Tras el fade-out de <code>LandingSequence</code> aparece un overlay negro de 1.9&nbsp;s mientras <code>sfx_passby_air</code> toma el control y la música queda silenciada; la nave entra en escena con posición alineada a la normal del planeta.</li>
           <li><strong>Vuelo bajo controlado:</strong> El impulso automático conserva la velocidad con la que cruzaste la puerta atmosférica (solo añade ~0.8&nbsp;u si llegas por debajo de ese umbral) y evita el <em>stall</em>; puedes mantenerte entre 20-80&nbsp;u de altura mientras el horizonte artificial reporta pitch/roll/altitud en tiempo real.</li>
-          <li><strong>Gravedad modulada por velocidad:</strong> <code>applyAtmosphereGravity()</code> mezcla la altitud con el <code>currentSpeed</code>: en reposo aplica el 100&nbsp;% del tirón, a 3&nbsp;u/s baja a ~35&nbsp;% (aún perceptible) y se diluye por completo al superar las 5&nbsp;u/s. Así la nave no se desploma cuando aceleras pero sientes el peso del planeta al flotar casi inmóvil.</li>
+          <li><strong>Gravedad modulada por velocidad:</strong> <code>applyAtmosphereGravity()</code> mezcla la altitud con el <code>currentSpeed</code>: en reposo aplica el 100&nbsp;% del tirón (caes a ~10&nbsp;u/s cuando vuelas a 1000&nbsp;u y hasta 30&nbsp;u/s pegado al suelo), a 3&nbsp;u/s baja a ~35&nbsp;% y se diluye por completo al superar las 5&nbsp;u/s. En paralelo, <code>applyAtmosphereAutoVector()</code> sólo entrega el 15&nbsp;% del lift cuando vas a &lt;0.5&nbsp;u/s y escala hasta el 100&nbsp;% a partir de 2.6&nbsp;u/s, de modo que si sueltas el acelerador la suma neta vuelve a apuntar hacia el suelo y la nave cae sin tener que cortar manualmente el auto-vector.</li>
           <li><strong>Aterrizaje manual:</strong> Si estabilizas la nave (≤50&nbsp;u de la superficie, ≤5&nbsp;u/s y ±60°) durante 3&nbsp;s el piloto verde vuelve a encenderse; en ese estado puedes presionar <kbd>Enter</kbd> para iniciar el auto-landing asistido (cámara, polvo y swell) y, tras el retardo de 2&nbsp;s, el panel se abre con el payload espacial.</li>
           <li><strong>Auto-landing suave:</strong> Cuando el toque con el suelo llega con componente vertical &lt;1&nbsp;u, el motor marca <code>landingContext.autoLand</code>, bloquea la cámara al terreno, lanza polvo y registra el touchdown sin intervención manual.</li>
           <li><strong>Salida por cielo:</strong> Puedes despegar manualmente y, al cruzar los 1000&nbsp;u sobre el suelo, <code>maybeTriggerAtmosphereAutoTakeoff()</code> ejecuta la secuencia completa, restaura música/renderer y deja la nave de vuelta en el sistema solar. También puedes iniciar el despegue desde el panel tradicional.</li>

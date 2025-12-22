@@ -1664,8 +1664,9 @@ export class GameStateStore {
         rarity: RarityTier.RARE,
         description: 'Módulo de soporte para equipamiento científico.',
         capabilities: [
-          'Aloja el Escáner Auxiliar de Habitantes (tecla 1).',
-          'Permite detectar civilizaciones y criaturas a <500u.'
+          'Bahía con dos sockets auxiliares activos.',
+          'Escáner Auxiliar de Habitantes (tecla 1): detecta civilizaciones y criaturas a <500u.',
+          'Estabilizador Vectorial Atmosférico (tecla 2): cancela auto-vector y amortigua turbulencias durante 6s.'
         ]
       }
     };

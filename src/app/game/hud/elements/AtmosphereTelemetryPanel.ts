@@ -176,10 +176,11 @@ export class AtmosphereTelemetryPanel {
     ctx.fillStyle = 'rgba(255,255,255,0.75)';
     ctx.font = '18px "Space Mono", monospace';
     ctx.fillText(`Estabilidad: ${telemetry.stability.toUpperCase()}`, x, telemetryStart + 110);
+    ctx.fillText(`Sacudidas: ${telemetry.turbulenceSeverity.toUpperCase()}`, x, telemetryStart + 134);
 
     if (warnings.length) {
       ctx.font = '16px "Space Mono", monospace';
-      let warnY = telemetryStart + 130;
+      let warnY = telemetryStart + 154;
       for (const warn of warnings.slice(0, 3)) {
         ctx.fillStyle = 'rgba(251,113,133,0.85)';
         ctx.fillRect(x, warnY, meterWidth, 20);

@@ -34,6 +34,43 @@ interface WeatherParticle {
   maxLife: number;
   variant: PrecipitationType;
   glow: number;
+  anchorForward: number;
+  anchorLateral: number;
+  anchorVertical: number;
+  despawnForward: number;
+  travel: number;
+  speed: number;
+  nearCamera: boolean;
+  widthOverride?: number;
+  lengthOverride?: number;
+}
+
+type ActivePrecipitation = Exclude<PrecipitationType, 'none'>;
+
+interface WeatherVariantTuning {
+  density: number;
+  forwardNear: [number, number];
+  forwardFar: [number, number];
+  nearCull: number;
+  lateralNear: number;
+  lateralFar: number;
+  verticalNear: [number, number];
+  verticalFar: [number, number];
+  verticalLift: number;
+  nearProbabilityBase: number;
+  nearProbabilityIntensity: number;
+  baseSpeed: number;
+  speedVariance: number;
+  speedFromShip: number;
+  speedFromIntensity: number;
+  driftFollow: number;
+  widthRange: [number, number];
+  widthIntensity: number;
+  glowBase: number;
+  glowIntensity: number;
+  glowNearBoost: number;
+  lengthMultiplier: number;
+  lengthIntensity: number;
 }
 
 interface LightningStrike {
@@ -100,8 +137,85 @@ export class ParticleEffectsService {
 
   // Weather precipitation particles (rain/dust sheets)
   private weatherParticles: WeatherParticle[] = [];
-  private weatherParticleAccum: number = 0;
   private readonly maxWeatherParticles = 280;
+  private activeWeatherType: PrecipitationType = 'none';
+  private readonly weatherVariantPresets: Record<ActivePrecipitation, WeatherVariantTuning> = {
+    rain: {
+      density: 0.85,
+      forwardNear: [4, 12],
+      forwardFar: [12, 38],
+      nearCull: -6,
+      lateralNear: 2.4,
+      lateralFar: 5.4,
+      verticalNear: [1.2, 2.8],
+      verticalFar: [2.2, 5.5],
+      verticalLift: 2.2,
+      nearProbabilityBase: 0.35,
+      nearProbabilityIntensity: 0.4,
+      baseSpeed: 18,
+      speedVariance: 17,
+      speedFromShip: 55,
+      speedFromIntensity: 20,
+      driftFollow: 0.65,
+      widthRange: [0.06, 0.12],
+      widthIntensity: 0.05,
+      glowBase: 0.28,
+      glowIntensity: 0.32,
+      glowNearBoost: 0.12,
+      lengthMultiplier: 11,
+      lengthIntensity: 3,
+    },
+    dust: {
+      density: 0.65,
+      forwardNear: [3, 10],
+      forwardFar: [10, 28],
+      nearCull: -4.5,
+      lateralNear: 3.2,
+      lateralFar: 7.2,
+      verticalNear: [0.8, 2.0],
+      verticalFar: [1.4, 3.8],
+      verticalLift: 1.1,
+      nearProbabilityBase: 0.32,
+      nearProbabilityIntensity: 0.35,
+      baseSpeed: 10,
+      speedVariance: 9,
+      speedFromShip: 32,
+      speedFromIntensity: 12,
+      driftFollow: 0.82,
+      widthRange: [0.12, 0.23],
+      widthIntensity: 0.11,
+      glowBase: 0.16,
+      glowIntensity: 0.18,
+      glowNearBoost: 0.06,
+      lengthMultiplier: 8.5,
+      lengthIntensity: 2.2,
+    },
+    meteor: {
+      density: 0.4,
+      forwardNear: [6, 18],
+      forwardFar: [18, 48],
+      nearCull: -9,
+      lateralNear: 2.6,
+      lateralFar: 6.2,
+      verticalNear: [5, 12],
+      verticalFar: [10, 24],
+      verticalLift: 7.5,
+      nearProbabilityBase: 0.18,
+      nearProbabilityIntensity: 0.2,
+      baseSpeed: 28,
+      speedVariance: 14,
+      speedFromShip: 48,
+      speedFromIntensity: 20,
+      driftFollow: 0.48,
+      widthRange: [0.16, 0.28],
+      widthIntensity: 0.09,
+      glowBase: 1.0,
+      glowIntensity: 0.65,
+      glowNearBoost: 0.4,
+      lengthMultiplier: 24,
+      lengthIntensity: 5,
+    },
+  };
   private lightningStrikes: LightningStrike[] = [];
   private readonly maxLightningStrikes = 6;
 
@@ -328,63 +442,62 @@ export class ParticleEffectsService {
       return;
     }
     const type = config?.type ?? 'none';
-    const drift = config?.driftVector ?? { x: 0, y: 0, z: 0 };
-    const intensity = Math.max(0, config?.intensity ?? 0);
-    const normalizedUp = config?.upVector ? this.normalize(config.upVector) : { x: 0, y: 1, z: 0 };
-    const gravityDir = { x: -normalizedUp.x, y: -normalizedUp.y, z: -normalizedUp.z };
-    const baseGravity = type === 'rain' ? 18 : (type === 'dust' ? 6 : type === 'meteor' ? 2.4 : 6);
-    const gravity = baseGravity * (0.65 + intensity * 1.35);
-
-    // Update existing particles
-    const updated: WeatherParticle[] = [];
-    for (const particle of this.weatherParticles) {
-      const variant = particle.variant;
-      if (typeof particle.glow !== 'number') {
-        particle.glow = 0;
-      }
-      const driftScale = variant === 'meteor' ? 0.35 : 1;
-      const gravityScale = variant === 'meteor' ? 0.12 : (variant === 'dust' ? 0.65 : 1);
-      particle.position.x += (particle.velocity.x + drift.x * driftScale) * deltaTime;
-      particle.position.y += (particle.velocity.y + drift.y * driftScale) * deltaTime;
-      particle.position.z += (particle.velocity.z + drift.z * driftScale) * deltaTime;
-      particle.velocity.x += gravityDir.x * gravity * gravityScale * deltaTime;
-      particle.velocity.y += gravityDir.y * gravity * gravityScale * deltaTime;
-      particle.velocity.z += gravityDir.z * gravity * gravityScale * deltaTime;
-      particle.life -= deltaTime;
-      particle.glow = Math.max(0, particle.glow - deltaTime * (variant === 'meteor' ? 0.35 : 0.7));
-      if (particle.life > 0) {
-        updated.push(particle);
-      }
-    }
-    this.weatherParticles = updated;
-
-    if (!config || type === 'none' || intensity <= 0) {
-      this.weatherParticleAccum = 0;
+    if (!config || type === 'none') {
+      this.weatherParticles = [];
+      this.activeWeatherType = 'none';
       return;
     }
 
-    let spawnRateBase = 110;
-    switch (type) {
-      case 'rain':
-        spawnRateBase = 220;
-        break;
-      case 'dust':
-        spawnRateBase = 150;
-        break;
-      case 'meteor':
-        spawnRateBase = 55;
-        break;
-      default:
-        spawnRateBase = 110;
+    const intensity = Math.max(0, Math.min(1, config.intensity ?? 0));
+    if (intensity <= 0) {
+      this.weatherParticles = [];
+      this.activeWeatherType = 'none';
+      return;
     }
-    const spawnRate = spawnRateBase * (0.35 + intensity * 1.15);
-    this.weatherParticleAccum += spawnRate * deltaTime;
-    const basis = this.computeShipBasis(spaceship, config);
 
-    while (this.weatherParticleAccum >= 1 && this.weatherParticles.length < this.maxWeatherParticles) {
-      this.spawnWeatherParticle(spaceship, config, basis);
-      this.weatherParticleAccum -= 1;
+    if (this.activeWeatherType !== type) {
+      this.weatherParticles = [];
+      this.activeWeatherType = type;
     }
+
+    const variant = type as ActivePrecipitation;
+    const tuning = this.weatherVariantPresets[variant] ?? this.weatherVariantPresets.rain;
+    const basis = this.computeShipBasis(spaceship, config);
+    const driftVector = config.driftVector ?? { x: 0, y: 0, z: 0 };
+    const driftRight = this.dot(driftVector, basis.right);
+    const driftUp = this.dot(driftVector, basis.up);
+    const driftForward = this.dot(driftVector, basis.forward);
+    const maxSpeed = Math.max(1, spaceship.maxSpeed ?? 1);
+    const shipSpeedRatio = Math.min(1, Math.max(0, (spaceship.currentSpeed ?? 0) / maxSpeed));
+
+    const densityFactor = 0.35 + intensity * 0.85;
+    const targetCount = Math.min(
+      this.maxWeatherParticles,
+      Math.max(18, Math.floor(this.maxWeatherParticles * densityFactor * tuning.density)),
+    );
+    this.syncWeatherParticlePool(targetCount, spaceship, basis, intensity, tuning, variant);
+
+    for (const particle of this.weatherParticles) {
+      this.advanceWeatherStreakParticle(
+        particle,
+        spaceship,
+        basis,
+        tuning,
+        deltaTime,
+        shipSpeedRatio,
+        intensity,
+        driftRight,
+        driftUp,
+        driftForward,
+        driftVector,
+      );
+    }
+  }
+
+  public clearWeatherEffects(): void {
+    this.weatherParticles = [];
+    this.activeWeatherType = 'none';
+    this.lightningStrikes = [];
   }
 
   public spawnLightningStrike(
@@ -449,150 +562,227 @@ export class ParticleEffectsService {
     }
   }
 
-  private spawnWeatherParticle(
+  private syncWeatherParticlePool(
+    targetCount: number,
     spaceship: Spaceship,
-    config: WeatherPrecipitationConfig,
     basis: { forward: Vector3; right: Vector3; up: Vector3 },
+    intensity: number,
+    tuning: WeatherVariantTuning,
+    variant: ActivePrecipitation,
   ): void {
-    const intensity = Math.max(0.05, config.intensity);
-    const variant = config.type;
-    let nearCameraProbability = 0.25 + intensity * 0.35;
-    switch (variant) {
-      case 'dust':
-        nearCameraProbability = 0.3 + intensity * 0.4;
-        break;
-      case 'meteor':
-        nearCameraProbability = 0.12 + intensity * 0.22;
-        break;
-      default:
-        nearCameraProbability = 0.28 + intensity * 0.32;
+    if (this.weatherParticles.length > targetCount) {
+      this.weatherParticles.length = targetCount;
+      return;
     }
-    const nearCameraSpawn = Math.random() < nearCameraProbability;
-
-    let forwardOffset = 4 + Math.random() * 4;
-    let upLift = 2 + Math.random() * 2;
-    let lateralSpread = 3;
-    let verticalSpread = 1.3;
-    switch (variant) {
-      case 'rain':
-        forwardOffset = nearCameraSpawn ? 2 + Math.random() * 3 : 6 + Math.random() * 8;
-        upLift = nearCameraSpawn ? 3 + Math.random() * 2.5 : 6 + Math.random() * 3.5;
-        lateralSpread = 2.6;
-        verticalSpread = nearCameraSpawn ? 0.8 : 1.3;
-        break;
-      case 'dust':
-        forwardOffset = nearCameraSpawn ? 1.6 + Math.random() * 2.5 : 4.5 + Math.random() * 8;
-        upLift = nearCameraSpawn ? 1.1 + Math.random() * 1.6 : 3 + Math.random() * 2.6;
-        lateralSpread = 5.2;
-        verticalSpread = nearCameraSpawn ? 1.2 : 2.4;
-        break;
-      case 'meteor':
-        forwardOffset = nearCameraSpawn ? 5 + Math.random() * 4 : 14 + Math.random() * 12;
-        upLift = nearCameraSpawn ? 12 + Math.random() * 6 : 22 + Math.random() * 18;
-        lateralSpread = 6.2;
-        verticalSpread = nearCameraSpawn ? 2.4 : 4.6;
-        break;
-      default:
-        break;
+    while (this.weatherParticles.length < targetCount && this.weatherParticles.length < this.maxWeatherParticles) {
+      this.weatherParticles.push(this.buildWeatherStreakParticle(spaceship, basis, intensity, tuning, variant));
     }
-    const lateralOffset = (Math.random() * 2 - 1) * (nearCameraSpawn ? lateralSpread * 0.45 : lateralSpread);
-    const verticalOffset = (Math.random() * 2 - 1) * verticalSpread;
+  }
 
-    const closeJitter = nearCameraSpawn ? this.randomPerpendicularVector(basis.forward) : { x: 0, y: 0, z: 0 };
-    const closeJitterScale = nearCameraSpawn ? (variant === 'meteor' ? 0.25 : 0.4 + intensity * 0.4) : 0;
-
-    const spawnPos: Vector3 = {
-      x: spaceship.position.x + basis.forward.x * forwardOffset + basis.right.x * lateralOffset + basis.up.x * (upLift + verticalOffset)
-        + closeJitter.x * closeJitterScale,
-      y: spaceship.position.y + basis.forward.y * forwardOffset + basis.right.y * lateralOffset + basis.up.y * (upLift + verticalOffset)
-        + closeJitter.y * closeJitterScale,
-      z: spaceship.position.z + basis.forward.z * forwardOffset + basis.right.z * lateralOffset + basis.up.z * (upLift + verticalOffset)
-        + closeJitter.z * closeJitterScale,
-    };
-
-    let alongForward = 4 + Math.random() * 3;
-    let downward = 8 + Math.random() * 4;
-    let lateralSpeedRange = 1.6;
-    switch (variant) {
-      case 'rain':
-        alongForward = 3 + Math.random() * 2.2;
-        downward = (18 + Math.random() * 8) * (nearCameraSpawn ? 0.7 : 1);
-        lateralSpeedRange = 1.2;
-        break;
-      case 'dust':
-        alongForward = 5.5 + Math.random() * 4;
-        downward = (7 + Math.random() * 4) * (nearCameraSpawn ? 0.55 : 0.75);
-        lateralSpeedRange = 2.8;
-        break;
-      case 'meteor':
-        alongForward = 10 + Math.random() * 6;
-        downward = (5 + Math.random() * 4) * (nearCameraSpawn ? 0.9 : 1.1);
-        lateralSpeedRange = 1.4;
-        break;
-      default:
-        break;
-    }
-    const lateralSpeed = (Math.random() * 2 - 1) * lateralSpeedRange * (nearCameraSpawn ? 0.55 : 1);
-
-    const velocity: Vector3 = {
-      x: basis.forward.x * alongForward - basis.up.x * downward + basis.right.x * lateralSpeed,
-      y: basis.forward.y * alongForward - basis.up.y * downward + basis.right.y * lateralSpeed,
-      z: basis.forward.z * alongForward - basis.up.z * downward + basis.right.z * lateralSpeed,
-    };
-
-    let maxLife = 1.1 + Math.random() * 0.6;
-    let color = { r: 0.7, g: 0.7, b: 0.8 };
-    let size = 0.12;
-    let glow = 0.25;
-    if (variant === 'rain') {
-      maxLife = 0.8 + Math.random() * 0.5 + (nearCameraSpawn ? 0.2 : 0);
-      color = {
-        r: 0.56 + Math.random() * 0.08,
-        g: 0.72 + Math.random() * 0.08,
-        b: 0.92 + Math.random() * 0.06,
-      };
-      size = (0.05 + Math.random() * 0.05 + intensity * 0.03) * (nearCameraSpawn ? 0.95 : 1.15);
-      glow = 0.3 + intensity * 0.25;
-    } else if (variant === 'dust') {
-      maxLife = 1.35 + Math.random() * 0.9 + intensity * 0.35;
-      color = {
-        r: 0.78 + Math.random() * 0.05,
-        g: 0.58 + Math.random() * 0.07,
-        b: 0.38 + Math.random() * 0.04,
-      };
-      size = (0.22 + Math.random() * 0.09 + intensity * 0.14) * (nearCameraSpawn ? 1.4 : 1);
-      glow = 0.18 + intensity * 0.15;
-    } else if (variant === 'meteor') {
-      maxLife = 1.4 + Math.random() * 0.6 + intensity * 0.4;
-      color = {
-        r: 0.98,
-        g: 0.74 + Math.random() * 0.09,
-        b: 0.46 + Math.random() * 0.08,
-      };
-      size = (0.24 + Math.random() * 0.08 + intensity * 0.18) * (nearCameraSpawn ? 1.25 : 1);
-      glow = 1.15 + intensity * 0.55;
-    }
-
-    if (nearCameraSpawn) {
-      const boost = variant === 'rain' ? { r: 0.06, g: 0.04, b: 0.08 } : (variant === 'dust'
-        ? { r: 0.08, g: 0.07, b: 0.04 }
-        : { r: 0.12, g: 0.08, b: 0.02 });
-      color.r = Math.min(1, color.r + boost.r);
-      color.g = Math.min(1, color.g + boost.g);
-      color.b = Math.min(1, color.b + boost.b);
-    }
-
+  private buildWeatherStreakParticle(
+    spaceship: Spaceship,
+    basis: { forward: Vector3; right: Vector3; up: Vector3 },
+    intensity: number,
+    tuning: WeatherVariantTuning,
+    variant: ActivePrecipitation,
+  ): WeatherParticle {
     const particle: WeatherParticle = {
-      position: spawnPos,
-      velocity,
-      size,
-      color,
-      life: maxLife,
-      maxLife,
+      position: { x: 0, y: 0, z: 0 },
+      velocity: { x: 0, y: 0, z: 0 },
+      size: 0,
+      color: { r: 1, g: 1, b: 1 },
+      life: 1,
+      maxLife: 1,
       variant,
-      glow,
+      glow: 0,
+      anchorForward: 0,
+      anchorLateral: 0,
+      anchorVertical: 0,
+      despawnForward: 0,
+      travel: 0,
+      speed: 0,
+      nearCamera: false,
     };
-    this.weatherParticles.push(particle);
+    this.resetWeatherStreakParticle(particle, spaceship, basis, intensity, tuning, variant);
+    return particle;
+  }
+
+  private resetWeatherStreakParticle(
+    particle: WeatherParticle,
+    spaceship: Spaceship,
+    basis: { forward: Vector3; right: Vector3; up: Vector3 },
+    intensity: number,
+    tuning: WeatherVariantTuning,
+    variant: ActivePrecipitation,
+  ): void {
+    const clampedIntensity = Math.max(0, Math.min(1, intensity));
+    particle.variant = variant;
+
+    const nearProbability = Math.min(0.95, tuning.nearProbabilityBase + clampedIntensity * tuning.nearProbabilityIntensity);
+    particle.nearCamera = Math.random() < nearProbability;
+
+    const forwardRange = particle.nearCamera ? tuning.forwardNear : tuning.forwardFar;
+    particle.anchorForward = this.sampleRange(forwardRange[0], forwardRange[1]);
+    particle.despawnForward = tuning.nearCull;
+    const lateralRange = particle.nearCamera ? tuning.lateralNear : tuning.lateralFar;
+    particle.anchorLateral = (Math.random() * 2 - 1) * lateralRange;
+    const verticalRange = particle.nearCamera ? tuning.verticalNear : tuning.verticalFar;
+    const verticalOffset = (Math.random() * 2 - 1) * this.sampleRange(verticalRange[0], verticalRange[1]);
+    particle.anchorVertical = tuning.verticalLift + verticalOffset;
+    particle.travel = 0;
+
+    const baseSpeed = tuning.baseSpeed + Math.random() * tuning.speedVariance + clampedIntensity * tuning.speedFromIntensity;
+    particle.speed = Math.max(2, baseSpeed);
+
+    const width = this.sampleRange(tuning.widthRange[0], tuning.widthRange[1]) + clampedIntensity * tuning.widthIntensity;
+    particle.size = width;
+    particle.widthOverride = width;
+    particle.lengthOverride = width * (tuning.lengthMultiplier + clampedIntensity * tuning.lengthIntensity);
+
+    particle.color = this.samplePrecipitationColor(variant, clampedIntensity, particle.nearCamera);
+    const baseGlow = tuning.glowBase + clampedIntensity * tuning.glowIntensity;
+    particle.glow = baseGlow + (particle.nearCamera ? tuning.glowNearBoost : 0);
+
+    const position = this.composeWeatherWorldPosition(
+      spaceship.position,
+      basis,
+      particle.anchorForward,
+      particle.anchorLateral,
+      particle.anchorVertical,
+    );
+    particle.position = position;
+    particle.velocity = {
+      x: -basis.forward.x * particle.speed,
+      y: -basis.forward.y * particle.speed,
+      z: -basis.forward.z * particle.speed,
+    };
+
+    particle.maxLife = particle.anchorForward - particle.despawnForward;
+    particle.life = particle.maxLife;
+  }
+
+  private advanceWeatherStreakParticle(
+    particle: WeatherParticle,
+    spaceship: Spaceship,
+    basis: { forward: Vector3; right: Vector3; up: Vector3 },
+    tuning: WeatherVariantTuning,
+    deltaTime: number,
+    shipSpeedRatio: number,
+    intensity: number,
+    driftRight: number,
+    driftUp: number,
+    driftForward: number,
+    driftVector: Vector3,
+  ): void {
+    const clampedIntensity = Math.max(0, Math.min(1, intensity));
+    const dynamicSpeed = particle.speed + tuning.speedFromShip * shipSpeedRatio;
+    particle.travel += Math.max(0.1, dynamicSpeed) * deltaTime;
+
+    const lifespan = particle.anchorForward - particle.despawnForward;
+    if (particle.travel >= lifespan) {
+      this.resetWeatherStreakParticle(
+        particle,
+        spaceship,
+        basis,
+        clampedIntensity,
+        tuning,
+        particle.variant as ActivePrecipitation,
+      );
+      return;
+    }
+
+    particle.anchorLateral += driftRight * deltaTime * tuning.driftFollow;
+    particle.anchorVertical += driftUp * deltaTime * tuning.driftFollow;
+    particle.anchorForward += driftForward * deltaTime * 0.35;
+    particle.anchorForward = Math.max(particle.despawnForward + 1, particle.anchorForward);
+
+    const forwardOffset = particle.anchorForward - particle.travel;
+    const position = this.composeWeatherWorldPosition(
+      spaceship.position,
+      basis,
+      forwardOffset,
+      particle.anchorLateral,
+      particle.anchorVertical,
+    );
+    particle.position = position;
+
+    particle.velocity.x = -basis.forward.x * dynamicSpeed + driftVector.x * 0.2;
+    particle.velocity.y = -basis.forward.y * dynamicSpeed + driftVector.y * 0.2;
+    particle.velocity.z = -basis.forward.z * dynamicSpeed + driftVector.z * 0.2;
+
+    particle.life = forwardOffset - particle.despawnForward;
+    particle.maxLife = lifespan;
+    const fade = particle.travel / Math.max(1e-3, lifespan);
+    const baseGlow = tuning.glowBase + clampedIntensity * tuning.glowIntensity + (particle.nearCamera ? tuning.glowNearBoost : 0);
+    particle.glow = Math.max(0, baseGlow * (1 - fade * 0.6));
+  }
+
+  private composeWeatherWorldPosition(
+    origin: Vector3,
+    basis: { forward: Vector3; right: Vector3; up: Vector3 },
+    forwardOffset: number,
+    lateral: number,
+    vertical: number,
+  ): Vector3 {
+    return {
+      x: origin.x + basis.forward.x * forwardOffset + basis.right.x * lateral + basis.up.x * vertical,
+      y: origin.y + basis.forward.y * forwardOffset + basis.right.y * lateral + basis.up.y * vertical,
+      z: origin.z + basis.forward.z * forwardOffset + basis.right.z * lateral + basis.up.z * vertical,
+    };
+  }
+
+  private samplePrecipitationColor(
+    variant: ActivePrecipitation,
+    intensity: number,
+    nearCamera: boolean,
+  ): { r: number; g: number; b: number } {
+    if (variant === 'rain') {
+      const color = {
+        r: 0.54 + Math.random() * 0.08,
+        g: 0.72 + Math.random() * 0.08,
+        b: 0.9 + Math.random() * 0.08,
+      };
+      if (nearCamera) {
+        color.r = Math.min(1, color.r + 0.05);
+        color.g = Math.min(1, color.g + 0.03);
+        color.b = Math.min(1, color.b + 0.06);
+      }
+      const tint = 0.04 * intensity;
+      return { r: color.r + tint, g: color.g + tint * 0.5, b: color.b + tint * 0.8 };
+    }
+    if (variant === 'dust') {
+      const base = {
+        r: 0.76 + Math.random() * 0.08,
+        g: 0.58 + Math.random() * 0.07,
+        b: 0.4 + Math.random() * 0.06,
+      };
+      if (nearCamera) {
+        base.r = Math.min(1, base.r + 0.06);
+        base.g = Math.min(1, base.g + 0.05);
+        base.b = Math.max(0, base.b - 0.03);
+      }
+      const haze = 0.05 * intensity;
+      return { r: base.r + haze, g: base.g + haze * 0.5, b: base.b - haze * 0.4 };
+    }
+    const ember = {
+      r: 0.95 + Math.random() * 0.03,
+      g: 0.7 + Math.random() * 0.08,
+      b: 0.44 + Math.random() * 0.08,
+    };
+    if (nearCamera) {
+      ember.r = Math.min(1, ember.r + 0.04);
+      ember.g = Math.min(1, ember.g + 0.04);
+      ember.b = Math.min(1, ember.b + 0.02);
+    }
+    const heat = 0.08 * intensity;
+    return { r: ember.r + heat, g: ember.g + heat * 0.5, b: ember.b + heat * 0.2 };
+  }
+
+  private sampleRange(min: number, max: number): number {
+    if (max <= min) {
+      return min;
+    }
+    return min + Math.random() * (max - min);
   }
 
   /**
@@ -962,14 +1152,16 @@ export class ParticleEffectsService {
     const lengthAxis = this.normalize(dir);
     const normal = this.normalize(this.cross(widthAxis, lengthAxis));
 
-    let widthScale = Math.max(0.02, particle.size * 0.7);
-    let lengthScale = particle.size * 10;
-    if (variant === 'dust') {
-      widthScale = Math.max(0.04, particle.size * 0.95);
-      lengthScale = particle.size * 7.5;
-    } else if (variant === 'meteor') {
-      widthScale = Math.max(0.12, particle.size * 1.5);
-      lengthScale = particle.size * 22;
+    let widthScale = particle.widthOverride ?? Math.max(0.02, particle.size * 0.7);
+    let lengthScale = particle.lengthOverride ?? particle.size * 10;
+    if (!particle.widthOverride || !particle.lengthOverride) {
+      if (variant === 'dust') {
+        widthScale = particle.widthOverride ?? Math.max(0.04, particle.size * 0.95);
+        lengthScale = particle.lengthOverride ?? particle.size * 7.5;
+      } else if (variant === 'meteor') {
+        widthScale = particle.widthOverride ?? Math.max(0.12, particle.size * 1.5);
+        lengthScale = particle.lengthOverride ?? particle.size * 22;
+      }
     }
 
     const modelMatrix = new Float32Array(16);
@@ -1333,7 +1525,6 @@ export class ParticleEffectsService {
     this.ambientDust = [];
     this.weatherParticles = [];
     this.lightningStrikes = [];
-    this.weatherParticleAccum = 0;
     this.gl = null;
     this.shaderManager = null;
     

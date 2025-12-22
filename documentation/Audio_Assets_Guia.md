@@ -99,6 +99,18 @@ El motor ya reproduce `sfx_thruster` y música de escena (`music_*`) cuando inic
 - `sfx_thruster` vs `sfx_thruster_atmo`: el `GameEngine` alterna automáticamente el loop base (`sfx_thruster.wav`) y el loop atmosférico (`Airthrust.wav`) al entrar/salir de la escena atmosférica mediante `requestThrusterClip()`, manteniendo el mismo controlador de aceleración.
 - Todos estos cues atmosféricos residen en `src/app/assets/audio/` y se precargan desde el manifiesto, por lo que basta con invocar `audio.play('sfx_passby_air', ...)`, `audio.play('sfx_stall', ...)`, `audio.play('sfx_autoland_touchdown', ...)` o dejar que el controlador de thruster resuelva el loop correspondiente.
 
+### Loops meteorológicos y bus `weather`
+- El manifiesto `_manifest.json` incluye los siguientes placeholders nuevos (se pueden reemplazar por assets reales en `/public/assets/audio/`):
+  - `sfx_weather_rain`
+  - `sfx_weather_fog`
+  - `sfx_weather_dust`
+  - `sfx_weather_thunder`
+  - `sfx_weather_meteor`
+- `AtmosphereWeatherService` adjunta uno de estos cues a cada evento y `GameEngine.updateWeatherAudioLoop()` los reproduce en un bus dedicado `weather` para poder mezclar lluvia/polvo/meteoros aparte de `sfx`.
+- El mismo controlador aplica ducking en impactos (multiplica `sfx_collision_*` y `Void Cocoon` por `impactVolumeMultiplier`), dispara relámpagos oportunistas (`sfx_weather_thunder`) y deja un `cooldown` de 2.2–4 s entre truenos.
+- Para sustituir los placeholders basta con actualizar `_manifest.json` y colocar los nuevos WAV/OGG; `AudioEngineService` los precargará igual que el resto de cues.
+- Recomendación de mezcla: mantener `bus weather` entre 0.12 y 0.7 según la intensidad y dejar margen para los flashes (`sfx_weather_thunder` via bus `weather`).
+
 ## Consejos de mezcla
 
 - Volúmenes tentativos por bus: music 0.6, sfx 1.0, voice 1.0, ui 0.9.

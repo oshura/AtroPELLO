@@ -6,18 +6,19 @@ Este documento reemplaza al plan `documentation/plans/planet-atmosphere-reboot.m
 
 | Área | Estado actual |
 | --- | --- |
-| Escena atmosférica mínima | Dos esferas (suelo/cielo) manejadas por `AtmosphereSceneManager`, heightmap procedural (3 octavas) y paleta por bioma. |
-| Integración GameEngine | Hooks `enterAtmosphereScene()` / `exitAtmosphereScene()` controlan fade, impulso inicial y limpieza. `AtmosphereSceneState` encapsula payload y HUD sigue activo. |
-| Reglas de vuelo | Gravedad gradual, impulso inicial de 3u tras el fade, detección de stall, swap automático de loops `sfx_thruster` ↔ `sfx_thruster_atmo` y SFX de aire reutilizando `AudioEngineService`. |
+| Escena atmosférica mínima | `AtmosphereSceneManager` controla suelo/cielo, niebla volumétrica estratificada y doble capa de nubes con iluminación según clima/bioma. |
+| Integración GameEngine | Hooks `enterAtmosphereScene()` / `exitAtmosphereScene()` controlan fade, impulso inicial y teardown (incluye limpiar partículas, filtros y audio). `AtmosphereSceneState` encapsula payload y HUD sigue activo. |
+| Reglas de vuelo | Gravedad dependiente de altitud (10 u/s a 1000 u, 30 u/s pegado al suelo) + clamp por velocidad; impulso inicial fija la nave en `maxSpeed` (10 u) y mantiene el thruster en aceleración continua con swap `sfx_thruster` ↔ `sfx_thruster_atmo`. |
+| Clima y turbulencias | `AtmosphereWeatherService` genera eventos por capas (superficie/baja/media/exósfera), actualiza HUD/partículas/audio y aplica drift/turbulencias + filtros/relámpagos en cabina. |
 | HUD | Horizonte artificial con `calculateAtmosphereAttitude()`, altímetro real, telemetría QA, Compass interpolado y sky tint suavizado sin escalones. |
 | Aterrizaje/Despegue | Detector físico de suelo, autoland suave, piloto verde persistente, cámara bloqueada con polvo, panel diferido 2s tras el touchdown auto y auto-takeoff a 1000u. |
-| QA | Bitácora manual 2025 documenta descenso, vuelo bajo, salida por cielo, aterrizaje manual y auto. Builds validados con `npm run build`. |
+| QA | Bitácora manual 2025 documenta descenso, vuelo bajo, salida por cielo, aterrizaje manual y auto; nueva sesión clima (dic 2025) cubre tormentas, absorción y relámpagos. Builds validados con `npm run build`. |
 
 ## Logros funcionales
 
 ### 1. Entrada y posicionamiento
 - Tras `LandingSequence`, `GameEngine.enterAtmosphereScene()` crea `AtmosphereSceneState`, activa overlay negro de 1.9 s (`ScreenOverlayRenderer`) y silencia la música mediante `MusicDirectorService.setScene('silence')`.
-- La nave se posiciona en `surfacePoint + normal * altitudeInicial`, se aplica `applyAtmosphereLandingImpulse()` para fijar `currentSpeed/targetSpeed` en 3u y se marca `stallWarning = false`.
+- La nave se posiciona en `surfacePoint + normal * altitudeInicial`, se aplica `applyAtmosphereLandingImpulse()` + `enforceAtmosphereMaxEntrySpeed()` para fijar `currentSpeed/targetSpeed` en el `maxSpeed` de la nave (10 u por defecto), se alinea el vector forward y se marca `stallWarning = false`.
 
 ### 2. Vuelo bajo y control continuo
 - `applyAtmosphereGravity()` actúa solo en modo atmosférico y ajusta la velocidad cuando cae por debajo de los umbrales de `Sistema_Landing_Narrativa.md`.
@@ -43,6 +44,13 @@ Este documento reemplaza al plan `documentation/plans/planet-atmosphere-reboot.m
 ### 6. QA y documentación
 - La bitácora “Sesión atmósfera ligera — Feb 2025” en `Resumen_Proyecto_y_Progreso.md` cubre los flujos completos (descenso, vuelo bajo, salida, landing manual, auto-landing).
 - La wiki de la nave (`src/app/wiki/pages/spaceship/spaceship.ts`) documenta: impulso automático, cámara bloqueada, piloto verde persistente, auto-takeoff y flujo simplificado en atmósfera.
+
+### 7. Clima estratificado y feedback sensorial
+- `AtmosphereWeatherService` mantiene cuatro capas (superficie/baja/media/exósfera) con estados "calma" y eventos dedicados (niebla, lluvia, tormenta eléctrica, polvo, meteoros). Cada evento expone `AtmosphereWeatherSnapshot` con `layerId`, drift, turbulencia, visibilidad objetivo y cues de audio.
+- `GameEngine` consume el snapshot para actualizar `AtmosphereWeatherEffectsState`: aplica drift progresivo (`applyAtmosphereProgressiveDrift()`), jitter en nave/cámara, modula gravedad, atenúa impactos (HUD lanza «Absorción atmosférica») y calcula filtros (`renderWeatherCameraFilters()`) + flash de relámpago.
+- `ParticleEffectsService.updateWeatherPrecipitation()` pinta lluvia/polvo/meteoros en primer plano tras la escena atmosférica, alineando deriva + velocidad de la nave.
+- Audio: `updateWeatherAudioLoop()` reproduce `sfx_weather_*` en el bus `weather`, ajusta volumen según intensidad y sincroniza relámpagos (`sfx_weather_thunder`). El manifiesto `_manifest.json` ya contiene los placeholders.
+- Documentación: la wiki sección “Clima volumétrico” y el `Resumen_Proyecto_y_Progreso.md` (apartado HUD/Clima) describen capas, partículas y controles QA. La bitácora incluye ahora la sesión “Clima dinámico — Dic 2025” con pruebas de tormentas, absorción y relámpagos.
 
 ## Decisiones arquitectónicas clave
 

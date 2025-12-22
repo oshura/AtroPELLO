@@ -369,6 +369,12 @@ export class GameEngine {
   private atmosphereCameraJitterPhase = 0;
   private atmosphereCameraJitterStrength = 0;
   private atmosphereCameraDriftStrength = 0;
+  private atmosphereShipJitterPhase = 0;
+  private atmosphereShipJitterStrength = 0;
+  private atmosphereProgressiveDriftBias: Vector3 = { x: 0, y: 0, z: 0 };
+  private atmosphereProgressiveDriftWeight = 0;
+  private atmosphereImpactAbsorptionActive = false;
+  private atmosphereManualStabilityUntilMs = 0;
   private weatherOverlayAlpha = 0;
   private weatherOverlayTarget = 0;
   private weatherOverlayColor: [number, number, number] = [0, 0, 0];
@@ -390,13 +396,30 @@ export class GameEngine {
   private readonly SUN_DAMAGE_STEP_DISTANCE: number = 100;
   private readonly WEATHER_DRIFT_OFFSET_MAX: number = 750;
   private readonly ZERO_VECTOR: Vector3 = { x: 0, y: 0, z: 0 };
-  private readonly ATMOSPHERE_DRIFT_FORCE_MULT = 12;
-  private readonly ATMOSPHERE_TURBULENCE_FORCE = 4.5;
+  private readonly ATMOSPHERE_DRIFT_FORCE_MULT = 16;
+  private readonly ATMOSPHERE_TURBULENCE_FORCE = 5.25;
   private readonly ATMOSPHERE_AUTO_VECTOR_ASCENT = 1.2;
   private readonly ATMOSPHERE_AUTO_VECTOR_BAND_MIN = 30;
   private readonly ATMOSPHERE_AUTO_VECTOR_BAND_MAX = 60;
-  private readonly ATMOSPHERE_CAMERA_JITTER_MAX = 0.45;
-  private readonly ATMOSPHERE_CAMERA_DRIFT_MAX = 3.5;
+  private readonly ATMOSPHERE_AUTO_VECTOR_SPEED_MIN = 0.35;
+  private readonly ATMOSPHERE_AUTO_VECTOR_SPEED_MAX = 2.6;
+  private readonly ATMOSPHERE_AUTO_VECTOR_MIN_FACTOR = 0.15;
+  private readonly ATMOSPHERE_DRIFT_TURBULENCE_BONUS = 1.1;
+  private readonly ATMOSPHERE_TURBULENCE_SHAKE_THRESHOLD = 0.4;
+  private readonly ATMOSPHERE_TURBULENCE_SHAKE_BASE = 0.12;
+  private readonly ATMOSPHERE_TURBULENCE_SHAKE_GAIN = 0.9;
+  private readonly ATMOSPHERE_CAMERA_DRIFT_TURBULENCE_PUSH = 0.35;
+  private readonly ATMOSPHERE_CAMERA_JITTER_MAX = 0.75;
+  private readonly ATMOSPHERE_CAMERA_DRIFT_MAX = 5;
+  private readonly ATMOSPHERE_SHIP_JITTER_THRESHOLD = 0.35;
+  private readonly ATMOSPHERE_SHIP_JITTER_FORCE = 6;
+  private readonly ATMOSPHERE_PROGRESSIVE_DRIFT_THRESHOLD = 0.45;
+  private readonly ATMOSPHERE_PROGRESSIVE_DRIFT_FORCE = 22;
+  private readonly ATMOSPHERE_PROGRESSIVE_DRIFT_WEIGHT_GAIN = 1.3;
+  private readonly ATMOSPHERE_PROGRESSIVE_DRIFT_WEIGHT_DECAY = 2.4;
+  private readonly ATMOSPHERE_IMPACT_ABSORPTION_THRESHOLD = 0.35;
+  private readonly ATMOSPHERE_STABILITY_DURATION_MS = 6000;
+  private readonly ATMOSPHERE_STABILITY_FORCE_SCALE = 0.2;
   private readonly AGE_SECONDS_PER_DAY: number = 60; // 1 minuto de juego = 1 día
   private readonly SURVIVABILITY_DECAY_START_YEAR: number = 50;
   private ageTimerAccumulatorSec: number = 0;
@@ -1458,6 +1481,32 @@ export class GameEngine {
     const entryKinetics = this.captureShipKineticsSnapshot();
     this.applyAtmosphereEntryPosition(contextClone, entryAltitude, groundRadius);
     this.restoreShipKineticsSnapshot(entryKinetics, { ensureForwardVelocity: true });
+    this.enforceAtmosphereMaxEntrySpeed();
+  }
+
+  private enforceAtmosphereMaxEntrySpeed(): void {
+    if (!this.spaceship || !this.atmosphereSceneState.active) {
+      return;
+    }
+    const maxSpeed = Math.max(0, this.spaceship.maxSpeed ?? 0);
+    if (maxSpeed <= 0) {
+      return;
+    }
+    const forward = this.normalize({ ...this.spaceship.forwardDirection });
+    const hasForward = Math.abs(forward.x) + Math.abs(forward.y) + Math.abs(forward.z) > 1e-5;
+    if (!hasForward) {
+      return;
+    }
+    this.spaceship.currentSpeed = maxSpeed;
+    this.spaceship.targetSpeed = maxSpeed;
+    this.spaceship.isThrusting = true;
+    this.spaceship.thrusterState = ThrusterState.ACCELERATING;
+    this.spaceship.velocity.x = forward.x * maxSpeed;
+    this.spaceship.velocity.y = forward.y * maxSpeed;
+    this.spaceship.velocity.z = forward.z * maxSpeed;
+    try {
+      this.hudManager?.setStallWarning(false);
+    } catch {}
   }
 
   private applyAtmosphereLandingImpulse(): void {
@@ -1534,6 +1583,25 @@ export class GameEngine {
     this.stopWeatherAudioLoop();
   }
 
+  private teardownAtmosphereSceneState(origin: string = 'teardown'): void {
+    const active = this.isAtmosphereSceneActive();
+    try {
+      if (active) {
+        this.exitAtmosphereScene();
+      } else {
+        this.resetAtmosphereWeather();
+        this.atmosphereSceneState = this.createDefaultAtmosphereSceneState();
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere teardown failed', { origin, error });
+    }
+    try {
+      this.particleEffects?.clearWeatherEffects();
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to clear weather particles during teardown', { origin, error });
+    }
+  }
+
   private setAtmosphereActionLock(active: boolean): void {
     try {
       this.gameState.setAtmosphereLockActive(active);
@@ -1591,6 +1659,7 @@ export class GameEngine {
   private resetWeatherEffectsState(): void {
     this.atmosphereWeatherEffects = this.createDefaultAtmosphereWeatherEffectsState();
     this.resetWeatherVisualLayers();
+    this.atmosphereImpactAbsorptionActive = false;
   }
 
   private createDefaultAtmosphereWeatherEffectsState(): AtmosphereWeatherEffectsState {
@@ -1670,6 +1739,8 @@ export class GameEngine {
     state.eventType = snapshot?.eventType ?? 'clear';
     state.active = active;
     state.updatedAtMs = now;
+
+    this.updateAtmosphereImpactAbsorptionHud(state);
 
     this.updateWeatherOverlayState(deltaTime, snapshot);
   }
@@ -1759,9 +1830,26 @@ export class GameEngine {
     return this.clamp(value, 0.1, 1.2);
   }
 
+  private updateAtmosphereImpactAbsorptionHud(state: AtmosphereWeatherEffectsState): void {
+    const absorbing = this.isAtmosphereSceneActive()
+      && state.active
+      && state.impactVolumeMultiplier <= this.ATMOSPHERE_IMPACT_ABSORPTION_THRESHOLD;
+    if (absorbing && !this.atmosphereImpactAbsorptionActive) {
+      try {
+        this.hudManager?.emitMarqueeEvent?.(
+          HudMarqueeEventType.WARNING,
+          'Absorción atmosférica: impactos amortiguados al 25%',
+          { dedupeKey: 'atmo-impact-absorption' }
+        );
+      } catch {}
+    }
+    this.atmosphereImpactAbsorptionActive = absorbing;
+  }
+
   private computeAtmosphereForceAltitudeFactor(altitude?: number): number {
     const alt = Math.max(0, altitude ?? this.computeAltitudeAboveGround());
-    return this.clamp(1 - alt / 900, 0.2, 1);
+    const normalized = 1 - alt / 750;
+    return this.clamp(normalized, 0.35, 1.05);
   }
 
   private computeAtmosphereUpVector(): Vector3 | null {
@@ -1783,8 +1871,13 @@ export class GameEngine {
     if (!this.spaceship) {
       return;
     }
+    if (this.isAtmosphereStabilityActive()) {
+      this.atmosphereAutoVectorCurrent = 0;
+      return;
+    }
     const up = this.computeAtmosphereUpVector();
     const altitude = Math.max(0, this.computeAltitudeAboveGround());
+    const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
     let targetLift = 0;
     if (up && this.isAtmosphereSceneActive() && altitude <= this.ATMOSPHERE_AUTO_VECTOR_BAND_MAX + 40) {
       if (altitude >= this.ATMOSPHERE_AUTO_VECTOR_BAND_MIN && altitude <= this.ATMOSPHERE_AUTO_VECTOR_BAND_MAX) {
@@ -1800,7 +1893,9 @@ export class GameEngine {
       }
     }
     const smoothing = 1 - Math.exp(-deltaTime * 6);
-    this.atmosphereAutoVectorCurrent = this.lerpScalar(this.atmosphereAutoVectorCurrent, targetLift, smoothing);
+    const liftSpeedFactor = this.computeAtmosphereAutoVectorSpeedFactor(speed);
+    const targetLiftWithSpeed = targetLift * liftSpeedFactor;
+    this.atmosphereAutoVectorCurrent = this.lerpScalar(this.atmosphereAutoVectorCurrent, targetLiftWithSpeed, smoothing);
     if (!up || this.atmosphereAutoVectorCurrent <= 1e-3) {
       return;
     }
@@ -1818,11 +1913,13 @@ export class GameEngine {
     const state = this.atmosphereWeatherEffects;
     const altitude = Math.max(0, this.computeAltitudeAboveGround());
     const altitudeFactor = this.computeAtmosphereForceAltitudeFactor(altitude);
-    const driftMultiplier = this.ATMOSPHERE_DRIFT_FORCE_MULT * altitudeFactor;
+    const turbulenceBoost = 1 + Math.max(0, state.turbulenceCurrent - this.ATMOSPHERE_TURBULENCE_SHAKE_THRESHOLD) * this.ATMOSPHERE_DRIFT_TURBULENCE_BONUS;
+    const driftMultiplier = this.ATMOSPHERE_DRIFT_FORCE_MULT * altitudeFactor * turbulenceBoost;
+    const stabilityScale = this.getAtmosphereStabilityForceScale();
     const driftForcePerSecond: Vector3 = {
-      x: state.driftVector.x * driftMultiplier,
-      y: state.driftVector.y * driftMultiplier * 0.45,
-      z: state.driftVector.z * driftMultiplier,
+      x: state.driftVector.x * driftMultiplier * stabilityScale,
+      y: state.driftVector.y * driftMultiplier * 0.45 * stabilityScale,
+      z: state.driftVector.z * driftMultiplier * stabilityScale,
     };
     this.atmosphereDriftForceApplied = state.active ? driftForcePerSecond : { x: 0, y: 0, z: 0 };
     if (state.active) {
@@ -1837,10 +1934,93 @@ export class GameEngine {
     this.atmosphereTurbulencePhase += deltaTime * (1.5 + state.turbulenceCurrent * 6);
     const noise = Math.sin(this.atmosphereTurbulencePhase) + Math.sin(this.atmosphereTurbulencePhase * 0.6 + 0.7);
     const normalizedNoise = Math.max(-1, Math.min(1, noise * 0.5));
-    const turbulenceForce = normalizedNoise * this.ATMOSPHERE_TURBULENCE_FORCE * state.turbulenceCurrent * altitudeFactor * deltaTime;
+    const turbulenceForce = normalizedNoise * this.ATMOSPHERE_TURBULENCE_FORCE * state.turbulenceCurrent * altitudeFactor * stabilityScale * deltaTime;
     this.spaceship.externalForces.x += up.x * turbulenceForce;
     this.spaceship.externalForces.y += up.y * turbulenceForce;
     this.spaceship.externalForces.z += up.z * turbulenceForce;
+
+    this.applyAtmosphereProgressiveDrift(deltaTime, state, altitudeFactor);
+  }
+
+  private applyAtmosphereProgressiveDrift(
+    deltaTime: number,
+    state: AtmosphereWeatherEffectsState,
+    altitudeFactor: number,
+  ): void {
+    if (!this.spaceship) {
+      this.atmosphereProgressiveDriftWeight = 0;
+      this.atmosphereProgressiveDriftBias = { x: 0, y: 0, z: 0 };
+      return;
+    }
+    const decay = 1 - Math.exp(-deltaTime * 3.5);
+    if (!this.isAtmosphereSceneActive() || !state.active) {
+      this.atmosphereProgressiveDriftWeight = this.lerpScalar(
+        this.atmosphereProgressiveDriftWeight,
+        0,
+        1 - Math.exp(-deltaTime * this.ATMOSPHERE_PROGRESSIVE_DRIFT_WEIGHT_DECAY)
+      );
+      this.atmosphereProgressiveDriftBias.x = this.lerpScalar(this.atmosphereProgressiveDriftBias.x, 0, decay);
+      this.atmosphereProgressiveDriftBias.y = this.lerpScalar(this.atmosphereProgressiveDriftBias.y, 0, decay);
+      this.atmosphereProgressiveDriftBias.z = this.lerpScalar(this.atmosphereProgressiveDriftBias.z, 0, decay);
+      return;
+    }
+    const driftLen = Math.hypot(state.driftVector.x, state.driftVector.y, state.driftVector.z);
+    const severity = Math.max(0, state.turbulenceCurrent - this.ATMOSPHERE_PROGRESSIVE_DRIFT_THRESHOLD);
+    const hasTarget = severity > 1e-3 && driftLen > 1e-3;
+    const targetWeight = hasTarget ? Math.min(1, severity * 1.35) : 0;
+    const weightSmoothing = 1 - Math.exp(
+      -deltaTime * (hasTarget ? this.ATMOSPHERE_PROGRESSIVE_DRIFT_WEIGHT_GAIN : this.ATMOSPHERE_PROGRESSIVE_DRIFT_WEIGHT_DECAY)
+    );
+    this.atmosphereProgressiveDriftWeight = this.lerpScalar(
+      this.atmosphereProgressiveDriftWeight,
+      targetWeight,
+      weightSmoothing
+    );
+    if (!hasTarget || this.atmosphereProgressiveDriftWeight <= 1e-4) {
+      this.atmosphereProgressiveDriftBias.x = this.lerpScalar(this.atmosphereProgressiveDriftBias.x, 0, decay);
+      this.atmosphereProgressiveDriftBias.y = this.lerpScalar(this.atmosphereProgressiveDriftBias.y, 0, decay);
+      this.atmosphereProgressiveDriftBias.z = this.lerpScalar(this.atmosphereProgressiveDriftBias.z, 0, decay);
+      return;
+    }
+    const up = this.computeAtmosphereUpVector() ?? { x: 0, y: 1, z: 0 };
+    const driftDir = this.normalize({ ...state.driftVector });
+    const dotUp = driftDir.x * up.x + driftDir.y * up.y + driftDir.z * up.z;
+    const lateral = this.normalize({
+      x: driftDir.x - up.x * dotUp,
+      y: driftDir.y - up.y * dotUp,
+      z: driftDir.z - up.z * dotUp,
+    });
+    const liftScale = Math.min(0.45, severity * 0.8);
+    const lift = { x: up.x * liftScale, y: up.y * liftScale, z: up.z * liftScale };
+    const biasTarget = this.normalize({
+      x: lateral.x + lift.x,
+      y: lateral.y + lift.y,
+      z: lateral.z + lift.z,
+    });
+    const biasSmoothing = 1 - Math.exp(-deltaTime * 4);
+    this.atmosphereProgressiveDriftBias.x = this.lerpScalar(
+      this.atmosphereProgressiveDriftBias.x,
+      biasTarget.x,
+      biasSmoothing
+    );
+    this.atmosphereProgressiveDriftBias.y = this.lerpScalar(
+      this.atmosphereProgressiveDriftBias.y,
+      biasTarget.y,
+      biasSmoothing
+    );
+    this.atmosphereProgressiveDriftBias.z = this.lerpScalar(
+      this.atmosphereProgressiveDriftBias.z,
+      biasTarget.z,
+      biasSmoothing
+    );
+    const magnitude = this.ATMOSPHERE_PROGRESSIVE_DRIFT_FORCE * this.atmosphereProgressiveDriftWeight * altitudeFactor * this.getAtmosphereStabilityForceScale();
+    if (magnitude <= 1e-4) {
+      return;
+    }
+    const applied = magnitude * deltaTime;
+    this.spaceship.externalForces.x += this.atmosphereProgressiveDriftBias.x * applied;
+    this.spaceship.externalForces.y += this.atmosphereProgressiveDriftBias.y * applied;
+    this.spaceship.externalForces.z += this.atmosphereProgressiveDriftBias.z * applied;
   }
 
   private applyAtmosphereCameraJitter(deltaTime: number): void {
@@ -1850,13 +2030,23 @@ export class GameEngine {
     const state = this.atmosphereWeatherEffects;
     const altitude = Math.max(0, this.computeAltitudeAboveGround());
     const altitudeFactor = this.computeAtmosphereForceAltitudeFactor(altitude);
-    const targetJitter = this.isAtmosphereSceneActive()
-      ? state.turbulenceCurrent * altitudeFactor + this.weatherLightningShockStrength
+    const turbulenceNormalized = state.turbulenceCurrent * altitudeFactor;
+    const stabilityScale = this.getAtmosphereStabilityForceScale();
+    const severityBonus = turbulenceNormalized >= this.ATMOSPHERE_TURBULENCE_SHAKE_THRESHOLD
+      ? this.ATMOSPHERE_TURBULENCE_SHAKE_BASE + (turbulenceNormalized - this.ATMOSPHERE_TURBULENCE_SHAKE_THRESHOLD) * this.ATMOSPHERE_TURBULENCE_SHAKE_GAIN
       : 0;
+    const targetJitter = this.isAtmosphereSceneActive()
+      ? this.clamp(Math.pow(turbulenceNormalized, 0.85) + severityBonus + this.weatherLightningShockStrength, 0, 1.35)
+      : 0;
+    const scaledTargetJitter = targetJitter * stabilityScale;
     const smoothing = 1 - Math.exp(-deltaTime * 5);
-    this.atmosphereCameraJitterStrength = this.lerpScalar(this.atmosphereCameraJitterStrength, targetJitter, smoothing);
+    this.atmosphereCameraJitterStrength = this.lerpScalar(this.atmosphereCameraJitterStrength, scaledTargetJitter, smoothing);
     const driftMagnitude = state.active ? Math.min(1, Math.hypot(state.driftOffset.x, state.driftOffset.y, state.driftOffset.z) / this.WEATHER_DRIFT_OFFSET_MAX) : 0;
-    this.atmosphereCameraDriftStrength = this.lerpScalar(this.atmosphereCameraDriftStrength, driftMagnitude, smoothing * 0.7);
+    const driftTurbulencePush = turbulenceNormalized >= this.ATMOSPHERE_TURBULENCE_SHAKE_THRESHOLD
+      ? (turbulenceNormalized - this.ATMOSPHERE_TURBULENCE_SHAKE_THRESHOLD) * this.ATMOSPHERE_CAMERA_DRIFT_TURBULENCE_PUSH
+      : 0;
+    const driftTarget = Math.min(1, driftMagnitude + driftTurbulencePush) * stabilityScale;
+    this.atmosphereCameraDriftStrength = this.lerpScalar(this.atmosphereCameraDriftStrength, driftTarget, smoothing * 0.7);
     if (this.atmosphereCameraJitterStrength <= 1e-3 && this.atmosphereCameraDriftStrength <= 1e-3) {
       return;
     }
@@ -1923,6 +2113,68 @@ export class GameEngine {
     this.camera.markDirty();
   }
 
+  private applyAtmosphereShipJitter(deltaTime: number): void {
+    if (!this.spaceship) {
+      this.atmosphereShipJitterStrength = 0;
+      return;
+    }
+    const state = this.atmosphereWeatherEffects;
+    const active = this.isAtmosphereSceneActive() && state.active;
+    const severity = active ? Math.max(0, state.turbulenceCurrent - this.ATMOSPHERE_SHIP_JITTER_THRESHOLD) : 0;
+    const targetStrength = Math.min(1, severity * 1.4);
+    const smoothing = 1 - Math.exp(-deltaTime * 5);
+    this.atmosphereShipJitterStrength = this.lerpScalar(
+      this.atmosphereShipJitterStrength,
+      targetStrength,
+      smoothing
+    );
+    if (this.atmosphereShipJitterStrength <= 1e-3) {
+      return;
+    }
+    const altitudeFactor = this.computeAtmosphereForceAltitudeFactor();
+    const up = this.normalize(this.computeAtmosphereUpVector() ?? { x: 0, y: 1, z: 0 });
+    let forward = this.normalize({ ...this.spaceship.forwardDirection });
+    if (Math.abs(forward.x) + Math.abs(forward.y) + Math.abs(forward.z) <= 1e-5) {
+      forward = { x: 0, y: 0, z: 1 };
+    }
+    let right = {
+      x: forward.y * up.z - forward.z * up.y,
+      y: forward.z * up.x - forward.x * up.z,
+      z: forward.x * up.y - forward.y * up.x,
+    };
+    const rightLen = Math.hypot(right.x, right.y, right.z);
+    if (rightLen > 1e-5) {
+      right.x /= rightLen;
+      right.y /= rightLen;
+      right.z /= rightLen;
+    } else {
+      right = { x: 1, y: 0, z: 0 };
+    }
+    const trueUp = this.normalize({
+      x: right.y * forward.z - right.z * forward.y,
+      y: right.z * forward.x - right.x * forward.z,
+      z: right.x * forward.y - right.y * forward.x,
+    });
+
+    this.atmosphereShipJitterPhase += deltaTime * (3.2 + state.turbulenceCurrent * 7.5);
+    const phase = this.atmosphereShipJitterPhase;
+    const noiseRight = Math.sin(phase * 1.35 + 0.7);
+    const noiseUp = Math.cos(phase * 0.92 + 1.4);
+    const noiseForward = Math.sin(phase * 0.48 + 2.1);
+    const baseForce = this.ATMOSPHERE_SHIP_JITTER_FORCE * this.atmosphereShipJitterStrength * altitudeFactor * this.getAtmosphereStabilityForceScale();
+    const appliedForce = baseForce * deltaTime;
+
+    this.spaceship.externalForces.x += (
+      right.x * noiseRight + trueUp.x * noiseUp * 0.55 + forward.x * noiseForward * 0.25
+    ) * appliedForce;
+    this.spaceship.externalForces.y += (
+      right.y * noiseRight + trueUp.y * noiseUp * 0.55 + forward.y * noiseForward * 0.25
+    ) * appliedForce;
+    this.spaceship.externalForces.z += (
+      right.z * noiseRight + trueUp.z * noiseUp * 0.55 + forward.z * noiseForward * 0.25
+    ) * appliedForce;
+  }
+
   private updateAtmosphereHudTelemetry(): void {
     if (!this.isAtmosphereSceneActive() || !this.spaceship) {
       this.atmosphereTelemetrySnapshot = null;
@@ -1937,9 +2189,12 @@ export class GameEngine {
     const driftMagnitude = Math.hypot(driftVector.x, driftVector.y, driftVector.z);
     const visibility = this.clamp(state.visibilityCurrent, 0, 1);
     const turbulence = this.clamp(state.turbulenceCurrent * altitudeFactor, 0, 1);
+    const turbulenceSeverity = this.classifyAtmosphereTurbulence(turbulence, driftMagnitude);
     let stability: AtmosphereTelemetryPayload['stability'] = state.active ? 'stable' : 'calm';
     if (state.active) {
-      if (turbulence > 0.55 || driftMagnitude > 2.5) {
+      if (turbulenceSeverity === 'severe' || driftMagnitude > 3.2) {
+        stability = 'unstable';
+      } else if (turbulenceSeverity === 'moderate') {
         stability = 'unstable';
       } else if (this.atmosphereAutoVectorCurrent < 0.25 && altitude < this.ATMOSPHERE_AUTO_VECTOR_BAND_MIN * 0.6) {
         stability = 'descending';
@@ -1957,6 +2212,7 @@ export class GameEngine {
       },
       eventType: state.eventType,
       stability,
+      turbulenceSeverity,
       liftPerSecond: this.atmosphereAutoVectorCurrent,
     };
 
@@ -1967,6 +2223,7 @@ export class GameEngine {
         eventType: state.eventType,
         drift: +driftMagnitude.toFixed(2),
         turbulence: +turbulence.toFixed(2),
+        turbulenceSeverity,
         lift: +this.atmosphereAutoVectorCurrent.toFixed(2),
         visibility: +visibility.toFixed(2),
       });
@@ -1975,6 +2232,19 @@ export class GameEngine {
     }
 
     this.atmosphereTelemetryPanelState = this.buildAtmosphereTelemetryPanelState();
+  }
+
+  private classifyAtmosphereTurbulence(value: number, driftMagnitude: number): AtmosphereTelemetryPayload['turbulenceSeverity'] {
+    if (value >= 0.75 || driftMagnitude >= 4) {
+      return 'severe';
+    }
+    if (value >= 0.4 || driftMagnitude >= 2.5) {
+      return 'moderate';
+    }
+    if (value >= 0.15 || driftMagnitude >= 1) {
+      return 'light';
+    }
+    return 'calm';
   }
 
   private buildAtmosphereTelemetryPanelState(): AtmosphereTelemetryPanelState | null {
@@ -2007,8 +2277,10 @@ export class GameEngine {
     if (telemetry.visibility < 0.35) {
       warnings.push('Visibilidad crítica');
     }
-    if (telemetry.turbulence > 0.6) {
-      warnings.push('Turbulencia extrema');
+    if (telemetry.turbulenceSeverity === 'moderate') {
+      warnings.push('Turbulencia fuerte (sacudidas)');
+    } else if (telemetry.turbulenceSeverity === 'severe') {
+      warnings.push('Turbulencia extrema — cámara inestable');
     }
     if ((weather?.lightningChance ?? 0) > 0.45) {
       warnings.push('Descargas frecuentes');
@@ -2988,6 +3260,26 @@ export class GameEngine {
       const flashAlpha = Math.min(1, this.weatherLightningFlashAlpha);
       this.overlayRenderer.drawSolid(this.weatherLightningFlashColor, flashAlpha);
     }
+  }
+
+  private renderParticleEffectsLayer(): void {
+    if (!this.particleEffects || !this.camera || !this.shaderManager) {
+      return;
+    }
+    this.particleEffects.render(this.camera);
+    this.shaderManager.useLitProgram();
+    this.shaderManager.setLighting(
+      this.lightDirection,
+      this.lightColor,
+      this.ambientColor,
+      this.ambientStrength
+    );
+    this.shaderManager.setSpecular(
+      new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]),
+      0.15,
+      32.0,
+    );
+    this.shaderManager.setLitColor(new Float32Array([0.7, 0.75, 0.8]));
   }
 
   private clearLandedShipAttachment(): void {
@@ -4410,6 +4702,7 @@ export class GameEngine {
   }
   this.applyAtmosphereAutoVector(deltaTime);
   this.applyAtmosphereWeatherForces(deltaTime);
+  this.applyAtmosphereShipJitter(deltaTime);
   this.spaceship.update(deltaTime);
   // Actualizar audio atmosférico después del update para tener la velocidad correcta
   if (this.isAtmosphereSceneActive()) {
@@ -5180,6 +5473,13 @@ export class GameEngine {
         cooldownMs: 8000,
         handler: () => this.executeAuxiliaryLifeScanner(),
       },
+      {
+        id: 'aux-atmo-stabilizer',
+        label: 'Estabilizador Vectorial Atmosférico',
+        description: 'Cancela el auto-vector y amortigua turbulencias durante 6s.',
+        cooldownMs: 16000,
+        handler: () => this.executeAuxiliaryAtmosphereStabilizer(),
+      },
     ];
     this.auxiliaryAbilities = definitions.map((def, idx) => {
       const bindingAction = this.auxiliaryBindingActions[idx];
@@ -5289,6 +5589,46 @@ export class GameEngine {
       this.showPlaceholderText(`ESCÁNER AUX: ${planet.getDisplayName()}\n${inhabitantLabel} / ${creatureLabel}`, 2600);
     } catch {}
     return true;
+  }
+
+  private executeAuxiliaryAtmosphereStabilizer(): boolean {
+    if (!this.isAtmosphereSceneActive()) {
+      try { this.showPlaceholderText('El estabilizador solo funciona dentro de una atmósfera activa', 1800); } catch {}
+      return false;
+    }
+    const now = performance.now();
+    this.atmosphereManualStabilityUntilMs = now + this.ATMOSPHERE_STABILITY_DURATION_MS;
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Atmosphere stabilizer engaged', {
+      durationMs: this.ATMOSPHERE_STABILITY_DURATION_MS,
+    });
+    try { this.showPlaceholderText('Estabilizador vectorial activo (6s)', 1500); } catch {}
+    try {
+      this.hudManager?.emitMarqueeEvent?.(
+        HudMarqueeEventType.WARNING,
+        'Estabilizador vectorial activo — autopilot suprimido',
+        { dedupeKey: 'atmo-stabilizer-active', force: true }
+      );
+    } catch {}
+    return true;
+  }
+
+  private isAtmosphereStabilityActive(): boolean {
+    if (this.atmosphereManualStabilityUntilMs <= 0) {
+      return false;
+    }
+    const now = performance?.now?.() ?? Date.now();
+    return now < this.atmosphereManualStabilityUntilMs;
+  }
+
+  private getAtmosphereStabilityForceScale(): number {
+    if (!this.isAtmosphereStabilityActive()) {
+      return 1;
+    }
+    const now = performance?.now?.() ?? Date.now();
+    const remaining = Math.max(0, this.atmosphereManualStabilityUntilMs - now);
+    const normalized = Math.min(1, remaining / this.ATMOSPHERE_STABILITY_DURATION_MS);
+    return this.ATMOSPHERE_STABILITY_FORCE_SCALE
+      + (1 - this.ATMOSPHERE_STABILITY_FORCE_SCALE) * (1 - normalized);
   }
 
   private getSurfaceDistanceToPlanet(planet: Planet): number | null {
@@ -6495,6 +6835,7 @@ export class GameEngine {
   }
 
   private resetLoopStateForRestart(): void {
+    this.teardownAtmosphereSceneState('restart-loop');
     this.ephemeralAsteroids = [];
     this.gameState.collisionCooldowns.clear();
     this.gameState.dopplerCues.clear();
@@ -6615,6 +6956,7 @@ export class GameEngine {
     // Reset death flag
     this.deathInProgress = false;
     this.resetPanelInteractionState('full-respawn');
+    this.teardownAtmosphereSceneState('respawn-game');
 
     try {
       this.gameState.clearRespawnAnchor('full-respawn');
@@ -7103,28 +7445,6 @@ export class GameEngine {
       this.renderVoidCocoonShield();
       restoreLitProgram();
     }
-    
-    // Renderizar efectos de partículas en programa básico (usa additive blending)
-    // Asegurar que el estado de la nave/asteroides no se contamine
-    this.particleEffects.render(this.camera);
-    
-    // Reforzar de nuevo programa lit y su iluminación tras partículas
-    this.shaderManager.useLitProgram();
-    this.shaderManager.setLighting(
-      this.lightDirection,
-      this.lightColor,
-      this.ambientColor,
-      this.ambientStrength
-    );
-
-    // Cambiar de vuelta al shader estándar para asteroides
-    this.shaderManager.useLitProgram();
-    this.shaderManager.setLighting(
-      this.lightDirection,
-      this.lightColor,
-      this.ambientColor,
-      this.ambientStrength
-    );
     // Color base por defecto de asteroides (si no se establece luego)
     this.shaderManager.setLitColor(new Float32Array([0.6, 0.5, 0.4]));
 
@@ -7136,8 +7456,14 @@ export class GameEngine {
       this.renderDefaultSolarScene(restoreLitProgram);
     }
 
+    this.renderParticleEffectsLayer();
+
     // Render overlays de animaciones (fade) sobre outlines
     this.animationManager.render(this);
+
+    try {
+      this.renderWeatherCameraFilters();
+    } catch {}
 
   // Renderizar overlay de mapa del sistema o el grimorio si están activados (opacos, reemplazan HUD)
   if (this.systemPanel && this.systemPanel.isEnabled()) {
@@ -7358,10 +7684,6 @@ export class GameEngine {
         this._placeholderOverlay = null;
       }
     }
-  } catch {}
-
-  try {
-    this.renderWeatherCameraFilters();
   } catch {}
 
   try {
@@ -7600,8 +7922,8 @@ export class GameEngine {
 
     // Factor de intensidad: máxima (1.0) cerca de la superficie, decae hacia el límite del cielo
     const maxHeight = Math.max(1, skyRadius - groundRadius);
-    const MIN_FALL_RATE = 1.0; // unidades/segundo a 1000u de altura (o punto máximo disponible)
-    const MAX_FALL_RATE = 3.0; // unidades/segundo cerca del suelo (≈1u de altura)
+    const MIN_FALL_RATE = 10.0; // unidades/segundo a 1000u de altura (o punto máximo disponible)
+    const MAX_FALL_RATE = 30.0; // unidades/segundo cerca del suelo (≈1u de altura)
     const lowReference = 1;
     const highReference = Math.max(lowReference + 1, Math.min(1000, maxHeight));
     const interiorRange = Math.max(1, highReference - lowReference);
@@ -7658,6 +7980,22 @@ export class GameEngine {
     }
     const t = this.clamp((speed - softThreshold) / Math.max(1e-3, zeroThreshold - softThreshold), 0, 1);
     return this.lerpScalar(0.35, 0, t);
+  }
+
+  private computeAtmosphereAutoVectorSpeedFactor(speed: number): number {
+    if (!isFinite(speed)) {
+      return this.ATMOSPHERE_AUTO_VECTOR_MIN_FACTOR;
+    }
+    if (speed <= this.ATMOSPHERE_AUTO_VECTOR_SPEED_MIN) {
+      return this.ATMOSPHERE_AUTO_VECTOR_MIN_FACTOR;
+    }
+    if (speed >= this.ATMOSPHERE_AUTO_VECTOR_SPEED_MAX) {
+      return 1;
+    }
+    const range = Math.max(1e-3, this.ATMOSPHERE_AUTO_VECTOR_SPEED_MAX - this.ATMOSPHERE_AUTO_VECTOR_SPEED_MIN);
+    const t = this.clamp((speed - this.ATMOSPHERE_AUTO_VECTOR_SPEED_MIN) / range, 0, 1);
+    const eased = Math.pow(t, 0.85);
+    return this.lerpScalar(this.ATMOSPHERE_AUTO_VECTOR_MIN_FACTOR, 1, eased);
   }
 
   /**
