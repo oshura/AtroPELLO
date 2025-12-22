@@ -11,19 +11,22 @@ Este documento reemplaza al plan `documentation/plans/planet-atmosphere-reboot.m
 | Reglas de vuelo | Gravedad dependiente de altitud (10 u/s a 1000 u, 30 u/s pegado al suelo) + clamp por velocidad; impulso inicial fija la nave en `maxSpeed` (10 u) y mantiene el thruster en aceleración continua con swap `sfx_thruster` ↔ `sfx_thruster_atmo`. |
 | Clima y turbulencias | `AtmosphereWeatherService` genera eventos por capas (superficie/baja/media/exósfera), actualiza HUD/partículas/audio y aplica drift/turbulencias + filtros/relámpagos en cabina. |
 | HUD | Horizonte artificial con `calculateAtmosphereAttitude()`, altímetro real, telemetría QA, Compass interpolado y sky tint suavizado sin escalones. |
-| Aterrizaje/Despegue | Detector físico de suelo, autoland suave, piloto verde persistente, cámara bloqueada con polvo, panel diferido 2s tras el touchdown auto y auto-takeoff a 1000u. |
+| Aterrizaje/Despegue | Cinemática rasante de 5 s (`LandingSequenceAnimation`) que alinea la nave "de cara" a cámara, polvo + `sfx_autoland_touchdown` en touchdown, detector físico de suelo, piloto verde persistente, panel diferido y auto-takeoff a 1000u. |
 | QA | Bitácora manual 2025 documenta descenso, vuelo bajo, salida por cielo, aterrizaje manual y auto; nueva sesión clima (dic 2025) cubre tormentas, absorción y relámpagos. Builds validados con `npm run build`. |
 
 ## Logros funcionales
+
+### 0. Cinemática rasante del landing
+- `LandingSequenceAnimation` ahora se apoya en una línea temporal fija de 5 s: reposiciona la nave detrás del punto de contacto, desacelera y desciende en línea recta hasta quedar a unas pocas unidades de la cámara.
+- La cámara pasa a `CameraMode.MANUAL`, se coloca a ras del suelo frente a la nave y realiza un tracking ligero para que el fuselaje ocupe más de la mitad del encuadre mientras se acerca "de cara". El flare final usa una curva cúbica para rematar el gesto de touchdown.
+- En el 96 % del timeline se invoca `GameEngine.playLandingCinematicTouchdownFx()`, que reutiliza `ParticleEffectsService.createDestructionDebris()` para levantar polvo y dispara `sfx_autoland_touchdown` (o `sfx_passby_air` como fallback) antes de ceder el control al modo atmosférico.
 
 ### 1. Entrada y posicionamiento
 - Tras `LandingSequence`, `GameEngine.enterAtmosphereScene()` crea `AtmosphereSceneState`, activa overlay negro de 1.9 s (`ScreenOverlayRenderer`) y silencia la música mediante `MusicDirectorService.setScene('silence')`.
 - La nave se posiciona en `surfacePoint + normal * altitudeInicial`, se aplica `applyAtmosphereLandingImpulse()` + `enforceAtmosphereMaxEntrySpeed()` para fijar `currentSpeed/targetSpeed` en el `maxSpeed` de la nave (10 u por defecto), se alinea el vector forward y se marca `stallWarning = false`.
 
 ### 2. Vuelo bajo y control continuo
-- `applyAtmosphereGravity()` actúa solo en modo atmosférico y ajusta la velocidad cuando cae por debajo de los umbrales de `Sistema_Landing_Narrativa.md`.
-- Todos los subsistemas (HUD, targeting, inputs) permanecen activos; no hay modo “mini juego” separado.
-- `GameEngine.requestThrusterClip()` conmuta el loop del thruster: `sfx_thruster` en espacio y `sfx_thruster_atmo` (Airthrust) dentro de la escena atmosférica, reutilizando el mismo controlador y fades para que el cambio sea inaudible.
+	- Rozamiento continuo: `applyAtmosphereDragAndAcceleration()` degrada la `targetSpeed` cada frame cuando la escena atmosférica está activa. El arrastre parte de un valor fijo (0.28 u/s) y escala con la altitud y la turbulencia; el estabilizador vectorial reduce parcialmente la pérdida pero nunca la elimina. La misma rutina limita la ganancia del thruster cuando pulsas `+`, de modo que una tormenta severa puede recortar hasta el 35 % de la aceleración disponible y obliga al piloto a reinyectar empuje periódicamente.
 
 ### 3. HUD especializado
 - `calculateAtmosphereAttitude()` (HUD Utils) usa normal planetaria exacta y vectores sanitizados para derivar pitch/roll desacoplados.
@@ -36,6 +39,7 @@ Este documento reemplaza al plan `documentation/plans/planet-atmosphere-reboot.m
 - `GameEngine.detectAtmosphereGroundCollision()` compara distancia nave-centro vs `groundCollisionRadius` + `shipRadius` y dispara `onAtmosphereGroundCollision()` → `handleLandingTouchdown()`.
 - Si la componente vertical <1u, se marca `landingContext.autoLand = true`, se bloquea la cámara (“locked to ground”), se generan partículas de polvo (`ParticleEffectsService`) y se reproduce SFX suave.
 - `openLandingPanelWithDelay()` aplica un retardo de 2 s para abrir el panel después del burst de polvo, manteniendo la cámara bloqueada hasta que la animación termine.
+- Al abrir el panel tras la cinemática, `GameEngine` detiene loops atmosféricos (`stopAtmosphereAudio()`), arma un foco de audio dedicado y reproduce `sfx_passby_air` al 50 % en loop mediante `applyLandingPanelAudioFocus()`. El estado se libera cuando el panel se cierra o cuando arranca el despegue.
 
 ### 5. Despegue y salida
 - El piloto puede iniciar `startTakeoffSequence()` desde el panel tradicional.

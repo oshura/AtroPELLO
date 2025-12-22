@@ -42,6 +42,7 @@ export class Spaceship extends GameObject {
   public thrusterIntensity: number = 0.0;
   public thrusterState: ThrusterState = ThrusterState.IDLE;
   public thrusterScaleFactor: number = 1.0; // Factor de escala dinámico del thruster
+  private speedControlGain: number = 1.0;
 
   // --- Mitigación e instrumentación de jitter a alta velocidad ---
   private highSpeedSmoothingEnabled: boolean = false; // activable externamente
@@ -93,6 +94,20 @@ export class Spaceship extends GameObject {
 
   private precisionRotationActive: boolean = false;
   private precisionRotationScalar: number = 1;
+
+  /** Escala aplicada al control de aceleración para efectos atmosféricos */
+  public setAtmosphereSpeedControlGain(scale: number | null | undefined): void {
+    if (!Number.isFinite(scale as number)) {
+      this.speedControlGain = 1;
+      return;
+    }
+    const clamped = Math.max(0.25, Math.min(1, scale as number));
+    this.speedControlGain = clamped;
+  }
+
+  public resetAtmosphereSpeedControlGain(): void {
+    this.speedControlGain = 1;
+  }
 
   // Override healthCurrent con getter/setter reactivo
   public override get healthCurrent(): number {
@@ -378,7 +393,8 @@ export class Spaceship extends GameObject {
       this.thrusterState = ThrusterState.IDLE;
       this.isThrusting = false;
     } else if (this.controls.speedUp) {
-      this.targetSpeed = Math.min(this.targetSpeed + this.acceleration * deltaTime, this.maxSpeed);
+      const accel = this.acceleration * this.speedControlGain;
+      this.targetSpeed = Math.min(this.targetSpeed + accel * deltaTime, this.maxSpeed);
       this.thrusterState = ThrusterState.ACCELERATING;
       this.isThrusting = true;
     } else if (this.controls.speedDown) {

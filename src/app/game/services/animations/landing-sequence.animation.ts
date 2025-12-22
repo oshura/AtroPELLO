@@ -28,29 +28,22 @@ export class LandingSequenceAnimation implements GameAnimation {
   private context!: LandingApproachContext;
   private blocking = true;
   private elapsed = 0;
-  private readonly approachDuration = 2.4; // seconds to glide toward anchor point
-  private readonly diveDuration = 0.8; // dip beneath the surface
-  private readonly interiorDuration = 5.0; // surf along the inner shell
-  private readonly fadeDuration = 1.0; // fade to black once aligned
-  private readonly surfSpeed = 60;
-  private readonly surfFlareDegrees = 16;
+  private readonly cinematicDuration = 5.0;
+  private readonly cameraHeight = 2.3;
+  private readonly cameraForwardOffset = 6.5;
+  private readonly cameraDollyRange = 4.5;
+  private readonly flareMaxDegrees = 10;
 
-  private shipStart!: Vector3;
-  private approachEnd!: Vector3;
-  private glideEnd!: Vector3;
-  private glideDir!: Vector3;
-  private interiorStart!: Vector3;
-  private planetCenter!: Vector3;
-  private interiorRadius = 0;
-  private interiorArcAngle = 0;
   private surfaceNormal!: Vector3;
-  private finalForward!: Vector3;
-  private finalNormal!: Vector3;
-  private fadeGlideDistance = 0;
+  private contactPoint!: Vector3;
+  private approachDir!: Vector3;
+  private shipStart!: Vector3;
+  private shipEnd!: Vector3;
+  private startSpeed = 0;
+  private touchdownTriggered = false;
 
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
-  private overlayAlpha = 0;
 
   private savedShipDynamics: { acceleration: number; deceleration: number; maxSpeed: number } | null = null;
 
@@ -90,38 +83,36 @@ export class LandingSequenceAnimation implements GameAnimation {
 
     engine.collisionsDisabled = true;
 
-    this.prevCameraMode = engine.camera?.getCurrentMode?.() ?? null;
-    engine.camera?.setCameraMode?.(CameraMode.COCKPIT);
-
-    this.shipStart = { ...ship.position };
-    const normal = this.normalize(this.context.surfaceNormal);
+    const normal = this.normalize(this.context.surfaceNormal ?? { x: 0, y: 1, z: 0 });
     this.surfaceNormal = normal;
-    const altitude = Math.max(6, Math.min(60, this.context.radius * 0.04));
-    this.approachEnd = {
-      x: this.context.surfacePoint.x + normal.x * altitude,
-      y: this.context.surfacePoint.y + normal.y * altitude,
-      z: this.context.surfacePoint.z + normal.z * altitude
+    this.contactPoint = this.resolveContactPoint();
+    this.approachDir = this.computeApproachDirection(ship.forwardDirection, normal);
+    const startOffset = Math.max(40, (this.context.radius ?? 800) * 0.05);
+    const startHeight = Math.max(12, (this.context.radius ?? 800) * 0.02);
+    const settleHeight = Math.max(2.4, (this.context.radius ?? 800) * 0.004);
+    this.shipStart = {
+      x: this.contactPoint.x - this.approachDir.x * startOffset + normal.x * (startHeight + settleHeight),
+      y: this.contactPoint.y - this.approachDir.y * startOffset + normal.y * (startHeight + settleHeight),
+      z: this.contactPoint.z - this.approachDir.z * startOffset + normal.z * (startHeight + settleHeight)
     };
-
-    this.glideDir = this.computeGlideDirection(ship.forwardDirection, normal);
-    this.planetCenter = this.getPlanetCenter();
-    const interiorDepth = clamp(this.context.radius * 0.015, 8, Math.max(10, this.context.radius - 5));
-    this.interiorRadius = Math.max(1, this.context.radius - interiorDepth);
-    this.interiorStart = {
-      x: this.planetCenter.x + normal.x * this.interiorRadius,
-      y: this.planetCenter.y + normal.y * this.interiorRadius,
-      z: this.planetCenter.z + normal.z * this.interiorRadius
+    this.shipEnd = {
+      x: this.contactPoint.x + normal.x * settleHeight,
+      y: this.contactPoint.y + normal.y * settleHeight,
+      z: this.contactPoint.z + normal.z * settleHeight
     };
-    const desiredArcLength = this.surfSpeed * this.interiorDuration;
-    const rawAngle = desiredArcLength / Math.max(1, this.interiorRadius);
-    this.interiorArcAngle = clamp(rawAngle, Math.PI / 36, Math.PI / 2);
-    const finalState = this.computeInteriorSurfState(1);
-    this.glideEnd = finalState.position;
-    this.finalForward = finalState.forward;
-    this.finalNormal = finalState.normal;
+    this.startSpeed = Math.max(6, Math.min(ship.currentSpeed || 0, ship.maxSpeed || 12));
+    this.elapsed = 0;
+    this.touchdownTriggered = false;
 
+    this.prevCameraMode = engine.camera?.getCurrentMode?.() ?? null;
+    this.configureCamera(engine, this.shipStart);
     this.installKeyBlockers();
-    this.fadeGlideDistance = 0;
+    this.applyShipPose(ship, this.shipStart, normal, this.approachDir, 0);
+    ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
+    ship.thrusterState = ThrusterState.BRAKING;
+    ship.currentSpeed = this.startSpeed;
+    ship.targetSpeed = this.startSpeed;
+
     engine.notifyLandingSequenceStarted?.(this.context);
   }
 
@@ -132,52 +123,20 @@ export class LandingSequenceAnimation implements GameAnimation {
     }
 
     this.elapsed += dt;
-    const normal = this.normalize(this.context.surfaceNormal);
+    const progress = clamp01(this.elapsed / this.cinematicDuration);
+    const eased = smoothstep(progress);
+    const shipPos = this.lerpVec(this.shipStart, this.shipEnd, eased);
+    const flare = this.computeFlare(progress);
+    this.applyShipPose(ship, shipPos, this.surfaceNormal, this.approachDir, flare);
+    this.updateShipKinetics(ship, eased);
+    this.updateCinematicCamera(engine, ship, eased);
 
-    const diveEndTime = this.approachDuration + this.diveDuration;
-    const interiorEndTime = diveEndTime + this.interiorDuration;
-
-    if (this.elapsed <= this.approachDuration) {
-      const k = smoothstep(this.elapsed / Math.max(0.001, this.approachDuration));
-      const pos = this.lerpVec(this.shipStart, this.approachEnd, k);
-      this.overlayAlpha = 0;
-      this.applyShipPose(ship, pos, normal, this.glideDir, 0);
-      ship.thrusterState = ThrusterState.BRAKING;
-      ship.currentSpeed = lerp(ship.currentSpeed, 0, clamp01(dt * 4));
-      ship.targetSpeed = 0;
-    } else if (this.elapsed <= diveEndTime) {
-      const localT = (this.elapsed - this.approachDuration) / Math.max(0.001, this.diveDuration);
-      const eased = smoothstep(localT);
-      const pos = this.lerpVec(this.approachEnd, this.interiorStart, eased);
-      this.overlayAlpha = 0;
-      this.applyShipPose(ship, pos, normal, this.glideDir, this.surfFlareDegrees * 0.5 * eased);
-      ship.thrusterState = ThrusterState.BRAKING;
-      ship.targetSpeed = lerp(0, this.surfSpeed * 0.6, eased);
-      ship.currentSpeed = ship.targetSpeed;
-    } else if (this.elapsed <= interiorEndTime) {
-      const localT = (this.elapsed - diveEndTime) / Math.max(0.001, this.interiorDuration);
-      const surf = this.computeInteriorSurfState(localT);
-      this.overlayAlpha = 0;
-      this.applyShipPose(ship, surf.position, surf.normal, surf.forward, this.surfFlareDegrees);
-      ship.thrusterState = ThrusterState.CRUISING;
-      ship.targetSpeed = this.surfSpeed;
-      ship.currentSpeed = this.surfSpeed;
-    } else {
-      const fadeT = (this.elapsed - interiorEndTime) / Math.max(0.001, this.fadeDuration);
-      this.overlayAlpha = clamp01(fadeT);
-      this.fadeGlideDistance += this.surfSpeed * 0.6 * dt;
-      const glidePosition = {
-        x: this.glideEnd.x + this.finalForward.x * this.fadeGlideDistance,
-        y: this.glideEnd.y + this.finalForward.y * this.fadeGlideDistance,
-        z: this.glideEnd.z + this.finalForward.z * this.fadeGlideDistance
-      };
-      this.applyShipPose(ship, glidePosition, this.finalNormal, this.finalForward, this.surfFlareDegrees);
-      ship.thrusterState = ThrusterState.CRUISING;
-      ship.currentSpeed = this.surfSpeed * 0.6;
-      ship.targetSpeed = ship.currentSpeed;
+    if (!this.touchdownTriggered && progress >= 0.96) {
+      this.touchdownTriggered = true;
+      try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal); } catch {}
     }
 
-    if (this.elapsed >= interiorEndTime + this.fadeDuration) {
+    if (progress >= 1) {
       this.finish(engine, false);
       return true;
     }
@@ -185,13 +144,7 @@ export class LandingSequenceAnimation implements GameAnimation {
   }
 
   public render(engine: GameEngine): void {
-    if (this.overlayAlpha <= 0) {
-      return;
-    }
-    const overlay = engine.overlayRenderer as any;
-    if (overlay?.drawSolid) {
-      try { overlay.drawSolid([0, 0, 0], this.overlayAlpha); } catch {}
-    }
+    // Cinematic uses cámara física; no overlay necesario.
   }
 
   public isBlockingInputs(): boolean {
@@ -264,63 +217,112 @@ export class LandingSequenceAnimation implements GameAnimation {
     return { x: v.x / len, y: v.y / len, z: v.z / len };
   }
 
-  private computeGlideDirection(forward: Vector3, normal: Vector3): Vector3 {
-    const dot = forward.x * normal.x + forward.y * normal.y + forward.z * normal.z;
-    let tangent = {
-      x: forward.x - normal.x * dot,
-      y: forward.y - normal.y * dot,
-      z: forward.z - normal.z * dot
-    };
-    const len = Math.hypot(tangent.x, tangent.y, tangent.z);
-    if (len < 1e-3) {
-      // build arbitrary perpendicular vector
-      const axis = Math.abs(normal.y) > 0.5 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
-      tangent = {
-        x: normal.y * axis.z - normal.z * axis.y,
-        y: normal.z * axis.x - normal.x * axis.z,
-        z: normal.x * axis.y - normal.y * axis.x
-      };
+  private computeApproachDirection(forward: Vector3, normal: Vector3): Vector3 {
+    const projected = this.projectOntoPlane(forward, normal);
+    if (this.vectorLength(projected) < 1e-3) {
+      return this.buildPerpendicular(normal);
     }
-    return this.normalize(tangent);
+    return this.normalize(projected);
   }
 
-  private computeInteriorSurfState(progress: number): { position: Vector3; forward: Vector3; normal: Vector3 } {
-    const t = clamp01(progress);
-    const eased = smoothstep(t);
-    const angle = this.interiorArcAngle * eased;
-    const cosT = Math.cos(angle);
-    const sinT = Math.sin(angle);
-    const r = this.interiorRadius;
-    const n = this.surfaceNormal;
-    const g = this.glideDir;
-    const position = {
-      x: this.planetCenter.x + n.x * r * cosT + g.x * r * sinT,
-      y: this.planetCenter.y + n.y * r * cosT + g.y * r * sinT,
-      z: this.planetCenter.z + n.z * r * cosT + g.z * r * sinT
-    };
-    const normal = this.normalize({
-      x: position.x - this.planetCenter.x,
-      y: position.y - this.planetCenter.y,
-      z: position.z - this.planetCenter.z
-    });
-    const forward = this.normalize({
-      x: -n.x * r * sinT + g.x * r * cosT,
-      y: -n.y * r * sinT + g.y * r * cosT,
-      z: -n.z * r * sinT + g.z * r * cosT
-    });
-    return { position, forward, normal };
-  }
-
-  private getPlanetCenter(): Vector3 {
-    if (this.context?.planetCenter) {
-      return { ...this.context.planetCenter };
-    }
-    const normal = this.normalize(this.context.surfaceNormal);
+  private projectOntoPlane(vector: Vector3, normal: Vector3): Vector3 {
+    const dot = vector.x * normal.x + vector.y * normal.y + vector.z * normal.z;
     return {
-      x: this.context.surfacePoint.x - normal.x * this.context.radius,
-      y: this.context.surfacePoint.y - normal.y * this.context.radius,
-      z: this.context.surfacePoint.z - normal.z * this.context.radius
+      x: vector.x - normal.x * dot,
+      y: vector.y - normal.y * dot,
+      z: vector.z - normal.z * dot,
     };
+  }
+
+  private vectorLength(v: Vector3): number {
+    return Math.hypot(v.x, v.y, v.z);
+  }
+
+  private buildPerpendicular(normal: Vector3): Vector3 {
+    const ref = Math.abs(normal.y) > 0.6 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+    const cross = {
+      x: normal.y * ref.z - normal.z * ref.y,
+      y: normal.z * ref.x - normal.x * ref.z,
+      z: normal.x * ref.y - normal.y * ref.x,
+    };
+    const len = this.vectorLength(cross) || 1;
+    return { x: cross.x / len, y: cross.y / len, z: cross.z / len };
+  }
+
+  private resolveContactPoint(): Vector3 {
+    if (this.context.surfacePoint) {
+      return { ...this.context.surfacePoint };
+    }
+    const normal = this.surfaceNormal;
+    const radius = Number.isFinite(this.context.radius) ? this.context.radius : 0;
+    const center = this.context.planetCenter
+      ? { ...this.context.planetCenter }
+      : { x: 0, y: 0, z: 0 };
+    return {
+      x: center.x + normal.x * radius,
+      y: center.y + normal.y * radius,
+      z: center.z + normal.z * radius,
+    };
+  }
+
+  private configureCamera(engine: GameEngine, shipPosition: Vector3): void {
+    const camera = engine.camera;
+    if (!camera) {
+      return;
+    }
+    try { camera.setCameraMode(CameraMode.MANUAL); } catch {}
+    const position = this.getCameraPosition(0);
+    const target = this.getCameraTarget(shipPosition);
+    try {
+      camera.seedManualTransform?.(position, target, this.surfaceNormal);
+      camera.markDirty?.();
+    } catch {}
+  }
+
+  private updateCinematicCamera(engine: GameEngine, ship: any, progress: number): void {
+    const camera = engine.camera;
+    if (!camera) {
+      return;
+    }
+    const position = this.getCameraPosition(progress);
+    const target = this.getCameraTarget(ship.position);
+    try {
+      camera.seedManualTransform?.(position, target, this.surfaceNormal);
+      camera.markDirty?.();
+    } catch {}
+  }
+
+  private getCameraPosition(progress: number): Vector3 {
+    const eased = smoothstep(progress);
+    const dolly = this.cameraForwardOffset + this.cameraDollyRange * eased;
+    const heightBoost = this.cameraHeight + 0.8 * (1 - eased);
+    return {
+      x: this.contactPoint.x + this.approachDir.x * dolly + this.surfaceNormal.x * heightBoost,
+      y: this.contactPoint.y + this.approachDir.y * dolly + this.surfaceNormal.y * heightBoost,
+      z: this.contactPoint.z + this.approachDir.z * dolly + this.surfaceNormal.z * heightBoost,
+    };
+  }
+
+  private getCameraTarget(shipPosition: Vector3): Vector3 {
+    return {
+      x: shipPosition.x + this.surfaceNormal.x * 0.4,
+      y: shipPosition.y + this.surfaceNormal.y * 0.4,
+      z: shipPosition.z + this.surfaceNormal.z * 0.4,
+    };
+  }
+
+  private computeFlare(progress: number): number {
+    const flareBoost = smoothstep(1 - Math.max(0, 1 - progress * 1.3));
+    return this.flareMaxDegrees * flareBoost;
+  }
+
+  private updateShipKinetics(ship: any, eased: number): void {
+    const remainingSpeed = clamp(this.startSpeed * (1 - eased * 0.98), 0, this.startSpeed);
+    ship.currentSpeed = remainingSpeed;
+    ship.targetSpeed = remainingSpeed;
+    ship.thrusterState = remainingSpeed > 0.35 ? ThrusterState.BRAKING : ThrusterState.IDLE;
+    ship.isThrusting = false;
+    ship.controls.forward = false;
   }
 
   private applyShipPose(

@@ -102,6 +102,10 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
     if (wasVisible) {
       this.setLandingMusicState(false);
       this.updateInputEnabled();
+      const engine = this.gameInitializer.getGameEngine();
+      if (engine && typeof (engine as any).notifyLandingPanelClosed === 'function') {
+        try { (engine as any).notifyLandingPanelClosed(); } catch {}
+      }
       this.cdr.detectChanges();
     }
   }
