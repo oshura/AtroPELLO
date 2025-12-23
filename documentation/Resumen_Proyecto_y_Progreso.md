@@ -16,6 +16,14 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - Shaders y texturas: `ShaderManager` con servicios especializados (HUD/Outline/etc.) y `TextureManager` con texturas procedurales y cargadas.
   - Canvas adaptativo: `GameEngine.applyCanvasResize()` escucha `webgl-resize` del `WebGLService` y recalcula aspect ratio, viewport y retícula diferenciando píxeles físicos (viewport) y dimensiones CSS (UI). `GameInitializer.updateCanvasSize()` invoca el mismo flujo como respaldo manual, así el HUD, la cámara y el targeting permanecen alineados al redimensionar la ventana o mover el canvas.
 
+- Flujo de aterrizaje actual (espacio → atmósfera → suelo)
+  - `GameEngine.tryStartLandingSequence()` exige `landingStatus.ready`, ausencia de `LandingThreat` y arranca `AnimationManager.startLandingSequence()` ya sea por <kbd>Enter</kbd> en espacio o vía `maybeTriggerAtmosphereAutoLandingFromInput()` si ya estabas en atmósfera.
+  - La secuencia captura el snapshot cinético, silencia música y entrega control a `notifyLandingSequenceFinished('landed', context)`, que a su vez llama `handleLandingTouchdown(context, { skipLandingPanel: true })` para crear la escena atmosférica sin abrir aún el panel.
+  - `handleLandingTouchdown()` aplica el impulso inicial, registra el planeta, arma auto-takeoff (se activará a 1000 u de altitud) y decide si abre el panel inmediatamente o tras un `deferLandingPanelMs` (auto-landing difiere 2 s para que la cámara y el polvo respiren).
+  - Dentro de la atmósfera, si la nave toca suelo con velocidad vertical ≤1 u/s y sigue `landingStatus.ready`, `onAtmosphereGroundCollision()` reaprovecha `handleLandingTouchdown()` con `autoLand=true` y dispara la cámara manual `startAtmosphereAutoLandingCamera()` más el swell `sfx_autoland_touchdown`.
+  - Colisiones duras pasan por `handleAtmosphereGroundImpact()`, que rebota la nave, aplica daño, partículas y SFX; sólo entonces el piloto verde puede rearmarse tras estabilizar 3 s.
+  - `maybeTriggerAtmosphereAutoTakeoff()` supervisa la altitud tras cada touchdown y lanza `startTakeoffSequence()` automáticamente al rebasar 1000 u, usando el mismo flujo y logs que un despegue manual.
+
 - Sistema de Salud y Destrucción Reactivo
   - Arquitectura reactiva: `GameObject` base tiene getter/setter para `healthCurrent` con callback automático cuando salud <= 0.
   - Registro universal: Todo objeto que herede de `GameObject` puede registrar callback de destrucción vía `setDestroyedCallback()`.
