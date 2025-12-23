@@ -1,23 +1,20 @@
 import { ChangeDetectorRef, Component, OnDestroy, inject } from '@angular/core';
-import { RouterModule } from '@angular/router';
 import { NgIf } from '@angular/common';
 import { AudioSettingsDialogComponent } from '../dialogs/audio-settings-dialog/audio-settings-dialog';
 import { LoggingService, LogCategory } from '../../services/logging.service';
-import { WikiNavigationService } from '../../services/wiki-navigation.service';
 import { AuthService } from '../../services/auth.service';
 import { CloudSavesService } from '../../libs/cloud-saves/cloud-saves.service';
 import { LANDING_SETTINGS } from '../../settings/landing-settings';
 
 @Component({
   selector: 'app-header',
-  imports: [AudioSettingsDialogComponent, RouterModule, NgIf],
+  imports: [AudioSettingsDialogComponent, NgIf],
   templateUrl: './header.html',
   styleUrl: './header.scss'
 })
 export class Header implements OnDestroy {
   showAudio = false;
   protected optionsInitialTab: 'audio' | 'controls' | 'saves' = 'audio';
-  protected wikiNav = inject(WikiNavigationService);
   protected auth = inject(AuthService);
   protected saves = inject(CloudSavesService);
   protected landingUrl = inject(LANDING_SETTINGS).landingUrl;
@@ -28,10 +25,6 @@ export class Header implements OnDestroy {
   private destroyed = false;
   
   constructor(private logger: LoggingService) {}
-  
-  getWikiRoute(): string {
-    return this.wikiNav.getLastRoute();
-  }
   onOptionsClick() {
     this.logger.debug(LogCategory.INPUT, 'Options dialog opened');
     this.openOptions('audio');

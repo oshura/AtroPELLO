@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Inventario · AtroPELLO Wiki</title>
+  <meta name="description" content="Desglose del panel de inventario: columnas, estadísticas del piloto, eventos de experiencia y atajos." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="canonical" href="https://to3.atropello-games.es/wiki/inventory/index.html" />
+  <meta property="og:title" content="Panel de Inventario TO³" />
+  <meta property="og:description" content="Aprende a leer la ficha del piloto, expulsar carga y ganar experiencia desde el panel." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://to3.atropello-games.es/wiki/inventory/index.html" />
+  <meta property="og:image" content="https://to3.atropello-games.es/assets/Wiki.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/wiki/wiki.css" />
+</head>
+<body>
+  <a class="wiki-back-button" href="/wiki/index.html">↩ Volver al índice</a>
+  <main>
+    <div class="wiki-shell">
+      <header class="wiki-hero">
+        <p class="wiki-hero__eyebrow">Panel diegético</p>
+        <h1>Inventario y ficha del piloto</h1>
+        <p class="wiki-hero__lead">Referencia rápida para dominar las tres columnas del inventario (<span class="kbd">I</span>), entender las barras vitales y aprovechar cada acción sin tirar recursos por error.</p>
+      </header>
+
+      <section class="section" id="layout">
+        <h2>Distribución del panel</h2>
+        <div class="card-grid">
+          <article class="card">
+            <h3>Perfil del piloto</h3>
+            <p class="wiki-hero__lead">Columna izquierda con HUD personal.</p>
+            <ul>
+              <li>Nombre, nivel y barras de Salud, Memoria y Experiencia con valores actuales.</li>
+              <li>Cuadrícula de cordura mostrando casillas activas, reservadas por glifos y bloqueadas.</li>
+              <li>Lista de equipo personal (traje, botas, accesorios) con scroll independiente.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Módulos de nave</h3>
+            <p class="wiki-hero__lead">Columna central ordenada por slot.</p>
+            <ul>
+              <li>Orden fijo: Cabina, Reactor, Alas, Fuselaje, Escudo, Bahía de drones y Bahía auxiliar.</li>
+              <li>Cada tarjeta combina manifiesto + datos vivos como empuje o top speed.</li>
+              <li>Los slots incompatibles muestran «N/A» para evitar confusiones.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Carga y bodega</h3>
+            <p class="wiki-hero__lead">Columna derecha con manifiesto.</p>
+            <ul>
+              <li>Medidor horizontal con <em>current / max</em> y alerta roja al superar 90&nbsp;%.</li>
+              <li>Filas etiquetadas con tipo (Materia prima, Artefacto, etc.) y unidades alineadas.</li>
+              <li>Scroll propio; cada fila es seleccionable para expulsar o consultar.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Pie y acciones</h3>
+            <p class="wiki-hero__lead">Resumen contextual + botón.</p>
+            <ul>
+              <li>Muestra slot y etiqueta del elemento activo para evitar errores.</li>
+              <li>El botón «Expulsar carga/equipo» solo se ilumina con una selección válida.</li>
+              <li>La selección persiste aunque cambies de columna.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="stats">
+        <h2>Ficha del piloto</h2>
+        <p>Todo lo que hagas mientras el inventario esté abierto actualiza barras y cifras en tiempo real. Es la forma más fiable de ver tu estado antes de arriesgarte a otra maniobra.</p>
+        <div class="stat-grid">
+          <article class="stat-card">
+            <header>
+              <h3>Salud</h3>
+              <span class="stat-card__scope">0 – 100</span>
+            </header>
+            <p>Integridad física cuando el daño traspasa los escudos de la nave.</p>
+            <h4>Cómo sube</h4>
+            <ul>
+              <li>Descansos en planetas o eventos que curan.</li>
+              <li>Respawns completos o checkpoints especiales.</li>
+            </ul>
+            <h4>Cómo baja</h4>
+            <ul>
+              <li>Colisiones fuertes, impactos solares y estados alterados.</li>
+              <li>Eventos narrativos que apliquen heridas.</li>
+            </ul>
+          </article>
+          <article class="stat-card">
+            <header>
+              <h3>Memoria</h3>
+              <span class="stat-card__scope">0 – 100</span>
+            </header>
+            <p>Grado de lucidez recuperada. No regenera sola.</p>
+            <h4>Cómo sube</h4>
+            <ul>
+              <li>Misiones de historia y descubrimientos clave.</li>
+              <li>Consumibles o mejoras específicas.</li>
+            </ul>
+            <h4>Cómo baja</h4>
+            <ul>
+              <li>Eventos de historia que fuerzan sacrificios.</li>
+              <li>Reinicios manuales del perfil.</li>
+            </ul>
+          </article>
+          <article class="stat-card">
+            <header>
+              <h3>Experiencia</h3>
+              <span class="stat-card__scope">Nivel + XP</span>
+            </header>
+            <p>Sube al realizar acciones heroicas. Al llenar la barra subes de nivel.</p>
+            <h4>Cómo sube</h4>
+            <ul>
+              <li>Eventos listados en la tabla (combate, hallazgos, diplomacia).</li>
+              <li>Recompensas especiales de misiones secundarias.</li>
+            </ul>
+            <h4>Cómo baja</h4>
+            <ul>
+              <li>Muerte del piloto (pierdes parte del progreso).</li>
+              <li>Fallar eventos críticos.</li>
+            </ul>
+          </article>
+          <article class="stat-card">
+            <header>
+              <h3>Cordura</h3>
+              <span class="stat-card__scope">Base 99 · tope dinámico</span>
+            </header>
+            <p>Casillas disponibles para glifos. Cada hechizo aprendido ocupa huecos y cada lanzamiento consume cordura temporal.</p>
+            <h4>Cómo sube</h4>
+            <ul>
+              <li>Descansos seguros, aterrizajes exitosos o rituales de recuperación.</li>
+              <li>Olvidar un glifo libera sus casillas.</li>
+            </ul>
+            <h4>Cómo baja</h4>
+            <ul>
+              <li>Aprender glifos aumenta el coste permanente.</li>
+              <li>Castear hechizos consume cordura temporal.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="xp">
+        <h2>Eventos de experiencia</h2>
+        <p>Cada acción relevante otorga o resta XP según esta tabla. Al llenar la barra subes de nivel y el contador vuelve a cero con un tope mayor.</p>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Evento</th>
+                <th>Delta</th>
+                <th>Notas</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Enemy ship destroyed</td><td>+25</td><td>Combate espacial estándar.</td></tr>
+              <tr><td>Primigenio derrotado en planeta</td><td>+50</td><td>Encuentros de boss de alto riesgo.</td></tr>
+              <tr><td>Planet landing</td><td>+3</td><td>Cada aterrizaje registrado suma.</td></tr>
+              <tr><td>New species discovered</td><td>+100</td><td>Escaneo Augurio/Revelación exitoso.</td></tr>
+              <tr><td>Spell cast</td><td>+1</td><td>Castear cualquier glifo concede XP simbólica.</td></tr>
+              <tr><td>Portal spell</td><td>+5</td><td>Gate Rite completado o salto especial.</td></tr>
+              <tr><td>Player death</td><td>−50</td><td>No baja tu nivel actual.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" id="gear">
+        <h2>Equipo personal y slots</h2>
+        <ul>
+          <li>El traje define cuántos accesorios visibles puedes llevar (hasta 3). El panel solo reserva los slots reales.</li>
+          <li>Los accesorios extra se guardan fuera de vista hasta que mejores el traje o expulses algo.</li>
+          <li>El botón «Expulsar carga/equipo» solo actúa sobre lo seleccionado en bodega o equipo personal; nunca desmonta módulos de nave.</li>
+          <li>Todo lo expulsado desaparece al instante. Confirma que no lo necesitas antes de liberar capacidad.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="flow">
+        <h2>Atajos y flujo de uso</h2>
+        <div class="card-grid">
+          <article class="card">
+            <h3>Apertura y cierre</h3>
+            <ul>
+              <li><span class="kbd">I</span> abre/cierra el panel. Si el grimorio o el mapa están abiertos, se cierran primero.</li>
+              <li><span class="kbd">Esc</span> cierra cualquier panel y limpia la selección.</li>
+              <li>El cursor pasa a modo inventario (glow azul) mientras el panel está visible.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Interacción</h3>
+            <ul>
+              <li>La rueda desplaza la columna sobre la que está el puntero.</li>
+              <li>Las selecciones se mantienen aunque cambies de columna.</li>
+              <li>El pie indica el elemento activo y solo habilita la expulsión cuando procede.</li>
+            </ul>
+          </article>
+        </div>
+        <p class="highlight">Consejo: deja un slot libre antes de reclamar botín; así evitas pausar la expedición para expulsar carga urgente.</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

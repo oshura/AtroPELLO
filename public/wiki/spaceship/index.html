@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Spaceship TO³ · AtroPELLO Wiki</title>
+  <meta name="description" content="Ficha técnica de la nave TO³: especificaciones, módulos, controles, HUD y flujo atmosférico completo." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="canonical" href="https://to3.atropello-games.es/wiki/spaceship/index.html" />
+  <meta property="og:title" content="Spaceship TO³" />
+  <meta property="og:description" content="Conoce los módulos activos, atajos de control, HUD y sistemas atmosféricos de la nave principal." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://to3.atropello-games.es/wiki/spaceship/index.html" />
+  <meta property="og:image" content="https://to3.atropello-games.es/assets/Wiki.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/wiki/wiki.css" />
+</head>
+<body>
+  <a class="wiki-back-button" href="/wiki/index.html">↩ Volver al índice</a>
+  <main>
+    <div class="wiki-shell">
+      <header class="wiki-hero">
+        <p class="wiki-hero__eyebrow">Nave insignia</p>
+        <h1>Spaceship TO³</h1>
+        <p class="wiki-hero__lead">
+          Tu único vehículo para explorar el vacío. Modular, preparado para lanzar glifos y con un HUD que replica la cabina física.
+        </p>
+      </header>
+
+      <section class="section" id="specs">
+        <h2>Especificaciones generales</h2>
+        <div class="card-grid">
+          <article class="card"><h3>Mass</h3><p>100&nbsp;kg</p></article>
+          <article class="card"><h3>Hull Points</h3><p>1000 HP</p></article>
+          <article class="card"><h3>Max Speed</h3><p>15&nbsp;u/s (espacio) · clamps atmosféricos automáticos</p></article>
+          <article class="card"><h3>Aceleración</h3><p>0.3&nbsp;u/s²</p></article>
+          <article class="card"><h3>Turn Rate</h3><p>0.05 rad/s</p></article>
+          <article class="card"><h3>Bounding radius</h3><p>≈25&nbsp;u</p></article>
+        </div>
+        <p class="note">El esqueleto central aloja el grimorio, el núcleo de energía y el registro de portales.</p>
+      </section>
+
+      <section class="section" id="componentes">
+        <h2>Componentes actuales</h2>
+        <div class="card-grid">
+          <article class="card">
+            <h3>🛡️ Body</h3>
+            <p>Chasis Standard Explorer con detección esférica centrada en la nave. Aloja el core de glifos.</p>
+            <p class="note">Futuros cuerpos añadirán variantes de masa/armadura.</p>
+          </article>
+          <article class="card">
+            <h3>🪽 Wings</h3>
+            <p>Estabilizadores estándar. Influencian el giro y la banca; el daño reducirá maniobrabilidad (TBD).</p>
+          </article>
+          <article class="card">
+            <h3>🔥 Thruster</h3>
+            <p>Plasma Drive MK‑I con loops duales: <code>sfx_thruster</code> en espacio y <code>sfx_thruster_atmo</code> dentro de atmósferas. Cambia en caliente sin pops.</p>
+            <ul>
+              <li>Salida variable 0‑100%.</li>
+              <li>Pista visual de partículas y polvo alineado con la nave tras portales.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>🧰 Bahía auxiliar Mk. I</h3>
+            <p>Dos sockets activos mapeados a la fila numérica:</p>
+            <ul>
+              <li><strong>1 — Escáner Auxiliar:</strong> revela habitantes y sincroniza intel con HUD a ≤500&nbsp;u.</li>
+              <li><strong>2 — Estabilizador Vectorial:</strong> desactiva el auto-vector 6&nbsp;s y reduce drift/jitter al 20%.</li>
+            </ul>
+            <p class="note">Los sockets comparten carcasa pero mantienen cooldowns independientes (8&nbsp;s y 16&nbsp;s).</p>
+          </article>
+          <article class="card">
+            <h3>⚔️ Weapons</h3>
+            <p class="warning">TBD: estructura preparada para proyectiles, apuntado con lead y distintos tipos de munición.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="controles">
+        <h2>Mapa de controles</h2>
+        <div class="stat-grid">
+          <article class="stat-card">
+            <header><h3>Actitud</h3><span class="stat-card__scope">W/S/A/D + Q/E</span></header>
+            <p>Pitch, yaw y roll clásicos. Mantén Caps Lock o Shift para modo precisión.</p>
+          </article>
+          <article class="stat-card">
+            <header><h3>Empuje</h3><span class="stat-card__scope">+/−</span></header>
+            <p>Incrementa o reduce la target speed. Mantener <kbd>+</kbd> un segundo sube ≈2&nbsp;u/s hasta el máximo actual.</p>
+          </article>
+          <article class="stat-card">
+            <header><h3>Cámaras</h3><span class="stat-card__scope">7‑0 · Wheel</span></header>
+            <p>Visión trasera, cabina, seguimiento y fija. El zoom reajusta retícula y HUD al instante aunque muevas el canvas.</p>
+          </article>
+          <article class="stat-card">
+            <header><h3>Paneles</h3><span class="stat-card__scope">M · G · I · Esc</span></header>
+            <p>Mapa, grimorio e inventario comparten cooldown de 500&nbsp;ms para evitar dobles aperturas.</p>
+          </article>
+          <article class="stat-card">
+            <header><h3>Bahía auxiliar</h3><span class="stat-card__scope">1 · 2</span></header>
+            <p>Cada socket tiene HUD propio y se muestra en el panel atmosférico cuando está activo.</p>
+          </article>
+        </div>
+        <p class="note">La rueda del ratón ajusta el zoom; el vector de vuelo se dibuja directamente sobre la pantalla y cambia con tu velocidad.</p>
+      </section>
+
+      <section class="section" id="hud-marquee">
+        <h2>HUD Marquee</h2>
+        <p>La marquesina informa de aterrizajes, amenazas, portales y rituales. Filtra duplicados y cada alerta da una vuelta completa antes de caducar.</p>
+        <ul>
+          <li><strong>Mission Flow:</strong> respawns, landing/takeoff y abortos.</li>
+          <li><strong>Hazards:</strong> daños críticos, radiación y bloqueos de paneles.</li>
+          <li><strong>World Events:</strong> Concordia, lesser beings, Void Rituals.</li>
+        </ul>
+        <p class="note">Pulsa <kbd>Backspace</kbd> para repetir la última alerta; se guarda un historial de 10 entradas.</p>
+      </section>
+
+      <section class="section" id="horizonte">
+        <h2>Horizonte artificial atmosférico</h2>
+        <ul>
+          <li>Usa la normal precisa del planeta (<em>calculateAtmosphereAttitude</em>) para dibujar la línea entre cielo y suelo.</li>
+          <li>Pitch y roll se filtran antes de llegar al HUD para evitar vibraciones tras la cinemática.</li>
+          <li>Altímetro integrado con clamp a 0&nbsp;u cuando rozas superficie.</li>
+          <li>Vector y estabilidad visibles en el panel dedicado.</li>
+        </ul>
+        <p class="note">El debug HUD verifica ±90° de pitch y roll completos para QA.</p>
+      </section>
+
+      <section class="section" id="telemetria">
+        <h2>Atmosphere Telemetry Panel</h2>
+        <ul>
+          <li>Muestra nombre del planeta, probabilidad de vida, intel de habitantes y estado de visita.</li>
+          <li>Columna derecha sincronizada con <em>AtmosphereWeatherService</em>: evento activo, intensidad, precipitación, rayos y capa.</li>
+          <li>Vector de drift con magnitud, heading y pitch actualizados cada frame.</li>
+          <li>Badges rosas para avisos de inestabilidad, baja visibilidad o lift degradado.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="estratos">
+        <h2>Estratos y superficie</h2>
+        <ul>
+          <li>Cuatro zonas cromáticas por planeta (valle, planicie, media montaña, picos) más dunas y casquetes.</li>
+          <li>Micro relieve dinámico a &lt;600&nbsp;u con extrusión adicional del 8%.</li>
+          <li>Niebla azul progresiva a &lt;300&nbsp;u mediante curva cúbica continua.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="clima">
+        <h2>Clima volumétrico</h2>
+        <ul>
+          <li>Eventos por capas: superficie, baja, media y exósfera con ventanas de ~2&nbsp;min.</li>
+          <li>Niebla estratificada, nubes en múltiples shells y iluminación reactiva.</li>
+          <li>Loops y relámpagos dedicados con probabilidades basadas en <em>lightningChance</em>.</li>
+          <li>Precipitación renderizada delante de la cabina; se limpia al salir de la atmósfera.</li>
+          <li>Fuerzas extras: drift lateral, jitter de cámara, jitter físico en la nave y deriva progresiva cuando la turbulencia supera 0.45.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="impulso">
+        <h2>Impulso post-aterrizaje</h2>
+        <ul>
+          <li>Al terminar la <em>LandingSequence</em> la nave se recoloca 40&nbsp;u antes del punto de contacto y recibe un boost controlado.</li>
+          <li><em>enforceAtmosphereMaxEntrySpeed()</em> fija <em>currentSpeed</em>/<em>targetSpeed</em> al máximo y evita avisos de stall.</li>
+          <li>Overlay negro de 1.9&nbsp;s + <em>sfx_passby_air</em> en loop para ocultar el corte.</li>
+          <li>Silencio intencional: se recuerda la escena musical previa y se restaura al abandonar el bioma.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="impactos">
+        <h2>Impactos contra el suelo</h2>
+        <ul>
+          <li>Rebote físico inmediato con restitución 0.28 y amortiguación lateral 0.65.</li>
+          <li>Daño lineal: 1&nbsp;HP a 1&nbsp;u/s → 100&nbsp;HP a 10&nbsp;u/s.</li>
+          <li>Si cumples auto-landing (&lt;1&nbsp;u/s + piloto verde), se dispara la misma cámara asistida con polvo y swell.</li>
+          <li>Los sonidos de impacto se mezclan con el multiplicador de clima (<em>impactVolumeMultiplier</em>).</li>
+        </ul>
+      </section>
+
+      <section class="section" id="flujo">
+        <h2>Flujo atmosférico completo</h2>
+        <ol>
+          <li>Activa la secuencia con <kbd>Enter</kbd> cuando el piloto verde esté encendido. Otra pulsación dentro de la atmósfera provoca un descenso asistido.</li>
+          <li>Tras la cinemática recuperas el control con impulso inicial, viento envolvente y sin alarmas de stall.</li>
+          <li>Mantente ≤50&nbsp;u, &lt;5&nbsp;u/s y ±60° durante 3&nbsp;s para reactivar el piloto verde.</li>
+          <li>Touchdown suave automático si rozas el suelo a &lt;1&nbsp;u/s vertical.</li>
+          <li>Impactos duros generan aviso «Impacto atmosférico» y daño proporcional.</li>
+          <li>El panel de aterrizaje corta loops de clima y deja solo el siseo de viento hasta que cierres.</li>
+          <li>Al superar 1000&nbsp;u se inicia la <em>TakeoffSequence</em> y vuelves al modo espacial; también puedes pulsar Despegar en la UI.</li>
+        </ol>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

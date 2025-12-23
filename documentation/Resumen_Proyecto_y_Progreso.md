@@ -91,7 +91,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 - SEO e indexación
   - `src/index.html` ahora incluye título semántico, descripción, canonical `https://to3.atropello-games.es/`, etiquetas Open Graph/Twitter y JSON-LD (`VideoGame` + `SoftwareApplication`) apuntando a la build WebGL.
   - Servicio `SeoService` (`src/app/services/seo/seo.service.ts`) coordina `<title>`, `<meta>`, canonical dinámico y structured data; se activa desde `AppComponent` al reaccionar a cada `NavigationEnd`.
-  - Todas las rutas de la wiki exponen `data.seo` (título, descripción, URL absoluta e imagen) en `wiki.routes.ts`, de modo que cada página overlay empuja sus propios metadatos cuando se visita `/wiki/...` sin romper el canvas del juego.
+  - La wiki vive ahora como mini‑site estático en `public/wiki/**` con HTML independiente. Cada página incluye sus propias etiquetas `<title>`, `<meta>` y canonical `https://to3.atropello-games.es/wiki/<slug>/index.html`, comparte `wiki.css` y se abre en una pestaña nueva desde el header sin tocar Angular.
   - `public/robots.txt` y `public/sitemap.xml` apuntan al dominio to3.atropello-games.es, listan todas las secciones activas de la wiki y declaran `xmlns:xhtml` para evitar errores al añadir `xhtml:link` en el futuro.
 
 - Targeting y outlines (Fase 4)
@@ -113,7 +113,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
   - `AuthService.loginWithRedirect()` ahora es un wrapper directo que abre `/auth/launch?return=...` y espera a que la landing reescriba la cookie. Al volver al juego se ejecuta `AuthReturnService` y, si no llega callback, el bootstrap lee la cookie compartida.
   - `AuthService.logoutWithRedirect()` limpia el estado local y hoy redirige a `/auth/logout?return=...`, pantalla recientemente añadida en la landing que muestra el estado del sign-out y delega en su propio `AuthService.logoutWithRedirect()` (Hosted UI). Si el launcher fallara, el servicio cae automáticamente al Hosted UI directo.
   - `CloudSavesSessionBridgeService` sigue reflejando `auth.token()`/`auth.identity()` al panel, pero ahora se alimenta exclusivamente de la cookie compartida (o del callback clásico) — no existe handshake.
-  - El componente `app-cloud-saves-panel` ahora vive dentro del diálogo de opciones (tab “Partidas”) y solo se renderiza cuando hay sesión Cognito. Desde ahí se exponen las acciones de QA (sync, load latest, save demo, delete) sobre `CloudSavesService`. Ruta rápida en la wiki: `/wiki/cloud-saves`.
+  - El componente `app-cloud-saves-panel` ahora vive dentro del diálogo de opciones (tab “Partidas”) y solo se renderiza cuando hay sesión Cognito. Desde ahí se exponen las acciones de QA (sync, load latest, save demo, delete) sobre `CloudSavesService`. La documentación para pilotos residirá en la wiki estática (pendiente de página dedicada).
   - `GamePersistenceService.saveGame()` ya produce el `SaveGamePayload` v1 real: pausa el loop, serializa jugador, `GameStateStore` y universo, añade metadata (`schemaVersion`, `savedAt`, `elapsedPlayTimeMs`, `systemId`, label del ancla y `userId` vía `CloudSavesSessionBridgeService`) y registra en `LogCategory.SAVE_SYSTEM` el tamaño exacto del JSON para monitorear regresiones.
   - `GamePersistenceService.loadGame()` quedó simétrico: normaliza el payload con `SaveGameMigrationService.ensureLatestSchema()`, crea snapshots completos, hidrata jugador (`PlayerStateSerializer.apply()`), `GameStateStore` (`GameStateSnapshotAdapter.restore()`) y universo (`UniverseStateSnapshotAdapter.ensureRuntimeState()`), y reinicia el engine con `GameEngine.restartWithContext()`. Todos los pasos emiten trazas `LogCategory.SAVE_SYSTEM` con IDs de sistema/ancla para facilitar QA. La verificación manual in-game está pendiente hasta contar con capturas reales.
   - La metadata incluye ahora `snapshotLabel` y `snapshotId` del sistema activo, de modo que Gate Rite + guardado remoto siempre puede localizar el snapshot correcto incluso si el anchor por defecto sigue apuntando al trail humano.
@@ -199,7 +199,7 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 - **Spaceship tiene doble callback**: uno para cambios de salud (logging, efectos) y otro para muerte (death dialog). Ambos se disparan desde el setter override.
 - **Independización de asteroides**: Cuando un asteroide en cluster recibe daño, se independiza con velocidad propia y se registra callback de destrucción.
 
-Nota: las pruebas manuales de carga desde la UI se programaron para la próxima sesión con payloads reales, una vez concluida la actualización de documentación y wiki.
+Nota: las pruebas manuales de carga desde la UI se programaron para la próxima sesión con payloads reales, una vez concluida la actualización de documentación y de la wiki estática.
 
 Actualizado: Diciembre 2025.
 

@@ -1,9 +1,24 @@
 <footer class="app-footer">
   <div class="footer-container">
     <div class="footer-links">
-      <a [routerLink]="['/wiki/legal']" fragment="cookies" (click)="onCookiesClick()">Política de Cookies</a>
-      <a [routerLink]="['/wiki/legal']" fragment="contacto" (click)="onContactClick()">Contactar</a>
-      <a [routerLink]="['/wiki/legal']" (click)="onLegalClick()">Términos Legales</a>
+      <a
+        href="/wiki/legal/index.html#cookies"
+        target="_blank"
+        rel="noopener noreferrer"
+        (click)="onCookiesClick()"
+      >Política de Cookies</a>
+      <a
+        href="/wiki/legal/index.html#contacto"
+        target="_blank"
+        rel="noopener noreferrer"
+        (click)="onContactClick()"
+      >Contactar</a>
+      <a
+        href="/wiki/legal/index.html"
+        target="_blank"
+        rel="noopener noreferrer"
+        (click)="onLegalClick()"
+      >Términos Legales</a>
       <a
         href="/third-party-licenses/"
         target="_blank"

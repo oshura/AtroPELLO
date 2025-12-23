@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Planetas · AtroPELLO Wiki</title>
+  <meta name="description" content="Tipos de planeta, biomas atmosféricos y checklist para aterrizar sin morir en TO³." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="canonical" href="https://to3.atropello-games.es/wiki/planets/index.html" />
+  <meta property="og:title" content="Planetas TO³" />
+  <meta property="og:description" content="Explora la paleta atmosférica, los biomas y los peligros de cada planeta del sistema humano." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://to3.atropello-games.es/wiki/planets/index.html" />
+  <meta property="og:image" content="https://to3.atropello-games.es/assets/Wiki.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/wiki/wiki.css" />
+</head>
+<body>
+  <a class="wiki-back-button" href="/wiki/index.html">↩ Volver al índice</a>
+  <main>
+    <div class="wiki-shell">
+      <header class="wiki-hero">
+        <p class="wiki-hero__eyebrow">Atlas atmosférico</p>
+        <h1>Planetas y biomas</h1>
+        <p class="wiki-hero__lead">Guía para entender las paletas, climas y mecánicas de aterrizaje de cada mundo accesible.</p>
+      </header>
+
+      <section class="section" id="visuales">
+        <h2>Terreno y paletas en modo atmósfera</h2>
+        <ul>
+          <li>Cada tipo de planeta mezcla cuatro zonas cromáticas (valle, planicie, media montaña, picos) más dunas y casquetes.</li>
+          <li>El heightmap procedural usa dos capas de ruido: una desplaza la malla y la otra dibuja vetas/desiertos.</li>
+          <li>Las zonas polares mezclan tonos fríos; las latitudes bajas mezclan arenas o brea según el bioma.</li>
+          <li>El horizonte artificial y el terreno comparten normal, así no hay popping cuando termina la animación de landing.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="tipos">
+        <h2>Tipos de planeta</h2>
+        <div class="card-grid">
+          <article class="card">
+            <h3>🪨 Rocosos</h3>
+            <ul>
+              <li>Radios 150‑400&nbsp;u.</li>
+              <li>Superficie sólida aterrizable.</li>
+              <li>Mercurio, Venus, Tierra, Marte.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>💨 Gigantes gaseosos</h3>
+            <ul>
+              <li>Radios 600‑1200&nbsp;u.</li>
+              <li>Bandas atmosféricas visibles.</li>
+              <li>No aterrizables: contacto = muerte.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>🧊 Gigantes helados</h3>
+            <ul>
+              <li>Radios 300‑500&nbsp;u.</li>
+              <li>Tonos azul‑verde.</li>
+              <li>Atmósfera de metano muy fría.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>⭕ Anillados</h3>
+            <ul>
+              <li>Anillos 1.5‑2.5× el radio del planeta.</li>
+              <li>Múltiples bandas de hielo y roca.</li>
+              <li>Saturno como ejemplo principal.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="humanos">
+        <h2>Planetas del sistema humano</h2>
+        <div class="card-grid">
+          <article class="card"><h3>Mercury</h3><p><strong>Tipo:</strong> Rocky · <strong>Distancia real:</strong> 57.9M km · <strong>Escalada:</strong> 2400&nbsp;u · <strong>Radio:</strong> 180&nbsp;u.</p><p>Planeta más pequeño. Superficie craterizada con fuertes variaciones térmicas.</p></article>
+          <article class="card"><h3>Venus</h3><p><strong>Tipo:</strong> Rocky · <strong>Distancia:</strong> 108.2M km · 3200&nbsp;u · 350&nbsp;u.</p><p>Similar en tamaño a la Tierra, pero atmósfera tóxica y nubes amarillentas.</p></article>
+          <article class="card">
+            <h3>Earth (Split)</h3>
+            <p><strong>Tipo:</strong> Catastrophically Damaged · 149.6M km · 4200&nbsp;u · 400&nbsp;u.</p>
+            <p>Tierra partida con núcleo expuesto y cinturón inestable. El área central inflige daño térmico continuo.</p>
+          </article>
+          <article class="card">
+            <h3>Mars</h3>
+            <p><strong>Tipo:</strong> Rocky · 227.9M km · 5400&nbsp;u · 250&nbsp;u.</p>
+            <p>PLANETA rojo con entradas atmosféricas siempre severas (tormentas de polvo o lluvia ácida).</p>
+          </article>
+          <article class="card">
+            <h3>Jupiter</h3>
+            <p><strong>Tipo:</strong> Gas Giant · 778.5M km · 8200&nbsp;u · 1000&nbsp;u.</p>
+            <p>El planeta más grande. Gravedad inmensa y sin superficie aterrizable.</p>
+          </article>
+          <article class="card">
+            <h3>Saturn</h3>
+            <p><strong>Tipo:</strong> Ringed Gas Giant · 1.43B km · 11500&nbsp;u · 900&nbsp;u.</p>
+            <p>Anillos espectaculares llenos de fragmentos peligrosos.</p>
+          </article>
+          <article class="card">
+            <h3>Uranus</h3>
+            <p><strong>Tipo:</strong> Ice Giant · 2.87B km · 16000&nbsp;u · 450&nbsp;u.</p>
+            <p>Tilt pronunciado, tonos azul‑verdes y temperaturas extremas.</p>
+          </article>
+          <article class="card">
+            <h3>Neptune</h3>
+            <p><strong>Tipo:</strong> Ice Giant · 4.50B km · 19500&nbsp;u · 440&nbsp;u.</p>
+            <p>Último planeta principal; más allá, solo espacio profundo.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="landing">
+        <h2>Checklist de aterrizaje manual</h2>
+        <ol>
+          <li>Reduce velocidad a ≤5&nbsp;u/s usando freno o pulsos inversos.</li>
+          <li>Alinea la nave casi paralela al suelo (±60°).</li>
+          <li>Acércate hasta 50&nbsp;u sin penetrar la capa de choque.</li>
+          <li>Mantén velocidad, distancia y orientación durante 3&nbsp;s hasta que el piloto verde «Landing» se ilumine.</li>
+          <li>Si aparece el piloto rojo «Threat», elimina o esquiva hostiles a &lt;500&nbsp;u antes de continuar.</li>
+          <li>Con verde encendido y rojo apagado, pulsa <kbd>Enter</kbd> para ejecutar la secuencia asistida o para despegar.</li>
+        </ol>
+        <p>En tierra puedes descansar, registrar anomalías, interactuar con habitantes o rearmar a la tripulación según el planeta.</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>
