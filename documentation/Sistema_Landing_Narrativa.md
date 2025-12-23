@@ -33,15 +33,27 @@
 
 ## 3. Secuencias de aterrizaje y despegue
 ### 3.1 LandingSequence
-1. `handleKeyDown(Enter)` ⇒ `AnimationManager.startLandingSequence()`.
-2. Setup: modo cockpit, thrusters en idle, colisiones y daño solar desactivados.
-3. Fases: approach (2.4 s), glide (3 s), fade (1 s).
-4. Termina llamando `notifyLandingSequenceFinished('landed')`, deja `landingTouchdownContext` disponible y abre el panel.
+1. `handleKeyDown(Enter)` en espacio (o `maybeTriggerAtmosphereAutoLandingFromInput()` ya en atmósfera) valida `landingStatus.ready`, ausencia de `LandingThreat` y ejecuta `GameEngine.tryStartLandingSequence()` ⇒ `AnimationManager.startLandingSequence()`.
+2. Setup: modo cockpit + cámara bloqueada, thrusters en idle, captura snapshot cinético para restaurar velocidad real, colisiones y daños desactivados.
+3. Fases: approach (2.4 s), glide rasante (3 s) y fade-out (≈1 s) que entrega la nave a la escena atmosférica.
+4. Al terminar llama `notifyLandingSequenceFinished('landed', context)`: invoca `handleLandingTouchdown(context, { skipLandingPanel: true })`, entra en modo atmósfera, silencia música (`silenceMusicForAtmosphere()`), arma `landingPanelAudioFocus` y deja el touchdown pendiente hasta que la nave toque suelo físico o se dispare un auto-landing.
 
 ### 3.2 TakeoffSequence
 1. Botón **Despegar** en el panel ejecuta `GameEngine.startTakeoffSequence()`.
 2. Fases: preparación (1 s), ascenso (4 s), salida (2 s).
 3. Restaura dinámica original, vuelve a habilitar daños y desbloquea input.
+
+### 3.3 Touchdown atmosférico y panel
+1. `handleLandingTouchdown()` enriquece el `LandingApproachContext`, llama `enterAtmosphereScene()` (si aún no se estaba allí) y aplica impulso inicial para que la nave recupere control.
+2. Si `autoLand=true`, `startAtmosphereAutoLandingCamera()` bloquea la cámara a ras de suelo y reproduce polvo + `sfx_autoland_touchdown`; en aterrizajes manuales se libera la cámara de inmediato.
+3. Registra la visita del planeta, arma `atmosphereAutoTakeoff` (se disparará cuando superes 1000 u de altura) y desactiva la supresión de daño para que el vuelo atmosférico vuelva a ser físico.
+4. El panel solo se abre cuando `skipLandingPanel` es falso. `openLandingPanelWithDelay()` espera 0–2 s según el tipo de touchdown; al abrirse se ejecuta `applyLandingPanelAudioFocus()` para dejar solo el loop de viento y pausar clima/música.
+
+### 3.4 Auto-landing, colisiones y takeoff automático
+- `detectAtmosphereGroundCollision()` controla la distancia nave-centro y, al detectar contacto suave (velocidad vertical ≤1 u/s y `landingStatus.ready`), llama nuevamente a `handleLandingTouchdown()` con `autoLand=true` y `deferLandingPanelMs = 2000` para mostrar la cinemática corta antes de abrir el panel.
+- Impactos bruscos reutilizan `handleAtmosphereGroundImpact()`: recoloca la nave sobre el suelo, aplica rebote con restitución 0.28, atenúa la componente lateral al 65 % y calcula daño + partículas/SFX.
+- La cámara manual auto-landing se libera cuando la velocidad lateral cae por debajo de 0.4 u/s o al iniciar un despegue.
+- `maybeTriggerAtmosphereAutoTakeoff()` monitoriza la altitud tras un touchdown y ejecuta `startTakeoffSequence()` automáticamente al superar 1000 u, compartiendo logs y audio con el flujo manual.
 
 Ambas secuencias se precargan en `AnimationManagerService`; los logs usan `LogCategory.GAME_LOOP` y `HUD` para depurar.
 
