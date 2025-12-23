@@ -9,7 +9,7 @@ Este proyecto es un Angular 20 SPA con encabezado, pie de página y área de con
 
 - Existe un desarrollo en la aplicacion SPA de una wiki para el usuario. La wiki se encuentra en la ruta /wiki y el código relacionado con la wiki se encuentra en la carpeta /src/app/wiki. /documentation Wiki_System.md documenta el sistema de la wiki.
 
-- La wiki, debe ser actualizada con el comportamiento (funcionalidades) que se implementan nuevas o se modifican. Debe tenerse en cuenta para completar cada desarrollo.
+- La wiki, debe ser actualizada con el comportamiento (funcionalidades) que se implementan nuevas o se modifican. Debe tenerse en cuenta para completar cada desarrollo. La wiki es un a guia centrada en el usuari, el jugador. Le explica funcionalidades del juego y mecanicas para que pueda entenderlas y usarlas. Pero en ningun caso se le ha de dar detalles técnicos de la implementación ni detalles de código. Es un manual del juego para el jugador exclusivamente.
 
 - Los desarrollos complejos, deben siempre partir con un analisis previo del código existente, analisis de la documentación técnica relacionada, y un plan de desarrollo que debe ser aprobado antes de comenzar a escribir código. El plan debe detallarse en /documentation/plans/ para poder retomar el desarrollo en cualquier momento con una lista con checks para marcar el progreso.
 
@@ -17,6 +17,6 @@ Este proyecto es un Angular 20 SPA con encabezado, pie de página y área de con
 
 - Siempre ten en cuenta sobretodo /documentation/CleanCode_Arquitectura.md y /documentation/Resumen_Proyecto_y_Progreso.md.
 
-- Por último, cada fase completada del desarrollo debe ser compilada con 'npm run build' para asegurar que el proyecto compila correctamente tras los cambios.
+- Por último, cada fase completada del desarrollo debe ser compilada con 'npm run build' para asegurar que el proyecto compila correctamente tras los cambios. No está de mas lanzar los tests 'npm run tests', pero hazlo desatendido para no dejar procesos en marcha, con los parametros '--watch=false --browsers=ChromeHeadless'.
 
 - Completado el plan y la documentación al respecto, puedes eliminar el plan.
