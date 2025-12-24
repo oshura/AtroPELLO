@@ -88,6 +88,24 @@ interface LightningStrikeOptions {
   jitterSegments?: number;
 }
 
+interface LandingDustSheet {
+  position: Vector3;
+  normal: Vector3;
+  tangent: Vector3;
+  bitangent: Vector3;
+  width: number;
+  height: number;
+  maxWidth: number;
+  maxHeight: number;
+  age: number;
+  maxLife: number;
+  opacity: number;
+  color: { r: number; g: number; b: number };
+  rotation: number;
+  rotationSpeed: number;
+  wobble: number;
+}
+
 export interface WeatherPrecipitationConfig {
   type: PrecipitationType;
   intensity: number;
@@ -218,6 +236,8 @@ export class ParticleEffectsService {
   };
   private lightningStrikes: LightningStrike[] = [];
   private readonly maxLightningStrikes = 6;
+  private landingDustSheets: LandingDustSheet[] = [];
+  private readonly maxLandingDustSheets = 18;
 
   constructor(private webglService: WebGLService, private logger: LoggingService) {}
 
@@ -236,6 +256,7 @@ export class ParticleEffectsService {
     this.createParticleBuffers();
     // Ambient dust will be seeded on first update when we have ship pose
     this.ambientInitialized = false;
+    this.landingDustSheets = [];
     this.logger.log(LogLevel.INFO, LogCategory.PARTICLES, 'ParticleEffectsService initialized');
     return true;
   }
@@ -530,6 +551,76 @@ export class ParticleEffectsService {
     this.lightningStrikes = this.lightningStrikes.filter(strike => {
       strike.remaining -= deltaTime;
       return strike.remaining > 0;
+    });
+  }
+
+  public spawnLandingDustBillboards(origin: Vector3, normal: Vector3, layers: number = 3): void {
+    if (layers <= 0) {
+      return;
+    }
+    const safeNormal = this.normalize(normal);
+    const basis = this.buildLandingDustBasis(safeNormal);
+    for (let i = 0; i < layers; i++) {
+      if (this.landingDustSheets.length >= this.maxLandingDustSheets) {
+        this.landingDustSheets.shift();
+      }
+      const radius = 0.6 + i * 0.45 + Math.random() * 0.35;
+      const angle = Math.random() * Math.PI * 2;
+      const radial = {
+        x: basis.tangent.x * Math.cos(angle) * radius + basis.bitangent.x * Math.sin(angle) * radius,
+        y: basis.tangent.y * Math.cos(angle) * radius + basis.bitangent.y * Math.sin(angle) * radius,
+        z: basis.tangent.z * Math.cos(angle) * radius + basis.bitangent.z * Math.sin(angle) * radius,
+      };
+      const maxWidth = 2.6 + i * 1.1 + Math.random() * 0.6;
+      const maxHeight = 1.1 + i * 0.45 + Math.random() * 0.35;
+      const sheet: LandingDustSheet = {
+        position: {
+          x: origin.x + safeNormal.x * 0.25 + radial.x,
+          y: origin.y + safeNormal.y * 0.25 + radial.y,
+          z: origin.z + safeNormal.z * 0.25 + radial.z,
+        },
+        normal: safeNormal,
+        tangent: basis.tangent,
+        bitangent: basis.bitangent,
+        width: 0.4,
+        height: 0.2,
+        maxWidth,
+        maxHeight,
+        age: 0,
+        maxLife: 2.2 + Math.random() * 0.9,
+        opacity: 0,
+        color: this.sampleLandingDustColor(),
+        rotation: angle,
+        rotationSpeed: (-0.5 + Math.random()) * 0.9,
+        wobble: 0.3 + Math.random() * 0.4,
+      };
+      this.landingDustSheets.push(sheet);
+    }
+  }
+
+  public updateLandingDustBillboards(deltaTime: number): void {
+    if (!deltaTime || this.landingDustSheets.length === 0) {
+      return;
+    }
+    const lift = Math.max(0.1, deltaTime * 0.65);
+    this.landingDustSheets = this.landingDustSheets.filter(sheet => {
+      sheet.age += deltaTime;
+      if (sheet.age >= sheet.maxLife) {
+        return false;
+      }
+      const t = sheet.age / Math.max(1e-3, sheet.maxLife);
+      const growth = Math.min(1, t * 1.35);
+      sheet.width = sheet.maxWidth * growth;
+      sheet.height = sheet.maxHeight * Math.min(1, 0.5 + t * 0.7);
+      const fadeIn = Math.min(1, t / 0.2);
+      const fadeOut = Math.max(0, 1 - Math.max(0, t - 0.55) / 0.4);
+      sheet.opacity = Math.max(0, fadeIn * fadeOut);
+      const wobbleStep = sheet.wobble * deltaTime;
+      sheet.position.x += sheet.normal.x * lift + sheet.tangent.x * wobbleStep * 0.35;
+      sheet.position.y += sheet.normal.y * lift + sheet.bitangent.y * wobbleStep * 0.35;
+      sheet.position.z += sheet.normal.z * lift + sheet.tangent.z * wobbleStep * 0.35;
+      sheet.rotation += sheet.rotationSpeed * deltaTime;
+      return true;
     });
   }
 
@@ -900,6 +991,12 @@ export class ParticleEffectsService {
       }
     }
 
+    if (this.landingDustSheets.length) {
+      for (const sheet of this.landingDustSheets) {
+        this.renderLandingDustBillboard(sheet, camera);
+      }
+    }
+
     if (this.lightningStrikes.length) {
       for (const strike of this.lightningStrikes) {
         this.renderLightningStrike(strike, camera);
@@ -1183,6 +1280,101 @@ export class ParticleEffectsService {
     gl.drawArrays(gl.TRIANGLES, 0, 6);
     gl.disableVertexAttribArray(positionLocation);
     gl.disableVertexAttribArray(colorLocation);
+  }
+
+  private renderLandingDustBillboard(sheet: LandingDustSheet, camera: Camera): void {
+    if (!this.gl || !this.shaderManager || !this.particleVertexBuffer) {
+      return;
+    }
+    if (sheet.opacity <= 0) {
+      return;
+    }
+    const gl = this.gl;
+    const alpha = sheet.opacity;
+    const head = alpha * 0.85;
+    const edge = head * 0.45;
+    const colors = new Float32Array([
+      sheet.color.r * edge, sheet.color.g * edge, sheet.color.b * edge,
+      sheet.color.r * edge, sheet.color.g * edge, sheet.color.b * edge,
+      sheet.color.r * head, sheet.color.g * head, sheet.color.b * head,
+      sheet.color.r * edge, sheet.color.g * edge, sheet.color.b * edge,
+      sheet.color.r * head, sheet.color.g * head, sheet.color.b * head,
+      sheet.color.r * head, sheet.color.g * head, sheet.color.b * head,
+    ]);
+    if (!this.particleColorBuffer) {
+      this.particleColorBuffer = gl.createBuffer();
+    }
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
+    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
+
+    const program = this.shaderManager.basicProgram!;
+    const positionLocation = this.shaderManager.basicAttributes['position'];
+    const colorLocation = this.shaderManager.basicAttributes['color'];
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVertexBuffer);
+    gl.enableVertexAttribArray(positionLocation);
+    gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
+    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
+    gl.enableVertexAttribArray(colorLocation);
+    gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
+
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+
+    const cosR = Math.cos(sheet.rotation);
+    const sinR = Math.sin(sheet.rotation);
+    let axis1 = {
+      x: sheet.tangent.x * cosR + sheet.bitangent.x * sinR,
+      y: sheet.tangent.y * cosR + sheet.bitangent.y * sinR,
+      z: sheet.tangent.z * cosR + sheet.bitangent.z * sinR,
+    };
+    axis1 = this.normalize(axis1);
+    let axis2 = {
+      x: -sheet.tangent.x * sinR + sheet.bitangent.x * cosR,
+      y: -sheet.tangent.y * sinR + sheet.bitangent.y * cosR,
+      z: -sheet.tangent.z * sinR + sheet.bitangent.z * cosR,
+    };
+    axis2 = this.normalize(axis2);
+    const axis3 = sheet.normal;
+
+    const modelMatrix = new Float32Array(16);
+    this.createIdentityMatrix(modelMatrix);
+    modelMatrix[0] = axis1.x * sheet.width;
+    modelMatrix[1] = axis1.y * sheet.width;
+    modelMatrix[2] = axis1.z * sheet.width;
+    modelMatrix[4] = axis2.x * sheet.width * 0.6;
+    modelMatrix[5] = axis2.y * sheet.width * 0.6;
+    modelMatrix[6] = axis2.z * sheet.width * 0.6;
+    modelMatrix[8] = axis3.x * sheet.height;
+    modelMatrix[9] = axis3.y * sheet.height;
+    modelMatrix[10] = axis3.z * sheet.height;
+    modelMatrix[12] = sheet.position.x;
+    modelMatrix[13] = sheet.position.y;
+    modelMatrix[14] = sheet.position.z;
+
+    this.shaderManager.setBasicMatrices(modelMatrix, camera.viewMatrix, camera.projectionMatrix);
+    gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+    gl.disableVertexAttribArray(positionLocation);
+    gl.disableVertexAttribArray(colorLocation);
+    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
+  }
+
+  private buildLandingDustBasis(normal: Vector3): { tangent: Vector3; bitangent: Vector3 } {
+    const reference = Math.abs(normal.y) > 0.7 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
+    let tangent = this.cross(normal, reference);
+    if (Math.hypot(tangent.x, tangent.y, tangent.z) < 1e-4) {
+      tangent = this.cross(normal, { x: 0, y: 0, z: 1 });
+    }
+    tangent = this.normalize(tangent);
+    const bitangent = this.normalize(this.cross(normal, tangent));
+    return { tangent, bitangent };
+  }
+
+  private sampleLandingDustColor(): { r: number; g: number; b: number } {
+    return {
+      r: 0.82 + Math.random() * 0.08,
+      g: 0.66 + Math.random() * 0.07,
+      b: 0.46 + Math.random() * 0.06,
+    };
   }
 
   private renderLightningStrike(strike: LightningStrike, camera: Camera): void {

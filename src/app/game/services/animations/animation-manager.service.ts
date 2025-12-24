@@ -30,6 +30,7 @@ export class AnimationManagerService {
   };
   private fallbackFlashImages: string[] = ['/assets/Nodens.webp'];
   private flashIndex = 0;
+  private readonly nonInterruptibleAnimationNames = new Set<string>(['landing-sequence', 'takeoff-sequence']);
 
   constructor() {
     // Preload the void-jump module to avoid first-use delay on 'y'
@@ -465,9 +466,25 @@ export class AnimationManagerService {
     return true;
   }
 
-  public startAtmosphereLandingCinematic(engine: GameEngine, context: LandingApproachContext): boolean {
+  public startAtmosphereLandingCinematic(
+    engine: GameEngine,
+    context: LandingApproachContext,
+    options?: { forceReplace?: boolean }
+  ): boolean {
     if (this.current && this.current.name !== 'blocking-delay') {
-      return false;
+      const canPreempt = options?.forceReplace && this.tryForceReplaceCurrentAnimation(engine, 'atmosphere-landing');
+      if (!canPreempt) {
+        if (options?.forceReplace) {
+          try {
+            const active = this.current?.name ?? 'unknown';
+            GameLogger.warn(
+              LogCategory.ANIMATION,
+              `Atmosphere landing cinematic blocked by active animation: ${active}`
+            );
+          } catch {}
+        }
+        return false;
+      }
     }
     const launch = (Ctor: { new(): GameAnimation }) => {
       const anim = new Ctor();
@@ -491,6 +508,26 @@ export class AnimationManagerService {
         this.current = null;
       }
     })();
+    return true;
+  }
+
+  private tryForceReplaceCurrentAnimation(engine: GameEngine, nextName: string): boolean {
+    if (!this.current) {
+      return true;
+    }
+    const activeName = this.current.name;
+    if (this.nonInterruptibleAnimationNames.has(activeName)) {
+      return false;
+    }
+    try {
+      this.current.cleanup?.(engine);
+    } catch (error) {
+      try { GameLogger.warn(LogCategory.ANIMATION, `Cleanup failed while preempting ${activeName}`, error); } catch {}
+    }
+    this.current = null;
+    try {
+      GameLogger.warn(LogCategory.ANIMATION, `Preempted animation ${activeName} → ${nextName}`);
+    } catch {}
     return true;
   }
 

@@ -28,19 +28,25 @@ export class AtmosphereLandingAnimation implements GameAnimation {
   private context!: LandingApproachContext;
   private blocking = true;
   private elapsed = 0;
-  private readonly cinematicDuration = 3.6;
-  private readonly cameraHeight = 1.9;
-  private readonly cameraForwardOffset = 4.8;
-  private readonly cameraDollyRange = 3.3;
-  private readonly flareMaxDegrees = 6;
+  private readonly descentDuration = 5;
+  private readonly settleDuration = 2;
+  private readonly cameraHeight = 3.2;
+  private readonly cameraStandoff = 11;
+  private readonly flareMaxDegrees = 7;
+  private readonly touchdownClearance = 0.85;
+  private readonly landingCueTime = 2;
+  private readonly dustLeadSeconds = 1;
 
   private surfaceNormal!: Vector3;
   private contactPoint!: Vector3;
   private approachDir!: Vector3;
   private shipStart!: Vector3;
   private shipEnd!: Vector3;
+  private cameraAnchor!: Vector3;
   private startSpeed = 0;
   private touchdownTriggered = false;
+  private preTouchdownFxTriggered = false;
+  private landingCueTriggered = false;
 
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
@@ -90,9 +96,9 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     this.approachDir = this.computeApproachDirection(ship.forwardDirection, this.surfaceNormal);
 
     const radius = Math.max(200, this.context.radius ?? 600);
-    const startOffset = Math.max(18, radius * 0.025);
-    const glideHeight = Math.max(1.5, radius * 0.0025);
-    const arcHeight = glideHeight + Math.max(1.2, radius * 0.0018);
+    const startOffset = Math.max(24, radius * 0.035);
+    const glideHeight = Math.max(1.8, radius * 0.0025);
+    const arcHeight = glideHeight + Math.max(1.5, radius * 0.002);
 
     this.shipStart = {
       x: this.contactPoint.x - this.approachDir.x * startOffset + this.surfaceNormal.x * (arcHeight + glideHeight),
@@ -100,14 +106,17 @@ export class AtmosphereLandingAnimation implements GameAnimation {
       z: this.contactPoint.z - this.approachDir.z * startOffset + this.surfaceNormal.z * (arcHeight + glideHeight),
     };
     this.shipEnd = {
-      x: this.contactPoint.x + this.surfaceNormal.x * glideHeight,
-      y: this.contactPoint.y + this.surfaceNormal.y * glideHeight,
-      z: this.contactPoint.z + this.surfaceNormal.z * glideHeight,
+      x: this.contactPoint.x + this.surfaceNormal.x * this.touchdownClearance,
+      y: this.contactPoint.y + this.surfaceNormal.y * this.touchdownClearance,
+      z: this.contactPoint.z + this.surfaceNormal.z * this.touchdownClearance,
     };
+    this.cameraAnchor = this.getCameraAnchor();
 
     this.startSpeed = Math.max(4, Math.min(ship.currentSpeed || 0, ship.maxSpeed || 9));
     this.elapsed = 0;
     this.touchdownTriggered = false;
+    this.preTouchdownFxTriggered = false;
+    this.landingCueTriggered = false;
 
     this.prevCameraMode = engine.camera?.getCurrentMode?.() ?? null;
     this.configureCamera(engine, this.shipStart);
@@ -117,6 +126,8 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     ship.thrusterState = ThrusterState.BRAKING;
     ship.currentSpeed = this.startSpeed;
     ship.targetSpeed = this.startSpeed;
+
+    engine.ensureAtmosphereLandingAirRushLoop?.();
 
     try { engine.notifyAtmosphereLandingCinematicStarted?.(this.context); } catch { /* ignore */ }
   }
@@ -128,20 +139,33 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     }
 
     this.elapsed += dt;
-    const progress = clamp01(this.elapsed / this.cinematicDuration);
-    const eased = smoothstep(progress);
-    const shipPos = this.lerpVec(this.shipStart, this.shipEnd, eased);
-    const flare = this.computeFlare(progress);
-    this.applyShipPose(ship, shipPos, this.surfaceNormal, this.approachDir, flare);
-    this.updateShipKinetics(ship, eased);
-    this.updateCinematicCamera(engine, ship, eased);
 
-    if (!this.touchdownTriggered && progress >= 0.9) {
-      this.touchdownTriggered = true;
-      try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal); } catch { /* ignore */ }
+    const descentProgress = clamp01(this.elapsed / this.descentDuration);
+    const eased = smoothstep(descentProgress);
+    const shipPos = this.lerpVec(this.shipStart, this.shipEnd, eased);
+    const flare = this.computeFlare(descentProgress);
+    this.applyShipPose(ship, shipPos, this.surfaceNormal, this.approachDir, flare);
+    this.updateShipKinetics(ship, descentProgress);
+    this.updateCinematicCamera(engine, ship);
+
+    if (!this.landingCueTriggered && this.elapsed >= this.landingCueTime) {
+      this.landingCueTriggered = true;
+      try { engine.playAtmosphereLandingApproachCue?.(); } catch { /* ignore */ }
     }
 
-    if (progress >= 1) {
+    const dustTriggerTime = this.descentDuration - this.dustLeadSeconds;
+    if (!this.preTouchdownFxTriggered && this.elapsed >= dustTriggerTime) {
+      this.preTouchdownFxTriggered = true;
+      try { engine.spawnAtmosphereLandingDustSheets?.(this.contactPoint, this.surfaceNormal); } catch { /* ignore */ }
+    }
+
+    if (!this.touchdownTriggered && descentProgress >= 1) {
+      this.touchdownTriggered = true;
+      try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal, { skipAudio: true }); } catch { /* ignore */ }
+    }
+
+    const totalDuration = this.descentDuration + this.settleDuration;
+    if (this.elapsed >= totalDuration) {
       this.finish(engine, false);
       return true;
     }
@@ -204,12 +228,12 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     });
   }
 
-  private updateCinematicCamera(engine: GameEngine, ship: any, progress: number): void {
+  private updateCinematicCamera(engine: GameEngine, ship: any): void {
     const camera = engine.camera;
     if (!camera) {
       return;
     }
-    const position = this.getCameraPosition(progress);
+    const position = this.cameraAnchor;
     const target = this.getCameraTarget(ship.position);
     try {
       camera.seedManualTransform?.(position, target, this.surfaceNormal);
@@ -223,7 +247,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
       return;
     }
     try { camera.setCameraMode(CameraMode.MANUAL); } catch { /* ignore */ }
-    const position = this.getCameraPosition(0);
+    const position = this.cameraAnchor;
     const target = this.getCameraTarget(shipPosition);
     try {
       camera.seedManualTransform?.(position, target, this.surfaceNormal);
@@ -231,14 +255,11 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     } catch { /* ignore */ }
   }
 
-  private getCameraPosition(progress: number): Vector3 {
-    const eased = smoothstep(progress);
-    const dolly = this.cameraForwardOffset + this.cameraDollyRange * eased;
-    const heightBoost = this.cameraHeight + 0.6 * (1 - eased);
+  private getCameraAnchor(): Vector3 {
     return {
-      x: this.contactPoint.x + this.approachDir.x * dolly + this.surfaceNormal.x * heightBoost,
-      y: this.contactPoint.y + this.approachDir.y * dolly + this.surfaceNormal.y * heightBoost,
-      z: this.contactPoint.z + this.approachDir.z * dolly + this.surfaceNormal.z * heightBoost,
+      x: this.contactPoint.x + this.approachDir.x * this.cameraStandoff + this.surfaceNormal.x * this.cameraHeight,
+      y: this.contactPoint.y + this.approachDir.y * this.cameraStandoff + this.surfaceNormal.y * this.cameraHeight,
+      z: this.contactPoint.z + this.approachDir.z * this.cameraStandoff + this.surfaceNormal.z * this.cameraHeight,
     };
   }
 
@@ -251,17 +272,26 @@ export class AtmosphereLandingAnimation implements GameAnimation {
   }
 
   private computeFlare(progress: number): number {
-    const flareBoost = smoothstep(1 - Math.max(0, 1 - progress * 1.35));
+    const early = smoothstep(Math.min(1, progress * 0.65));
+    const late = Math.max(0, 1 - progress);
+    const flareBoost = early * late;
     return this.flareMaxDegrees * flareBoost;
   }
 
-  private updateShipKinetics(ship: any, eased: number): void {
-    const remainingSpeed = clamp(this.startSpeed * (1 - eased * 0.95), 0, this.startSpeed);
+  private updateShipKinetics(ship: any, descentProgress: number): void {
+    const brakeRatio = clamp(1 - descentProgress, 0, 1);
+    const remainingSpeed = this.startSpeed * brakeRatio * 0.98;
     ship.currentSpeed = remainingSpeed;
     ship.targetSpeed = remainingSpeed;
-    ship.thrusterState = remainingSpeed > 0.25 ? ThrusterState.BRAKING : ThrusterState.IDLE;
+    ship.thrusterState = remainingSpeed > 0.2 ? ThrusterState.BRAKING : ThrusterState.IDLE;
     ship.isThrusting = false;
     ship.controls.forward = false;
+    if (descentProgress >= 1) {
+      ship.currentSpeed = 0;
+      ship.targetSpeed = 0;
+      ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
+      ship.thrusterState = ThrusterState.IDLE;
+    }
   }
 
   private applyShipPose(
