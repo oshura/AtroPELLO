@@ -19,6 +19,7 @@ export class AnimationManagerService {
   private cachedVoidKinesisCtor: ({ new(): GameAnimation }) | null = null;
   private cachedLandingSequenceCtor: ({ new(): GameAnimation }) | null = null;
   private cachedTakeoffSequenceCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedAtmosphereLandingCtor: ({ new(): GameAnimation }) | null = null;
   private cachedQuimioSigillumCtor: ({ new(): GameAnimation }) | null = null;
   private cachedRespawnSigillumCtor: ({ new(): GameAnimation }) | null = null;
   private elderGodFlashImages: Record<ElderGod, string> = {
@@ -42,6 +43,7 @@ export class AnimationManagerService {
     this.preloadVoidKinesis();
     this.preloadLandingSequence();
     this.preloadTakeoffSequence();
+    this.preloadAtmosphereLanding();
     this.preloadQuimioSigillum();
     this.preloadRespawnSigillum();
   }
@@ -463,12 +465,51 @@ export class AnimationManagerService {
     return true;
   }
 
+  public startAtmosphereLandingCinematic(engine: GameEngine, context: LandingApproachContext): boolean {
+    if (this.current && this.current.name !== 'blocking-delay') {
+      return false;
+    }
+    const launch = (Ctor: { new(): GameAnimation }) => {
+      const anim = new Ctor();
+      try { (anim as any).configure?.(context); } catch {}
+      anim.start(engine);
+      this.current = anim;
+    };
+    if (this.cachedAtmosphereLandingCtor) {
+      launch(this.cachedAtmosphereLandingCtor);
+      return true;
+    }
+    this.current = this.createLoadingStub();
+    (async () => {
+      try {
+        const mod = await import('./atmosphere-landing.animation');
+        const Anim = (mod as any).AtmosphereLandingAnimation as { new(): GameAnimation };
+        this.cachedAtmosphereLandingCtor = Anim;
+        launch(Anim);
+      } catch (e) {
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load AtmosphereLandingAnimation', e); } catch {}
+        this.current = null;
+      }
+    })();
+    return true;
+  }
+
   private preloadLandingSequence(): void {
     (async () => {
       try {
         const mod = await import('./landing-sequence.animation');
         const Anim = (mod as any).LandingSequenceAnimation as { new(): GameAnimation };
         this.cachedLandingSequenceCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  private preloadAtmosphereLanding(): void {
+    (async () => {
+      try {
+        const mod = await import('./atmosphere-landing.animation');
+        const Anim = (mod as any).AtmosphereLandingAnimation as { new(): GameAnimation };
+        this.cachedAtmosphereLandingCtor = Anim;
       } catch { /* ignore */ }
     })();
   }

@@ -273,6 +273,7 @@ export class GameEngine {
   private readonly ATMOSPHERE_AUTO_LAND_CAMERA_TARGET_LIFT = 3;
   private readonly ATMOSPHERE_AUTO_LAND_CAMERA_MIN_HOLD_MS = 900;
   private readonly ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS = 2000;
+  private readonly ATMOSPHERE_AUTO_LAND_CINEMATIC_PANEL_DELAY_MS = 3600;
   private readonly ATMOSPHERE_GROUND_RESTITUTION = 0.28;
   private readonly ATMOSPHERE_GROUND_TANGENT_DAMPING = 0.65;
   private readonly ATMOSPHERE_GROUND_MIN_REBOUND_SPEED = 0.75;
@@ -305,6 +306,8 @@ export class GameEngine {
   private atmosphereAutoLandingContactPoint: Vector3 | null = null;
   private atmosphereAutoLandingCameraStartedAt = 0;
   private atmosphereAutoLandingDustTriggered = false;
+  private atmosphereLandingCinematicActive = false;
+  private atmosphereLandingCinematicContext: LandingApproachContext | null = null;
   
   // HUD health update throttle (update every 250ms instead of every frame)
   private lastHealthUpdateTime: number = 0;
@@ -1028,6 +1031,34 @@ export class GameEngine {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing sequence finished', { outcome });
   }
 
+  public notifyAtmosphereLandingCinematicStarted(context: LandingApproachContext): void {
+    this.atmosphereLandingCinematicActive = true;
+    this.atmosphereLandingCinematicContext = context;
+    this.stopAtmosphereAutoLandingCamera();
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Atmosphere landing cinematic started', {
+      planetId: context.planetId,
+      planetName: context.planetName,
+    });
+  }
+
+  public notifyAtmosphereLandingCinematicFinished(
+    outcome: 'completed' | 'aborted',
+    context?: LandingApproachContext | null,
+  ): void {
+    const resolvedContext = context ?? this.atmosphereLandingCinematicContext;
+    this.atmosphereLandingCinematicActive = false;
+    this.atmosphereLandingCinematicContext = null;
+    if (outcome === 'completed' && resolvedContext?.autoLand) {
+      this.startAtmosphereAutoLandingCamera(resolvedContext);
+    } else if (outcome === 'aborted') {
+      this.stopAtmosphereAutoLandingCamera();
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Atmosphere landing cinematic finished', {
+      outcome,
+      planetId: resolvedContext?.planetId,
+    });
+  }
+
   public notifyTakeoffSequenceStarted(context: LandingApproachContext): void {
     this.takeoffSequenceActive = true;
     this.setLandingDamageSuppressed(true, 'takeoff-sequence-start');
@@ -1074,8 +1105,12 @@ export class GameEngine {
     }
     this.applyAtmosphereLandingImpulse();
     this.landingTouchdownContext = enrichedContext;
+    let autoLandCinematicActive = false;
     if (enrichedContext.autoLand) {
-      this.startAtmosphereAutoLandingCamera(enrichedContext);
+      autoLandCinematicActive = this.animationManager?.startAtmosphereLandingCinematic?.(this, enrichedContext) ?? false;
+      if (!autoLandCinematicActive) {
+        this.startAtmosphereAutoLandingCamera(enrichedContext);
+      }
     } else {
       this.stopAtmosphereAutoLandingCamera();
     }
@@ -1092,7 +1127,10 @@ export class GameEngine {
 
     let panelManaged = false;
     if (!options?.skipLandingPanel) {
-      const deferMs = options?.deferLandingPanelMs ?? (enrichedContext.autoLand ? this.ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS : 0);
+      const baseDeferMs = options?.deferLandingPanelMs ?? (enrichedContext.autoLand ? this.ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS : 0);
+      const deferMs = autoLandCinematicActive
+        ? Math.max(baseDeferMs, this.ATMOSPHERE_AUTO_LAND_CINEMATIC_PANEL_DELAY_MS)
+        : baseDeferMs;
       panelManaged = this.openLandingPanelWithDelay(enrichedContext, deferMs);
     }
 

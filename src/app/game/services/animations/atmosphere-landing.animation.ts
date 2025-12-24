@@ -22,33 +22,30 @@ function clamp(x: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, x));
 }
 
-export class LandingSequenceAnimation implements GameAnimation {
-  public readonly name = 'landing-sequence';
+export class AtmosphereLandingAnimation implements GameAnimation {
+  public readonly name = 'atmosphere-landing';
 
   private context!: LandingApproachContext;
   private blocking = true;
   private elapsed = 0;
-  private readonly cinematicDuration = 5.0;
-  private readonly cameraHeight = 2.3;
-  private readonly cameraForwardOffset = 6.5;
-  private readonly cameraDollyRange = 4.5;
-  private readonly flareMaxDegrees = 10;
-  private readonly atmosphereEntryBlendStart = 0.82;
-  private readonly atmosphereEntryBlendEnd = 1;
+  private readonly cinematicDuration = 3.6;
+  private readonly cameraHeight = 1.9;
+  private readonly cameraForwardOffset = 4.8;
+  private readonly cameraDollyRange = 3.3;
+  private readonly flareMaxDegrees = 6;
 
   private surfaceNormal!: Vector3;
   private contactPoint!: Vector3;
   private approachDir!: Vector3;
   private shipStart!: Vector3;
   private shipEnd!: Vector3;
-  private shipEntry!: Vector3;
   private startSpeed = 0;
   private touchdownTriggered = false;
 
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
-
   private savedShipDynamics: { acceleration: number; deceleration: number; maxSpeed: number } | null = null;
+  private prevCollisionsDisabled = false;
 
   public configure(context: LandingApproachContext): void {
     this.context = context;
@@ -61,15 +58,17 @@ export class LandingSequenceAnimation implements GameAnimation {
       return;
     }
 
+    this.prevCollisionsDisabled = engine.collisionsDisabled;
     this.savedShipDynamics = {
       acceleration: ship.acceleration,
       deceleration: ship.deceleration,
-      maxSpeed: ship.maxSpeed
+      maxSpeed: ship.maxSpeed,
     };
-    ship.acceleration = 5;
-    ship.deceleration = 7;
+
+    ship.acceleration = 4.2;
+    ship.deceleration = 6;
     ship.targetSpeed = 0;
-    ship.currentSpeed = Math.min(ship.currentSpeed, 8);
+    ship.currentSpeed = Math.min(ship.currentSpeed, 6);
     ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
     ship.thrusterState = ThrusterState.BRAKING;
     ship.voidEnergyPaused = true;
@@ -86,43 +85,40 @@ export class LandingSequenceAnimation implements GameAnimation {
 
     engine.collisionsDisabled = true;
 
-    const normal = this.normalize(this.context.surfaceNormal ?? { x: 0, y: 1, z: 0 });
-    this.surfaceNormal = normal;
+    this.surfaceNormal = this.normalize(this.context.surfaceNormal ?? this.deriveNormalFromContext());
     this.contactPoint = this.resolveContactPoint();
-    this.approachDir = this.computeApproachDirection(ship.forwardDirection, normal);
-    const startOffset = Math.max(40, (this.context.radius ?? 800) * 0.05);
-    const startHeight = Math.max(12, (this.context.radius ?? 800) * 0.02);
-    const settleHeight = Math.max(2.4, (this.context.radius ?? 800) * 0.004);
+    this.approachDir = this.computeApproachDirection(ship.forwardDirection, this.surfaceNormal);
+
+    const radius = Math.max(200, this.context.radius ?? 600);
+    const startOffset = Math.max(18, radius * 0.025);
+    const glideHeight = Math.max(1.5, radius * 0.0025);
+    const arcHeight = glideHeight + Math.max(1.2, radius * 0.0018);
+
     this.shipStart = {
-      x: this.contactPoint.x - this.approachDir.x * startOffset + normal.x * (startHeight + settleHeight),
-      y: this.contactPoint.y - this.approachDir.y * startOffset + normal.y * (startHeight + settleHeight),
-      z: this.contactPoint.z - this.approachDir.z * startOffset + normal.z * (startHeight + settleHeight)
+      x: this.contactPoint.x - this.approachDir.x * startOffset + this.surfaceNormal.x * (arcHeight + glideHeight),
+      y: this.contactPoint.y - this.approachDir.y * startOffset + this.surfaceNormal.y * (arcHeight + glideHeight),
+      z: this.contactPoint.z - this.approachDir.z * startOffset + this.surfaceNormal.z * (arcHeight + glideHeight),
     };
     this.shipEnd = {
-      x: this.contactPoint.x + normal.x * settleHeight,
-      y: this.contactPoint.y + normal.y * settleHeight,
-      z: this.contactPoint.z + normal.z * settleHeight
+      x: this.contactPoint.x + this.surfaceNormal.x * glideHeight,
+      y: this.contactPoint.y + this.surfaceNormal.y * glideHeight,
+      z: this.contactPoint.z + this.surfaceNormal.z * glideHeight,
     };
-    const entryDepth = Math.max(12, (this.context.radius ?? 800) * 0.015);
-    this.shipEntry = {
-      x: this.contactPoint.x - normal.x * entryDepth,
-      y: this.contactPoint.y - normal.y * entryDepth,
-      z: this.contactPoint.z - normal.z * entryDepth,
-    };
-    this.startSpeed = Math.max(6, Math.min(ship.currentSpeed || 0, ship.maxSpeed || 12));
+
+    this.startSpeed = Math.max(4, Math.min(ship.currentSpeed || 0, ship.maxSpeed || 9));
     this.elapsed = 0;
     this.touchdownTriggered = false;
 
     this.prevCameraMode = engine.camera?.getCurrentMode?.() ?? null;
     this.configureCamera(engine, this.shipStart);
     this.installKeyBlockers();
-    this.applyShipPose(ship, this.shipStart, normal, this.approachDir, 0);
+    this.applyShipPose(ship, this.shipStart, this.surfaceNormal, this.approachDir, 0);
     ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
     ship.thrusterState = ThrusterState.BRAKING;
     ship.currentSpeed = this.startSpeed;
     ship.targetSpeed = this.startSpeed;
 
-    engine.notifyLandingSequenceStarted?.(this.context);
+    try { engine.notifyAtmosphereLandingCinematicStarted?.(this.context); } catch { /* ignore */ }
   }
 
   public update(engine: GameEngine, dt: number): boolean {
@@ -134,15 +130,15 @@ export class LandingSequenceAnimation implements GameAnimation {
     this.elapsed += dt;
     const progress = clamp01(this.elapsed / this.cinematicDuration);
     const eased = smoothstep(progress);
-    const shipPos = this.computeBlendedShipPosition(progress);
+    const shipPos = this.lerpVec(this.shipStart, this.shipEnd, eased);
     const flare = this.computeFlare(progress);
     this.applyShipPose(ship, shipPos, this.surfaceNormal, this.approachDir, flare);
     this.updateShipKinetics(ship, eased);
     this.updateCinematicCamera(engine, ship, eased);
 
-    if (!this.touchdownTriggered && progress >= this.atmosphereEntryBlendStart) {
+    if (!this.touchdownTriggered && progress >= 0.9) {
       this.touchdownTriggered = true;
-      try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal); } catch {}
+      try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal); } catch { /* ignore */ }
     }
 
     if (progress >= 1) {
@@ -152,8 +148,8 @@ export class LandingSequenceAnimation implements GameAnimation {
     return false;
   }
 
-  public render(engine: GameEngine): void {
-    // Cinematic uses cámara física; no overlay necesario.
+  public render(_engine: GameEngine): void {
+    // Cámara física, no se requieren overlays.
   }
 
   public isBlockingInputs(): boolean {
@@ -181,22 +177,18 @@ export class LandingSequenceAnimation implements GameAnimation {
     }
     this.savedShipDynamics = null;
 
-    try { this.inputBlockers.forEach(fn => fn()); } catch {}
+    try { this.inputBlockers.forEach(fn => fn()); } catch { /* ignore */ }
     this.inputBlockers = [];
 
-    // Keep collisions disabled through landed state; only re-enable if sequence aborts
-    if (aborted) {
-      engine.collisionsDisabled = false;
-    } else {
-      engine.collisionsDisabled = true;
-    }
+    engine.collisionsDisabled = this.prevCollisionsDisabled;
+
     if (engine.camera && this.prevCameraMode !== null) {
-      try { engine.camera.setCameraMode(this.prevCameraMode); } catch {}
+      try { engine.camera.setCameraMode(this.prevCameraMode); } catch { /* ignore */ }
     }
     this.prevCameraMode = null;
 
-    const outcome = aborted ? 'aborted' : 'landed';
-    try { engine.notifyLandingSequenceFinished?.(outcome, aborted ? null : this.context); } catch {}
+    const outcome = aborted ? 'aborted' : 'completed';
+    try { engine.notifyAtmosphereLandingCinematicFinished?.(outcome, aborted ? null : this.context); } catch { /* ignore */ }
     this.blocking = false;
   }
 
@@ -212,30 +204,123 @@ export class LandingSequenceAnimation implements GameAnimation {
     });
   }
 
-  private computeBlendedShipPosition(progress: number): Vector3 {
-    if (progress < this.atmosphereEntryBlendStart) {
-      const local = clamp01(progress / Math.max(1e-3, this.atmosphereEntryBlendStart));
-      const eased = smoothstep(local);
-      return this.lerpVec(this.shipStart, this.shipEnd, eased);
+  private updateCinematicCamera(engine: GameEngine, ship: any, progress: number): void {
+    const camera = engine.camera;
+    if (!camera) {
+      return;
     }
-    const span = Math.max(1e-3, this.atmosphereEntryBlendEnd - this.atmosphereEntryBlendStart);
-    const local = clamp01((progress - this.atmosphereEntryBlendStart) / span);
-    const eased = smoothstep(local);
-    return this.lerpVec(this.shipEnd, this.shipEntry, eased);
+    const position = this.getCameraPosition(progress);
+    const target = this.getCameraTarget(ship.position);
+    try {
+      camera.seedManualTransform?.(position, target, this.surfaceNormal);
+      camera.markDirty?.();
+    } catch { /* ignore */ }
   }
 
-  private lerpVec(a: Vector3, b: Vector3, t: number): Vector3 {
-    const k = clamp01(t);
+  private configureCamera(engine: GameEngine, shipPosition: Vector3): void {
+    const camera = engine.camera;
+    if (!camera) {
+      return;
+    }
+    try { camera.setCameraMode(CameraMode.MANUAL); } catch { /* ignore */ }
+    const position = this.getCameraPosition(0);
+    const target = this.getCameraTarget(shipPosition);
+    try {
+      camera.seedManualTransform?.(position, target, this.surfaceNormal);
+      camera.markDirty?.();
+    } catch { /* ignore */ }
+  }
+
+  private getCameraPosition(progress: number): Vector3 {
+    const eased = smoothstep(progress);
+    const dolly = this.cameraForwardOffset + this.cameraDollyRange * eased;
+    const heightBoost = this.cameraHeight + 0.6 * (1 - eased);
     return {
-      x: lerp(a.x, b.x, k),
-      y: lerp(a.y, b.y, k),
-      z: lerp(a.z, b.z, k)
+      x: this.contactPoint.x + this.approachDir.x * dolly + this.surfaceNormal.x * heightBoost,
+      y: this.contactPoint.y + this.approachDir.y * dolly + this.surfaceNormal.y * heightBoost,
+      z: this.contactPoint.z + this.approachDir.z * dolly + this.surfaceNormal.z * heightBoost,
     };
   }
 
-  private normalize(v: Vector3): Vector3 {
-    const len = Math.hypot(v.x, v.y, v.z) || 1;
-    return { x: v.x / len, y: v.y / len, z: v.z / len };
+  private getCameraTarget(shipPosition: Vector3): Vector3 {
+    return {
+      x: shipPosition.x + this.surfaceNormal.x * 0.35,
+      y: shipPosition.y + this.surfaceNormal.y * 0.35,
+      z: shipPosition.z + this.surfaceNormal.z * 0.35,
+    };
+  }
+
+  private computeFlare(progress: number): number {
+    const flareBoost = smoothstep(1 - Math.max(0, 1 - progress * 1.35));
+    return this.flareMaxDegrees * flareBoost;
+  }
+
+  private updateShipKinetics(ship: any, eased: number): void {
+    const remainingSpeed = clamp(this.startSpeed * (1 - eased * 0.95), 0, this.startSpeed);
+    ship.currentSpeed = remainingSpeed;
+    ship.targetSpeed = remainingSpeed;
+    ship.thrusterState = remainingSpeed > 0.25 ? ThrusterState.BRAKING : ThrusterState.IDLE;
+    ship.isThrusting = false;
+    ship.controls.forward = false;
+  }
+
+  private applyShipPose(
+    ship: any,
+    position: Vector3,
+    up: Vector3,
+    forward: Vector3,
+    flareDegrees: number
+  ): void {
+    ship.position.x = position.x;
+    ship.position.y = position.y;
+    ship.position.z = position.z;
+
+    const flareRad = flareDegrees * Math.PI / 180;
+    const dir = this.normalize({
+      x: forward.x * Math.cos(flareRad) + up.x * Math.sin(flareRad),
+      y: forward.y * Math.cos(flareRad) + up.y * Math.sin(flareRad),
+      z: forward.z * Math.cos(flareRad) + up.z * Math.sin(flareRad),
+    });
+    const lookTarget = {
+      x: ship.position.x + dir.x,
+      y: ship.position.y + dir.y,
+      z: ship.position.z + dir.z,
+    };
+    ship.lookAt(lookTarget, up);
+    ship.updateModelMatrix();
+    if (ship.boundingSphere?.center) {
+      ship.boundingSphere.center.x = ship.position.x;
+      ship.boundingSphere.center.y = ship.position.y;
+      ship.boundingSphere.center.z = ship.position.z;
+    }
+  }
+
+  private resolveContactPoint(): Vector3 {
+    if (this.context.surfacePoint) {
+      return { ...this.context.surfacePoint };
+    }
+    const normal = this.surfaceNormal;
+    const radius = Number.isFinite(this.context.radius) ? this.context.radius : 0;
+    const center = this.context.planetCenter
+      ? { ...this.context.planetCenter }
+      : { x: 0, y: 0, z: 0 };
+    return {
+      x: center.x + normal.x * radius,
+      y: center.y + normal.y * radius,
+      z: center.z + normal.z * radius,
+    };
+  }
+
+  private deriveNormalFromContext(): Vector3 {
+    if (this.context.planetCenter && this.context.surfacePoint) {
+      const dir = {
+        x: this.context.surfacePoint.x - this.context.planetCenter.x,
+        y: this.context.surfacePoint.y - this.context.planetCenter.y,
+        z: this.context.surfacePoint.z - this.context.planetCenter.z,
+      };
+      return this.normalize(dir);
+    }
+    return { x: 0, y: 1, z: 0 };
   }
 
   private computeApproachDirection(forward: Vector3, normal: Vector3): Vector3 {
@@ -270,110 +355,17 @@ export class LandingSequenceAnimation implements GameAnimation {
     return { x: cross.x / len, y: cross.y / len, z: cross.z / len };
   }
 
-  private resolveContactPoint(): Vector3 {
-    if (this.context.surfacePoint) {
-      return { ...this.context.surfacePoint };
-    }
-    const normal = this.surfaceNormal;
-    const radius = Number.isFinite(this.context.radius) ? this.context.radius : 0;
-    const center = this.context.planetCenter
-      ? { ...this.context.planetCenter }
-      : { x: 0, y: 0, z: 0 };
+  private lerpVec(a: Vector3, b: Vector3, t: number): Vector3 {
+    const k = clamp01(t);
     return {
-      x: center.x + normal.x * radius,
-      y: center.y + normal.y * radius,
-      z: center.z + normal.z * radius,
+      x: lerp(a.x, b.x, k),
+      y: lerp(a.y, b.y, k),
+      z: lerp(a.z, b.z, k),
     };
   }
 
-  private configureCamera(engine: GameEngine, shipPosition: Vector3): void {
-    const camera = engine.camera;
-    if (!camera) {
-      return;
-    }
-    try { camera.setCameraMode(CameraMode.MANUAL); } catch {}
-    const position = this.getCameraPosition(0);
-    const target = this.getCameraTarget(shipPosition);
-    try {
-      camera.seedManualTransform?.(position, target, this.surfaceNormal);
-      camera.markDirty?.();
-    } catch {}
-  }
-
-  private updateCinematicCamera(engine: GameEngine, ship: any, progress: number): void {
-    const camera = engine.camera;
-    if (!camera) {
-      return;
-    }
-    const position = this.getCameraPosition(progress);
-    const target = this.getCameraTarget(ship.position);
-    try {
-      camera.seedManualTransform?.(position, target, this.surfaceNormal);
-      camera.markDirty?.();
-    } catch {}
-  }
-
-  private getCameraPosition(progress: number): Vector3 {
-    const eased = smoothstep(progress);
-    const dolly = this.cameraForwardOffset + this.cameraDollyRange * eased;
-    const heightBoost = this.cameraHeight + 0.8 * (1 - eased);
-    return {
-      x: this.contactPoint.x + this.approachDir.x * dolly + this.surfaceNormal.x * heightBoost,
-      y: this.contactPoint.y + this.approachDir.y * dolly + this.surfaceNormal.y * heightBoost,
-      z: this.contactPoint.z + this.approachDir.z * dolly + this.surfaceNormal.z * heightBoost,
-    };
-  }
-
-  private getCameraTarget(shipPosition: Vector3): Vector3 {
-    return {
-      x: shipPosition.x + this.surfaceNormal.x * 0.4,
-      y: shipPosition.y + this.surfaceNormal.y * 0.4,
-      z: shipPosition.z + this.surfaceNormal.z * 0.4,
-    };
-  }
-
-  private computeFlare(progress: number): number {
-    const flareBoost = smoothstep(1 - Math.max(0, 1 - progress * 1.3));
-    return this.flareMaxDegrees * flareBoost;
-  }
-
-  private updateShipKinetics(ship: any, eased: number): void {
-    const remainingSpeed = clamp(this.startSpeed * (1 - eased * 0.98), 0, this.startSpeed);
-    ship.currentSpeed = remainingSpeed;
-    ship.targetSpeed = remainingSpeed;
-    ship.thrusterState = remainingSpeed > 0.35 ? ThrusterState.BRAKING : ThrusterState.IDLE;
-    ship.isThrusting = false;
-    ship.controls.forward = false;
-  }
-
-  private applyShipPose(
-    ship: any,
-    position: Vector3,
-    up: Vector3,
-    forward: Vector3,
-    flareDegrees: number
-  ): void {
-    ship.position.x = position.x;
-    ship.position.y = position.y;
-    ship.position.z = position.z;
-
-    const flareRad = flareDegrees * Math.PI / 180;
-    const dir = this.normalize({
-      x: forward.x * Math.cos(flareRad) + up.x * Math.sin(flareRad),
-      y: forward.y * Math.cos(flareRad) + up.y * Math.sin(flareRad),
-      z: forward.z * Math.cos(flareRad) + up.z * Math.sin(flareRad)
-    });
-    const lookTarget = {
-      x: ship.position.x + dir.x,
-      y: ship.position.y + dir.y,
-      z: ship.position.z + dir.z
-    };
-    ship.lookAt(lookTarget, up);
-    ship.updateModelMatrix();
-    if (ship.boundingSphere?.center) {
-      ship.boundingSphere.center.x = ship.position.x;
-      ship.boundingSphere.center.y = ship.position.y;
-      ship.boundingSphere.center.z = ship.position.z;
-    }
+  private normalize(v: Vector3): Vector3 {
+    const len = Math.hypot(v.x, v.y, v.z) || 1;
+    return { x: v.x / len, y: v.y / len, z: v.z / len };
   }
 }
