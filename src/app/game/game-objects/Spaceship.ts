@@ -900,14 +900,26 @@ export class Spaceship extends GameObject {
     const wingWidth = 0.016;     // Profundidad (eje Y)
     const wingThickness = 0.225; // Altura (eje Z local)
     const wingRoot = 0.4;        // Punto donde nace el ala en el fuselaje
+    const verticalLiftMax = 0.28; // Altura máxima aplicada al plegar completamente
+    const bodyEmbedDepth = 0.18;  // Cuánto se introduce la base del ala en el fuselaje
 
     const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
     const foldProgress = clamp01(this.wingDeploymentProgress);
-    const maxFoldAngle = Math.PI * 0.75; // ≈135° para que converjan sobre el fuselaje
+    const maxFoldAngle = Math.PI * 0.5; // 90° exactos para un plegado vertical
     const foldAngle = foldProgress * maxFoldAngle;
     const lateralCollapse = 1 - 0.6 * Math.pow(foldProgress, 0.85); // Traer las alas al centro al plegar
-    const verticalLift = foldProgress * 0.4; // Elevarlas sobre el fuselaje
+    const verticalLift = foldProgress * verticalLiftMax; // Elevarlas sobre el fuselaje
+    const embedDepth = foldProgress * bodyEmbedDepth; // Inserción progresiva en el fuselaje
     const forwardTuck = foldProgress * 0.08; // Pequeña traslación para que se entrelacen como alas de ave
+
+    const computeEmbedInfluence = (x: number) => {
+      const span = wingLength - wingRoot;
+      if (span <= 0) {
+        return 0;
+      }
+      const distanceToTip = wingLength - Math.abs(x);
+      return clamp01(distanceToTip / span);
+    };
 
     const rotateAroundZAxis = (x: number, y: number, pivotX: number, pivotY: number, angle: number) => {
       const translatedX = x - pivotX;
@@ -920,11 +932,13 @@ export class Spaceship extends GameObject {
     };
 
     const transformVertex = (x: number, y: number, z: number, sign: -1 | 1) => {
+      const embedInfluence = computeEmbedInfluence(x);
       const collapsedX = x * lateralCollapse;
       const sweptY = y + forwardTuck * sign;
       const rotationAngle = sign * foldAngle;
       const rotated = rotateAroundZAxis(collapsedX, sweptY, 0, 0, rotationAngle);
-      vertices.push(rotated.x, rotated.y + verticalLift, z);
+      const embeddedY = rotated.y + verticalLift - embedDepth * embedInfluence;
+      vertices.push(rotated.x, embeddedY, z);
     };
 
     const pushWing = (sign: -1 | 1) => {
