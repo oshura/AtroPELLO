@@ -19,6 +19,7 @@ export class AnimationManagerService {
   private cachedVoidKinesisCtor: ({ new(): GameAnimation }) | null = null;
   private cachedLandingSequenceCtor: ({ new(): GameAnimation }) | null = null;
   private cachedTakeoffSequenceCtor: ({ new(): GameAnimation }) | null = null;
+  private cachedGroundTakeoffCtor: ({ new(): GameAnimation }) | null = null;
   private cachedAtmosphereLandingCtor: ({ new(): GameAnimation }) | null = null;
   private cachedQuimioSigillumCtor: ({ new(): GameAnimation }) | null = null;
   private cachedRespawnSigillumCtor: ({ new(): GameAnimation }) | null = null;
@@ -30,7 +31,7 @@ export class AnimationManagerService {
   };
   private fallbackFlashImages: string[] = ['/assets/Nodens.webp'];
   private flashIndex = 0;
-  private readonly nonInterruptibleAnimationNames = new Set<string>(['landing-sequence', 'takeoff-sequence']);
+  private readonly nonInterruptibleAnimationNames = new Set<string>(['landing-sequence', 'takeoff-sequence', 'ground-takeoff']);
 
   constructor() {
     // Preload the void-jump module to avoid first-use delay on 'y'
@@ -44,6 +45,7 @@ export class AnimationManagerService {
     this.preloadVoidKinesis();
     this.preloadLandingSequence();
     this.preloadTakeoffSequence();
+    this.preloadGroundTakeoff();
     this.preloadAtmosphereLanding();
     this.preloadQuimioSigillum();
     this.preloadRespawnSigillum();
@@ -551,29 +553,43 @@ export class AnimationManagerService {
     })();
   }
 
-  public startTakeoffSequence(engine: GameEngine, context: LandingApproachContext): boolean {
+  public startTakeoffSequence(
+    engine: GameEngine,
+    context: LandingApproachContext,
+    options?: { phase?: 'ground' | 'atmo-exit' }
+  ): boolean {
     if (this.current && this.current.name !== 'blocking-delay') {
       return false;
     }
+    const phase = options?.phase ?? 'ground';
     const launch = (Ctor: { new(): GameAnimation }) => {
       const anim = new Ctor();
-      try { (anim as any).configure?.(context); } catch {}
+      try { (anim as any).configure?.(context, { phase }); } catch {}
       anim.start(engine);
       this.current = anim;
     };
-    if (this.cachedTakeoffSequenceCtor) {
-      launch(this.cachedTakeoffSequenceCtor);
+    const useGroundPhase = phase === 'ground';
+    const cachedCtor = useGroundPhase ? this.cachedGroundTakeoffCtor : this.cachedTakeoffSequenceCtor;
+    if (cachedCtor) {
+      launch(cachedCtor);
       return true;
     }
     this.current = this.createLoadingStub();
     (async () => {
       try {
-        const mod = await import('./takeoff-sequence.animation');
-        const Anim = (mod as any).TakeoffSequenceAnimation as { new(): GameAnimation };
-        this.cachedTakeoffSequenceCtor = Anim;
-        launch(Anim);
+        if (useGroundPhase) {
+          const mod = await import('./ground-takeoff.animation');
+          const Anim = (mod as any).GroundTakeoffAnimation as { new(): GameAnimation };
+          this.cachedGroundTakeoffCtor = Anim;
+          launch(Anim);
+        } else {
+          const mod = await import('./takeoff-sequence.animation');
+          const Anim = (mod as any).TakeoffSequenceAnimation as { new(): GameAnimation };
+          this.cachedTakeoffSequenceCtor = Anim;
+          launch(Anim);
+        }
       } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load TakeoffSequenceAnimation', e); } catch {}
+        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load Takeoff animation', e); } catch {}
         this.current = null;
       }
     })();
@@ -586,6 +602,16 @@ export class AnimationManagerService {
         const mod = await import('./takeoff-sequence.animation');
         const Anim = (mod as any).TakeoffSequenceAnimation as { new(): GameAnimation };
         this.cachedTakeoffSequenceCtor = Anim;
+      } catch { /* ignore */ }
+    })();
+  }
+
+  private preloadGroundTakeoff(): void {
+    (async () => {
+      try {
+        const mod = await import('./ground-takeoff.animation');
+        const Anim = (mod as any).GroundTakeoffAnimation as { new(): GameAnimation };
+        this.cachedGroundTakeoffCtor = Anim;
       } catch { /* ignore */ }
     })();
   }

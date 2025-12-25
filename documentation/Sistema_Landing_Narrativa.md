@@ -45,7 +45,7 @@
 
 ### 3.3 Touchdown atmosférico y panel
 1. `handleLandingTouchdown()` enriquece el `LandingApproachContext`, llama `enterAtmosphereScene()` (si aún no se estaba allí) y aplica impulso inicial para que la nave recupere control.
-2. Si `autoLand=true`, `startAtmosphereAutoLandingCamera()` bloquea la cámara a ras de suelo y reproduce polvo + `sfx_autoland_touchdown`; en aterrizajes manuales se libera la cámara de inmediato.
+2. Si `autoLand=true`, `startAtmosphereAutoLandingCamera()` bloquea la cámara a ras de suelo y reproduce polvo + `sfx_autoland_touchdown`. `AtmosphereLandingAnimation` ahora dura 7 s (5 s de descenso + 2 s de giro coreografiado de 90° alineado con la normal y despliegue completo de alas) antes de los 2 s de reposo previos al panel; durante ese tramo final `ParticleEffectsService.startLandingAnchorRig()` dibuja una escalera lumínica y los brazos de anclaje que golpean el suelo mientras progresa `setLandingAnchorRigProgress()`, reproduce el golpe `sfx_anchor` al soltar la estructura y mantiene el polvo volumétrico 100 % visible (el renderer deshabilita el depth test mientras se pintan los billboards). En aterrizajes manuales se libera la cámara de inmediato.
 3. Registra la visita del planeta, arma `atmosphereAutoTakeoff` (se disparará cuando superes 1000 u de altura) y desactiva la supresión de daño para que el vuelo atmosférico vuelva a ser físico.
 4. El panel solo se abre cuando `skipLandingPanel` es falso. `openLandingPanelWithDelay()` espera 0–2 s según el tipo de touchdown; al abrirse se ejecuta `applyLandingPanelAudioFocus()` para dejar solo el loop de viento y pausar clima/música.
 

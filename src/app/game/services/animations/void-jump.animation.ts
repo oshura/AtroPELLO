@@ -45,6 +45,8 @@ export class VoidJumpAnimation implements GameAnimation {
   private streakMaxBoost = 220; // additional speed when at max visual speed
   private lastUpdateTime = 0;
   private savedVoidEnergy = 0;
+  private cockpitModeLatched = false;
+  private restoreCameraMode = true;
 
   start(engine: GameEngine, target: ITargetable): void {
     this.target = target;
@@ -87,6 +89,8 @@ export class VoidJumpAnimation implements GameAnimation {
   this.teleportMoment = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime * 0.9; // near end of fade-to-black
   this.totalTime = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime + this.imageDisplayTime + this.fadeOutTime;
     this.lastUpdateTime = 0;
+    this.cockpitModeLatched = false;
+    this.restoreCameraMode = true;
 
     // Prepare optional flash images (if configured)
     this.flashTextures = [];
@@ -215,6 +219,11 @@ export class VoidJumpAnimation implements GameAnimation {
     // Phase 5: fade-in scene (remove overlay)
     const fadeOutStart = holdEnd;
     if (this.t > fadeOutStart) {
+      if (!this.cockpitModeLatched) {
+        engine['camera']?.setCameraMode?.(CameraMode.COCKPIT);
+        this.cockpitModeLatched = true;
+        this.restoreCameraMode = false;
+      }
       const k = clamp01((this.t - fadeOutStart) / this.fadeOutTime);
       this.overlayAlpha = lerp(1.0, 0.0, k);
     }
@@ -234,7 +243,11 @@ export class VoidJumpAnimation implements GameAnimation {
       try { this.inputBlockers.forEach(fn => fn()); this.inputBlockers = []; } catch {}
       engine.voidJumpActive = false;
       try { (engine as any).handleVoidJumpCompleted?.(); } catch {}
-      engine['camera']?.setCameraMode?.(this.prevCameraMode);
+      if (this.restoreCameraMode) {
+        engine['camera']?.setCameraMode?.(this.prevCameraMode);
+      } else if (this.cockpitModeLatched) {
+        engine['camera']?.setCameraMode?.(CameraMode.COCKPIT);
+      }
       this.blocking = false;
       return true;
     }
@@ -258,8 +271,11 @@ export class VoidJumpAnimation implements GameAnimation {
       // Reset flags
       engine.voidJumpActive = false;
       engine.collisionsDisabled = false;
-      // Restore camera
-      engine['camera']?.setCameraMode?.(this.prevCameraMode);
+      if (this.restoreCameraMode) {
+        engine['camera']?.setCameraMode?.(this.prevCameraMode);
+      } else if (this.cockpitModeLatched) {
+        engine['camera']?.setCameraMode?.(CameraMode.COCKPIT);
+      }
     } catch (err) {
       console.error('[VoidJumpAnimation] cleanup() error:', err);
     }

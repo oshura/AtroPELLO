@@ -254,6 +254,7 @@ export class GameEngine {
   private landingTouchdownContext: LandingApproachContext | null = null;
   private landedShipAttachment: { planetId: string; offset: Vector3 } | null = null;
   private takeoffSequenceActive: boolean = false;
+  private takeoffSequencePhase: 'ground' | 'atmo-exit' | null = null;
   private landingCandidatePlanetId: string | null = null;
   private landingCandidateStartMs: number | null = null;
   private readonly LANDING_DISTANCE_THRESHOLD = 50;
@@ -400,6 +401,7 @@ export class GameEngine {
   private weatherAudioCue: string | null = null;
   private weatherLightningCooldownMs: number = 0;
   private pendingLightningAudioVolume: number | null = null;
+  private stallWarningSuppressedUntilTakeoff: boolean = false;
   private landingPanelAirHandle: ReturnType<AudioEngineService['play']> | null = null;
   private landingPanelAudioFocusActive: boolean = false;
   private landingPanelAudioFocusArmed: boolean = false;
@@ -526,6 +528,9 @@ export class GameEngine {
   } = {};
   // Record the last applied dynamic scale for the thruster to refresh geometry when it changes
   private lastThrusterScale: number = -1;
+  private lastWingDeploymentProgress: number = -1;
+  private wingGeometryDirty = true;
+  private pendingWingDeploymentProgress: number | null = null;
   // Simple ephemeral text overlay (e.g., "ANIMATION NUMBER X.")
   private _placeholderOverlay: { tex: WebGLTexture; w: number; h: number; until: number } | null = null;
 
@@ -877,9 +882,40 @@ export class GameEngine {
     const relativeSpeed = Math.abs(this.spaceship.currentSpeed);
     const meetsDistance = altitude <= this.LANDING_DISTANCE_THRESHOLD;
     const meetsSpeed = relativeSpeed <= this.LANDING_SPEED_THRESHOLD;
-    const normal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
+    const storedNormal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
     const forward = this.normalize({ ...this.spaceship.forwardDirection });
-    const alignmentDot = forward.x * normal.x + forward.y * normal.y + forward.z * normal.z;
+    const planetCenter = context.planetCenter ?? this.resolvePlanetCenterFromContext(context);
+    const radius = Number.isFinite(context.radius) ? context.radius : 0;
+    const groundRadius = Math.max(0, this.atmosphereSceneState.groundRadius ?? 0);
+    const targetRadius = groundRadius > 0 ? groundRadius : radius;
+    const shipPos = this.spaceship.position;
+    let landingNormal = storedNormal;
+    let surfacePoint = context.surfacePoint ? { ...context.surfacePoint } : this.resolveLandingContactPoint(context);
+    if (planetCenter) {
+      const toShip = {
+        x: shipPos.x - planetCenter.x,
+        y: shipPos.y - planetCenter.y,
+        z: shipPos.z - planetCenter.z,
+      };
+      const distance = Math.hypot(toShip.x, toShip.y, toShip.z);
+      if (distance > 1e-4) {
+        landingNormal = {
+          x: toShip.x / distance,
+          y: toShip.y / distance,
+          z: toShip.z / distance,
+        };
+        if (targetRadius > 0) {
+          surfacePoint = {
+            x: planetCenter.x + landingNormal.x * targetRadius,
+            y: planetCenter.y + landingNormal.y * targetRadius,
+            z: planetCenter.z + landingNormal.z * targetRadius,
+          };
+        } else {
+          surfacePoint = { x: shipPos.x, y: shipPos.y, z: shipPos.z };
+        }
+      }
+    }
+    const alignmentDot = forward.x * landingNormal.x + forward.y * landingNormal.y + forward.z * landingNormal.z;
     const meetsAlignment = Math.abs(alignmentDot) <= this.LANDING_ALIGNMENT_MAX_DOT;
     const meetsAll = meetsDistance && meetsSpeed && meetsAlignment;
 
@@ -901,14 +937,12 @@ export class GameEngine {
       now - this.landingCandidateStartMs >= this.LANDING_READY_HOLD_MS
     );
 
-    const surfacePoint = context.surfacePoint ?? this.resolveLandingContactPoint(context);
-    const planetCenter = context.planetCenter ?? this.resolvePlanetCenterFromContext(context);
-
     const statusContext: LandingStatus['context'] = {
       ...context,
+      radius: targetRadius > 0 ? targetRadius : radius,
       surfacePoint,
-      surfaceNormal: normal,
-      planetCenter: planetCenter ?? surfacePoint,
+      surfaceNormal: { ...landingNormal },
+      planetCenter: planetCenter ? { ...planetCenter } : surfacePoint,
       distanceToSurface: altitude,
       relativeSpeed,
       alignmentDot,
@@ -1086,22 +1120,63 @@ export class GameEngine {
     this.particleEffects.spawnLandingDustBillboards(position, normal, 4);
   }
 
-  public notifyTakeoffSequenceStarted(context: LandingApproachContext): void {
+
+  public setWingDeploymentProgress(progress: number | null | undefined): void {
+    if (!this.spaceship) {
+      this.pendingWingDeploymentProgress = typeof progress === 'number' ? progress : 0;
+      return;
+    }
+    const changed = this.spaceship.setWingDeploymentProgress(progress);
+    if (changed) {
+      this.wingGeometryDirty = true;
+    }
+    this.pendingWingDeploymentProgress = null;
+  }
+
+  public notifyTakeoffSequenceStarted(
+    context: LandingApproachContext,
+    phase: 'ground' | 'atmo-exit' = 'ground'
+  ): void {
     this.takeoffSequenceActive = true;
+    this.takeoffSequencePhase = phase;
     this.setLandingDamageSuppressed(true, 'takeoff-sequence-start');
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Takeoff sequence initiated', {
       planetId: context.planetId,
-      planetName: context.planetName
+      planetName: context.planetName,
+      phase
     });
     try {
-      const label = context.planetName ? `TAKEOFF: ${context.planetName}` : 'TAKEOFF SEQUENCE';
+      const label = context.planetName
+        ? (phase === 'atmo-exit' ? `ASCENSO ORBITAL: ${context.planetName}` : `TAKEOFF: ${context.planetName}`)
+        : (phase === 'atmo-exit' ? 'ATMOSPHERE EXIT' : 'TAKEOFF SEQUENCE');
       this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.TAKEOFF_SEQUENCE, label);
     } catch {}
   }
 
-  public notifyTakeoffSequenceFinished(outcome: 'completed' | 'aborted', context?: LandingApproachContext | null): void {
+  public notifyTakeoffSequenceFinished(
+    outcome: 'completed' | 'aborted' | 'stage-one',
+    context?: LandingApproachContext | null,
+    phase?: 'ground' | 'atmo-exit'
+  ): void {
+    const resolvedPhase = phase ?? this.takeoffSequencePhase ?? 'ground';
     this.takeoffSequenceActive = false;
+    this.takeoffSequencePhase = null;
     const resolvedContext = context ?? this.landingTouchdownContext;
+
+    if (outcome === 'stage-one') {
+      this.collisionsDisabled = false;
+      this.setLandingDamageSuppressed(false, 'takeoff-stage-one');
+      this.setStallWarningSuppressedUntilTakeoff(false);
+      this.resetLandingThreatSuppression();
+      this.primeAtmosphereAirRushCue();
+      try { this.showPlaceholderText('Ascenso inicial completado · Continúa hasta 1000u', 3200); } catch {}
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Takeoff stage-one completed', {
+        planetId: resolvedContext?.planetId,
+        planetName: resolvedContext?.planetName
+      });
+      return;
+    }
+
     if (outcome === 'completed') {
       this.exitAtmosphereScene();
       try { this.gameState.setActiveLandingPlanet?.(null); } catch {}
@@ -1110,15 +1185,18 @@ export class GameEngine {
       this.collisionsDisabled = false;
       this.setLandingDamageSuppressed(false, 'takeoff-completed');
       try { this.showPlaceholderText('DESPEGUE COMPLETADO', 2000); } catch {}
-      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Takeoff sequence completed');
-    } else {
-      this.landingTouchdownContext = resolvedContext || null;
-      // Stay invulnerable to terrain until another attempt or manual exit
-      this.collisionsDisabled = true;
-      this.setLandingDamageSuppressed(true, 'takeoff-aborted');
-      try { this.showPlaceholderText('DESPEGUE ABORTADO', 2200); } catch {}
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff sequence aborted');
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Takeoff sequence completed', { phase: resolvedPhase });
+      return;
     }
+
+    this.landingTouchdownContext = resolvedContext || null;
+    this.collisionsDisabled = true;
+    this.setLandingDamageSuppressed(true, 'takeoff-aborted');
+    if (resolvedPhase === 'atmo-exit') {
+      this.atmosphereAutoTakeoffArmed = true;
+    }
+    try { this.showPlaceholderText('DESPEGUE ABORTADO', 2200); } catch {}
+    this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff sequence aborted', { phase: resolvedPhase });
   }
 
   private handleLandingTouchdown(context: LandingApproachContext, options?: LandingTouchdownOptions): void {
@@ -1170,6 +1248,7 @@ export class GameEngine {
     });
     // Recuperado el control atmosférico, la nave vuelve a recibir daño normal
     this.setLandingDamageSuppressed(false, 'atmosphere-flight');
+    this.setStallWarningSuppressedUntilTakeoff(true);
 
     let panelManaged = false;
     if (!options?.skipLandingPanel) {
@@ -1296,12 +1375,36 @@ export class GameEngine {
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Takeoff already in progress');
       return true;
     }
-    this.atmosphereAutoTakeoffArmed = false;
-    if (!this.animationManager.startTakeoffSequence(this, this.landingTouchdownContext)) {
+    if (!this.animationManager.startTakeoffSequence(this, this.landingTouchdownContext, { phase: 'ground' })) {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff animation rejected (busy)');
       try { this.showPlaceholderText('DESPEGUE BLOQUEADO - SISTEMA OCUPADO', 2200); } catch {}
       return false;
     }
+    return true;
+  }
+
+  private startAtmosphereExitSequence(origin: 'auto' | 'manual' = 'auto'): boolean {
+    this.stopAtmosphereAutoLandingCamera();
+    this.stopLandingPanelAudioFocus();
+    this.landingPanelAudioFocusArmed = false;
+    if (!this.landingTouchdownContext) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit requested without landing context', { origin });
+      try { this.showPlaceholderText('DESPEGUE BLOQUEADO - SIN PLANETA', 2000); } catch {}
+      return false;
+    }
+    if (this.landingSequenceActive) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit blocked: landing sequence still active', { origin });
+      return false;
+    }
+    if (this.takeoffSequenceActive) {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Atmosphere exit already running', { origin });
+      return true;
+    }
+    if (!this.animationManager.startTakeoffSequence(this, this.landingTouchdownContext, { phase: 'atmo-exit' })) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit animation rejected (busy)', { origin });
+      return false;
+    }
+    this.atmosphereAutoTakeoffArmed = false;
     return true;
   }
 
@@ -1556,10 +1659,19 @@ export class GameEngine {
       options?.groundCollisionRadius ?? (groundRadius + collisionPadding)
     );
     const palette = this.deriveAtmospherePalette(context);
+    const entryNormal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
+    const scaledSurfacePoint = center
+      ? {
+        x: center.x + entryNormal.x * groundRadius,
+        y: center.y + entryNormal.y * groundRadius,
+        z: center.z + entryNormal.z * groundRadius,
+      }
+      : (context.surfacePoint ? { ...context.surfacePoint } : null);
     const contextClone: LandingApproachContext = {
       ...context,
-      surfacePoint: context.surfacePoint ? { ...context.surfacePoint } : context.surfacePoint,
-      surfaceNormal: context.surfaceNormal ? { ...context.surfaceNormal } : context.surfaceNormal,
+      radius: groundRadius,
+      surfacePoint: scaledSurfacePoint ?? (context.surfacePoint ? { ...context.surfacePoint } : context.surfacePoint),
+      surfaceNormal: entryNormal,
       planetCenter: context.planetCenter ? { ...context.planetCenter } : context.planetCenter,
     };
     this.atmosphereSceneState = {
@@ -1645,6 +1757,7 @@ export class GameEngine {
     if (!this.atmosphereSceneState.active) {
       return;
     }
+    this.setStallWarningSuppressedUntilTakeoff(false);
     this.setAtmosphereActionLock(false);
     this.requestThrusterClip(this.SPACE_THRUSTER_CLIP);
     this.clearPendingLandingPanelTimer();
@@ -2674,15 +2787,8 @@ export class GameEngine {
       this.atmosphereAirRushHandle.stop(150);
       this.atmosphereAirRushHandle = null;
     }
-    if (this.atmosphereStallHandle && this.atmosphereStallHandle.isPlaying()) {
-      this.atmosphereStallHandle.stop(150);
-      this.atmosphereStallHandle = null;
-    }
+    this.stopAtmosphereStallWarning();
     this.stopWeatherAudioLoop();
-    // Limpiar indicador visual de stall en el HUD
-    if (this.hudManager) {
-      this.hudManager.setStallWarning(false);
-    }
   }
 
   private applyLandingPanelAudioFocus(): void {
@@ -2820,7 +2926,13 @@ export class GameEngine {
   }
 
   private onAtmosphereGroundCollision(): void {
-    const context = this.landingTouchdownContext ?? this.atmosphereSceneState.context;
+    if (this.atmosphereLandingCinematicActive) {
+      return;
+    }
+    const context =
+      this.landingTouchdownContext ??
+      this.landingStatus.context ??
+      this.atmosphereSceneState.context;
     if (!context) {
       return;
     }
@@ -2879,7 +2991,7 @@ export class GameEngine {
       return;
     }
     this.atmosphereAutoTakeoffArmed = false;
-    const started = this.startTakeoffSequence();
+    const started = this.startAtmosphereExitSequence('auto');
     if (started) {
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Auto takeoff triggered by altitude threshold', {
         altitude,
@@ -4350,6 +4462,12 @@ export class GameEngine {
         }
       });
       
+      if (this.pendingWingDeploymentProgress !== null) {
+        this.spaceship.setWingDeploymentProgress(this.pendingWingDeploymentProgress);
+        this.wingGeometryDirty = true;
+        this.pendingWingDeploymentProgress = null;
+      }
+
       this.logger.log(LogLevel.INFO, LogCategory.GAME_INITIALIZATION, 'Spaceship created successfully', { position: this.spaceship.position });
     } catch (error) {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_INITIALIZATION, 'Error creating spaceship', error);
@@ -5890,6 +6008,10 @@ export class GameEngine {
     return this.getNowMs() < this.landingThreatSuppressedUntilMs;
   }
 
+  private resetLandingThreatSuppression(): void {
+    this.landingThreatSuppressedUntilMs = 0;
+  }
+
   private extendAtmosphereCollisionGrace(windowMs: number): void {
     const duration = Math.max(0, windowMs);
     if (duration <= 0) {
@@ -7147,6 +7269,10 @@ export class GameEngine {
     this.landingDamageSuppressed = false;
     this.atmosphereCollisionGraceUntilMs = 0;
     this.voidJumpActive = false;
+    this.lastWingDeploymentProgress = -1;
+    this.wingGeometryDirty = true;
+    this.pendingWingDeploymentProgress = null;
+    try { this.spaceship?.setWingDeploymentProgress(0); } catch {}
     this.resetPanelInteractionState('restart-loop');
   }
 
@@ -8320,9 +8446,9 @@ export class GameEngine {
     }
 
     // === STALL WARNING (baja velocidad) ===
-    const stallActive = speed < LOW_SPEED_THRESHOLD;
+    const stallAllowed = !this.stallWarningSuppressedUntilTakeoff;
+    const stallActive = stallAllowed && speed < LOW_SPEED_THRESHOLD;
     if (stallActive) {
-      // Iniciar loop de stall si no está activo
       if (!this.atmosphereStallHandle || !this.atmosphereStallHandle.isPlaying()) {
         this.atmosphereStallHandle = this.audio.play('sfx_stall', {
           volume: 0.5,
@@ -8331,19 +8457,32 @@ export class GameEngine {
         });
       }
     } else {
-      // Detener stall si la velocidad sube
-      if (this.atmosphereStallHandle && this.atmosphereStallHandle.isPlaying()) {
-        this.atmosphereStallHandle.stop(200); // fade out suave
-        this.atmosphereStallHandle = null;
-      }
+      this.stopAtmosphereStallWarning();
     }
-    
-    // Actualizar indicador visual de stall en el HUD
+
     if (this.hudManager) {
       this.hudManager.setStallWarning(stallActive);
     }
 
     this.updateWeatherAudioLoop(deltaTime);
+  }
+
+  private setStallWarningSuppressedUntilTakeoff(active: boolean): void {
+    if (this.stallWarningSuppressedUntilTakeoff === active) {
+      return;
+    }
+    this.stallWarningSuppressedUntilTakeoff = active;
+    if (active) {
+      this.stopAtmosphereStallWarning();
+    }
+  }
+
+  private stopAtmosphereStallWarning(): void {
+    if (this.atmosphereStallHandle && this.atmosphereStallHandle.isPlaying()) {
+      try { this.atmosphereStallHandle.stop(200); } catch {}
+      this.atmosphereStallHandle = null;
+    }
+    try { this.hudManager?.setStallWarning(false); } catch {}
   }
 
   private updateWeatherAudioLoop(deltaTime: number): void {
@@ -9525,7 +9664,8 @@ export class GameEngine {
   private ensureShipModuleVAO(
     key: keyof GameEngine['shipVAO'],
     geometry: { vertices: Float32Array; indices: Uint16Array },
-    normalAttribName: 'normal' = 'normal'
+    normalAttribName: 'normal' = 'normal',
+    forceBufferRefresh: boolean = false
   ): void {
     if (!this.gl || !this.shaderManager) return;
     // Create buffers if missing
@@ -9542,6 +9682,15 @@ export class GameEngine {
       this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, i);
       this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, geometry.indices, this.gl.STATIC_DRAW);
       this.shipBuffers[key] = { v, n, i, indexCount: geometry.indices.length } as any;
+    } else if (forceBufferRefresh) {
+      const normals = this.computeNormals(geometry.vertices, geometry.indices);
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers[key]!.v);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, geometry.vertices, this.gl.STATIC_DRAW);
+      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers[key]!.n);
+      this.gl.bufferData(this.gl.ARRAY_BUFFER, normals, this.gl.STATIC_DRAW);
+      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.shipBuffers[key]!.i);
+      this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, geometry.indices, this.gl.STATIC_DRAW);
+      this.shipBuffers[key]!.indexCount = geometry.indices.length;
     }
     // Create VAO if missing
     if (!this.shipVAO[key]) {
@@ -9730,12 +9879,18 @@ export class GameEngine {
     if (!this.gl || !this.shaderManager || !this.spaceship) return;
 
   const wingsGeometry = this.spaceship.createWingsGeometry();
+    const currentProgress = this.spaceship.getWingDeploymentProgress?.() ?? 0;
+    const progressChanged = this.wingGeometryDirty || Math.abs(currentProgress - this.lastWingDeploymentProgress) > 1e-4;
     const program = this.shaderManager.litProgram;
     if (!program) return;
 
     this.gl.useProgram(program);
     // Ensure VAO + buffers
-    this.ensureShipModuleVAO('wings', wingsGeometry);
+    this.ensureShipModuleVAO('wings', wingsGeometry, 'normal', progressChanged);
+    if (progressChanged) {
+      this.lastWingDeploymentProgress = currentProgress;
+      this.wingGeometryDirty = false;
+    }
 
     // Configurar matriz de transformación
     this.spaceship.updateModelMatrix();

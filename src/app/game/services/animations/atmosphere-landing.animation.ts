@@ -28,8 +28,10 @@ export class AtmosphereLandingAnimation implements GameAnimation {
   private context!: LandingApproachContext;
   private blocking = true;
   private elapsed = 0;
-  private readonly descentDuration = 5;
+  private readonly descentDuration = 7;
   private readonly settleDuration = 2;
+  private readonly rotationPhaseDuration = 2;
+  private readonly finalRotationDegrees: number = 90;
   private readonly cameraHeight = 3.2;
   private readonly cameraStandoff = 11;
   private readonly flareMaxDegrees = 7;
@@ -47,6 +49,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
   private touchdownTriggered = false;
   private preTouchdownFxTriggered = false;
   private landingCueTriggered = false;
+  private lastWingDeploymentProgress = -1;
 
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
@@ -128,6 +131,8 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     ship.targetSpeed = this.startSpeed;
 
     engine.ensureAtmosphereLandingAirRushLoop?.();
+    this.lastWingDeploymentProgress = -1;
+    this.syncWingDeployment(engine, 0);
 
     try { engine.notifyAtmosphereLandingCinematicStarted?.(this.context); } catch { /* ignore */ }
   }
@@ -143,8 +148,12 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     const descentProgress = clamp01(this.elapsed / this.descentDuration);
     const eased = smoothstep(descentProgress);
     const shipPos = this.lerpVec(this.shipStart, this.shipEnd, eased);
-    const flare = this.computeFlare(descentProgress);
-    this.applyShipPose(ship, shipPos, this.surfaceNormal, this.approachDir, flare);
+    const rotationProgress = this.computeRotationProgress();
+    const easedRotation = smoothstep(rotationProgress);
+    const heading = this.getRotatedApproachDirection(easedRotation);
+    const flare = this.computeAdaptiveFlare(descentProgress, easedRotation);
+    this.applyShipPose(ship, shipPos, this.surfaceNormal, heading, flare);
+    this.syncWingDeployment(engine, easedRotation);
     this.updateShipKinetics(ship, descentProgress);
     this.updateCinematicCamera(engine, ship);
 
@@ -212,6 +221,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     this.prevCameraMode = null;
 
     const outcome = aborted ? 'aborted' : 'completed';
+    this.syncWingDeployment(engine, aborted ? 0 : 1);
     try { engine.notifyAtmosphereLandingCinematicFinished?.(outcome, aborted ? null : this.context); } catch { /* ignore */ }
     this.blocking = false;
   }
@@ -276,6 +286,12 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     const late = Math.max(0, 1 - progress);
     const flareBoost = early * late;
     return this.flareMaxDegrees * flareBoost;
+  }
+
+  private computeAdaptiveFlare(descentProgress: number, rotationProgress: number): number {
+    const base = this.computeFlare(descentProgress);
+    const damping = clamp(1 - rotationProgress * 0.85, 0.2, 1);
+    return base * damping;
   }
 
   private updateShipKinetics(ship: any, descentProgress: number): void {
@@ -368,6 +384,59 @@ export class AtmosphereLandingAnimation implements GameAnimation {
       y: vector.y - normal.y * dot,
       z: vector.z - normal.z * dot,
     };
+  }
+
+  private computeRotationProgress(): number {
+    if (!Number.isFinite(this.rotationPhaseDuration) || this.rotationPhaseDuration <= 0) {
+      return 0;
+    }
+    const rotationStart = Math.max(0, this.descentDuration - this.rotationPhaseDuration);
+    const elapsedInRotation = this.elapsed - rotationStart;
+    return clamp01(elapsedInRotation / this.rotationPhaseDuration);
+  }
+
+  private getRotatedApproachDirection(rotationProgress: number): Vector3 {
+    if (!this.approachDir) {
+      return { x: 0, y: 0, z: 1 };
+    }
+    if (rotationProgress <= 1e-4 || this.finalRotationDegrees === 0) {
+      return this.approachDir;
+    }
+    const radians = (this.finalRotationDegrees * rotationProgress) * Math.PI / 180;
+    const rotated = this.rotateAroundAxis(this.approachDir, this.surfaceNormal, radians);
+    return this.normalize(rotated);
+  }
+
+  private rotateAroundAxis(vector: Vector3, axis: Vector3, radians: number): Vector3 {
+    if (Math.abs(radians) <= 1e-4) {
+      return { ...vector };
+    }
+    const normalizedAxis = this.normalize(axis);
+    const cos = Math.cos(radians);
+    const sin = Math.sin(radians);
+    const dot = vector.x * normalizedAxis.x + vector.y * normalizedAxis.y + vector.z * normalizedAxis.z;
+    const cross = {
+      x: normalizedAxis.y * vector.z - normalizedAxis.z * vector.y,
+      y: normalizedAxis.z * vector.x - normalizedAxis.x * vector.z,
+      z: normalizedAxis.x * vector.y - normalizedAxis.y * vector.x,
+    };
+    return {
+      x: vector.x * cos + cross.x * sin + normalizedAxis.x * dot * (1 - cos),
+      y: vector.y * cos + cross.y * sin + normalizedAxis.y * dot * (1 - cos),
+      z: vector.z * cos + cross.z * sin + normalizedAxis.z * dot * (1 - cos),
+    };
+  }
+
+  private syncWingDeployment(engine: GameEngine, progress: number): void {
+    const clamped = clamp01(progress);
+    if (!engine?.setWingDeploymentProgress) {
+      return;
+    }
+    if (Math.abs(clamped - this.lastWingDeploymentProgress) <= 1e-3) {
+      return;
+    }
+    try { engine.setWingDeploymentProgress(clamped); } catch { /* ignore */ }
+    this.lastWingDeploymentProgress = clamped;
   }
 
   private vectorLength(v: Vector3): number {

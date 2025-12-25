@@ -624,6 +624,7 @@ export class ParticleEffectsService {
     });
   }
 
+
   /**
    * Genera nuevas partículas de propulsión
    */
@@ -992,8 +993,15 @@ export class ParticleEffectsService {
     }
 
     if (this.landingDustSheets.length) {
+      const depthWasEnabled = this.gl.isEnabled(this.gl.DEPTH_TEST);
+      if (depthWasEnabled) {
+        this.gl.disable(this.gl.DEPTH_TEST);
+      }
       for (const sheet of this.landingDustSheets) {
         this.renderLandingDustBillboard(sheet, camera);
+      }
+      if (depthWasEnabled) {
+        this.gl.enable(this.gl.DEPTH_TEST);
       }
     }
 
@@ -1358,6 +1366,7 @@ export class ParticleEffectsService {
     gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
   }
 
+
   private buildLandingDustBasis(normal: Vector3): { tangent: Vector3; bitangent: Vector3 } {
     const reference = Math.abs(normal.y) > 0.7 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
     let tangent = this.cross(normal, reference);
@@ -1619,6 +1628,50 @@ export class ParticleEffectsService {
     });
   }
 
+  private clamp01(value: number): number {
+    if (!Number.isFinite(value)) {
+      return 0;
+    }
+    return Math.max(0, Math.min(1, value));
+  }
+
+  private projectOntoPlane(vector: Vector3, normal: Vector3): Vector3 {
+    const safeNormal = this.normalize(normal);
+    const dot = vector.x * safeNormal.x + vector.y * safeNormal.y + vector.z * safeNormal.z;
+    return {
+      x: vector.x - safeNormal.x * dot,
+      y: vector.y - safeNormal.y * dot,
+      z: vector.z - safeNormal.z * dot,
+    };
+  }
+
+  private addVectors(a: Vector3, b: Vector3): Vector3 {
+    return { x: a.x + b.x, y: a.y + b.y, z: a.z + b.z };
+  }
+
+  private scaleVector(v: Vector3, scalar: number): Vector3 {
+    return { x: v.x * scalar, y: v.y * scalar, z: v.z * scalar };
+  }
+
+  private lerpVec(a: Vector3, b: Vector3, t: number): Vector3 {
+    const k = this.clamp01(t);
+    return {
+      x: a.x + (b.x - a.x) * k,
+      y: a.y + (b.y - a.y) * k,
+      z: a.z + (b.z - a.z) * k,
+    };
+  }
+
+  private distanceBetween(a: Vector3, b: Vector3): number {
+    return Math.hypot(a.x - b.x, a.y - b.y, a.z - b.z);
+  }
+
+  private easeOutCubic(t: number): number {
+    const c = this.clamp01(t);
+    const inv = 1 - c;
+    return 1 - inv * inv * inv;
+  }
+
   private vectorLength(v: { x: number; y: number; z: number }): number {
     return Math.hypot(v.x, v.y, v.z);
   }
@@ -1723,3 +1776,4 @@ export class ParticleEffectsService {
     this.logger.log(LogLevel.INFO, LogCategory.PARTICLES, 'ParticleEffectsService cleaned up');
   }
 }
+

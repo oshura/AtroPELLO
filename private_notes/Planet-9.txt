@@ -4,7 +4,7 @@
  
  - Dialogo de landing mas reducido y transparente, casi que dentro del juego mejor un overlay 2D como es el mapa, pero transparente.
  
- - Mejorar animacion de aterrizaje con un despliegue de anclajes/escalera, y que la nave rote 90 grados  a lo largo de 2 segundos poco antes del touch down. Ya la repera que las alas se levanten durante ese giro.
+ - Mejorar animacion de aterrizaje con un despliegue de anclajes/escalera, y que la nave rote 90 grados  a lo largo de 2 segundos poco antes del touch down. Ya la repera que las alas se levanten 90 grados durante ese giro.
  - Probarlo con manual touchdown y activarlo para el modo atmosfera.
  
 
