@@ -1,11 +1,10 @@
 import { Component, Inject } from '@angular/core';
-import { RouterModule } from '@angular/router';
 import { LoggingService, LogCategory } from '../../services/logging.service';
 import { VERSION_SETTINGS, VersionSettings, formatVersion } from '../../settings/version-settings';
 
 @Component({
   selector: 'app-footer',
-  imports: [RouterModule],
+  imports: [],
   templateUrl: './footer.html',
   styleUrl: './footer.scss'
 })

@@ -43,6 +43,8 @@ export class Spaceship extends GameObject {
   public thrusterState: ThrusterState = ThrusterState.IDLE;
   public thrusterScaleFactor: number = 1.0; // Factor de escala dinámico del thruster
   private speedControlGain: number = 1.0;
+  private wingDeploymentProgress = 0;
+  private noseAnchorProgress = 0;
 
   // --- Mitigación e instrumentación de jitter a alta velocidad ---
   private highSpeedSmoothingEnabled: boolean = false; // activable externamente
@@ -107,6 +109,34 @@ export class Spaceship extends GameObject {
 
   public resetAtmosphereSpeedControlGain(): void {
     this.speedControlGain = 1;
+  }
+
+  public setWingDeploymentProgress(progress: number | null | undefined): boolean {
+    const numeric = typeof progress === 'number' && Number.isFinite(progress) ? progress : 0;
+    const clamped = Math.max(0, Math.min(1, numeric));
+    if (Math.abs(clamped - this.wingDeploymentProgress) <= 1e-4) {
+      return false;
+    }
+    this.wingDeploymentProgress = clamped;
+    return true;
+  }
+
+  public getWingDeploymentProgress(): number {
+    return this.wingDeploymentProgress;
+  }
+
+  public setNoseAnchorProgress(progress: number | null | undefined): boolean {
+    const numeric = typeof progress === 'number' && Number.isFinite(progress) ? progress : 0;
+    const clamped = Math.max(0, Math.min(1, numeric));
+    if (Math.abs(clamped - this.noseAnchorProgress) <= 1e-4) {
+      return false;
+    }
+    this.noseAnchorProgress = clamped;
+    return true;
+  }
+
+  public getNoseAnchorProgress(): number {
+    return this.noseAnchorProgress;
   }
 
   // Override healthCurrent con getter/setter reactivo
@@ -880,76 +910,85 @@ export class Spaceship extends GameObject {
     const vertices: number[] = [];
     const indices: number[] = [];
     
-    // Dimensiones de las alas CORREGIDAS - intercambiando los valores
-    const wingLength = 1.2;              // Longitud lateral (sin cambio)
-    const wingWidth = 0.016;             // Ancho atrás-adelante: quinta parte (más estrechas)
-    const wingThickness = 0.225;         // Grosor arriba-abajo: 1.5x (más altas)
-    const wingRoot = 0.4;                // Conexión con cuerpo (sin cambio)
-    
-    // CREAR AMBAS ALAS CON WINDING ORDER CONSISTENTE
-    // Cada ala como cubo independiente con coordenadas explícitas
-    
-    // ==================== ALA IZQUIERDA ====================
-    // 8 vértices del cubo ala izquierda
-    vertices.push(
-      // Vértices 0-7 (ala izquierda)
-      -wingRoot,   -wingWidth, -wingThickness,  // 0: cerca-frontal-abajo
-      -wingLength, -wingWidth, -wingThickness,  // 1: lejos-frontal-abajo  
-      -wingRoot,   -wingWidth,  wingThickness,  // 2: cerca-frontal-arriba
-      -wingLength, -wingWidth,  wingThickness,  // 3: lejos-frontal-arriba
-      -wingRoot,    wingWidth, -wingThickness,  // 4: cerca-trasero-abajo
-      -wingLength,  wingWidth, -wingThickness,  // 5: lejos-trasero-abajo
-      -wingRoot,    wingWidth,  wingThickness,  // 6: cerca-trasero-arriba
-      -wingLength,  wingWidth,  wingThickness   // 7: lejos-trasero-arriba
-    );
-    
-    // Índices ala izquierda - ajustar winding para orientar normales consistente con el cuerpo
-    indices.push(
-      // Cara frontal (frente de la nave, -Y)
-      0, 2, 3,  0, 3, 1,
-      // Cara trasera (atrás de la nave, +Y)  
-      4, 7, 6,  4, 5, 7,
-      // Cara inferior (-Z)
-      0, 4, 5,  0, 5, 1,
-      // Cara superior (+Z)
-      2, 7, 6,  2, 3, 7,
-      // Cara interna (hacia cuerpo, +X)
-      0, 2, 6,  0, 6, 4,
-      // Cara externa (punta ala, -X)
-      1, 5, 7,  1, 7, 3
-    );
-    
-    // ==================== ALA DERECHA ====================  
-    const rightStartIndex = 8; // Empezamos desde vértice 8
-    
-    // 8 vértices del cubo ala derecha
-    vertices.push(
-      // Vértices 8-15 (ala derecha)
-      wingRoot,   -wingWidth, -wingThickness,   // 8:  cerca-frontal-abajo
-      wingLength, -wingWidth, -wingThickness,   // 9:  lejos-frontal-abajo
-      wingRoot,   -wingWidth,  wingThickness,   // 10: cerca-frontal-arriba  
-      wingLength, -wingWidth,  wingThickness,   // 11: lejos-frontal-arriba
-      wingRoot,    wingWidth, -wingThickness,   // 12: cerca-trasero-abajo
-      wingLength,  wingWidth, -wingThickness,   // 13: lejos-trasero-abajo
-      wingRoot,    wingWidth,  wingThickness,   // 14: cerca-trasero-arriba
-      wingLength,  wingWidth,  wingThickness    // 15: lejos-trasero-arriba
-    );
-    
-    // Índices ala derecha - ajustar winding simétrico (8-15)
-    indices.push(
-      // Cara frontal (frente de la nave, -Y)
-      8, 11, 10,  8, 9, 11,
-      // Cara trasera (atrás de la nave, +Y)
-      12, 15, 13,  12, 14, 15,
-      // Cara inferior (-Z)  
-      8, 9, 13,  8, 13, 12,
-      // Cara superior (+Z)
-      10, 14, 15,  10, 15, 11,
-      // Cara interna (hacia cuerpo, -X)
-      8, 12, 14,  8, 14, 10,
-      // Cara externa (punta ala, +X)
-      9, 11, 15,  9, 15, 13
-    );
+    // Dimensiones base
+    const wingLength = 1.2;      // Extensión lateral
+    const wingWidth = 0.016;     // Profundidad (eje Y)
+    const wingThickness = 0.225; // Altura (eje Z local)
+    const wingRoot = 0.4;        // Punto donde nace el ala en el fuselaje
+    const verticalLiftMax = 0.28; // Altura máxima aplicada al plegar completamente
+    const bodyEmbedDepth = 0.18;  // Cuánto se introduce la base del ala en el fuselaje
+
+    const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+    const foldProgress = clamp01(this.wingDeploymentProgress);
+    const maxFoldAngle = Math.PI * 0.5; // 90° exactos para un plegado vertical
+    const foldAngle = foldProgress * maxFoldAngle;
+    const lateralCollapse = 1 - 0.6 * Math.pow(foldProgress, 0.85); // Traer las alas al centro al plegar
+    const verticalLift = foldProgress * verticalLiftMax; // Elevarlas sobre el fuselaje
+    const embedDepth = foldProgress * bodyEmbedDepth; // Inserción progresiva en el fuselaje
+    const forwardTuck = foldProgress * 0.08; // Pequeña traslación para que se entrelacen como alas de ave
+
+    const computeEmbedInfluence = (x: number) => {
+      const span = wingLength - wingRoot;
+      if (span <= 0) {
+        return 0;
+      }
+      const distanceToTip = wingLength - Math.abs(x);
+      return clamp01(distanceToTip / span);
+    };
+
+    const rotateAroundZAxis = (x: number, y: number, pivotX: number, pivotY: number, angle: number) => {
+      const translatedX = x - pivotX;
+      const translatedY = y - pivotY;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const rotatedX = translatedX * cos - translatedY * sin;
+      const rotatedY = translatedX * sin + translatedY * cos;
+      return { x: rotatedX + pivotX, y: rotatedY + pivotY };
+    };
+
+    const transformVertex = (x: number, y: number, z: number, sign: -1 | 1) => {
+      const embedInfluence = computeEmbedInfluence(x);
+      const collapsedX = x * lateralCollapse;
+      const sweptY = y + forwardTuck * sign;
+      const rotationAngle = sign * foldAngle;
+      const rotated = rotateAroundZAxis(collapsedX, sweptY, 0, 0, rotationAngle);
+      const embeddedY = rotated.y + verticalLift - embedDepth * embedInfluence;
+      vertices.push(rotated.x, embeddedY, z);
+    };
+
+    const pushWing = (sign: -1 | 1) => {
+      const baseIndex = vertices.length / 3;
+      const xNear = sign * wingRoot;
+      const xFar = sign * wingLength;
+
+      const addVertex = (x: number, y: number, z: number) => {
+        transformVertex(x, y, z, sign);
+      };
+
+      addVertex(xNear, -wingWidth, -wingThickness);
+      addVertex(xFar, -wingWidth, -wingThickness);
+      addVertex(xNear, -wingWidth,  wingThickness);
+      addVertex(xFar, -wingWidth,  wingThickness);
+      addVertex(xNear,  wingWidth, -wingThickness);
+      addVertex(xFar,  wingWidth, -wingThickness);
+      addVertex(xNear,  wingWidth,  wingThickness);
+      addVertex(xFar,  wingWidth,  wingThickness);
+
+      const localIndices = [
+        0, 2, 3, 0, 3, 1,
+        4, 7, 6, 4, 5, 7,
+        0, 4, 5, 0, 5, 1,
+        2, 7, 6, 2, 3, 7,
+        0, 2, 6, 0, 6, 4,
+        1, 5, 7, 1, 7, 3,
+      ];
+      for (const idx of localIndices) {
+        indices.push(baseIndex + idx);
+      }
+    };
+
+    pushWing(-1);
+    pushWing(1);
     
     return {
       vertices: new Float32Array(vertices),

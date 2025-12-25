@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <title>AtroPELLO Wiki · Guía oficial del piloto</title>
+  <meta name="description" content="Explora toda la referencia jugable de TO³: naves, glifos, sistemas solares, reglas de supervivencia y avisos legales." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="canonical" href="https://to3.atropello-games.es/wiki/index.html" />
+  <meta property="og:title" content="AtroPELLO Wiki" />
+  <meta property="og:description" content="Todas las guías del piloto TO³ en un solo sitio estático preparado para indexación." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://to3.atropello-games.es/wiki/index.html" />
+  <meta property="og:image" content="https://to3.atropello-games.es/assets/Wiki.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/wiki/wiki.css" />
+</head>
+<body>
+  <a class="wiki-back-button" data-variant="home" href="/" rel="noopener">↩ Volver al juego</a>
+  <main>
+    <div class="wiki-shell">
+      <header class="wiki-hero">
+        <p class="wiki-hero__eyebrow">Archivo del vacío</p>
+        <h1>AtroPELLO Wiki</h1>
+        <p class="wiki-hero__lead">
+          Consulta la información oficial del juego WebGL TO³ en formato estático. Cada página se abre en esta pestaña y mantiene
+          la misma jerga diegética que verás dentro del cockpit: glifos, sistemas solares, paneles de inventario y protocolos de aterrizaje.
+        </p>
+        <p class="wiki-hero__lead">
+          El índice reemplaza al panel flotante dentro del juego, así que puedes compartir cualquier URL con terceros o con buscadores
+          sin depender del canvas 3D.
+        </p>
+      </header>
+
+      <section class="section" id="toc">
+        <h2>Entradas destacadas</h2>
+        <div class="card-grid">
+          <article class="card">
+            <p class="badge">Legal · Contacto</p>
+            <h3><a href="/wiki/legal/index.html">Aviso legal y licencias</a></h3>
+            <p>Identidad del titular, jurisdicción aplicable, cookies y procedimiento de reclamaciones DMCA.</p>
+            <p class="note">Incluye enlaces directos a Privacy & Cookies para auditorías.</p>
+          </article>
+
+          <article class="card">
+            <p class="badge">Universo · Catálogo</p>
+            <h3><a href="/wiki/game-objects/index.html">Game Objects</a></h3>
+            <p>Todos los objetos físicos del universo (asteroides, planetas, soles y portales) con masas, daños por impacto y notas tácticas.</p>
+          </article>
+
+          <article class="card">
+            <p class="badge">Magia · Rituales</p>
+            <h3><a href="/wiki/glyphs/index.html">Glifos del grimorio</a></h3>
+            <p>Costes de cordura, requisitos y efectos confirmados para Speed Rite, Void Jump, Gate Rite y el resto de sellos.</p>
+          </article>
+
+          <article class="card">
+            <p class="badge">Nave · HUD</p>
+            <h3><a href="/wiki/spaceship/index.html">Spaceship TO³</a></h3>
+            <p>Ficha completa de la nave, módulos actuales, controles y cómo funciona el nuevo horizonte artificial atmosférico.</p>
+          </article>
+
+          <article class="card">
+            <p class="badge">Paneles · Gestión</p>
+            <h3><a href="/wiki/inventory/index.html">Panel de inventario</a></h3>
+            <p>Distribución del manifiesto, estadísticas del piloto y tabla de eventos de experiencia.</p>
+          </article>
+
+          <article class="card">
+            <p class="badge">Procedural · Viajes</p>
+            <h3><a href="/wiki/solar-systems/index.html">Sistemas solares</a></h3>
+            <p>Parámetros de generación, densidad de escombros y reglas de colisión en el vacío.</p>
+          </article>
+
+          <article class="card">
+            <p class="badge">Biomas · Piloto verde</p>
+            <h3><a href="/wiki/planets/index.html">Planetas</a></h3>
+            <p>Tipos de planeta, peligros atmosféricos y checklist para aterrizar manualmente.</p>
+          </article>
+
+          <article class="card">
+            <p class="badge">Supervivencia</p>
+            <h3><a href="/wiki/game-rules/index.html">Reglas del juego</a></h3>
+            <p>Cloud Saves, mecánicas de aterrizaje, colisiones, hechizos, consejos de navegación y funcionamiento del Sigillum.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="uso">
+        <h2>Cómo usar la wiki estática</h2>
+        <ul>
+          <li>El icono de la wiki en el header del juego abre este sitio en una pestaña nueva, por lo que no interrumpe tu sesión en el canvas.</li>
+          <li>Todos los enlaces abren páginas HTML puras con la misma capa visual. Usa el botón ↩ para volver al índice cuando termines.</li>
+          <li>Los buscadores pueden indexar cada ruta porque vive bajo <code>/public/wiki/</code> y no depende del bundler Angular.</li>
+          <li>Si una mecánica cambia en el juego, la página asociada se actualizará dentro de este mismo sitio y el historial quedará versionado en el repositorio.</li>
+          <li>Las rutas existentes siguen funcionando con sufijo <code>index.html</code>; compártalas tal cual para evitar redirecciones 403 en CloudFront.</li>
+        </ul>
+        <p class="note">¿Falta alguna sección? Envía feedback desde el Discord interno o abre un ticket en la cola de documentación.</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

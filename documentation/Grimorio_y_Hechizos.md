@@ -107,6 +107,7 @@ Notas:
 - Costes: 2 de cordura temporal y 4 reservados; ya no consume Energía del Vacío.
 - Requisitos: objetivo válido (planeta/portal/waypoint) situado a más de 4000u de distancia; con menos distancia aparece placeholder “ANIMATION NUMBER 2”.
 - Flujo: tras validar el objetivo, `AnimationManager.startVoidJump` bloquea inputs hasta finalizar. No hay chequeo de energía: el salto depende únicamente del rango y de que las animaciones estén libres.
+- Cámara: al salir de la imagen con zoom el engine fija `CameraMode.COCKPIT` (modo 8) para el resto de la secuencia, asegurando que el regreso al control ocurra directamente desde cabina.
 
 ### Gate Rite
 

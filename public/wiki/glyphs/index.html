@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Glifos y Rituales · AtroPELLO Wiki</title>
+  <meta name="description" content="Costes de cordura, Energía del Vacío y requisitos confirmados para cada glifo del grimorio TO³." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="canonical" href="https://to3.atropello-games.es/wiki/glyphs/index.html" />
+  <meta property="og:title" content="Glifos y Rituales TO³" />
+  <meta property="og:description" content="Consulta activaciones, efectos y notas tácticas de Speed Rite, Gate Rite, Void Jump y el resto de sellos." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://to3.atropello-games.es/wiki/glyphs/index.html" />
+  <meta property="og:image" content="https://to3.atropello-games.es/assets/Wiki.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/wiki/wiki.css" />
+</head>
+<body>
+  <a class="wiki-back-button" href="/wiki/index.html">↩ Volver al índice</a>
+  <main>
+    <div class="wiki-shell">
+      <header class="wiki-hero">
+        <p class="wiki-hero__eyebrow">Grimorio del vacío</p>
+        <h1>Glifos y Rituales</h1>
+        <p class="wiki-hero__lead">
+          Cada glifo consume cordura temporal y bloquea parte de tu reserva máxima mientras esté aprendido. Usa esta referencia para saber cuánto te costará cada lanzamiento y qué requisitos debes cumplir antes de pulsar <kbd>H</kbd>.
+        </p>
+      </header>
+
+      <section class="section" id="tabla-costes">
+        <h2>Tabla rápida de costes</h2>
+        <div class="table-responsive">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>Glifo</th>
+                <th>Temp</th>
+                <th>Reserva</th>
+                <th>Energía vacío</th>
+                <th>Notas breves</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr><td>Speed Rite</td><td>1</td><td>2</td><td>0u</td><td>Duplica velocidad durante 120&nbsp;s.</td></tr>
+              <tr><td>Void Jump</td><td>2</td><td>4</td><td>0u</td><td>Salto a objetivos &gt; 4000u.</td></tr>
+              <tr><td>Gate Rite</td><td>5</td><td>5</td><td>0u</td><td>Portal permanente, rellena energía.</td></tr>
+              <tr><td>Eternal Rite</td><td>1</td><td>0</td><td>0u</td><td>Congela el entorno temporalmente.</td></tr>
+              <tr><td>Disrupt</td><td>1</td><td>1</td><td>0u</td><td>Haz para desestabilizar portales.</td></tr>
+              <tr><td>Anchoring Pulse</td><td>2</td><td>3</td><td>0u</td><td>Convierte asteroides en carga.</td></tr>
+              <tr><td>Void Kinesis</td><td>2</td><td>3</td><td>+8u a +70u</td><td>Transmuta asteroides en energía.</td></tr>
+              <tr><td>Void Cocoon</td><td>3</td><td>3</td><td>0u</td><td>Escudo de 30&nbsp;s contra impactos.</td></tr>
+              <tr><td>Tempus Sigillum</td><td>2</td><td>5</td><td>0u</td><td>Reinicia habitantes y lesser beings.</td></tr>
+              <tr><td>Quimio Sigillum</td><td>5</td><td>8</td><td>0u</td><td>Restaura +5% supervivencia.</td></tr>
+              <tr><td>Concordia Gate</td><td>2</td><td>4</td><td>0u</td><td>Purga portales hostiles.</td></tr>
+              <tr><td>Augurio</td><td>1</td><td>3</td><td>50u</td><td>Revela la especie dominante.</td></tr>
+              <tr><td>Revelación</td><td>1</td><td>3</td><td>50u</td><td>Detecta seres menores activos.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="section" id="glifos">
+        <h2>Detalle glifo por glifo</h2>
+        <div class="icon-grid">
+          <article class="icon-card">
+            <div class="icon-card__glyph">💨</div>
+            <h3 class="icon-card__title">Speed Rite</h3>
+            <p class="icon-card__meta">SPEED · Temp 1 · Reserva 2</p>
+            <p>Duplica velocidad máxima, aceleración y frenado durante 120&nbsp;s. Re-lanzarlo refresca la duración y al expirar reduce la velocidad progresivamente.</p>
+            <ul>
+              <li>Activación: selecciona y pulsa <kbd>H</kbd>.</li>
+              <li>Requisitos: completar el precast de 2&nbsp;s sin interrupciones.</li>
+              <li>Notas: ideal para travesías largas; el HUD suaviza la transición cuando termina.</li>
+            </ul>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">⚡</div>
+            <h3 class="icon-card__title">Void Jump</h3>
+            <p class="icon-card__meta">LONGJUMP · Temp 2 · Reserva 4</p>
+            <p>Teletransporte a objetivos a &gt; 4000&nbsp;u. Congela la escena, muestra al dios del sistema y desplaza la nave tras la animación.</p>
+            <ul>
+              <li>Requisitos: objetivo válido, fuera de atmósfera y animaciones libres.</li>
+              <li>Notas: si el objetivo falla, recibes aviso y conservas recursos.</li>
+              <li>Feedback: tras la imagen con zoom vuelves directo a la vista de cabina (cámara 8) para continuar el viaje.</li>
+            </ul>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">🌀</div>
+            <h3 class="icon-card__title">Gate Rite</h3>
+            <p class="icon-card__meta">GATE_RITE · Temp 5 · Reserva 5</p>
+            <p>Colapsa un planeta ≤ 50&nbsp;u, genera un portal enlazado y recarga la Energía del Vacío. Bloquea inputs mientras dura.</p>
+            <ul>
+              <li>Usa el planeta seleccionado en el HUD.</li>
+              <li>El portal queda disponible para viajes de ida y vuelta.</li>
+            </ul>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">🛡️</div>
+            <h3 class="icon-card__title">Eternal Rite</h3>
+            <p class="icon-card__meta">ETERNAL_RITE · Temp 1 · Reserva 0</p>
+            <p>Detiene todo salvo tu nave para atravesar campos densos. No modifica daño ni velocidad.</p>
+            <ul>
+              <li>Se cancela volviendo a castear.</li>
+              <li>No se superpone con Gate Rite ni Void Jump.</li>
+            </ul>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">💥</div>
+            <h3 class="icon-card__title">Disrupt</h3>
+            <p class="icon-card__meta">DISRUPT · Temp 1 · Reserva 1</p>
+            <p>Haz canalizado (1.5&nbsp;s) para desestabilizar portales u objetos resonantes ≤ 50&nbsp;u.</p>
+            <p>El haz sigue la cámara, así que apunta con precisión.</p>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">🧲</div>
+            <h3 class="icon-card__title">Anchoring Pulse</h3>
+            <p class="icon-card__meta">ANCHORING · Temp 2 · Reserva 3</p>
+            <p>Desintegra un asteroide cercano y almacena su masa directamente en la bodega.</p>
+            <p>Si la bodega está llena, recibirás aviso sin consumir recursos.</p>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">🌌</div>
+            <h3 class="icon-card__title">Void Kinesis</h3>
+            <p class="icon-card__meta">VOID_KINESIS · Temp 2 · Reserva 3</p>
+            <p>Convierte asteroides en Energía del Vacío (+8u a +70u según masa). Mantiene el objetivo intacto si superarías el límite.</p>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">🕸️</div>
+            <h3 class="icon-card__title">Void Cocoon</h3>
+            <p class="icon-card__meta">VOID_COCOON · Temp 3 · Reserva 3</p>
+            <p>Escudo esférico de 30&nbsp;s que absorbe impactos de colisión. Cada golpe muestra un mensaje HUD y preserva tus HP.</p>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">⏳</div>
+            <h3 class="icon-card__title">Tempus Sigillum</h3>
+            <p class="icon-card__meta">TEMPUS · Temp 2 · Reserva 5</p>
+            <p>Reinicia el estado civilizatorio del planeta apuntado ≤ 500&nbsp;u, pacifica seres menores y obliga a un nuevo escaneo.</p>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">⚕️</div>
+            <h3 class="icon-card__title">Quimio Sigillum</h3>
+            <p class="icon-card__meta">QUIMIO · Temp 5 · Reserva 8</p>
+            <p>Aplica +5% de supervivencia instantánea (máx. 100%). Si ya estás al tope, el rito se anula sin gastar recursos.</p>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">🔷</div>
+            <h3 class="icon-card__title">Concordia Gate</h3>
+            <p class="icon-card__meta">PORTAL_CONCORD · Temp 2 · Reserva 4</p>
+            <p>Purga portales hostiles ≤ 500&nbsp;u, cambiando su pentáculo a cian y bloqueando incursiones futuras.</p>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">🧬</div>
+            <h3 class="icon-card__title">Augurio</h3>
+            <p class="icon-card__meta">SPECIES_SCAN · Temp 1 · Reserva 3</p>
+            <p>Escanea la especie dominante de un planeta ≤ 500&nbsp;u a cambio de 50u de Energía del Vacío. Otorga +100 XP la primera vez.</p>
+          </article>
+
+          <article class="icon-card">
+            <div class="icon-card__glyph">👁️</div>
+            <h3 class="icon-card__title">Revelación</h3>
+            <p class="icon-card__meta">CREATURE_SCAN · Temp 1 · Reserva 3</p>
+            <p>Confirma si existe un Ser Menor activo y actualiza el registro de intel, también con coste de 50u.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="grimoire">
+        <h2>Uso del grimorio</h2>
+        <ul>
+          <li>Pulsa <kbd>G</kbd> para abrir el libro y selecciona un glifo. La tecla rápida por defecto es <kbd>H</kbd>.</li>
+          <li>El panel muestra estados: 🔒 bloqueado, ⚡ disponible. Tras castear, la selección se limpia para evitar dobles lanzamientos.</li>
+          <li>Augurio y Revelación comparten alcance con la bahía auxiliar (≤ 500&nbsp;u). Si falta energía o el objetivo es inválido, conservarás cordura y recibirás aviso.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

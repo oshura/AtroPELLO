@@ -31,6 +31,7 @@
   "ui_drop_glyph": "/assets/audio/DropGlyph.wav",
   "sfx_stall": "/assets/audio/sfx_stall.wav",
   "sfx_autoland_touchdown": "/assets/audio/Landing.wav",
+  "sfx_anchor": "/assets/audio/sfx_anchor.wav",
   "sfx_thruster_atmo": "/assets/audio/Airthrust.wav",
   "sfx_weather_rain": "/assets/audio/sfx_passby_air.wav",
   "sfx_weather_fog": "/assets/audio/sfx_longdark.wav",

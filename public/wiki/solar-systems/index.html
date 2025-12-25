@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Sistemas solares · AtroPELLO Wiki</title>
+  <meta name="description" content="Parámetros de generación, tipos de sistemas y reglas de colisión para navegar el vacío TO³." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="canonical" href="https://to3.atropello-games.es/wiki/solar-systems/index.html" />
+  <meta property="og:title" content="Sistemas solares TO³" />
+  <meta property="og:description" content="Descubre el sistema humano preconfigurado y las variantes procedurales, con densidades de escombros y físicas orbitales." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://to3.atropello-games.es/wiki/solar-systems/index.html" />
+  <meta property="og:image" content="https://to3.atropello-games.es/assets/Wiki.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/wiki/wiki.css" />
+</head>
+<body>
+  <a class="wiki-back-button" href="/wiki/index.html">↩ Volver al índice</a>
+  <main>
+    <div class="wiki-shell">
+      <header class="wiki-hero">
+        <p class="wiki-hero__eyebrow">Cartografía procedimental</p>
+        <h1>Sistemas solares y Gate Rite</h1>
+        <p class="wiki-hero__lead">
+          Los sistemas combinan órbitas fijas, cinturones de escombros y reglas de colisión diseñadas para vuelos largos. Aquí tienes las configuraciones confirmadas y los límites de seguridad.
+        </p>
+      </header>
+
+      <section class="section" id="tipos">
+        <h2>Tipos de sistema</h2>
+        <div class="card-grid">
+          <article class="card">
+            <h3>🌍 Sistema humano</h3>
+            <ul>
+              <li>Sol de 1500&nbsp;u de radio.</li>
+              <li>8 planetas (Mercurio → Neptuno) con distancias escaladas (~1:1.000.000).</li>
+              <li>Asteroid Belt entre Marte y Júpiter (2.2‑3.2 AU escaladas) con densidad media (50‑80 clusters).</li>
+              <li>Tierra partida en dos mitades con núcleo expuesto y escombros letales.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>🌌 Procedurales</h3>
+            <ul>
+              <li>Planetas: 3‑8.</li>
+              <li>Sol: 1500‑2500&nbsp;u.</li>
+              <li>Primera órbita: 2000‑3000&nbsp;u; separación 1500‑3000&nbsp;u.</li>
+              <li>Radios planetarios: 150‑1200&nbsp;u (gigantes 1300‑2300, anillados 2600‑4200).</li>
+              <li>Clusters de escombros: 30‑120.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="orbitales">
+        <h2>Física orbital</h2>
+        <h3>Planetas</h3>
+        <ul>
+          <li>Actualmente permanecen estáticos para facilitar la planificación; las órbitas móviles llegarán más adelante.</li>
+          <li>Corredores seguros de 1500‑3000&nbsp;u entre órbitas.</li>
+          <li>Sin mundos a &lt;2000&nbsp;u del sol para darte margen antes de la zona letal.</li>
+          <li>Impactar planeta = 100.000 de daño (tu casco solo soporta 1000).</li>
+        </ul>
+        <h3>Asteroides</h3>
+        <ul>
+          <li>Se agrupan en trails de 5‑15 rocas con dirección común.</li>
+          <li>Cada trail avanza con la misma velocidad base pero cada roca deriva 0.1‑0.5&nbsp;u por fotograma, generando huecos momentáneos.</li>
+          <li>Golpear una roca separa ese fragmento del grupo y continúa con la velocidad que llevaba.</li>
+          <li>Los clusters evitan aparecer a menos de 1.5× el radio de un planeta.</li>
+        </ul>
+        <h3>Colisiones</h3>
+        <ul>
+          <li>Asteroides pequeños rebotan transfiriendo tu inercia.</li>
+          <li>Objetos enormes apenas se mueven: la nave se desliza alrededor conservando velocidad tangencial.</li>
+          <li>El motor distingue si embistes tú o si el objeto móvil te golpea para ajustar daño.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="escombros">
+        <h2>Densidad de escombros</h2>
+        <div class="card-grid">
+          <article class="card">
+            <h3>Zona interior (&lt;5000&nbsp;u)</h3>
+            <p>Densidad baja (5‑15 clusters). Asteroides rocosos pequeños.</p>
+          </article>
+          <article class="card">
+            <h3>Cinturón principal</h3>
+            <p>Densidad muy alta (40‑80 clusters). Mezcla de tamaños con super/mega asteroides.</p>
+          </article>
+          <article class="card">
+            <h3>Sistema exterior</h3>
+            <p>Densidad media (15‑30 clusters). Asteroides helados y dwarf planets.</p>
+          </article>
+          <article class="card">
+            <h3>Espacio profundo</h3>
+            <p>Densidad baja (5‑10 clusters). Rocas aisladas dispersas.</p>
+          </article>
+        </div>
+        <p class="note">Los clusters mantienen 500&nbsp;u de separación mínima entre centros para evitar bloqueos imposibles.</p>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

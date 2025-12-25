@@ -33,12 +33,15 @@ export class LandingSequenceAnimation implements GameAnimation {
   private readonly cameraForwardOffset = 6.5;
   private readonly cameraDollyRange = 4.5;
   private readonly flareMaxDegrees = 10;
+  private readonly atmosphereEntryBlendStart = 0.82;
+  private readonly atmosphereEntryBlendEnd = 1;
 
   private surfaceNormal!: Vector3;
   private contactPoint!: Vector3;
   private approachDir!: Vector3;
   private shipStart!: Vector3;
   private shipEnd!: Vector3;
+  private shipEntry!: Vector3;
   private startSpeed = 0;
   private touchdownTriggered = false;
 
@@ -100,6 +103,12 @@ export class LandingSequenceAnimation implements GameAnimation {
       y: this.contactPoint.y + normal.y * settleHeight,
       z: this.contactPoint.z + normal.z * settleHeight
     };
+    const entryDepth = Math.max(12, (this.context.radius ?? 800) * 0.015);
+    this.shipEntry = {
+      x: this.contactPoint.x - normal.x * entryDepth,
+      y: this.contactPoint.y - normal.y * entryDepth,
+      z: this.contactPoint.z - normal.z * entryDepth,
+    };
     this.startSpeed = Math.max(6, Math.min(ship.currentSpeed || 0, ship.maxSpeed || 12));
     this.elapsed = 0;
     this.touchdownTriggered = false;
@@ -125,13 +134,13 @@ export class LandingSequenceAnimation implements GameAnimation {
     this.elapsed += dt;
     const progress = clamp01(this.elapsed / this.cinematicDuration);
     const eased = smoothstep(progress);
-    const shipPos = this.lerpVec(this.shipStart, this.shipEnd, eased);
+    const shipPos = this.computeBlendedShipPosition(progress);
     const flare = this.computeFlare(progress);
     this.applyShipPose(ship, shipPos, this.surfaceNormal, this.approachDir, flare);
     this.updateShipKinetics(ship, eased);
     this.updateCinematicCamera(engine, ship, eased);
 
-    if (!this.touchdownTriggered && progress >= 0.96) {
+    if (!this.touchdownTriggered && progress >= this.atmosphereEntryBlendStart) {
       this.touchdownTriggered = true;
       try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal); } catch {}
     }
@@ -201,6 +210,18 @@ export class LandingSequenceAnimation implements GameAnimation {
       document.addEventListener(evt, handler, { capture: true });
       this.inputBlockers.push(() => document.removeEventListener(evt, handler, { capture: true }));
     });
+  }
+
+  private computeBlendedShipPosition(progress: number): Vector3 {
+    if (progress < this.atmosphereEntryBlendStart) {
+      const local = clamp01(progress / Math.max(1e-3, this.atmosphereEntryBlendStart));
+      const eased = smoothstep(local);
+      return this.lerpVec(this.shipStart, this.shipEnd, eased);
+    }
+    const span = Math.max(1e-3, this.atmosphereEntryBlendEnd - this.atmosphereEntryBlendStart);
+    const local = clamp01((progress - this.atmosphereEntryBlendStart) / span);
+    const eased = smoothstep(local);
+    return this.lerpVec(this.shipEnd, this.shipEntry, eased);
   }
 
   private lerpVec(a: Vector3, b: Vector3, t: number): Vector3 {

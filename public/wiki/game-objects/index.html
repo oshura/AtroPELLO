@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Game Objects · AtroPELLO Wiki</title>
+  <meta name="description" content="Catálogo de asteroides, planetas, soles y portales con masas, daños por colisión y notas de generación." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="canonical" href="https://to3.atropello-games.es/wiki/game-objects/index.html" />
+  <meta property="og:title" content="Game Objects TO³" />
+  <meta property="og:description" content="Consulta qué esperar de cada objeto físico del universo: tamaños, daños y comportamiento orbital." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://to3.atropello-games.es/wiki/game-objects/index.html" />
+  <meta property="og:image" content="https://to3.atropello-games.es/assets/Wiki.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/wiki/wiki.css" />
+</head>
+<body>
+  <a class="wiki-back-button" href="/wiki/index.html">↩ Volver al índice</a>
+  <main>
+    <div class="wiki-shell">
+      <header class="wiki-hero">
+        <p class="wiki-hero__eyebrow">Cartografía del vacío</p>
+        <h1>Game Objects & Entities</h1>
+        <p class="wiki-hero__lead">
+          Cada objeto del universo TO³ aporta masa, daño por contacto y reglas de generación propias. Conocerlas te ayuda a planear rutas, aterrizajes y Gate Rites sin sorpresas.
+        </p>
+      </header>
+
+      <section class="section" id="intro">
+        <h2>Cómo leer la ficha</h2>
+        <p>
+          Las masas están normalizadas respecto a la nave (100&nbsp;kg). El daño por colisión refleja lo que recibe el casco cuando impactas a velocidad media (15&nbsp;u/s). El tamaño físico determina si la nave rebota, se desliza o explota al contacto.
+        </p>
+      </section>
+
+      <section class="section" id="catalogo">
+        <h2>Catálogo de objetos</h2>
+        <div class="icon-grid">
+          <article class="icon-card">
+            <div class="icon-card__glyph">🪨</div>
+            <h3 class="icon-card__title">Asteroid</h3>
+            <p class="icon-card__meta">Debris · SMALL</p>
+            <p>Masas de 1 unidad, daño 10 HP y radio entre 8‑25&nbsp;u. Viajan en trails rápidos que obligan a corregir rumbo.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">🪨</div>
+            <h3 class="icon-card__title">Super Asteroid</h3>
+            <p class="icon-card__meta">Debris · MEDIUM</p>
+            <p>Masas 10x, daño 75 HP y radios 35‑80&nbsp;u. Casi estáticos en zonas densas: bordéalos siempre.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">🪨</div>
+            <h3 class="icon-card__title">Mega Asteroid</h3>
+            <p class="icon-card__meta">Debris · LARGE</p>
+            <p>Masas gigantes (100x), daño 150 HP y radios 100‑200&nbsp;u. Custodian órbitas clave: un impacto equivale a muerte.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">🪐</div>
+            <h3 class="icon-card__title">Planet</h3>
+            <p class="icon-card__meta">Celestial · MASSIVE</p>
+            <p>Masas 1.000.000 y daño 100.000. Radios 300‑800&nbsp;u. Orbitan el sol y definen las rutas principales.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">💠</div>
+            <h3 class="icon-card__title">Ringed Planet</h3>
+            <p class="icon-card__meta">Celestial · MASSIVE</p>
+            <p>Anillos visibles con fragmentos ocultos. Radios 400‑900&nbsp;u. Preparan emboscadas en las órbitas exteriores.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">🌫️</div>
+            <h3 class="icon-card__title">Gaseous Planet</h3>
+            <p class="icon-card__meta">Celestial · MASSIVE</p>
+            <p>Gigantes de 500‑1000&nbsp;u que no permiten aterrizajes. Su atmósfera mata de inmediato.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">🪐</div>
+            <h3 class="icon-card__title">Giant Planet</h3>
+            <p class="icon-card__meta">Celestial · MASSIVE</p>
+            <p>Los cuerpos más pesados (600‑1200&nbsp;u). Obligatorio rodearlos con antelación.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">🛰️</div>
+            <h3 class="icon-card__title">Dwarf Planet</h3>
+            <p class="icon-card__meta">Celestial · MASSIVE</p>
+            <p>Pequeños mundos rocosos (150‑300&nbsp;u). Ideales para aterrizajes rápidos y portales ocultos.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">☄️</div>
+            <h3 class="icon-card__title">Protoplanet</h3>
+            <p class="icon-card__meta">Celestial · MASSIVE</p>
+            <p>Planetas en formación con polvo orbitando (200‑400&nbsp;u). Activan eventos narrativos únicos.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">🌍</div>
+            <h3 class="icon-card__title">Earth Split Planet</h3>
+            <p class="icon-card__meta">Celestial · MASSIVE</p>
+            <p>Exclusivo del sistema humano: la Tierra partida con núcleo expuesto y cinturón inestable (400‑600&nbsp;u).</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">☀️</div>
+            <h3 class="icon-card__title">Sun</h3>
+            <p class="icon-card__meta">Celestial · MASSIVE</p>
+            <p>Centro del sistema (1500‑2500&nbsp;u). El calor funde la nave incluso antes de tocar la superficie.</p>
+          </article>
+          <article class="icon-card">
+            <div class="icon-card__glyph">🌀</div>
+            <h3 class="icon-card__title">Portal</h3>
+            <p class="icon-card__meta">Ethereal</p>
+            <p>Sin masa ni daño. Crean rutas tras un Gate Rite y permanecen activos para viajes de ida y vuelta.</p>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="fisica">
+        <h2>Notas de física</h2>
+        <ul>
+          <li><strong>SMALL:</strong> rebotan y desvían tu trayectoria; cruzar varios seguidos puede sacarte de órbita.</li>
+          <li><strong>MEDIUM/LARGE:</strong> actúan como muros inmóviles. Rozarlos vacía gran parte del escudo.</li>
+          <li><strong>MASSIVE:</strong> contacto letal. Solo aterrizas mediante secuencias guiadas.</li>
+          <li><strong>ETHEREAL:</strong> no tienen colisión física, pero sirven de gatillos (portales, rituales).</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

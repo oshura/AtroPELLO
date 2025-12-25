@@ -1,0 +1,200 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <title>Reglas del Juego · AtroPELLO Wiki</title>
+  <meta name="description" content="Normas clave de TO³: guardados en la nube, aterrizajes manuales, colisiones, hechizos, controles y respawns." />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="canonical" href="https://to3.atropello-games.es/wiki/game-rules/index.html" />
+  <meta property="og:title" content="Reglas y mecánicas TO³" />
+  <meta property="og:description" content="Domina cloud saves, aterrizajes, colisiones, sigillum y hechizos antes de lanzarte al vacío." />
+  <meta property="og:type" content="article" />
+  <meta property="og:url" content="https://to3.atropello-games.es/wiki/game-rules/index.html" />
+  <meta property="og:image" content="https://to3.atropello-games.es/assets/Wiki.png" />
+  <meta name="twitter:card" content="summary_large_image" />
+  <link rel="stylesheet" href="/wiki/wiki.css" />
+</head>
+<body>
+  <a class="wiki-back-button" href="/wiki/index.html">↩ Volver al índice</a>
+  <main>
+    <div class="wiki-shell">
+      <header class="wiki-hero">
+        <p class="wiki-hero__eyebrow">Supervivencia</p>
+        <h1>Reglas y mecánicas del juego</h1>
+        <p class="wiki-hero__lead">Todo lo esencial para sobrevivir a TO³: del guardado en la nube al aterrizaje manual, pasando por colisiones, hechizos, controles y respawns.</p>
+      </header>
+
+      <section class="section" id="cloud-saves">
+        <h2>Cloud Saves</h2>
+        <p>Cada piloto comienza con un único slot en la nube. El header muestra «Guardar partida» cuando va a sobrescribir directamente ese slot; no se abre diálogo.</p>
+        <ul>
+          <li><strong>Ver todas las partidas</strong> abre la lista completa y bloquea el guardado para evitar sobrescribir campañas ajenas.</li>
+          <li><strong>Guardar / Load / Delete</strong> solo se activan con un slot seleccionado (si solo tienes uno, queda marcado por defecto).</li>
+          <li>Desbloquear <em>Memoria Ancestral</em> o módulos como <em>Máquina del Tiempo</em> añade slots y obliga a pasar siempre por el selector.</li>
+          <li>Los slots y mejoras van ligados al piloto: cada carga respeta lo que compraste o ganaste.</li>
+        </ul>
+        <p>Si usas varios pilotos con la misma cuenta, siempre verás primero la campaña más reciente del personaje activo. Las demás se ocultan salvo que pulses «Ver todas las partidas».</p>
+        <p>Guardar tras un Gate Rite, Sigillum móvil o salto remoto captura sistema, portal y estado de portales. Al cargar vuelves a esa instantánea en vez del ancla humano.</p>
+      </section>
+
+      <section class="section" id="landing">
+        <h2>Aterrizaje manual y pilotos HUD</h2>
+        <p>El HUD muestra dos pilotos junto al marquee: <strong>Landing</strong> (verde) cuando cumples las condiciones, y <strong>Threat</strong> (rojo) si algo amenaza la maniobra.</p>
+        <h3>Checklist</h3>
+        <ol>
+          <li><strong>Velocidad:</strong> baja de 5&nbsp;u/s usando freno (<span class="kbd">S</span>) o pulsos inversos.</li>
+          <li><strong>Alineación:</strong> nave casi paralela al suelo (±60°). Nada de picar.</li>
+          <li><strong>Distancia:</strong> queda a 50&nbsp;u o menos sin chocar con la esfera.</li>
+          <li><strong>Estabilidad:</strong> mantén todo 3&nbsp;s seguidos; si fallas, se apaga el piloto verde.</li>
+        </ol>
+        <div class="warning"><strong>Consejo:</strong> Ajusta primero la velocidad, luego la orientación y por último la distancia.</div>
+        <h3>Iniciar la secuencia</h3>
+        <ul>
+          <li>Con verde encendido y Threat apagado, pulsa <span class="kbd">Enter</span> para que la IA complete el touchdown.</li>
+          <li>Durante la animación se bloquean controles y recibes una breve ventana de invulnerabilidad.</li>
+          <li>Al tocar suelo se abre el panel de aterrizaje (descanso, exploración o despegue).</li>
+        </ul>
+        <h3>Piloto rojo «Threat»</h3>
+        <p>Se activa si un enemigo, meteorito o anomalía entra a 500&nbsp;u. Mientras parpadee, no puedes aterrizar.</p>
+        <ul>
+          <li>Destruye o empuja la amenaza con glifos o maniobras evasivas.</li>
+          <li>O describe una órbita amplia hasta que queden fuera del radio.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="collisions">
+        <h2>Mecánicas de colisión</h2>
+        <h3>Asteroides</h3>
+        <ul>
+          <li>Los pequeños rebotan según ángulo y velocidad; un toque suave apenas te mueve, un choque frontal te lanza.</li>
+          <li>Ambos objetos intercambian trayectoria; úsalo para empujar rocas fuera del camino.</li>
+          <li>Golpear una roca dentro de un cluster la separa y empieza a vagar sola.</li>
+          <li>Daño: 10&nbsp;HP (pequeño), 75&nbsp;HP (super), 150&nbsp;HP (mega).</li>
+        </ul>
+        <h3>Planetas</h3>
+        <ul>
+          <li>Impactar un planeta inflige 100&nbsp;000 de daño; tu nave solo tiene 1000&nbsp;HP.</li>
+          <li>Un roce te hace deslizarte conservando impulso lateral.</li>
+          <li>Nunca cuenta como aterrizaje: siempre es destrucción.</li>
+        </ul>
+        <h3>Sol</h3>
+        <ul>
+          <li>Contacto directo = 100&nbsp;000 de daño instantáneo.</li>
+          <li>La radiación erosiona tus escudos antes de tocar la superficie.</li>
+          <li>Distancia segura: mantente a 3000&nbsp;u o más.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="spells">
+        <h2>Hechizos y grimorio</h2>
+        <h3>Sistema</h3>
+        <ul>
+          <li><strong>Acceso:</strong> <span class="kbd">G</span> abre el grimorio.</li>
+          <li><strong>Estados:</strong> Locked 🔒, Available ⚡, Active ⏱️, Cooldown ⏳.</li>
+          <li><strong>Feedback:</strong> los hechizos activos muestran su duración.</li>
+        </ul>
+        <h3>Reglas</h3>
+        <ul>
+          <li>Solo un spell toggle (Speed/Eternal) activo a la vez.</li>
+          <li>No puedes recastear hasta que termine el cooldown.</li>
+          <li>Máximo 5 portales de Gate Rite simultáneos.</li>
+          <li>No existe stacking: lanzar el mismo hechizo no acumula efectos.</li>
+        </ul>
+        <p class="note">TBD: sistema de recursos, combinaciones y variantes mejoradas.</p>
+      </section>
+
+      <section class="section" id="controls">
+        <h2>Navegación y controles</h2>
+        <div class="card-grid">
+          <article class="card">
+            <h3>Movimiento</h3>
+            <ul>
+              <li><strong>Acelerar:</strong> mantén <span class="kbd">W</span> o <span class="kbd">↑</span>.</li>
+              <li><strong>Frenar:</strong> <span class="kbd">S</span> o <span class="kbd">↓</span>.</li>
+              <li><strong>Girar:</strong> <span class="kbd">A/D</span> o flechas laterales.</li>
+              <li><strong>Inercia:</strong> sin empuje mantienes la velocidad actual.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Cámara</h3>
+            <ul>
+              <li>Zoom con la rueda.</li>
+              <li>La cámara sigue la nave en modo follow.</li>
+              <li>Redimensionar canvas recalcula aspecto y retícula al instante.</li>
+            </ul>
+          </article>
+          <article class="card">
+            <h3>Interfaz</h3>
+            <ul>
+              <li><strong>Grimorio:</strong> <span class="kbd">G</span>.</li>
+              <li><strong>Mapa del sistema:</strong> <span class="kbd">Tab</span>.</li>
+              <li><strong>Audio:</strong> haz clic una vez tras cargar para desbloquearlo.</li>
+              <li><strong>Pantalla completa:</strong> botón verde <code>[ ]</code> abajo a la derecha; vuelve con <code>▣</code>.</li>
+              <li><strong>Flight Vector Reticle:</strong> cruz proyectada fuera del HUD que marca el punto de fuga real; se oculta al abrir paneles.</li>
+            </ul>
+          </article>
+        </div>
+      </section>
+
+      <section class="section" id="survival">
+        <h2>Consejos de supervivencia</h2>
+        <ul>
+          <li>La velocidad alta multiplica el daño por colisión.</li>
+          <li>Planea rutas con Gate Rite para escapes rápidos.</li>
+          <li>En campos de asteroides, navega perpendicular al drift del cluster.</li>
+          <li>Acércate a los planetas en trayectoria tangencial, nunca de frente.</li>
+          <li>Mantén Void Jump listo para emergencias.</li>
+          <li>No pierdas de vista el sol; orienta tu cámara a menudo.</li>
+          <li>Speed Rite acelera, pero también mata si chocas.</li>
+          <li>Usa Eternal Rite para cruzar zonas densas con seguridad.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="respawn">
+        <h2>Respawn & Sigillum</h2>
+        <p>Al morir, el juego recompone el sistema y reapareces según tu estado con el Sigillum.</p>
+        <ul>
+          <li><strong>Sin Sigillum:</strong> ancla humano «Trail Entry», lejos del sol, instrumentos reiniciados.</li>
+          <li><strong>Con Sigillum:</strong> vuelves exactamente al punto sellado, con órbita y portales intactos.</li>
+        </ul>
+        <p><em>No puedes grabar un Sigillum dentro de una atmósfera.</em> Despega o vuelve al modo sistema solar.</p>
+        <h3>Qué conserva</h3>
+        <ul>
+          <li>Portales y sellos: su estado se mantiene entre muertes o viajes.</li>
+          <li>Planetas alterados: destrucciones o limpiezas permanecen.</li>
+          <li>Lesser beings: posición, objetivo y memoria se restauran.</li>
+          <li>Deidad regente: cada sistema conserva la misma entidad.</li>
+          <li>Grimorio y paneles: distribución y estados se rehidratan.</li>
+        </ul>
+        <h3>Portales y transiciones</h3>
+        <ul>
+          <li>Cruzar un portal o Gate Rite guarda la instantánea del sistema origen.</li>
+          <li>Las dos bocas de cada portal siguen enlazadas tras morir.</li>
+          <li>El consumo de Energía del Vacío se pausa durante la animación.</li>
+          <li>Los labels de sistema se reciclan para evitar capturas desordenadas.</li>
+        </ul>
+        <h3>Lesser beings y deidades</h3>
+        <ul>
+          <li>Cada sistema tiene un patrono (Cthulhu, Azathoth…).</li>
+          <li>Void Jump decide con antelación si habrá incursión según el patrono.</li>
+          <li>Los Void Jump se bloquean dentro de atmósferas.</li>
+          <li>Semillas y Vampiros comparan distancia con tu nave para fijar persecución.</li>
+        </ul>
+      </section>
+
+      <section class="section" id="future">
+        <h2>Futuras mecánicas (TBD)</h2>
+        <ul>
+          <li>Recolección de recursos en asteroides para mejoras.</li>
+          <li>Upgrades de nave: thrusters, fuselaje, slots extra.</li>
+          <li>Sistemas de combate: armas, targeting, IA enemiga.</li>
+          <li>Misiones con objetivos y recompensas.</li>
+          <li>Cooperativo y carreras competitivas.</li>
+          <li>Permadeath ligado al envejecimiento del piloto.</li>
+          <li>Deep save system para estados avanzados.</li>
+        </ul>
+      </section>
+    </div>
+  </main>
+</body>
+</html>

@@ -18,6 +18,8 @@ function smoothstep(t: number): number {
   return c * c * (3 - 2 * c);
 }
 
+type TakeoffPhase = 'ground' | 'atmo-exit';
+
 export class TakeoffSequenceAnimation implements GameAnimation {
   public readonly name = 'takeoff-sequence';
   private context!: LandingApproachContext;
@@ -26,12 +28,14 @@ export class TakeoffSequenceAnimation implements GameAnimation {
   private readonly prepDuration = 1.0;
   private readonly ascentDuration = 4.0;
   private readonly exitDuration = 2.0;
+  private readonly phaseTwoStartAltitude = 1000;
 
   private burrowTarget!: Vector3;
   private ascentTarget!: Vector3;
   private exitTarget!: Vector3;
   private tangentDir!: Vector3;
   private coreStart!: Vector3;
+  private phase: TakeoffPhase = 'ground';
 
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
@@ -39,8 +43,9 @@ export class TakeoffSequenceAnimation implements GameAnimation {
 
   private savedShipDynamics: { acceleration: number; deceleration: number; maxSpeed: number } | null = null;
 
-  public configure(context: LandingApproachContext): void {
+  public configure(context: LandingApproachContext, options?: { phase?: TakeoffPhase }): void {
     this.context = context;
+    this.phase = options?.phase ?? 'ground';
   }
 
   public start(engine: GameEngine): void {
@@ -83,7 +88,7 @@ export class TakeoffSequenceAnimation implements GameAnimation {
     const normal = this.normalize(this.context.surfaceNormal);
     const center = this.getPlanetCenter();
     this.coreStart = { ...center };
-    const surfacePoint = { ...this.context.surfacePoint };
+    const surfacePoint = this.getSurfacePoint();
     const clearance = this.computeClearanceDistance();
     const burrowDepth = Math.max(5, Math.min(this.context.radius * 0.05, clearance * 0.15));
     const ascendHeight = Math.max(120, clearance);
@@ -106,8 +111,12 @@ export class TakeoffSequenceAnimation implements GameAnimation {
       z: this.ascentTarget.z + this.tangentDir.z * exitDrift
     };
 
+    if (this.phase === 'atmo-exit') {
+      this.configureForAtmosphereExit(surfacePoint, normal, clearance);
+    }
+
     this.installKeyBlockers();
-    engine.notifyTakeoffSequenceStarted(this.context);
+    engine.notifyTakeoffSequenceStarted(this.context, this.phase);
   }
 
   public update(engine: GameEngine, dt: number): boolean {
@@ -197,7 +206,7 @@ export class TakeoffSequenceAnimation implements GameAnimation {
     this.overlayAlpha = 0;
     this.blocking = false;
     const outcome = aborted ? 'aborted' : 'completed';
-    try { engine.notifyTakeoffSequenceFinished(outcome as 'completed' | 'aborted', this.context); } catch {}
+    try { engine.notifyTakeoffSequenceFinished(outcome as 'completed' | 'aborted', this.context, this.phase); } catch {}
   }
 
   private installKeyBlockers(): void {
@@ -280,6 +289,41 @@ export class TakeoffSequenceAnimation implements GameAnimation {
   private computeClearanceDistance(): number {
     const baseRadius = Math.max(10, this.context?.radius ?? 0);
     return Math.max(250, baseRadius * 0.35);
+  }
+
+  private configureForAtmosphereExit(surfacePoint: Vector3, normal: Vector3, clearance: number): void {
+    const boundaryAltitude = Math.max(this.phaseTwoStartAltitude, clearance);
+    const startPoint = {
+      x: surfacePoint.x + normal.x * boundaryAltitude,
+      y: surfacePoint.y + normal.y * boundaryAltitude,
+      z: surfacePoint.z + normal.z * boundaryAltitude
+    };
+    const ascentAltitude = boundaryAltitude + Math.max(300, clearance * 0.6);
+    const exitDrift = Math.max(400, clearance);
+    this.coreStart = { ...startPoint };
+    this.burrowTarget = { ...startPoint };
+    this.ascentTarget = {
+      x: surfacePoint.x + normal.x * ascentAltitude,
+      y: surfacePoint.y + normal.y * ascentAltitude,
+      z: surfacePoint.z + normal.z * ascentAltitude
+    };
+    this.exitTarget = {
+      x: this.ascentTarget.x + this.tangentDir.x * exitDrift,
+      y: this.ascentTarget.y + this.tangentDir.y * exitDrift,
+      z: this.ascentTarget.z + this.tangentDir.z * exitDrift
+    };
+  }
+
+  private getSurfacePoint(): Vector3 {
+    if (this.context?.surfacePoint) {
+      return { ...this.context.surfacePoint };
+    }
+    const normal = this.normalize(this.context?.surfaceNormal ?? { x: 0, y: 1, z: 0 });
+    return {
+      x: normal.x * Math.max(1, this.context?.radius ?? 1),
+      y: normal.y * Math.max(1, this.context?.radius ?? 1),
+      z: normal.z * Math.max(1, this.context?.radius ?? 1)
+    };
   }
 
   private ensureShipClearOfPlanet(ship: any): void {
