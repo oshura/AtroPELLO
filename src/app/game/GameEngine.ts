@@ -381,6 +381,10 @@ export class GameEngine {
   private atmosphereCameraJitterPhase = 0;
   private atmosphereCameraJitterStrength = 0;
   private atmosphereCameraDriftStrength = 0;
+  private atmosphereCameraShakeActive = false;
+  private atmosphereCameraShakeElapsed = 0;
+  private atmosphereCameraShakeCooldown = 3 + Math.random() * 3;
+  private atmosphereCameraShakeDirection = 1;
   private atmosphereShipJitterPhase = 0;
   private atmosphereShipJitterStrength = 0;
   private atmosphereProgressiveDriftBias: Vector3 = { x: 0, y: 0, z: 0 };
@@ -428,6 +432,10 @@ export class GameEngine {
   private readonly ATMOSPHERE_CAMERA_DRIFT_TURBULENCE_PUSH = 0.35;
   private readonly ATMOSPHERE_CAMERA_JITTER_MAX = 0.75;
   private readonly ATMOSPHERE_CAMERA_DRIFT_MAX = 5;
+  private readonly ATMOSPHERE_CAMERA_SHAKE_MIN_INTERVAL = 3;
+  private readonly ATMOSPHERE_CAMERA_SHAKE_MAX_INTERVAL = 6;
+  private readonly ATMOSPHERE_CAMERA_SHAKE_DURATION = 0.9;
+  private readonly ATMOSPHERE_CAMERA_SHAKE_MAX_DEGREES = 4;
   private readonly ATMOSPHERE_SHIP_JITTER_THRESHOLD = 0.35;
   private readonly ATMOSPHERE_SHIP_JITTER_FORCE = 6;
   private readonly ATMOSPHERE_PROGRESSIVE_DRIFT_THRESHOLD = 0.45;
@@ -2357,11 +2365,13 @@ export class GameEngine {
     if (this.isAtmosphereLandingCinematicShieldActive()) {
       this.atmosphereCameraJitterStrength = 0;
       this.atmosphereCameraDriftStrength = 0;
+      this.suspendAtmosphereCameraShake();
       return;
     }
     if (this.landingCinematicCameraHold) {
       this.atmosphereCameraJitterStrength = 0;
       this.atmosphereCameraDriftStrength = 0;
+      this.suspendAtmosphereCameraShake();
       return;
     }
     const state = this.atmosphereWeatherEffects;
@@ -2384,14 +2394,14 @@ export class GameEngine {
       : 0;
     const driftTarget = Math.min(1, driftMagnitude + driftTurbulencePush) * stabilityScale;
     this.atmosphereCameraDriftStrength = this.lerpScalar(this.atmosphereCameraDriftStrength, driftTarget, smoothing * 0.7);
-    if (this.atmosphereCameraJitterStrength <= 1e-3 && this.atmosphereCameraDriftStrength <= 1e-3) {
-      return;
-    }
-    const forward = this.normalize({
+    const shakeAngleDeg = this.updateAtmosphereCameraPeriodicShake(deltaTime, turbulenceNormalized, stabilityScale);
+    const cameraOffset = {
       x: this.camera.target.x - this.camera.position.x,
       y: this.camera.target.y - this.camera.position.y,
       z: this.camera.target.z - this.camera.position.z,
-    });
+    };
+    const cameraDistance = Math.hypot(cameraOffset.x, cameraOffset.y, cameraOffset.z) || 1;
+    const forward = this.normalize(cameraOffset);
     let up = this.normalize({ ...this.camera.up });
     let right = {
       x: forward.y * up.z - forward.z * up.y,
@@ -2409,45 +2419,124 @@ export class GameEngine {
       y: right.z * forward.x - right.x * forward.z,
       z: right.x * forward.y - right.y * forward.x,
     });
-
-    this.atmosphereCameraJitterPhase += deltaTime * (2.5 + state.turbulenceCurrent * 6);
-    const jitterNoiseX = Math.sin(this.atmosphereCameraJitterPhase) + Math.sin(this.atmosphereCameraJitterPhase * 0.6 + 1.1);
-    const jitterNoiseY = Math.cos(this.atmosphereCameraJitterPhase * 0.9 + 0.4);
-    const jitterScale = this.ATMOSPHERE_CAMERA_JITTER_MAX * this.atmosphereCameraJitterStrength;
-    const jitterOffset = {
-      x: right.x * (jitterNoiseX * jitterScale) + up.x * (jitterNoiseY * jitterScale * 0.6),
-      y: right.y * (jitterNoiseX * jitterScale) + up.y * (jitterNoiseY * jitterScale * 0.6),
-      z: right.z * (jitterNoiseX * jitterScale) + up.z * (jitterNoiseY * jitterScale * 0.6),
-    };
-
-    let driftOffset = { x: 0, y: 0, z: 0 };
-    const driftLen = Math.hypot(state.driftOffset.x, state.driftOffset.y, state.driftOffset.z);
-    if (state.active && driftLen > 1e-3) {
-      const driftScale = this.ATMOSPHERE_CAMERA_DRIFT_MAX * this.atmosphereCameraDriftStrength;
-      driftOffset = {
-        x: (state.driftOffset.x / driftLen) * driftScale,
-        y: (state.driftOffset.y / driftLen) * driftScale * 0.4,
-        z: (state.driftOffset.z / driftLen) * driftScale,
+    let cameraDirty = false;
+    const hasTranslationOffset = this.atmosphereCameraJitterStrength > 1e-3 || this.atmosphereCameraDriftStrength > 1e-3;
+    if (hasTranslationOffset) {
+      this.atmosphereCameraJitterPhase += deltaTime * (2.5 + state.turbulenceCurrent * 6);
+      const jitterNoiseX = Math.sin(this.atmosphereCameraJitterPhase) + Math.sin(this.atmosphereCameraJitterPhase * 0.6 + 1.1);
+      const jitterNoiseY = Math.cos(this.atmosphereCameraJitterPhase * 0.9 + 0.4);
+      const jitterScale = this.ATMOSPHERE_CAMERA_JITTER_MAX * this.atmosphereCameraJitterStrength;
+      const jitterOffset = {
+        x: right.x * (jitterNoiseX * jitterScale) + up.x * (jitterNoiseY * jitterScale * 0.6),
+        y: right.y * (jitterNoiseX * jitterScale) + up.y * (jitterNoiseY * jitterScale * 0.6),
+        z: right.z * (jitterNoiseX * jitterScale) + up.z * (jitterNoiseY * jitterScale * 0.6),
       };
+
+      let driftOffset = { x: 0, y: 0, z: 0 };
+      const driftLen = Math.hypot(state.driftOffset.x, state.driftOffset.y, state.driftOffset.z);
+      if (state.active && driftLen > 1e-3) {
+        const driftScale = this.ATMOSPHERE_CAMERA_DRIFT_MAX * this.atmosphereCameraDriftStrength;
+        driftOffset = {
+          x: (state.driftOffset.x / driftLen) * driftScale,
+          y: (state.driftOffset.y / driftLen) * driftScale * 0.4,
+          z: (state.driftOffset.z / driftLen) * driftScale,
+        };
+      }
+
+      const totalOffset = {
+        x: jitterOffset.x + driftOffset.x,
+        y: jitterOffset.y + driftOffset.y,
+        z: jitterOffset.z + driftOffset.z,
+      };
+
+      if (Math.abs(totalOffset.x) + Math.abs(totalOffset.y) + Math.abs(totalOffset.z) > 1e-5) {
+        this.camera.position.x += totalOffset.x;
+        this.camera.position.y += totalOffset.y;
+        this.camera.position.z += totalOffset.z;
+        this.camera.target.x += totalOffset.x;
+        this.camera.target.y += totalOffset.y;
+        this.camera.target.z += totalOffset.z;
+        cameraDirty = true;
+      }
     }
 
-    const totalOffset = {
-      x: jitterOffset.x + driftOffset.x,
-      y: jitterOffset.y + driftOffset.y,
-      z: jitterOffset.z + driftOffset.z,
-    };
-
-    if (Math.abs(totalOffset.x) + Math.abs(totalOffset.y) + Math.abs(totalOffset.z) <= 1e-5) {
-      return;
+    if (cameraDistance > 1e-4 && Math.abs(shakeAngleDeg) > 1e-3) {
+      const angleRad = shakeAngleDeg * (Math.PI / 180);
+      const cosA = Math.cos(angleRad);
+      const sinA = Math.sin(angleRad);
+      const rotatedForward = {
+        x: forward.x * cosA + up.x * sinA,
+        y: forward.y * cosA + up.y * sinA,
+        z: forward.z * cosA + up.z * sinA,
+      };
+      const rotatedUp = {
+        x: up.x * cosA - forward.x * sinA,
+        y: up.y * cosA - forward.y * sinA,
+        z: up.z * cosA - forward.z * sinA,
+      };
+      const normalizedForward = this.normalize(rotatedForward);
+      const normalizedUp = this.normalize(rotatedUp);
+      this.camera.target.x = this.camera.position.x + normalizedForward.x * cameraDistance;
+      this.camera.target.y = this.camera.position.y + normalizedForward.y * cameraDistance;
+      this.camera.target.z = this.camera.position.z + normalizedForward.z * cameraDistance;
+      this.camera.up.x = normalizedUp.x;
+      this.camera.up.y = normalizedUp.y;
+      this.camera.up.z = normalizedUp.z;
+      cameraDirty = true;
     }
 
-    this.camera.position.x += totalOffset.x;
-    this.camera.position.y += totalOffset.y;
-    this.camera.position.z += totalOffset.z;
-    this.camera.target.x += totalOffset.x;
-    this.camera.target.y += totalOffset.y;
-    this.camera.target.z += totalOffset.z;
-    this.camera.markDirty();
+    if (cameraDirty) {
+      this.camera.markDirty();
+    }
+  }
+
+  private updateAtmosphereCameraPeriodicShake(
+    deltaTime: number,
+    turbulenceNormalized: number,
+    stabilityScale: number,
+  ): number {
+    if (!this.isAtmosphereSceneActive()) {
+      this.atmosphereCameraShakeActive = false;
+      this.atmosphereCameraShakeElapsed = 0;
+      return 0;
+    }
+    const severity = this.clamp(
+      (turbulenceNormalized - this.ATMOSPHERE_TURBULENCE_SHAKE_THRESHOLD)
+        / Math.max(1e-3, 1 - this.ATMOSPHERE_TURBULENCE_SHAKE_THRESHOLD),
+      0,
+      1,
+    );
+    if (severity <= 0 || stabilityScale <= 1e-3) {
+      this.atmosphereCameraShakeActive = false;
+      this.atmosphereCameraShakeElapsed = 0;
+      return 0;
+    }
+    if (this.atmosphereCameraShakeActive) {
+      this.atmosphereCameraShakeElapsed += deltaTime;
+      const progress = this.atmosphereCameraShakeElapsed / this.ATMOSPHERE_CAMERA_SHAKE_DURATION;
+      if (progress >= 1) {
+        this.atmosphereCameraShakeActive = false;
+        this.atmosphereCameraShakeElapsed = 0;
+        return 0;
+      }
+      const envelope = Math.sin(progress * Math.PI);
+      const angleDeg = this.ATMOSPHERE_CAMERA_SHAKE_MAX_DEGREES * envelope * severity * stabilityScale;
+      return angleDeg * this.atmosphereCameraShakeDirection;
+    }
+    this.atmosphereCameraShakeCooldown = Math.max(0, this.atmosphereCameraShakeCooldown - deltaTime);
+    if (this.atmosphereCameraShakeCooldown <= 0) {
+      this.atmosphereCameraShakeActive = true;
+      this.atmosphereCameraShakeElapsed = 0;
+      this.atmosphereCameraShakeDirection = Math.random() > 0.5 ? 1 : -1;
+      this.atmosphereCameraShakeCooldown = this.ATMOSPHERE_CAMERA_SHAKE_MIN_INTERVAL
+        + Math.random() * (this.ATMOSPHERE_CAMERA_SHAKE_MAX_INTERVAL - this.ATMOSPHERE_CAMERA_SHAKE_MIN_INTERVAL);
+    }
+    return 0;
+  }
+
+  private suspendAtmosphereCameraShake(): void {
+    this.atmosphereCameraShakeActive = false;
+    this.atmosphereCameraShakeElapsed = 0;
   }
 
   private applyAtmosphereShipJitter(deltaTime: number): void {
