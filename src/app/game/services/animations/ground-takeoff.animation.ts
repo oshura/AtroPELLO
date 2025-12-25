@@ -34,6 +34,8 @@ export class GroundTakeoffAnimation implements GameAnimation {
   private wingProgressStart = 0;
   private wingProgressEnd = 0;
   private readonly wingUnfoldSpoolShare = 0.65;
+  private noseAnchorStart = 0;
+  private noseAnchorEnd = 0;
 
   private savedDynamics: { acceleration: number; deceleration: number; maxSpeed: number } | null = null;
   private startPoint!: Vector3;
@@ -59,6 +61,13 @@ export class GroundTakeoffAnimation implements GameAnimation {
     }
     this.wingProgressEnd = 0;
     this.applyWingDeployment(engine, 0);
+    if (typeof ship.getNoseAnchorProgress === 'function') {
+      this.noseAnchorStart = clamp01(ship.getNoseAnchorProgress());
+    } else {
+      this.noseAnchorStart = 0;
+    }
+    this.noseAnchorEnd = 0;
+    this.applyNoseAnchor(engine, 0);
 
     this.savedDynamics = {
       acceleration: ship.acceleration,
@@ -124,6 +133,7 @@ export class GroundTakeoffAnimation implements GameAnimation {
       ship.targetSpeed = 0;
       ship.currentSpeed = 0;
       this.applyWingDeployment(engine, this.wingUnfoldSpoolShare * t);
+      this.applyNoseAnchor(engine, t);
       this.overlayAlpha = lerp(1, 0.6, t);
       return false;
     }
@@ -138,6 +148,7 @@ export class GroundTakeoffAnimation implements GameAnimation {
     ship.currentSpeed = desiredSpeed;
     const wingJourney = this.wingUnfoldSpoolShare + (1 - this.wingUnfoldSpoolShare) * eased;
     this.applyWingDeployment(engine, wingJourney);
+    this.applyNoseAnchor(engine, eased);
     this.overlayAlpha = lerp(0.6, 0, eased);
 
     if (localT >= 1) {
@@ -191,16 +202,22 @@ export class GroundTakeoffAnimation implements GameAnimation {
     this.inputBlockers = [];
 
     engine.collisionsDisabled = false;
-    if (engine.camera && this.prevCameraMode !== null) {
-      try { engine.camera.setCameraMode(this.prevCameraMode); } catch {}
+    if (engine.camera) {
+      if (aborted && this.prevCameraMode !== null) {
+        try { engine.camera.setCameraMode(this.prevCameraMode); } catch {}
+      } else {
+        try { engine.camera.setCameraMode(CameraMode.COCKPIT); } catch {}
+      }
     }
     this.prevCameraMode = null;
     this.overlayAlpha = 0;
     this.blocking = false;
     if (aborted) {
       try { engine.setWingDeploymentProgress(this.wingProgressStart); } catch {}
+      this.applyNoseAnchor(engine, 0);
     } else {
       this.applyWingDeployment(engine, 1);
+      this.applyNoseAnchor(engine, 1);
     }
     const outcome = aborted ? 'aborted' : 'stage-one';
     engine.notifyTakeoffSequenceFinished(outcome as 'aborted' | 'stage-one', this.context, 'ground');
@@ -223,6 +240,15 @@ export class GroundTakeoffAnimation implements GameAnimation {
     try {
       engine.setWingDeploymentProgress(
         lerp(this.wingProgressStart, this.wingProgressEnd, normalized)
+      );
+    } catch {}
+  }
+
+  private applyNoseAnchor(engine: GameEngine, journeyT: number): void {
+    const normalized = clamp01(journeyT);
+    try {
+      engine.setNoseAnchorProgress(
+        lerp(this.noseAnchorStart, this.noseAnchorEnd, normalized)
       );
     } catch {}
   }

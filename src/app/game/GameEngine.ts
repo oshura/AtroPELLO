@@ -275,7 +275,7 @@ export class GameEngine {
   private readonly ATMOSPHERE_AUTO_LAND_CAMERA_TARGET_LIFT = 3;
   private readonly ATMOSPHERE_AUTO_LAND_CAMERA_MIN_HOLD_MS = 900;
   private readonly ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS = 2000;
-  private readonly ATMOSPHERE_AUTO_LAND_CINEMATIC_PANEL_DELAY_MS = 7000;
+  private readonly ATMOSPHERE_AUTO_LAND_CINEMATIC_PANEL_DELAY_MS = 11500;
   private readonly ATMOSPHERE_AUTO_LAND_THREAT_SUPPRESSION_WINDOW_MS = 9000;
   private readonly ATMOSPHERE_AUTO_LAND_THREAT_RECOVERY_MS = 2000;
   private readonly ATMOSPHERE_AUTO_LAND_COLLISION_GRACE_WINDOW_MS = 9000;
@@ -314,6 +314,8 @@ export class GameEngine {
   private atmosphereAutoLandingDustTriggered = false;
   private atmosphereLandingCinematicActive = false;
   private atmosphereLandingCinematicContext: LandingApproachContext | null = null;
+  private landingCinematicCameraHold: { prevMode: CameraMode | null } | null = null;
+  private pendingAutoLandingCameraContext: LandingApproachContext | null = null;
   private atmosphereCollisionGraceUntilMs = 0;
   
   // HUD health update throttle (update every 250ms instead of every frame)
@@ -405,6 +407,7 @@ export class GameEngine {
   private landingPanelAirHandle: ReturnType<AudioEngineService['play']> | null = null;
   private landingPanelAudioFocusActive: boolean = false;
   private landingPanelAudioFocusArmed: boolean = false;
+  private landingPanelAwaitingUser: boolean = false;
   private readonly SUN_DAMAGE_INTERVAL_MS: number = 5000;
   private readonly SUN_DAMAGE_THRESHOLD: number = 3000;
   private readonly SUN_DAMAGE_STEP_DISTANCE: number = 100;
@@ -531,6 +534,7 @@ export class GameEngine {
   private lastWingDeploymentProgress: number = -1;
   private wingGeometryDirty = true;
   private pendingWingDeploymentProgress: number | null = null;
+  private pendingNoseAnchorProgress: number | null = null;
   // Simple ephemeral text overlay (e.g., "ANIMATION NUMBER X.")
   private _placeholderOverlay: { tex: WebGLTexture; w: number; h: number; until: number } | null = null;
 
@@ -1096,8 +1100,11 @@ export class GameEngine {
     this.extendAtmosphereCollisionGrace(this.ATMOSPHERE_AUTO_LAND_COLLISION_RECOVERY_MS);
     if (outcome === 'completed' && resolvedContext?.autoLand) {
       this.startAtmosphereAutoLandingCamera(resolvedContext);
-    } else if (outcome === 'aborted') {
+    } else {
       this.stopAtmosphereAutoLandingCamera();
+      if (outcome === 'aborted') {
+        this.releaseLandingCinematicCameraHold('cinematic-aborted');
+      }
     }
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Atmosphere landing cinematic finished', {
       outcome,
@@ -1133,10 +1140,56 @@ export class GameEngine {
     this.pendingWingDeploymentProgress = null;
   }
 
+  public setNoseAnchorProgress(progress: number | null | undefined): void {
+    if (!this.spaceship) {
+      this.pendingNoseAnchorProgress = typeof progress === 'number' ? progress : 0;
+      return;
+    }
+    this.spaceship.setNoseAnchorProgress(progress);
+    this.pendingNoseAnchorProgress = null;
+  }
+
+  public holdLandingCinematicCamera(prevMode: CameraMode | null): void {
+    if (!this.camera) {
+      return;
+    }
+    if (!this.landingPanelAwaitingUser) {
+      if (prevMode !== null) {
+        try { this.camera.setCameraMode(prevMode); } catch {}
+      }
+      return;
+    }
+    if (this.landingCinematicCameraHold) {
+      this.landingCinematicCameraHold.prevMode = prevMode ?? null;
+      return;
+    }
+    this.landingCinematicCameraHold = { prevMode: prevMode ?? null };
+  }
+
+  private releaseLandingCinematicCameraHold(_reason?: string): void {
+    if (!this.landingCinematicCameraHold) {
+      this.pendingAutoLandingCameraContext = null;
+      return;
+    }
+    const prevMode = this.landingCinematicCameraHold.prevMode;
+    this.landingCinematicCameraHold = null;
+    if (this.camera && prevMode !== null) {
+      try { this.camera.setCameraMode(prevMode); } catch {}
+    }
+    if (this.pendingAutoLandingCameraContext) {
+      const pending = this.pendingAutoLandingCameraContext;
+      this.pendingAutoLandingCameraContext = null;
+      this.startAtmosphereAutoLandingCamera(pending);
+    }
+  }
+
   public notifyTakeoffSequenceStarted(
     context: LandingApproachContext,
     phase: 'ground' | 'atmo-exit' = 'ground'
   ): void {
+    this.pendingAutoLandingCameraContext = null;
+    this.releaseLandingCinematicCameraHold('takeoff-sequence-start');
+    this.stopAtmosphereAutoLandingCamera();
     this.takeoffSequenceActive = true;
     this.takeoffSequencePhase = phase;
     this.setLandingDamageSuppressed(true, 'takeoff-sequence-start');
@@ -1250,6 +1303,8 @@ export class GameEngine {
     this.setLandingDamageSuppressed(false, 'atmosphere-flight');
     this.setStallWarningSuppressedUntilTakeoff(true);
 
+    this.landingPanelAwaitingUser = false;
+
     let panelManaged = false;
     if (!options?.skipLandingPanel) {
       const baseDeferMs = options?.deferLandingPanelMs ?? (enrichedContext.autoLand ? this.ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS : 0);
@@ -1257,11 +1312,16 @@ export class GameEngine {
         ? Math.max(baseDeferMs, this.ATMOSPHERE_AUTO_LAND_CINEMATIC_PANEL_DELAY_MS)
         : baseDeferMs;
       panelManaged = this.openLandingPanelWithDelay(enrichedContext, deferMs);
+      this.landingPanelAwaitingUser = panelManaged;
+    } else {
+      this.releaseLandingCinematicCameraHold('landing-panel-skipped');
     }
 
     if (panelManaged) {
       return;
     }
+
+    this.releaseLandingCinematicCameraHold('landing-panel-unavailable');
 
     const label = context.planetName ? `Aterrizaje en ${context.planetName}` : 'Aterrizaje completado';
     try { this.showPlaceholderText(`${label} - Escena atmosférica activa`, 3000); } catch {}
@@ -1281,6 +1341,8 @@ export class GameEngine {
     } catch (error) {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Landing panel open failed', error);
     }
+    this.landingPanelAwaitingUser = false;
+    this.releaseLandingCinematicCameraHold('landing-panel-open-failed');
     return false;
   }
 
@@ -1300,12 +1362,16 @@ export class GameEngine {
     if (this.pendingLandingPanelTimer !== null) {
       clearTimeout(this.pendingLandingPanelTimer);
       this.pendingLandingPanelTimer = null;
+      this.landingPanelAwaitingUser = false;
+      this.releaseLandingCinematicCameraHold('landing-panel-timer-cleared');
     }
   }
 
   public notifyLandingPanelClosed(): void {
     this.stopLandingPanelAudioFocus();
     this.landingPanelAudioFocusArmed = false;
+    this.landingPanelAwaitingUser = false;
+    this.releaseLandingCinematicCameraHold('landing-panel-closed');
   }
 
   private registerPlanetLandingVisit(planetId?: string | null): void {
@@ -2293,6 +2359,11 @@ export class GameEngine {
       this.atmosphereCameraDriftStrength = 0;
       return;
     }
+    if (this.landingCinematicCameraHold) {
+      this.atmosphereCameraJitterStrength = 0;
+      this.atmosphereCameraDriftStrength = 0;
+      return;
+    }
     const state = this.atmosphereWeatherEffects;
     const altitude = Math.max(0, this.computeAltitudeAboveGround());
     const altitudeFactor = this.computeAtmosphereForceAltitudeFactor(altitude);
@@ -3151,9 +3222,14 @@ export class GameEngine {
   }
 
   private startAtmosphereAutoLandingCamera(context: LandingApproachContext): void {
+    if (this.landingCinematicCameraHold) {
+      this.pendingAutoLandingCameraContext = context;
+      return;
+    }
     if (!this.camera || !this.spaceship) {
       return;
     }
+    this.pendingAutoLandingCameraContext = null;
     const normal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
     const contactPoint = this.resolveLandingContactPoint(context);
     const now = performance?.now?.() ?? Date.now();
@@ -3183,6 +3259,7 @@ export class GameEngine {
       return;
     }
     this.atmosphereAutoLandingCameraActive = false;
+    this.pendingAutoLandingCameraContext = null;
     this.atmosphereAutoLandingCameraNormal = null;
     this.atmosphereAutoLandingContactPoint = null;
     this.atmosphereAutoLandingDustTriggered = false;
@@ -4466,6 +4543,10 @@ export class GameEngine {
         this.spaceship.setWingDeploymentProgress(this.pendingWingDeploymentProgress);
         this.wingGeometryDirty = true;
         this.pendingWingDeploymentProgress = null;
+      }
+      if (this.pendingNoseAnchorProgress !== null) {
+        this.spaceship.setNoseAnchorProgress(this.pendingNoseAnchorProgress);
+        this.pendingNoseAnchorProgress = null;
       }
 
       this.logger.log(LogLevel.INFO, LogCategory.GAME_INITIALIZATION, 'Spaceship created successfully', { position: this.spaceship.position });
@@ -9749,10 +9830,25 @@ export class GameEngine {
 
     // Configurar matriz de transformación
     this.spaceship.updateModelMatrix();
-    this.calculateNormalMatrix(this.spaceship.modelMatrix);
+    const noseMatrix = mat4.clone(this.spaceship.modelMatrix as unknown as mat4);
+    const anchorProgress = this.spaceship.getNoseAnchorProgress?.() ?? 0;
+    if (anchorProgress > 0) {
+      const pivotZ = 0.35;
+      const dropOffset = 0.08 * anchorProgress;
+      const forwardSlide = 0.04 * anchorProgress;
+      const localTransform = mat4.create();
+      mat4.translate(localTransform, localTransform, [0, 0, pivotZ]);
+      const pitchRadians = (18 * Math.PI / 180) * anchorProgress;
+      mat4.rotateX(localTransform, localTransform, pitchRadians);
+      mat4.translate(localTransform, localTransform, [0, 0, -pivotZ]);
+      mat4.translate(localTransform, localTransform, [0, dropOffset, forwardSlide]);
+      mat4.multiply(noseMatrix, noseMatrix, localTransform);
+    }
+    const renderMatrix = noseMatrix as unknown as Float32Array;
+    this.calculateNormalMatrix(renderMatrix);
 
     this.shaderManager.setLitMatrices(
-      this.spaceship.modelMatrix,
+      renderMatrix,
       this.camera.viewMatrix,
       this.camera.projectionMatrix,
       this.normalMatrix

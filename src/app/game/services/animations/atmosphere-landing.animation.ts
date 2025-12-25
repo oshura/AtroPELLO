@@ -31,6 +31,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
   private readonly descentDuration = 7;
   private readonly settleDuration = 2;
   private readonly rotationPhaseDuration = 2;
+  private readonly noseAnchorDuration = 2.1;
   private readonly finalRotationDegrees: number = 90;
   private readonly cameraHeight = 3.2;
   private readonly cameraStandoff = 11;
@@ -50,6 +51,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
   private preTouchdownFxTriggered = false;
   private landingCueTriggered = false;
   private lastWingDeploymentProgress = -1;
+  private lastNoseAnchorProgress = -1;
 
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
@@ -123,6 +125,8 @@ export class AtmosphereLandingAnimation implements GameAnimation {
 
     this.prevCameraMode = engine.camera?.getCurrentMode?.() ?? null;
     this.configureCamera(engine, this.shipStart);
+    try { engine.setNoseAnchorProgress?.(0); } catch { /* ignore */ }
+    this.lastNoseAnchorProgress = -1;
     this.installKeyBlockers();
     this.applyShipPose(ship, this.shipStart, this.surfaceNormal, this.approachDir, 0);
     ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
@@ -154,6 +158,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     const flare = this.computeAdaptiveFlare(descentProgress, easedRotation);
     this.applyShipPose(ship, shipPos, this.surfaceNormal, heading, flare);
     this.syncWingDeployment(engine, easedRotation);
+    this.updateNoseAnchor(engine);
     this.updateShipKinetics(ship, descentProgress);
     this.updateCinematicCamera(engine, ship);
 
@@ -173,7 +178,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
       try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal, { skipAudio: true }); } catch { /* ignore */ }
     }
 
-    const totalDuration = this.descentDuration + this.settleDuration;
+    const totalDuration = this.descentDuration + this.settleDuration + this.noseAnchorDuration;
     if (this.elapsed >= totalDuration) {
       this.finish(engine, false);
       return true;
@@ -215,10 +220,19 @@ export class AtmosphereLandingAnimation implements GameAnimation {
 
     engine.collisionsDisabled = this.prevCollisionsDisabled;
 
-    if (engine.camera && this.prevCameraMode !== null) {
+    if (aborted) {
+      if (engine.camera && this.prevCameraMode !== null) {
+        try { engine.camera.setCameraMode(this.prevCameraMode); } catch { /* ignore */ }
+      }
+    } else if (typeof engine.holdLandingCinematicCamera === 'function') {
+      try { engine.holdLandingCinematicCamera(this.prevCameraMode); } catch { /* ignore */ }
+    } else if (engine.camera && this.prevCameraMode !== null) {
       try { engine.camera.setCameraMode(this.prevCameraMode); } catch { /* ignore */ }
     }
     this.prevCameraMode = null;
+
+    try { engine.setNoseAnchorProgress?.(aborted ? 0 : 1); } catch { /* ignore */ }
+    this.lastNoseAnchorProgress = aborted ? 0 : 1;
 
     const outcome = aborted ? 'aborted' : 'completed';
     this.syncWingDeployment(engine, aborted ? 0 : 1);
@@ -249,6 +263,32 @@ export class AtmosphereLandingAnimation implements GameAnimation {
       camera.seedManualTransform?.(position, target, this.surfaceNormal);
       camera.markDirty?.();
     } catch { /* ignore */ }
+  }
+
+  private updateNoseAnchor(engine: GameEngine): void {
+    const progress = this.computeNoseAnchorProgress();
+    this.syncNoseAnchor(engine, progress);
+  }
+
+  private computeNoseAnchorProgress(): number {
+    const anchorStart = this.descentDuration + this.settleDuration;
+    if (this.elapsed <= anchorStart) {
+      return 0;
+    }
+    const local = (this.elapsed - anchorStart) / Math.max(0.001, this.noseAnchorDuration);
+    return clamp01(local);
+  }
+
+  private syncNoseAnchor(engine: GameEngine, progress: number): void {
+    if (!engine?.setNoseAnchorProgress) {
+      return;
+    }
+    const clamped = clamp01(progress);
+    if (Math.abs(clamped - this.lastNoseAnchorProgress) <= 1e-3) {
+      return;
+    }
+    try { engine.setNoseAnchorProgress(clamped); } catch { /* ignore */ }
+    this.lastNoseAnchorProgress = clamped;
   }
 
   private configureCamera(engine: GameEngine, shipPosition: Vector3): void {

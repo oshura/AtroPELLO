@@ -44,6 +44,7 @@ export class Spaceship extends GameObject {
   public thrusterScaleFactor: number = 1.0; // Factor de escala dinámico del thruster
   private speedControlGain: number = 1.0;
   private wingDeploymentProgress = 0;
+  private noseAnchorProgress = 0;
 
   // --- Mitigación e instrumentación de jitter a alta velocidad ---
   private highSpeedSmoothingEnabled: boolean = false; // activable externamente
@@ -122,6 +123,20 @@ export class Spaceship extends GameObject {
 
   public getWingDeploymentProgress(): number {
     return this.wingDeploymentProgress;
+  }
+
+  public setNoseAnchorProgress(progress: number | null | undefined): boolean {
+    const numeric = typeof progress === 'number' && Number.isFinite(progress) ? progress : 0;
+    const clamped = Math.max(0, Math.min(1, numeric));
+    if (Math.abs(clamped - this.noseAnchorProgress) <= 1e-4) {
+      return false;
+    }
+    this.noseAnchorProgress = clamped;
+    return true;
+  }
+
+  public getNoseAnchorProgress(): number {
+    return this.noseAnchorProgress;
   }
 
   // Override healthCurrent con getter/setter reactivo
