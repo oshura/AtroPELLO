@@ -315,6 +315,7 @@ export class GameEngine {
   private atmosphereLandingCinematicActive = false;
   private atmosphereLandingCinematicContext: LandingApproachContext | null = null;
   private landingCinematicCameraHold: { prevMode: CameraMode | null } | null = null;
+  private landingCameraHoldDeferredForTakeoff = false;
   private pendingAutoLandingCameraContext: LandingApproachContext | null = null;
   private atmosphereCollisionGraceUntilMs = 0;
   
@@ -1174,14 +1175,19 @@ export class GameEngine {
     this.landingCinematicCameraHold = { prevMode: prevMode ?? null };
   }
 
-  private releaseLandingCinematicCameraHold(_reason?: string): void {
+  private releaseLandingCinematicCameraHold(
+    _reason?: string,
+    options?: { restoreCamera?: boolean }
+  ): void {
     if (!this.landingCinematicCameraHold) {
       this.pendingAutoLandingCameraContext = null;
       return;
     }
     const prevMode = this.landingCinematicCameraHold.prevMode;
     this.landingCinematicCameraHold = null;
-    if (this.camera && prevMode !== null) {
+    this.landingCameraHoldDeferredForTakeoff = false;
+    const shouldRestoreCamera = options?.restoreCamera !== false;
+    if (shouldRestoreCamera && this.camera && prevMode !== null) {
       try { this.camera.setCameraMode(prevMode); } catch {}
     }
     if (this.pendingAutoLandingCameraContext) {
@@ -1191,12 +1197,24 @@ export class GameEngine {
     }
   }
 
+  public releaseLandingCameraHold(
+    reason?: string,
+    options?: { restoreCamera?: boolean }
+  ): void {
+    this.releaseLandingCinematicCameraHold(reason, options);
+  }
+
   public notifyTakeoffSequenceStarted(
     context: LandingApproachContext,
     phase: 'ground' | 'atmo-exit' = 'ground'
   ): void {
     this.pendingAutoLandingCameraContext = null;
-    this.releaseLandingCinematicCameraHold('takeoff-sequence-start');
+    if (phase !== 'ground') {
+      this.releaseLandingCinematicCameraHold('takeoff-sequence-start');
+    }
+    if (phase === 'ground' && this.landingCinematicCameraHold) {
+      this.landingCameraHoldDeferredForTakeoff = true;
+    }
     this.stopAtmosphereAutoLandingCamera();
     this.takeoffSequenceActive = true;
     this.takeoffSequencePhase = phase;
@@ -1379,6 +1397,9 @@ export class GameEngine {
     this.stopLandingPanelAudioFocus();
     this.landingPanelAudioFocusArmed = false;
     this.landingPanelAwaitingUser = false;
+    if (this.landingCameraHoldDeferredForTakeoff) {
+      return;
+    }
     this.releaseLandingCinematicCameraHold('landing-panel-closed');
   }
 
