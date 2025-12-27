@@ -128,7 +128,7 @@
         <ul>
           <li>Usa la normal precisa del planeta (<em>calculateAtmosphereAttitude</em>) para dibujar la línea entre cielo y suelo.</li>
           <li>Pitch y roll se filtran antes de llegar al HUD para evitar vibraciones tras la cinemática.</li>
-          <li>Altímetro integrado que muestrea la misma extrusión procedimental del terreno; cae a 0&nbsp;u en cuanto la nariz alcanza la cresta que ves, incluso en montañas y mesetas.</li>
+          <li>Altímetro integrado que muestrea la misma extrusión procedimental del terreno; ahora cae a 0&nbsp;u al instante (sin amortiguación) en cuanto la nariz alcanza la cresta que ves, incluso en montañas y mesetas.</li>
           <li>Vector y estabilidad visibles en el panel dedicado.</li>
         </ul>
         <p class="note">El debug HUD verifica ±90° de pitch y roll completos para QA.</p>
@@ -150,6 +150,7 @@
           <li>Cuatro zonas cromáticas por planeta (valle, planicie, media montaña, picos) más dunas y casquetes.</li>
           <li>Micro relieve dinámico a &lt;600&nbsp;u con extrusión adicional del 8%.</li>
           <li>Niebla azul progresiva a &lt;300&nbsp;u mediante curva cúbica continua.</li>
+          <li>El altímetro, el piloto verde y las colisiones samplean ese mismo relieve en tiempo real: si rozas un pico a baja altura la lectura caerá instantáneamente a 0&nbsp;u y, si impactas, el rebote te expulsará justo desde esa cresta sin permitir que el fuselaje atraviese la montaña.</li>
         </ul>
       </section>
 

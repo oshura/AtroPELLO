@@ -8,6 +8,12 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 - Núcleo: `GameEngine` orquesta el bucle de update/render, administra objetos (nave, asteroides, planetas), shaders, texturas y la UI de cabina.
  
 
+## Notas recientes (27 dic 2025)
+
+- Se restauró `src/app/game/atmosphere/terrain-sampler.ts` y `GameEngine` volvió a usarlo en `detectAtmosphereGroundCollision()`, `computeAltitudeAboveGround()` y `handleAtmosphereGroundImpact()`. Las colisiones vuelven a samplear el relieve procedural siguiendo la normal de la nave, ajustan el factor de detalle según altitud y recolocan la nave fuera del domo real antes de aplicar el rebote. Este cambio elimina los atravesamientos de montañas que reaparecieron tras la regresión y mantiene en sincronía la cámara, el HUD y las cinemáticas con la cresta visible.
+- El altímetro del HUD abandona el suavizado al descender: la lectura cae inmediatamente al valor real del sampler cuando el fuselaje se acerca al suelo, de modo que la cifra nunca muestra «unas u» de margen cuando ya estás colisionando.
+
+
 ## Sistemas principales implementados
 
 - Motor 3D y escena

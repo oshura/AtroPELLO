@@ -34,4 +34,18 @@ describe('Compass', () => {
     expect(debug.altitudeAboveGround).toBeGreaterThan(0);
     expect(debug.altitudeAboveGround).toBeLessThan(800);
   });
+
+  it('drops the altimeter immediately when the ship descends', () => {
+    const compass = new Compass();
+    compass.setAtmosphereMode(true, 0, 0, 150);
+    compass.setAtmosphereMode(true, 0, 0, 6);
+    let debug = compass.getDebugInfo();
+
+    expect(debug.altitudeAboveGround).toBeCloseTo(6, 5);
+
+    compass.setAtmosphereMode(true, 0, 0, 0);
+    debug = compass.getDebugInfo();
+
+    expect(debug.altitudeAboveGround).toBe(0);
+  });
 });

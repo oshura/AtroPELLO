@@ -96,6 +96,11 @@ import {
 } from './atmosphere/AtmosphereSceneManager';
 import { AtmosphereWeatherService, AtmosphereWeatherSnapshot, AtmosphereWeatherEventType } from './atmosphere/AtmosphereWeatherService';
 import { calculateAtmosphereAttitude } from './utils/atmosphere-attitude.util';
+import {
+  computeAtmosphereDetailFactor,
+  sampleAtmosphereSurfaceRadius,
+  sampleAtmosphereSurfaceRadiusAlongNormal,
+} from './atmosphere/terrain-sampler';
 
 interface AuxiliaryAbilityRuntime {
   id: string;
@@ -3086,12 +3091,25 @@ export class GameEngine {
       this.atmosphereGroundContactActive = false;
       return;
     }
-    const dx = this.spaceship.position.x - state.center.x;
-    const dy = this.spaceship.position.y - state.center.y;
-    const dz = this.spaceship.position.z - state.center.z;
-    const distFromCenter = Math.hypot(dx, dy, dz);
+    const offset = {
+      x: this.spaceship.position.x - state.center.x,
+      y: this.spaceship.position.y - state.center.y,
+      z: this.spaceship.position.z - state.center.z,
+    };
+    const distFromCenter = Math.hypot(offset.x, offset.y, offset.z);
+    if (!Number.isFinite(distFromCenter)) {
+      this.atmosphereGroundContactActive = false;
+      return;
+    }
     const shipRadius = Math.max(0, this.spaceship.boundingSphere?.radius ?? 0);
-    const collisionRadius = Math.max(state.groundCollisionRadius || state.groundRadius, 0) + shipRadius;
+    const baseAltitude = Math.max(0, distFromCenter - state.groundRadius);
+    const detailFactor = computeAtmosphereDetailFactor(baseAltitude);
+    const surfaceRadius = sampleAtmosphereSurfaceRadius({
+      offset,
+      groundRadius: state.groundRadius,
+      detailFactor,
+    });
+    const collisionRadius = surfaceRadius + shipRadius;
     const isColliding = distFromCenter <= collisionRadius;
 
     if (this.landingSequenceActive || this.takeoffSequenceActive) {
@@ -3224,11 +3242,17 @@ export class GameEngine {
     const state = this.atmosphereSceneState;
     const center = state.center ?? this.resolvePlanetCenterFromContext(context) ?? { x: 0, y: 0, z: 0 };
     const groundRadius = Math.max(
-      state.groundCollisionRadius || state.groundRadius || 0,
+      state.groundRadius || 0,
+      state.groundCollisionRadius || 0,
       Math.max(0, context.radius ?? 0)
     );
+    const detailFactor = computeAtmosphereDetailFactor(Math.max(0, this.computeAltitudeAboveGround()));
+    const sampledSurface = sampleAtmosphereSurfaceRadiusAlongNormal(normal, groundRadius, detailFactor);
+    const safeSurfaceRadius = Number.isFinite(sampledSurface)
+      ? Math.max(sampledSurface, groundRadius)
+      : groundRadius;
     const shipRadius = Math.max(0, this.spaceship.boundingSphere?.radius ?? 0);
-    const separation = Math.max(shipRadius + this.ATMOSPHERE_GROUND_REBOUND_PADDING, groundRadius + shipRadius + this.ATMOSPHERE_GROUND_REBOUND_PADDING);
+    const separation = safeSurfaceRadius + shipRadius + this.ATMOSPHERE_GROUND_REBOUND_PADDING;
     const reboundPosition = {
       x: center.x + normal.x * separation,
       y: center.y + normal.y * separation,
@@ -3733,19 +3757,26 @@ export class GameEngine {
     if (!this.spaceship || !this.isAtmosphereSceneActive()) {
       return 0;
     }
-    const center = this.atmosphereSceneState.center;
-    const groundRadius = this.atmosphereSceneState.groundRadius;
-    const collisionRadius = Math.max(
-      groundRadius,
-      this.atmosphereSceneState.groundCollisionRadius || groundRadius,
-    );
+    const state = this.atmosphereSceneState;
+    const center = state.center;
+    const offset = {
+      x: this.spaceship.position.x - center.x,
+      y: this.spaceship.position.y - center.y,
+      z: this.spaceship.position.z - center.z,
+    };
+    const distFromCenter = Math.hypot(offset.x, offset.y, offset.z);
+    if (!Number.isFinite(distFromCenter)) {
+      return 0;
+    }
     const shipRadius = Math.max(0, this.spaceship.boundingSphere?.radius ?? 0);
-    const dx = this.spaceship.position.x - center.x;
-    const dy = this.spaceship.position.y - center.y;
-    const dz = this.spaceship.position.z - center.z;
-    const distFromCenter = Math.hypot(dx, dy, dz);
-    const effectiveSurface = collisionRadius + shipRadius;
-    return Math.max(0, distFromCenter - effectiveSurface);
+    const baseAltitude = Math.max(0, distFromCenter - state.groundRadius);
+    const detailFactor = computeAtmosphereDetailFactor(baseAltitude);
+    const surfaceRadius = sampleAtmosphereSurfaceRadius({
+      offset,
+      groundRadius: state.groundRadius,
+      detailFactor,
+    });
+    return Math.max(0, distFromCenter - surfaceRadius - shipRadius);
   }
 
   private renderAtmosphereScene(): void {
