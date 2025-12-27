@@ -45,6 +45,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
   private approachDir!: Vector3;
   private shipStart!: Vector3;
   private shipEnd!: Vector3;
+  private shipFinal!: Vector3;
   private cameraAnchor!: Vector3;
   private startSpeed = 0;
   private touchdownTriggered = false;
@@ -115,6 +116,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
       y: this.contactPoint.y + this.surfaceNormal.y * this.touchdownClearance,
       z: this.contactPoint.z + this.surfaceNormal.z * this.touchdownClearance,
     };
+    this.shipFinal = { ...this.contactPoint };
     this.cameraAnchor = this.getCameraAnchor();
 
     this.startSpeed = Math.max(4, Math.min(ship.currentSpeed || 0, ship.maxSpeed || 9));
@@ -149,9 +151,13 @@ export class AtmosphereLandingAnimation implements GameAnimation {
 
     this.elapsed += dt;
 
-    const descentProgress = clamp01(this.elapsed / this.descentDuration);
+    const descentProgress = clamp01(Math.min(this.elapsed, this.descentDuration) / this.descentDuration);
     const eased = smoothstep(descentProgress);
-    const shipPos = this.lerpVec(this.shipStart, this.shipEnd, eased);
+    const settleProgress = this.computeSettleProgress();
+    let shipPos = this.lerpVec(this.shipStart, this.shipEnd, eased);
+    if (settleProgress > 0) {
+      shipPos = this.lerpVec(this.shipEnd, this.shipFinal, settleProgress);
+    }
     const rotationProgress = this.computeRotationProgress();
     const easedRotation = smoothstep(rotationProgress);
     const heading = this.getRotatedApproachDirection(easedRotation);
@@ -167,15 +173,15 @@ export class AtmosphereLandingAnimation implements GameAnimation {
       try { engine.playAtmosphereLandingApproachCue?.(); } catch { /* ignore */ }
     }
 
-    const dustTriggerTime = this.descentDuration - this.dustLeadSeconds;
+    const dustTriggerTime = (this.descentDuration + this.settleDuration) - this.dustLeadSeconds;
     if (!this.preTouchdownFxTriggered && this.elapsed >= dustTriggerTime) {
       this.preTouchdownFxTriggered = true;
       try { engine.spawnAtmosphereLandingDustSheets?.(this.contactPoint, this.surfaceNormal); } catch { /* ignore */ }
     }
 
-    if (!this.touchdownTriggered && descentProgress >= 1) {
+    if (!this.touchdownTriggered && settleProgress >= 1) {
       this.touchdownTriggered = true;
-      try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal, { skipAudio: true }); } catch { /* ignore */ }
+      try { engine.playLandingCinematicTouchdownFx?.(this.shipFinal, this.surfaceNormal, { skipAudio: true }); } catch { /* ignore */ }
     }
 
     const totalDuration = this.descentDuration + this.settleDuration + this.noseAnchorDuration;
@@ -433,6 +439,14 @@ export class AtmosphereLandingAnimation implements GameAnimation {
     const rotationStart = Math.max(0, this.descentDuration - this.rotationPhaseDuration);
     const elapsedInRotation = this.elapsed - rotationStart;
     return clamp01(elapsedInRotation / this.rotationPhaseDuration);
+  }
+
+  private computeSettleProgress(): number {
+    if (this.elapsed <= this.descentDuration) {
+      return 0;
+    }
+    const local = (this.elapsed - this.descentDuration) / Math.max(0.001, this.settleDuration);
+    return clamp01(local);
   }
 
   private getRotatedApproachDirection(rotationProgress: number): Vector3 {
