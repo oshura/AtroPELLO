@@ -177,6 +177,34 @@ export interface AtmosphereWeatherEffectsState {
   updatedAtMs: number;
 }
 
+interface AtmosphereCollisionContact {
+  normal: Vector3;
+  contactPoint: Vector3;
+  surfaceRadius: number;
+}
+
+interface AtmosphereGravitySample {
+  altitude: number;
+  gravityPerSecond: number;
+  finalGravity: number;
+  speedFactor: number;
+}
+
+interface AtmosphereAutoVectorSample {
+  altitude: number;
+  targetLift: number;
+  liftFactor: number;
+  autoVectorCurrent: number;
+  liftVelocity: number;
+}
+
+interface AtmosphereImpactProbeState {
+  id: number;
+  startedAt: number;
+  expiresAt: number;
+  lastLoggedAt: number;
+}
+
 /**
  * Motor principal del juego que coordina todos los sistemas
  */
@@ -293,6 +321,8 @@ export class GameEngine {
   private readonly ATMOSPHERE_GROUND_DAMAGE_SPEED_MAX = 10;
   private readonly ATMOSPHERE_GROUND_DAMAGE_MIN = 1;
   private readonly ATMOSPHERE_GROUND_DAMAGE_MAX = 100;
+  private readonly ATMOSPHERE_IMPACT_PROBE_DURATION_MS = 2000;
+  private readonly ATMOSPHERE_IMPACT_PROBE_LOG_INTERVAL_MS = 120;
   private readonly SPACE_THRUSTER_CLIP = 'sfx_thruster';
   private readonly ATMOSPHERE_THRUSTER_CLIP = 'sfx_thruster_atmo';
   private landingApproachAnnouncements: Map<string, number> = new Map();
@@ -378,10 +408,15 @@ export class GameEngine {
   private atmosphereFogEnabled: boolean = true;
   private atmosphereCloudsEnabled: boolean = true;
   private atmosphereAutoVectorCurrent = 0;
+  private atmosphereAutoVectorSuppressedUntilMs = 0;
   private atmosphereTelemetrySnapshot: AtmosphereTelemetryPayload | null = null;
   private atmosphereTelemetryLastStability: AtmosphereTelemetryPayload['stability'] | null = null;
   private atmosphereTelemetryLastLogMs = 0;
   private atmosphereTelemetryPanelState: AtmosphereTelemetryPanelState | null = null;
+  private atmosphereGravityTelemetry: AtmosphereGravitySample | null = null;
+  private atmosphereAutoVectorTelemetry: AtmosphereAutoVectorSample | null = null;
+  private atmosphereImpactProbeState: AtmosphereImpactProbeState | null = null;
+  private atmosphereImpactProbeSerial = 0;
   private atmosphereDriftForceApplied: Vector3 = { x: 0, y: 0, z: 0 };
   private atmosphereTurbulencePhase = 0;
   private atmosphereCameraJitterPhase = 0;
@@ -431,6 +466,8 @@ export class GameEngine {
   private readonly ATMOSPHERE_AUTO_VECTOR_SPEED_MIN = 0.35;
   private readonly ATMOSPHERE_AUTO_VECTOR_SPEED_MAX = 2.6;
   private readonly ATMOSPHERE_AUTO_VECTOR_MIN_FACTOR = 0.15;
+  private readonly ATMOSPHERE_AUTO_VECTOR_CONTACT_SUPPRESS_MS = 450;
+  private readonly ATMOSPHERE_AUTO_VECTOR_IMPACT_SUPPRESS_MS = 1400;
   private readonly ATMOSPHERE_DRIFT_TURBULENCE_BONUS = 1.1;
   private readonly ATMOSPHERE_TURBULENCE_SHAKE_THRESHOLD = 0.4;
   private readonly ATMOSPHERE_TURBULENCE_SHAKE_BASE = 0.12;
@@ -1858,6 +1895,7 @@ export class GameEngine {
       return;
     }
     this.setStallWarningSuppressedUntilTakeoff(false);
+    this.atmosphereAutoVectorSuppressedUntilMs = 0;
     this.setAtmosphereActionLock(false);
     this.requestThrusterClip(this.SPACE_THRUSTER_CLIP);
     this.clearPendingLandingPanelTimer();
@@ -2189,6 +2227,7 @@ export class GameEngine {
     if (!this.spaceship) {
       return;
     }
+    this.atmosphereAutoVectorTelemetry = null;
     if (this.isAtmosphereStabilityActive()) {
       this.atmosphereAutoVectorCurrent = 0;
       return;
@@ -2196,6 +2235,26 @@ export class GameEngine {
     const up = this.computeAtmosphereUpVector();
     const altitude = Math.max(0, this.computeAltitudeAboveGround());
     const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
+    const smoothing = 1 - Math.exp(-deltaTime * 6);
+    const now = this.getNowMs();
+    if (this.atmosphereGroundContactActive && this.ATMOSPHERE_AUTO_VECTOR_CONTACT_SUPPRESS_MS > 0) {
+      const target = now + this.ATMOSPHERE_AUTO_VECTOR_CONTACT_SUPPRESS_MS;
+      if (target > this.atmosphereAutoVectorSuppressedUntilMs) {
+        this.atmosphereAutoVectorSuppressedUntilMs = target;
+      }
+    }
+    const autoVectorSuppressed = this.atmosphereGroundContactActive || now < this.atmosphereAutoVectorSuppressedUntilMs;
+    if (autoVectorSuppressed) {
+      this.atmosphereAutoVectorCurrent = this.lerpScalar(this.atmosphereAutoVectorCurrent, 0, smoothing);
+      this.atmosphereAutoVectorTelemetry = {
+        altitude,
+        targetLift: 0,
+        liftFactor: 0,
+        autoVectorCurrent: this.atmosphereAutoVectorCurrent,
+        liftVelocity: 0,
+      };
+      return;
+    }
     let targetLift = 0;
     if (up && this.isAtmosphereSceneActive() && altitude <= this.ATMOSPHERE_AUTO_VECTOR_BAND_MAX + 40) {
       if (altitude >= this.ATMOSPHERE_AUTO_VECTOR_BAND_MIN && altitude <= this.ATMOSPHERE_AUTO_VECTOR_BAND_MAX) {
@@ -2210,14 +2269,20 @@ export class GameEngine {
         targetLift = this.ATMOSPHERE_AUTO_VECTOR_ASCENT * falloff * 0.95;
       }
     }
-    const smoothing = 1 - Math.exp(-deltaTime * 6);
     const liftSpeedFactor = this.computeAtmosphereAutoVectorSpeedFactor(speed);
     const targetLiftWithSpeed = targetLift * liftSpeedFactor;
     this.atmosphereAutoVectorCurrent = this.lerpScalar(this.atmosphereAutoVectorCurrent, targetLiftWithSpeed, smoothing);
+    const liftVelocity = this.atmosphereAutoVectorCurrent * deltaTime;
+    this.atmosphereAutoVectorTelemetry = {
+      altitude,
+      targetLift,
+      liftFactor: liftSpeedFactor,
+      autoVectorCurrent: this.atmosphereAutoVectorCurrent,
+      liftVelocity,
+    };
     if (!up || this.atmosphereAutoVectorCurrent <= 1e-3) {
       return;
     }
-    const liftVelocity = this.atmosphereAutoVectorCurrent * deltaTime;
     this.spaceship.externalForces.x += up.x * liftVelocity;
     this.spaceship.externalForces.y += up.y * liftVelocity;
     this.spaceship.externalForces.z += up.z * liftVelocity;
@@ -3111,6 +3176,19 @@ export class GameEngine {
     });
     const collisionRadius = surfaceRadius + shipRadius;
     const isColliding = distFromCenter <= collisionRadius;
+    const contactNormal = distFromCenter > 1e-6
+      ? this.normalize(offset)
+      : { x: 0, y: 1, z: 0 };
+    const contactPoint = {
+      x: state.center.x + contactNormal.x * surfaceRadius,
+      y: state.center.y + contactNormal.y * surfaceRadius,
+      z: state.center.z + contactNormal.z * surfaceRadius,
+    };
+    const contact: AtmosphereCollisionContact = {
+      normal: contactNormal,
+      contactPoint,
+      surfaceRadius,
+    };
 
     if (this.landingSequenceActive || this.takeoffSequenceActive) {
       this.atmosphereGroundContactActive = isColliding;
@@ -3118,13 +3196,13 @@ export class GameEngine {
     }
 
     if (isColliding && !this.atmosphereGroundContactActive) {
-      this.onAtmosphereGroundCollision();
+      this.onAtmosphereGroundCollision(contact);
     }
 
     this.atmosphereGroundContactActive = isColliding;
   }
 
-  private onAtmosphereGroundCollision(): void {
+  private onAtmosphereGroundCollision(contact?: AtmosphereCollisionContact): void {
     if (this.atmosphereLandingCinematicActive) {
       return;
     }
@@ -3135,17 +3213,29 @@ export class GameEngine {
     if (!context) {
       return;
     }
-    const normal = context.surfaceNormal ? this.normalize(context.surfaceNormal) : this.deriveLandingNormalFromContext(context);
-    const canAutoLand = this.landingStatus.ready && this.shouldAutoLandFromCollision(normal);
+    const collisionNormal = this.normalize(
+      contact?.normal
+        ?? context.surfaceNormal
+        ?? this.deriveLandingNormalFromContext(context)
+    );
+    const canAutoLand = this.landingStatus.ready && this.shouldAutoLandFromCollision(collisionNormal);
     if (canAutoLand) {
       const payload: LandingApproachContext = { ...context, autoLand: true };
+      if (contact?.contactPoint) {
+        payload.surfacePoint = { ...contact.contactPoint };
+      }
+      if (contact?.surfaceRadius && Number.isFinite(contact.surfaceRadius)) {
+        const nextRadius = Math.max(contact.surfaceRadius, payload.radius ?? 0);
+        payload.radius = nextRadius;
+      }
+      payload.surfaceNormal = { ...collisionNormal };
       this.handleLandingTouchdown(payload, {
         skipAtmosphereScene: true,
         deferLandingPanelMs: this.ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS,
       });
       return;
     }
-    this.handleAtmosphereGroundImpact(context, normal);
+    this.handleAtmosphereGroundImpact(context, collisionNormal, contact);
   }
 
   private tryTriggerAtmosphereAutoLandingFromInput(): boolean {
@@ -3235,22 +3325,41 @@ export class GameEngine {
     return Math.abs(verticalSpeed) <= this.ATMOSPHERE_AUTO_LAND_VERTICAL_SPEED_MAX;
   }
 
-  private handleAtmosphereGroundImpact(context: LandingApproachContext, normal: Vector3): void {
+  private handleAtmosphereGroundImpact(
+    context: LandingApproachContext,
+    normal: Vector3,
+    contact?: AtmosphereCollisionContact
+  ): void {
     if (!this.spaceship || !this.isAtmosphereSceneActive()) {
       return;
     }
     const state = this.atmosphereSceneState;
-    const center = state.center ?? this.resolvePlanetCenterFromContext(context) ?? { x: 0, y: 0, z: 0 };
-    const groundRadius = Math.max(
+    const contactSurfaceRadius = contact?.surfaceRadius;
+    const hasContactSurface = typeof contactSurfaceRadius === 'number' && Number.isFinite(contactSurfaceRadius);
+    const contactPoint = contact?.contactPoint ?? null;
+    const derivedCenterFromContact = hasContactSurface && contactPoint
+      ? {
+          x: contactPoint.x - normal.x * contactSurfaceRadius,
+          y: contactPoint.y - normal.y * contactSurfaceRadius,
+          z: contactPoint.z - normal.z * contactSurfaceRadius,
+        }
+      : contactPoint;
+    const center = state.center
+      ?? this.resolvePlanetCenterFromContext(context)
+      ?? derivedCenterFromContact
+      ?? { x: 0, y: 0, z: 0 };
+    const baseSurfaceRadius = Math.max(
       state.groundRadius || 0,
       state.groundCollisionRadius || 0,
       Math.max(0, context.radius ?? 0)
     );
     const detailFactor = computeAtmosphereDetailFactor(Math.max(0, this.computeAltitudeAboveGround()));
-    const sampledSurface = sampleAtmosphereSurfaceRadiusAlongNormal(normal, groundRadius, detailFactor);
+    const sampledSurface = hasContactSurface
+      ? contactSurfaceRadius
+      : sampleAtmosphereSurfaceRadiusAlongNormal(normal, baseSurfaceRadius, detailFactor);
     const safeSurfaceRadius = Number.isFinite(sampledSurface)
-      ? Math.max(sampledSurface, groundRadius)
-      : groundRadius;
+      ? Math.max(sampledSurface, baseSurfaceRadius)
+      : baseSurfaceRadius;
     const shipRadius = Math.max(0, this.spaceship.boundingSphere?.radius ?? 0);
     const separation = safeSurfaceRadius + shipRadius + this.ATMOSPHERE_GROUND_REBOUND_PADDING;
     const reboundPosition = {
@@ -3293,6 +3402,22 @@ export class GameEngine {
       z: dampedLateral.z + normal.z * reboundSpeed,
     };
     this.spaceship.velocity = newVelocity;
+    const reboundSpeedMagnitude = Math.max(0, Math.hypot(newVelocity.x, newVelocity.y, newVelocity.z));
+    const clampedReboundSpeed = Math.min(
+      reboundSpeedMagnitude,
+      Math.max(0, this.spaceship.maxSpeed ?? reboundSpeedMagnitude)
+    );
+    this.spaceship.currentSpeed = clampedReboundSpeed;
+    this.spaceship.targetSpeed = clampedReboundSpeed;
+    const cruising = clampedReboundSpeed > 0.1;
+    this.spaceship.isThrusting = cruising;
+    this.spaceship.thrusterState = cruising ? ThrusterState.CRUISING : ThrusterState.IDLE;
+    const now = this.getNowMs();
+    const suppressUntil = now + this.ATMOSPHERE_AUTO_VECTOR_IMPACT_SUPPRESS_MS;
+    if (suppressUntil > this.atmosphereAutoVectorSuppressedUntilMs) {
+      this.atmosphereAutoVectorSuppressedUntilMs = suppressUntil;
+    }
+    this.releaseStallWarningSuppressionAfterImpact();
 
     const damageRange = this.ATMOSPHERE_GROUND_DAMAGE_MAX - this.ATMOSPHERE_GROUND_DAMAGE_MIN;
     let dealtDamage = 0;
@@ -3344,6 +3469,89 @@ export class GameEngine {
       reboundSpeed: reboundSpeed.toFixed(2),
       tangentSpeed: Math.hypot(dampedLateral.x, dampedLateral.y, dampedLateral.z).toFixed(2),
     });
+
+    this.startAtmosphereImpactProbe();
+  }
+
+  private startAtmosphereImpactProbe(): void {
+    if (!this.logger.isCategoryEnabled(LogCategory.GAME_LOOP)) {
+      this.atmosphereImpactProbeState = null;
+      return;
+    }
+    const now = this.getNowMs();
+    this.atmosphereImpactProbeState = {
+      id: ++this.atmosphereImpactProbeSerial,
+      startedAt: now,
+      expiresAt: now + this.ATMOSPHERE_IMPACT_PROBE_DURATION_MS,
+      lastLoggedAt: 0,
+    };
+    this.logAtmosphereImpactProbeSample('impact');
+  }
+
+  private tickAtmosphereImpactProbe(): void {
+    const probe = this.atmosphereImpactProbeState;
+    if (!probe) {
+      return;
+    }
+    if (!this.logger.isCategoryEnabled(LogCategory.GAME_LOOP) || !this.isAtmosphereSceneActive()) {
+      this.atmosphereImpactProbeState = null;
+      return;
+    }
+    const now = this.getNowMs();
+    if (now >= probe.expiresAt) {
+      this.atmosphereImpactProbeState = null;
+      return;
+    }
+    if (probe.lastLoggedAt && (now - probe.lastLoggedAt) < this.ATMOSPHERE_IMPACT_PROBE_LOG_INTERVAL_MS) {
+      return;
+    }
+    probe.lastLoggedAt = now;
+    this.logAtmosphereImpactProbeSample('sample');
+  }
+
+  private logAtmosphereImpactProbeSample(reason: 'impact' | 'sample'): void {
+    if (!this.logger.isCategoryEnabled(LogCategory.GAME_LOOP) || !this.spaceship) {
+      return;
+    }
+    const probe = this.atmosphereImpactProbeState;
+    const altitude = this.computeAltitudeAboveGround();
+    const velocity = this.spaceship.velocity ?? { x: 0, y: 0, z: 0 };
+    const gravity = this.atmosphereGravityTelemetry;
+    const autoVector = this.atmosphereAutoVectorTelemetry;
+    const payload = {
+      probeId: probe?.id ?? null,
+      reason,
+      elapsedMs: probe ? Math.max(0, Math.round(this.getNowMs() - probe.startedAt)) : 0,
+      altitude: Number(altitude.toFixed(2)),
+      groundContact: this.atmosphereGroundContactActive,
+      speed: {
+        current: Number((this.spaceship.currentSpeed ?? 0).toFixed(2)),
+        target: Number((this.spaceship.targetSpeed ?? 0).toFixed(2)),
+      },
+      velocity: {
+        x: Number((velocity.x ?? 0).toFixed(3)),
+        y: Number((velocity.y ?? 0).toFixed(3)),
+        z: Number((velocity.z ?? 0).toFixed(3)),
+      },
+      gravity: gravity
+        ? {
+            altitude: Number(gravity.altitude.toFixed(2)),
+            perSecond: Number(gravity.gravityPerSecond.toFixed(3)),
+            final: Number(gravity.finalGravity.toFixed(3)),
+            speedFactor: Number(gravity.speedFactor.toFixed(3)),
+          }
+        : null,
+      autoVector: autoVector
+        ? {
+            altitude: Number(autoVector.altitude.toFixed(2)),
+            targetLift: Number(autoVector.targetLift.toFixed(3)),
+            liftFactor: Number(autoVector.liftFactor.toFixed(3)),
+            current: Number(autoVector.autoVectorCurrent.toFixed(3)),
+            velocityDelta: Number(autoVector.liftVelocity.toFixed(4)),
+          }
+        : null,
+    };
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Atmosphere impact probe sample', payload);
   }
 
   private shouldReleaseAtmosphereAutoLandingCamera(normal: Vector3): boolean {
@@ -5290,6 +5498,7 @@ export class GameEngine {
     this.updateAtmosphereAudio(deltaTime);
     this.detectAtmosphereGroundCollision();
     this.maybeTriggerAtmosphereAutoTakeoff();
+    this.tickAtmosphereImpactProbe();
   } else if (this.atmosphereGroundContactActive) {
     this.atmosphereGroundContactActive = false;
   }
@@ -8532,6 +8741,7 @@ export class GameEngine {
    * La intensidad aumenta a medida que la nave se acerca a la superficie
    */
   private applyAtmosphereGravity(deltaTime: number): void {
+    this.atmosphereGravityTelemetry = null;
     if (!this.spaceship || !this.atmosphereSceneState.active || !this.atmosphereSceneState.context) {
       return;
     }
@@ -8555,6 +8765,14 @@ export class GameEngine {
 
     // La gravedad solo actúa dentro de la atmósfera (entre groundRadius y skyRadius)
     if (altitude < 0 || altitude > (skyRadius - groundRadius)) {
+      const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
+      const speedFactor = this.computeAtmosphereGravitySpeedFactor(speed);
+      this.atmosphereGravityTelemetry = {
+        altitude,
+        gravityPerSecond: 0,
+        finalGravity: 0,
+        speedFactor,
+      };
       return;
     }
 
@@ -8573,14 +8791,16 @@ export class GameEngine {
     const outerRange = Math.max(1, maxHeight - highReference);
     const outerFalloff = outerRange <= 0 ? 1 : 1 - Math.min(1, aboveReference / outerRange);
     const gravityPerSecond = innerFallRate * outerFalloff;
-    if (gravityPerSecond <= 0) {
-      return;
-    }
-
     const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
     const speedFactor = this.computeAtmosphereGravitySpeedFactor(speed);
     const finalGravity = gravityPerSecond * speedFactor;
-    if (finalGravity <= 0) {
+    this.atmosphereGravityTelemetry = {
+      altitude,
+      gravityPerSecond,
+      finalGravity: Math.max(0, finalGravity),
+      speedFactor,
+    };
+    if (gravityPerSecond <= 0 || finalGravity <= 0) {
       return;
     }
 
@@ -8697,6 +8917,19 @@ export class GameEngine {
     if (active) {
       this.stopAtmosphereStallWarning();
     }
+  }
+
+  private releaseStallWarningSuppressionAfterImpact(): void {
+    if (!this.stallWarningSuppressedUntilTakeoff) {
+      return;
+    }
+    if (this.landingSequenceActive || this.takeoffSequenceActive || this.atmosphereLandingCinematicActive) {
+      return;
+    }
+    if (this.landingPanelAwaitingUser) {
+      return;
+    }
+    this.setStallWarningSuppressedUntilTakeoff(false);
   }
 
   private stopAtmosphereStallWarning(): void {

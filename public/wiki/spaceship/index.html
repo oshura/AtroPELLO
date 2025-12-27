@@ -184,6 +184,8 @@
           <li>Daño lineal: 1&nbsp;HP a 1&nbsp;u/s → 100&nbsp;HP a 10&nbsp;u/s.</li>
           <li>La nave no puede atravesar promontorios: las colisiones consultan el mismo relieve que ves en pantalla, así que cualquier protuberancia real detiene el fuselaje justo donde toca.</li>
           <li>Tras cada golpe la nave se recoloca fuera del domo procedimental (superficie + radio + margen) antes de aplicar el rebote, así que siempre sentirás que el impacto te expulsa fuera de la montaña.</li>
+          <li>La dirección del rebote copia la normal exacta del punto que tocaste: si llegas ladeado contra una cresta el empuje de salida seguirá esa pendiente y, si rozas el suelo a &lt;1&nbsp;u/s vertical, el auto-landing se engancha obedeciendo esa misma normal.</li>
+          <li>El auto-vector atmosférico se apaga durante ~1.5&nbsp;s tras cada impacto (y mientras sigas rozando el suelo), así que la nave cae por su propio peso hasta que tú vuelvas a levantarla; en paralelo, el aviso de stall se reactiva nada más despegarte si no estás en una secuencia de aterrizaje real.</li>
           <li>Si cumples auto-landing (&lt;1&nbsp;u/s + piloto verde), se dispara la misma cámara asistida con polvo y swell.</li>
           <li>Los sonidos de impacto se mezclan con el multiplicador de clima (<em>impactVolumeMultiplier</em>).</li>
         </ul>
