@@ -1656,18 +1656,39 @@ export class GameEngine {
     this.bindShipToPlanet(context, anchor);
   }
 
+  private getSolarSystemPlanetCenter(planetId?: string | null): Vector3 | null {
+    if (!planetId) {
+      return null;
+    }
+    const planet = this.gameState.planets.find((p) => p?.id === planetId);
+    const source = planet ? (planet as any).position ?? (planet as any).center ?? null : null;
+    if (!source) {
+      return null;
+    }
+    return {
+      x: source.x ?? 0,
+      y: source.y ?? 0,
+      z: source.z ?? 0,
+    };
+  }
+
   private resolvePlanetCenterFromContext(context: LandingApproachContext): Vector3 | null {
     if (context.planetCenter) {
       return { ...context.planetCenter };
+    }
+    const stateCenter = this.getSolarSystemPlanetCenter(context.planetId);
+    if (stateCenter) {
+      return stateCenter;
     }
     if (!context.surfacePoint || !context.surfaceNormal) {
       return null;
     }
     const normal = this.normalize(context.surfaceNormal);
+    const radius = Number.isFinite(context.radius) ? context.radius : 0;
     return {
-      x: context.surfacePoint.x - normal.x * context.radius,
-      y: context.surfacePoint.y - normal.y * context.radius,
-      z: context.surfacePoint.z - normal.z * context.radius
+      x: context.surfacePoint.x - normal.x * radius,
+      y: context.surfacePoint.y - normal.y * radius,
+      z: context.surfacePoint.z - normal.z * radius
     };
   }
 

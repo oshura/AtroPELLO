@@ -117,7 +117,7 @@ export class TakeoffSequenceAnimation implements GameAnimation {
     };
 
     if (this.phase === 'atmo-exit') {
-      this.configureForAtmosphereExit(surfacePoint, normal, clearance);
+      this.configureForAtmosphereExit(surfacePoint, normal, clearance, center);
     }
 
     this.installKeyBlockers();
@@ -296,26 +296,31 @@ export class TakeoffSequenceAnimation implements GameAnimation {
     return Math.max(250, baseRadius * 0.35);
   }
 
-  private configureForAtmosphereExit(surfacePoint: Vector3, normal: Vector3, clearance: number): void {
+  private configureForAtmosphereExit(
+    surfacePoint: Vector3,
+    normal: Vector3,
+    clearance: number,
+    center: Vector3,
+  ): void {
+    const emergeOffset = Math.max(60, clearance * 0.15);
     const boundaryAltitude = Math.max(this.phaseTwoStartAltitude, clearance);
-    const startPoint = {
-      x: surfacePoint.x + normal.x * boundaryAltitude,
-      y: surfacePoint.y + normal.y * boundaryAltitude,
-      z: surfacePoint.z + normal.z * boundaryAltitude
-    };
     const ascentAltitude = boundaryAltitude + Math.max(300, clearance * 0.6);
     const exitDrift = Math.max(400, clearance);
-    this.coreStart = { ...startPoint };
-    this.burrowTarget = { ...startPoint };
+    this.coreStart = { ...center };
+    this.burrowTarget = {
+      x: surfacePoint.x + normal.x * emergeOffset,
+      y: surfacePoint.y + normal.y * emergeOffset,
+      z: surfacePoint.z + normal.z * emergeOffset,
+    };
     this.ascentTarget = {
       x: surfacePoint.x + normal.x * ascentAltitude,
       y: surfacePoint.y + normal.y * ascentAltitude,
-      z: surfacePoint.z + normal.z * ascentAltitude
+      z: surfacePoint.z + normal.z * ascentAltitude,
     };
     this.exitTarget = {
       x: this.ascentTarget.x + this.tangentDir.x * exitDrift,
       y: this.ascentTarget.y + this.tangentDir.y * exitDrift,
-      z: this.ascentTarget.z + this.tangentDir.z * exitDrift
+      z: this.ascentTarget.z + this.tangentDir.z * exitDrift,
     };
   }
 
