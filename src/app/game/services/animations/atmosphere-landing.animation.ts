@@ -32,6 +32,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
   private readonly settleDuration = 2;
   private readonly rotationPhaseDuration = 2;
   private readonly noseAnchorDuration = 2.1;
+  private readonly postSettleHoldDuration = 0.6; // Hold after touchdown so the fuselage settles before anchoring
   private readonly finalRotationDegrees: number = 90;
   private readonly cameraHeight = 3.2;
   private readonly cameraStandoff = 11;
@@ -184,7 +185,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
       try { engine.playLandingCinematicTouchdownFx?.(this.shipFinal, this.surfaceNormal, { skipAudio: true }); } catch { /* ignore */ }
     }
 
-    const totalDuration = this.descentDuration + this.settleDuration + this.noseAnchorDuration;
+    const totalDuration = this.descentDuration + this.settleDuration + this.postSettleHoldDuration + this.noseAnchorDuration;
     if (this.elapsed >= totalDuration) {
       this.finish(engine, false);
       return true;
@@ -277,7 +278,7 @@ export class AtmosphereLandingAnimation implements GameAnimation {
   }
 
   private computeNoseAnchorProgress(): number {
-    const anchorStart = this.descentDuration + this.settleDuration;
+    const anchorStart = this.descentDuration + this.settleDuration + this.postSettleHoldDuration;
     if (this.elapsed <= anchorStart) {
       return 0;
     }

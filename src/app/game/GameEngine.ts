@@ -330,6 +330,7 @@ export class GameEngine {
   private readonly ATMOSPHERE_AUTO_LAND_THREAT_RECOVERY_MS = 2000;
   private readonly ATMOSPHERE_AUTO_LAND_COLLISION_GRACE_WINDOW_MS = 9000;
   private readonly ATMOSPHERE_AUTO_LAND_COLLISION_RECOVERY_MS = 1500;
+  private readonly ATMOSPHERE_AUTO_LAND_LOCK_RELEASE_ALTITUDE = 120;
   private readonly ATMOSPHERE_GROUND_RESTITUTION = 0.28;
   private readonly ATMOSPHERE_GROUND_TANGENT_DAMPING = 0.65;
   private readonly ATMOSPHERE_GROUND_MIN_REBOUND_SPEED = 0.75;
@@ -418,6 +419,8 @@ export class GameEngine {
     lastUpdatedMs: 0,
   };
   private atmosphereGroundContactActive: boolean = false;
+  private atmosphereAutoLandingLockActive: boolean = false;
+  private atmosphereAutoLandingLockReason: string | null = null;
   private atmosphereAutoTakeoffArmed: boolean = false;
   private atmosphereWeather: AtmosphereWeatherService | null = null;
   private atmosphereWeatherSnapshot: AtmosphereWeatherSnapshot | null = null;
@@ -1346,17 +1349,24 @@ export class GameEngine {
     if (!options?.skipAtmosphereScene) {
       this.enterAtmosphereScene(enrichedContext);
     }
-    this.landingTouchdownContext = enrichedContext;
+    this.refreshAtmosphereSceneContextSurfaceSample();
+    const landingContext = this.sampleLandingContextSurface(enrichedContext);
+    this.landingTouchdownContext = landingContext;
+    if (landingContext.autoLand) {
+      this.enableAtmosphereAutoLandingLock('auto-touchdown');
+    } else {
+      this.clearAtmosphereAutoLandingLock('manual-touchdown');
+    }
     let autoLandCinematicActive = false;
-    if (enrichedContext.autoLand) {
-      autoLandCinematicActive = this.animationManager?.startAtmosphereLandingCinematic?.(this, enrichedContext, {
+    if (landingContext.autoLand) {
+      autoLandCinematicActive = this.animationManager?.startAtmosphereLandingCinematic?.(this, landingContext, {
         forceReplace: true,
       }) ?? false;
       if (!autoLandCinematicActive) {
-        this.startAtmosphereAutoLandingCamera(enrichedContext);
+        this.startAtmosphereAutoLandingCamera(landingContext);
         const activeAnimation = this.animationManager?.getCurrentAnimation?.()?.name;
         this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Auto-landing cinematic unavailable, using fallback camera', {
-          planetId: enrichedContext.planetId,
+          planetId: landingContext.planetId,
           blockingAnimation: activeAnimation ?? 'none',
         });
       }
@@ -1372,15 +1382,15 @@ export class GameEngine {
       this.spaceship.velocity.y = 0;
       this.spaceship.velocity.z = 0;
     }
-    if (enrichedContext.autoLand && !autoLandCinematicActive) {
+    if (landingContext.autoLand && !autoLandCinematicActive) {
       this.extendLandingThreatSuppression(this.ATMOSPHERE_AUTO_LAND_THREAT_SUPPRESSION_WINDOW_MS);
       this.extendAtmosphereCollisionGrace(this.ATMOSPHERE_AUTO_LAND_COLLISION_GRACE_WINDOW_MS);
     }
-    this.registerPlanetLandingVisit(context.planetId);
+    this.registerPlanetLandingVisit(landingContext.planetId);
     this.atmosphereAutoTakeoffArmed = true;
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Landing touchdown registered', {
-      planetId: context.planetId,
-      planetName: context.planetName,
+      planetId: landingContext.planetId,
+      planetName: landingContext.planetName,
       skipPanel: !!options?.skipLandingPanel,
       skipAtmosphereScene: !!options?.skipAtmosphereScene,
     });
@@ -1392,11 +1402,11 @@ export class GameEngine {
 
     let panelManaged = false;
     if (!options?.skipLandingPanel) {
-      const baseDeferMs = options?.deferLandingPanelMs ?? (enrichedContext.autoLand ? this.ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS : 0);
+      const baseDeferMs = options?.deferLandingPanelMs ?? (landingContext.autoLand ? this.ATMOSPHERE_AUTO_LAND_PANEL_DELAY_MS : 0);
       const deferMs = autoLandCinematicActive
         ? Math.max(baseDeferMs, this.ATMOSPHERE_AUTO_LAND_CINEMATIC_PANEL_DELAY_MS)
         : baseDeferMs;
-      panelManaged = this.openLandingPanelWithDelay(enrichedContext, deferMs);
+      panelManaged = this.openLandingPanelWithDelay(landingContext, deferMs);
       this.landingPanelAwaitingUser = panelManaged;
     } else {
       this.releaseLandingCinematicCameraHold('landing-panel-skipped');
@@ -1408,7 +1418,7 @@ export class GameEngine {
 
     this.releaseLandingCinematicCameraHold('landing-panel-unavailable');
 
-    const label = context.planetName ? `Aterrizaje en ${context.planetName}` : 'Aterrizaje completado';
+    const label = landingContext.planetName ? `Aterrizaje en ${landingContext.planetName}` : 'Aterrizaje completado';
     try { this.showPlaceholderText(`${label} - Escena atmosférica activa`, 3000); } catch {}
   }
 
@@ -1508,6 +1518,64 @@ export class GameEngine {
       ...context,
       planetIntel,
       probabilityOfLifePct: probability,
+    };
+  }
+
+  private refreshAtmosphereSceneContextSurfaceSample(): void {
+    const state = this.atmosphereSceneState;
+    if (!state?.active || !state.context) {
+      return;
+    }
+    state.context = this.sampleLandingContextSurface(state.context);
+    state.lastUpdatedMs = performance?.now?.() ?? Date.now();
+  }
+
+  private sampleLandingContextSurface(context: LandingApproachContext): LandingApproachContext {
+    if (!context) {
+      return context;
+    }
+    const state = this.atmosphereSceneState;
+    const normal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
+    const centerFromState = state?.center ? { ...state.center } : null;
+    const contextCenter = this.resolvePlanetCenterFromContext(context);
+    let planetCenter = centerFromState ?? contextCenter ?? (context.planetCenter ? { ...context.planetCenter } : null);
+    const stateGroundRadius = Number.isFinite(state?.groundRadius) ? (state?.groundRadius as number) : 0;
+    const stateCollisionRadius = Number.isFinite(state?.groundCollisionRadius) ? (state?.groundCollisionRadius as number) : 0;
+    const contextRadius = Number.isFinite(context.radius) ? context.radius : 0;
+    const baseSurfaceRadius = Math.max(1, stateGroundRadius, stateCollisionRadius, contextRadius);
+    const altitudeSample = this.computeAltitudeAboveGround();
+    const detailAltitude = Number.isFinite(altitudeSample)
+      ? Math.max(0, altitudeSample)
+      : Math.max(0, Number.isFinite(context.distanceToSurface) ? context.distanceToSurface : 0);
+    const detailFactor = computeAtmosphereDetailFactor(detailAltitude);
+    const sampledSurface = sampleAtmosphereSurfaceRadiusAlongNormal(normal, baseSurfaceRadius, detailFactor);
+    const surfaceRadius = Number.isFinite(sampledSurface)
+      ? Math.max(sampledSurface, baseSurfaceRadius)
+      : baseSurfaceRadius;
+    if (!planetCenter && context.surfacePoint) {
+      const fallbackRadius = Math.max(1, Number.isFinite(context.radius) ? context.radius : surfaceRadius);
+      planetCenter = {
+        x: context.surfacePoint.x - normal.x * fallbackRadius,
+        y: context.surfacePoint.y - normal.y * fallbackRadius,
+        z: context.surfacePoint.z - normal.z * fallbackRadius,
+      };
+    }
+    if (!planetCenter) {
+      planetCenter = { x: 0, y: 0, z: 0 };
+    }
+    const surfacePoint = {
+      x: planetCenter.x + normal.x * surfaceRadius,
+      y: planetCenter.y + normal.y * surfaceRadius,
+      z: planetCenter.z + normal.z * surfaceRadius,
+    };
+    const now = performance?.now?.() ?? Date.now();
+    return {
+      ...context,
+      radius: surfaceRadius,
+      surfacePoint,
+      surfaceNormal: normal,
+      planetCenter,
+      lastUpdatedMs: now,
     };
   }
 
@@ -1944,6 +2012,7 @@ export class GameEngine {
     if (!this.atmosphereSceneState.active) {
       return;
     }
+    this.clearAtmosphereAutoLandingLock('exit-atmosphere');
     this.setStallWarningSuppressedUntilTakeoff(false);
     this.atmosphereAutoVectorSuppressedUntilMs = 0;
     this.setAtmosphereActionLock(false);
@@ -2293,6 +2362,10 @@ export class GameEngine {
       return;
     }
     this.atmosphereAutoVectorTelemetry = null;
+    if (this.isAtmosphereLandingCinematicShieldActive()) {
+      this.atmosphereAutoVectorCurrent = 0;
+      return;
+    }
     if (this.isAtmosphereStabilityActive()) {
       this.atmosphereAutoVectorCurrent = 0;
       return;
@@ -3288,7 +3361,9 @@ export class GameEngine {
         ?? context.surfaceNormal
         ?? this.deriveLandingNormalFromContext(context)
     );
-    const canAutoLand = this.landingStatus.ready && this.shouldAutoLandFromCollision(collisionNormal);
+    const gentleContact = this.shouldAutoLandFromCollision(collisionNormal);
+    const lockActive = this.isAtmosphereAutoLandingLocked();
+    const canAutoLand = !lockActive && this.landingStatus.ready && gentleContact;
     if (canAutoLand) {
       const payload: LandingApproachContext = { ...context, autoLand: true };
       if (contact?.contactPoint) {
@@ -3305,7 +3380,52 @@ export class GameEngine {
       });
       return;
     }
+    if (lockActive && gentleContact) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Atmosphere auto-landing retrigger ignored (lock active)', {
+        planetId: context.planetId,
+      });
+      return;
+    }
     this.handleAtmosphereGroundImpact(context, collisionNormal, contact);
+  }
+
+  private enableAtmosphereAutoLandingLock(reason: string): void {
+    if (this.atmosphereAutoLandingLockActive) {
+      return;
+    }
+    this.atmosphereAutoLandingLockActive = true;
+    this.atmosphereAutoLandingLockReason = reason;
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Atmosphere auto-landing lock engaged', { reason });
+  }
+
+  private clearAtmosphereAutoLandingLock(reason?: string): void {
+    if (!this.atmosphereAutoLandingLockActive) {
+      this.atmosphereAutoLandingLockReason = null;
+      return;
+    }
+    this.atmosphereAutoLandingLockActive = false;
+    this.atmosphereAutoLandingLockReason = null;
+    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Atmosphere auto-landing lock released', { reason });
+  }
+
+  private isAtmosphereAutoLandingLocked(): boolean {
+    if (!this.atmosphereAutoLandingLockActive) {
+      return false;
+    }
+    if (!this.isAtmosphereSceneActive() || !this.spaceship) {
+      this.clearAtmosphereAutoLandingLock('scene-inactive');
+      return false;
+    }
+    if (this.takeoffSequenceActive) {
+      this.clearAtmosphereAutoLandingLock('takeoff-sequence');
+      return false;
+    }
+    const altitude = this.computeAltitudeAboveGround();
+    if (Number.isFinite(altitude) && altitude >= this.ATMOSPHERE_AUTO_LAND_LOCK_RELEASE_ALTITUDE) {
+      this.clearAtmosphereAutoLandingLock('altitude-threshold');
+      return false;
+    }
+    return true;
   }
 
   private tryTriggerAtmosphereAutoLandingFromInput(): boolean {
@@ -3317,6 +3437,10 @@ export class GameEngine {
     }
     if (this.atmosphereAutoLandingCameraActive) {
       return true;
+    }
+    if (this.isAtmosphereAutoLandingLocked()) {
+      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Auto-landing input ignored (lock active)');
+      return false;
     }
     if (!this.landingStatus.ready || !this.landingStatus.context) {
       return false;
@@ -6669,7 +6793,7 @@ export class GameEngine {
   }
 
   private isAtmosphereLandingCinematicShieldActive(): boolean {
-    return !!this.atmosphereLandingCinematicActive;
+    return !!this.atmosphereLandingCinematicActive || this.landingPanelAwaitingUser;
   }
 
   private getNowMs(): number {

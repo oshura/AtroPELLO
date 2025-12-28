@@ -8,6 +8,13 @@ Este documento resume el estado actual del juego, los sistemas fundamentales ya 
 - Núcleo: `GameEngine` orquesta el bucle de update/render, administra objetos (nave, asteroides, planetas), shaders, texturas y la UI de cabina.
  
 
+## Notas recientes (28 dic 2025)
+
+- Se introdujo un candado para el auto-landing atmosférico: `handleLandingTouchdown()` lo activa tras cualquier touchdown con `autoLand=true` y `detectAtmosphereGroundCollision()`/`onAtmosphereGroundCollision()` lo consultan antes de relanzar la cinemática. Mientras el candado está activo, los contactos suaves se ignoran y sólo las colisiones con velocidad vertical alta vuelven a pasar por `handleAtmosphereGroundImpact()`. El bloqueo se libera automáticamente al salir de la escena, iniciar un despegue o cuando la nave asciende ≈120 u sobre la superficie, garantizando que cada aterrizaje sólo dispara una cinemática.
+- `AtmosphereLandingAnimation` incorpora un `postSettleHoldDuration` de 0.6 s antes de animar `setNoseAnchorProgress()`: el fuselaje termina de hundirse, las capas de polvo quedan en cuadro y la nariz no empieza a “morder” hasta que la nave ya está estable. La cámara mantiene el plano durante ese hold y el panel de aterrizaje sigue esperando el mismo retraso para que la secuencia completa se vea sin cortes.
+- Mientras el panel de aterrizaje permanece abierto, `isAtmosphereLandingCinematicShieldActive()` también cubre ese hold: se desactivan el auto-vector, las fuerzas de deriva/turbulencia y los jitter de cámara/nave, evitando que el clima empuje a la nave mientras el jugador revisa el menú.
+- `handleLandingTouchdown()` ahora re-samplea el relieve real justo antes de guardar el `LandingApproachContext`: se refresca el estado de la escena atmosférica y se recalculan `surfacePoint`, `radius` y `surfaceNormal` con `sampleAtmosphereSurfaceRadiusAlongNormal`. Al lanzar la cinemática o la cámara asistida, ambas arrancan exactamente desde la cresta que ves en pantalla, la nave queda a “altura 0” del sampler y el `LandingPanel` hereda ese mismo payload, evitando que la animación atraviese laderas o que la cámara quede enterrada tras tocar suelo.
+
 ## Notas recientes (27 dic 2025)
 
 - Se restauró `src/app/game/atmosphere/terrain-sampler.ts` y `GameEngine` volvió a usarlo en `detectAtmosphereGroundCollision()`, `computeAltitudeAboveGround()` y `handleAtmosphereGroundImpact()`. Las colisiones vuelven a samplear el relieve procedural siguiendo la normal de la nave, ajustan el factor de detalle según altitud y recolocan la nave fuera del domo real antes de aplicar el rebote. Este cambio elimina los atravesamientos de montañas que reaparecieron tras la regresión y mantiene en sincronía la cámara, el HUD y las cinemáticas con la cresta visible.
