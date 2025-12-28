@@ -556,15 +556,19 @@ export class AnimationManagerService {
   public startTakeoffSequence(
     engine: GameEngine,
     context: LandingApproachContext,
-    options?: { phase?: 'ground' | 'atmo-exit' }
+    options?: { phase?: 'ground' | 'atmo-exit'; suppressOverlay?: boolean }
   ): boolean {
     if (this.current && this.current.name !== 'blocking-delay') {
       return false;
     }
     const phase = options?.phase ?? 'ground';
+    const configureOptions = {
+      phase,
+      suppressOverlay: options?.suppressOverlay ?? false,
+    };
     const launch = (Ctor: { new(): GameAnimation }) => {
       const anim = new Ctor();
-      try { (anim as any).configure?.(context, { phase }); } catch {}
+      try { (anim as any).configure?.(context, configureOptions); } catch {}
       anim.start(engine);
       this.current = anim;
     };

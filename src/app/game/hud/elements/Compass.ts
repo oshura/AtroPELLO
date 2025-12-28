@@ -57,6 +57,7 @@ export class Compass {
     const normalizedPitch = this.clamp(pitch, -90, 90);
     const normalizedRoll = this.normalizeSignedAngle(roll);
     const normalizedAltitude = Math.max(0, altitudeAboveGround);
+    const previousAltitude = this.atmosphereMode ? this.altitudeAboveGround : normalizedAltitude;
 
     if (!this.atmosphereMode) {
       this.pitch = normalizedPitch;
@@ -65,7 +66,7 @@ export class Compass {
     } else {
       this.pitch = this.lerp(this.pitch, normalizedPitch, this.horizonBlend);
       this.roll = this.lerpAngle(this.roll, normalizedRoll, this.horizonBlend);
-      this.altitudeAboveGround = this.lerp(this.altitudeAboveGround, normalizedAltitude, this.altitudeBlend);
+      this.altitudeAboveGround = this.applyAltitudeResponse(previousAltitude, normalizedAltitude);
     }
 
     this.atmosphereMode = true;
@@ -379,6 +380,16 @@ export class Compass {
     const t = Math.max(0, Math.min(1, alpha));
     const delta = this.normalizeSignedAngle(target - current);
     return this.normalizeSignedAngle(current + delta * t);
+  }
+
+  private applyAltitudeResponse(current: number, target: number): number {
+    if (!Number.isFinite(current)) {
+      return target;
+    }
+    if (target <= current) {
+      return target;
+    }
+    return this.lerp(current, target, this.altitudeBlend);
   }
 
   private clamp(value: number, min: number, max: number): number {

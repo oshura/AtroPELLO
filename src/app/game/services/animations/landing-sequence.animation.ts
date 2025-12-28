@@ -142,7 +142,7 @@ export class LandingSequenceAnimation implements GameAnimation {
 
     if (!this.touchdownTriggered && progress >= this.atmosphereEntryBlendStart) {
       this.touchdownTriggered = true;
-      try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal); } catch {}
+      try { engine.playLandingCinematicTouchdownFx?.(this.shipEnd, this.surfaceNormal, { skipAudio: true }); } catch {}
     }
 
     if (progress >= 1) {

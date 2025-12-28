@@ -27,8 +27,11 @@ export class GroundTakeoffAnimation implements GameAnimation {
   private readonly ascentDuration = 4.0;
   private readonly targetAltitude = 50; // unidades sobre la superficie
   private readonly targetSpeed = 5; // u/s suaves
+  private readonly cameraSwitchDelay = 5;
 
   private prevCameraMode: CameraMode | null = null;
+  private cameraSwitchApplied = false;
+  private landingCameraHoldReleased = false;
   private inputBlockers: Array<() => void> = [];
   private overlayAlpha = 1;
   private wingProgressStart = 0;
@@ -42,6 +45,11 @@ export class GroundTakeoffAnimation implements GameAnimation {
   private endPoint!: Vector3;
   private upDir!: Vector3;
   private tangentDir!: Vector3;
+  private manualCameraFollow: {
+    positionOffset: Vector3;
+    targetOffset: Vector3;
+    up: Vector3;
+  } | null = null;
 
   public configure(context: LandingApproachContext): void {
     this.context = context;
@@ -53,6 +61,10 @@ export class GroundTakeoffAnimation implements GameAnimation {
       this.blocking = false;
       return;
     }
+    this.elapsed = 0;
+    this.cameraSwitchApplied = false;
+    this.landingCameraHoldReleased = false;
+    this.manualCameraFollow = null;
 
     if (typeof ship.getWingDeploymentProgress === 'function') {
       this.wingProgressStart = clamp01(ship.getWingDeploymentProgress());
@@ -94,7 +106,7 @@ export class GroundTakeoffAnimation implements GameAnimation {
     engine.collisionsDisabled = true;
 
     this.prevCameraMode = engine.camera?.getCurrentMode?.() ?? null;
-    engine.camera?.setCameraMode?.(CameraMode.COCKPIT);
+  this.manualCameraFollow = this.captureManualCameraFollow(engine, ship);
 
     const normal = this.normalize(this.context.surfaceNormal ?? { x: 0, y: 1, z: 0 });
     this.upDir = normal;
@@ -125,10 +137,12 @@ export class GroundTakeoffAnimation implements GameAnimation {
       return true;
     }
     this.elapsed += dt;
+    this.applyCameraSwitch(engine);
 
     if (this.elapsed <= this.spoolDuration) {
       const t = smoothstep(this.elapsed / Math.max(0.001, this.spoolDuration));
       this.applyShipPose(ship, this.startPoint, this.upDir, this.tangentDir, -8);
+      this.updateDeferredCameraShot(engine, ship);
       ship.thrusterState = ThrusterState.IDLE;
       ship.targetSpeed = 0;
       ship.currentSpeed = 0;
@@ -142,6 +156,7 @@ export class GroundTakeoffAnimation implements GameAnimation {
     const eased = smoothstep(localT);
     const pos = this.lerpVec(this.startPoint, this.endPoint, eased);
     this.applyShipPose(ship, pos, this.upDir, this.tangentDir, 4);
+    this.updateDeferredCameraShot(engine, ship);
     ship.thrusterState = ThrusterState.CRUISING;
     const desiredSpeed = lerp(0, this.targetSpeed, eased);
     ship.targetSpeed = desiredSpeed;
@@ -202,6 +217,15 @@ export class GroundTakeoffAnimation implements GameAnimation {
     this.inputBlockers = [];
 
     engine.collisionsDisabled = false;
+    if (!this.landingCameraHoldReleased) {
+      const shouldRestoreCamera = aborted || !this.cameraSwitchApplied;
+      this.releaseLandingCameraHold(
+        engine,
+        aborted ? 'ground-takeoff-aborted' : 'ground-takeoff-finish',
+        shouldRestoreCamera
+      );
+    }
+    this.manualCameraFollow = null;
     if (engine.camera) {
       if (aborted && this.prevCameraMode !== null) {
         try { engine.camera.setCameraMode(this.prevCameraMode); } catch {}
@@ -251,6 +275,19 @@ export class GroundTakeoffAnimation implements GameAnimation {
         lerp(this.noseAnchorStart, this.noseAnchorEnd, normalized)
       );
     } catch {}
+  }
+
+  private applyCameraSwitch(engine: GameEngine): void {
+    if (this.cameraSwitchApplied) {
+      return;
+    }
+    if (this.elapsed < this.cameraSwitchDelay) {
+      return;
+    }
+    this.manualCameraFollow = null;
+    this.releaseLandingCameraHold(engine, 'ground-takeoff-camera-switch', false);
+    try { engine.camera?.setCameraMode?.(CameraMode.COCKPIT); } catch {}
+    this.cameraSwitchApplied = true;
   }
 
   private lerpVec(a: Vector3, b: Vector3, t: number): Vector3 {
@@ -327,5 +364,69 @@ export class GroundTakeoffAnimation implements GameAnimation {
       y: normal.y * Math.max(1, this.context.radius ?? 1),
       z: normal.z * Math.max(1, this.context.radius ?? 1)
     };
+  }
+
+  private captureManualCameraFollow(engine: GameEngine, ship: any): {
+    positionOffset: Vector3;
+    targetOffset: Vector3;
+    up: Vector3;
+  } | null {
+    const camera = engine.camera;
+    if (!camera || camera.getCurrentMode?.() !== CameraMode.MANUAL) {
+      return null;
+    }
+    return {
+      positionOffset: {
+        x: camera.position.x - ship.position.x,
+        y: camera.position.y - ship.position.y,
+        z: camera.position.z - ship.position.z
+      },
+      targetOffset: {
+        x: camera.target.x - ship.position.x,
+        y: camera.target.y - ship.position.y,
+        z: camera.target.z - ship.position.z
+      },
+      up: {
+        x: camera.up.x,
+        y: camera.up.y,
+        z: camera.up.z
+      }
+    };
+  }
+
+  private updateDeferredCameraShot(engine: GameEngine, ship: any): void {
+    if (!this.manualCameraFollow || this.cameraSwitchApplied) {
+      return;
+    }
+    const camera = engine.camera;
+    if (!camera || camera.getCurrentMode?.() !== CameraMode.MANUAL) {
+      return;
+    }
+    const position = {
+      x: ship.position.x + this.manualCameraFollow.positionOffset.x,
+      y: ship.position.y + this.manualCameraFollow.positionOffset.y,
+      z: ship.position.z + this.manualCameraFollow.positionOffset.z
+    };
+    const target = {
+      x: ship.position.x + this.manualCameraFollow.targetOffset.x,
+      y: ship.position.y + this.manualCameraFollow.targetOffset.y,
+      z: ship.position.z + this.manualCameraFollow.targetOffset.z
+    };
+    try {
+      camera.seedManualTransform?.(position, target, this.manualCameraFollow.up);
+      camera.markDirty?.();
+    } catch {}
+  }
+
+  private releaseLandingCameraHold(engine: GameEngine, reason: string, restoreCamera: boolean): void {
+    if (this.landingCameraHoldReleased) {
+      return;
+    }
+    this.landingCameraHoldReleased = true;
+    this.manualCameraFollow = null;
+    const releaseFn = (engine as any)?.releaseLandingCameraHold ?? (engine as any)?.releaseLandingCinematicCameraHold;
+    if (typeof releaseFn === 'function') {
+      try { releaseFn.call(engine, reason, { restoreCamera }); } catch {}
+    }
   }
 }

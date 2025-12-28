@@ -100,6 +100,7 @@ Notas:
 - HUD: activa un contador MM:SS carmesí en la brújula; se oculta automáticamente al expirar.
 - Re-lanzar antes del final solo refresca la duración, nunca acumula multiplicadores.
 - Al terminar, el motor recalcula velocidades (`targetSpeed` y `currentSpeed`) para impedir overshoot por encima del límite restaurado.
+- Tras la revisión de despegues atmosféricos, el motor guarda un `shipDynamicsBaseline` y lo usa como única referencia para duplicar/restaurar velocidades. Así el rito mantiene el límite correcto incluso si sales de una atmósfera o si la nave atraviesa cinemáticas que modifican temporalmente sus parámetros.
 
 ### Salto al Vacío (Long Jump / Void Jump)
 
