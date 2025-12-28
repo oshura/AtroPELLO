@@ -40,12 +40,17 @@ export class TakeoffSequenceAnimation implements GameAnimation {
   private prevCameraMode: CameraMode | null = null;
   private inputBlockers: Array<() => void> = [];
   private overlayAlpha = 1;
+  private overlaySuppressed = false;
 
   private savedShipDynamics: { acceleration: number; deceleration: number; maxSpeed: number } | null = null;
 
-  public configure(context: LandingApproachContext, options?: { phase?: TakeoffPhase }): void {
+  public configure(
+    context: LandingApproachContext,
+    options?: { phase?: TakeoffPhase; suppressOverlay?: boolean },
+  ): void {
     this.context = context;
     this.phase = options?.phase ?? 'ground';
+    this.overlaySuppressed = !!options?.suppressOverlay;
   }
 
   public start(engine: GameEngine): void {
@@ -160,7 +165,7 @@ export class TakeoffSequenceAnimation implements GameAnimation {
   }
 
   public render(engine: GameEngine): void {
-    if (this.overlayAlpha <= 0) {
+    if (this.overlaySuppressed || this.overlayAlpha <= 0) {
       return;
     }
     const overlay = engine.overlayRenderer as any;

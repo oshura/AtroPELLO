@@ -176,6 +176,22 @@ export interface AtmosphereWeatherEffectsState {
   eventType: AtmosphereWeatherEventType;
   updatedAtMs: number;
 }
+interface AtmosphereExitTransitionCallbacks {
+  onBlackout?: () => void;
+  onComplete?: () => void;
+}
+interface AtmosphereExitTransitionState {
+  active: boolean;
+  stage: 'idle' | 'fade-out' | 'blackout' | 'fade-in';
+  alpha: number;
+  elapsedMs: number;
+  fadeOutMs: number;
+  fadeInMs: number;
+  blackoutHoldMs: number;
+  origin: 'auto' | 'manual';
+  blackoutActionExecuted: boolean;
+  callbacks: AtmosphereExitTransitionCallbacks;
+}
 
 interface AtmosphereCollisionContact {
   normal: Vector3;
@@ -237,6 +253,7 @@ export class GameEngine {
   private inventoryHoverKey: string | null = null;
   public overlayRenderer: ScreenOverlayRenderer | null = null;
   private atmosphereEntryFadeRemainingMs: number = 0;
+  private atmosphereExitTransition: AtmosphereExitTransitionState = this.createDefaultAtmosphereExitTransitionState();
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   public voidJumpActive: boolean = false;
   public collisionsDisabled: boolean = false;
@@ -1537,9 +1554,21 @@ export class GameEngine {
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Atmosphere exit already running', { origin });
       return true;
     }
-    if (!this.animationManager.startTakeoffSequence(this, this.landingTouchdownContext, { phase: 'atmo-exit' })) {
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit animation rejected (busy)', { origin });
-      return false;
+    if (this.isAtmosphereExitTransitionActive()) {
+      this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Atmosphere exit transition already active', { origin });
+      return true;
+    }
+    const started = this.beginAtmosphereExitTransition(origin, {
+      onBlackout: () => this.handleAtmosphereExitBlackoutStep(origin),
+      onComplete: () => this.handleAtmosphereExitFadeInStart(origin),
+    });
+    if (!started) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to begin atmosphere exit transition', { origin });
+      if (!this.animationManager.startTakeoffSequence(this, this.landingTouchdownContext, { phase: 'atmo-exit' })) {
+        this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit animation rejected (busy)', { origin, fallback: true });
+        return false;
+      }
+      return true;
     }
     this.atmosphereAutoTakeoffArmed = false;
     return true;
@@ -2032,6 +2061,21 @@ export class GameEngine {
       impactVolumeMultiplier: 1,
       eventType: 'clear',
       updatedAtMs: now,
+    };
+  }
+
+  private createDefaultAtmosphereExitTransitionState(): AtmosphereExitTransitionState {
+    return {
+      active: false,
+      stage: 'idle',
+      alpha: 0,
+      elapsedMs: 0,
+      fadeOutMs: 1200,
+      fadeInMs: 900,
+      blackoutHoldMs: 400,
+      origin: 'auto',
+      blackoutActionExecuted: false,
+      callbacks: {},
     };
   }
 
@@ -3020,6 +3064,11 @@ export class GameEngine {
     return a + (b - a) * t;
   }
 
+  private smoothStep01(value: number): number {
+    const t = this.clamp(value, 0, 1);
+    return t * t * (3 - 2 * t);
+  }
+
   private clamp(value: number, min: number, max: number): number {
     if (value < min) {
       return min;
@@ -3269,6 +3318,9 @@ export class GameEngine {
     if (!this.isAtmosphereSceneActive()) {
       return;
     }
+    if (this.isAtmosphereExitTransitionActive()) {
+      return;
+    }
     if (this.landingSequenceActive || this.takeoffSequenceActive) {
       return;
     }
@@ -3291,6 +3343,172 @@ export class GameEngine {
         altitude,
         threshold: this.ATMOSPHERE_AUTO_TAKEOFF_ALTITUDE,
       });
+    }
+  }
+
+  private beginAtmosphereExitTransition(
+    origin: 'auto' | 'manual',
+    callbacks?: AtmosphereExitTransitionCallbacks,
+  ): boolean {
+    if (this.isAtmosphereExitTransitionActive()) {
+      return false;
+    }
+    const nextState = this.createDefaultAtmosphereExitTransitionState();
+    nextState.active = true;
+    nextState.stage = 'fade-out';
+    nextState.origin = origin;
+    nextState.callbacks = callbacks ?? {};
+    this.atmosphereExitTransition = nextState;
+    this.collisionsDisabled = true;
+    return true;
+  }
+
+  private updateAtmosphereExitTransition(deltaTime: number): void {
+    const state = this.atmosphereExitTransition;
+    if (!state.active || state.stage === 'idle') {
+      return;
+    }
+    const deltaMs = Math.max(0, deltaTime * 1000);
+    state.elapsedMs += deltaMs;
+
+    if (state.stage === 'fade-out') {
+      const denom = Math.max(1, state.fadeOutMs);
+      const progress = this.clamp(state.elapsedMs / denom, 0, 1);
+      state.alpha = this.smoothStep01(progress);
+      if (progress >= 1) {
+        state.stage = 'blackout';
+        state.elapsedMs = 0;
+        state.alpha = 1;
+      }
+      return;
+    }
+
+    if (state.stage === 'blackout') {
+      state.alpha = 1;
+      if (!state.blackoutActionExecuted) {
+        state.blackoutActionExecuted = true;
+        try {
+          state.callbacks?.onBlackout?.();
+        } catch (error) {
+          this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit blackout callback failed', { error });
+        }
+      }
+      if (state.elapsedMs >= state.blackoutHoldMs) {
+        state.stage = 'fade-in';
+        state.elapsedMs = 0;
+        state.alpha = 1;
+        try {
+          state.callbacks?.onComplete?.();
+        } catch (error) {
+          this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit completion callback failed', { error });
+        }
+      }
+      return;
+    }
+
+    if (state.stage === 'fade-in') {
+      const denom = Math.max(1, state.fadeInMs);
+      const progress = this.clamp(state.elapsedMs / denom, 0, 1);
+      state.alpha = 1 - this.smoothStep01(progress);
+      if (progress >= 1) {
+        this.atmosphereExitTransition = this.createDefaultAtmosphereExitTransitionState();
+        if (!this.takeoffSequenceActive) {
+          this.collisionsDisabled = false;
+        }
+      }
+    }
+  }
+
+  private isAtmosphereExitTransitionActive(): boolean {
+    return this.atmosphereExitTransition.active && this.atmosphereExitTransition.stage !== 'idle';
+  }
+
+  private isAtmosphereExitTransitionBlocking(): boolean {
+    return this.isAtmosphereExitTransitionActive();
+  }
+
+  private enforceAtmosphereExitShipHold(): void {
+    if (!this.isAtmosphereExitTransitionBlocking() || !this.spaceship) {
+      return;
+    }
+    const ship = this.spaceship;
+    ship.targetSpeed = 0;
+    ship.currentSpeed = 0;
+    ship.velocity = { x: 0, y: 0, z: 0 };
+    ship.angularVelocity = { x: 0, y: 0, z: 0 };
+    ship.isThrusting = false;
+    ship.thrusterState = ThrusterState.IDLE;
+    if (ship.controls) {
+      ship.controls.forward = false;
+      ship.controls.backward = false;
+      ship.controls.left = false;
+      ship.controls.right = false;
+      ship.controls.up = false;
+      ship.controls.down = false;
+      ship.controls.speedUp = false;
+      ship.controls.speedDown = false;
+      ship.controls.rollLeft = false;
+      ship.controls.rollRight = false;
+    }
+  }
+
+  private handleAtmosphereExitBlackoutStep(origin: 'auto' | 'manual'): void {
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Executing atmosphere exit blackout step', { origin });
+    try {
+      this.exitAtmosphereScene();
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to exit atmosphere scene during blackout', { error });
+    }
+    this.setLandingDamageSuppressed(true, 'atmo-exit-transition');
+    const context = this.landingTouchdownContext ?? this.landingStatus.context ?? null;
+    if (context) {
+      this.repositionShipForAtmosphereExit(context);
+    }
+    if (this.camera) {
+      try { this.camera.setCameraMode(CameraMode.COCKPIT); } catch {}
+    }
+  }
+
+  private handleAtmosphereExitFadeInStart(origin: 'auto' | 'manual'): void {
+    if (!this.landingTouchdownContext) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit fade-in lacks landing context', { origin });
+      return;
+    }
+    const accepted = this.animationManager.startTakeoffSequence(this, this.landingTouchdownContext, {
+      phase: 'atmo-exit',
+      suppressOverlay: true,
+    });
+    if (!accepted) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff animation rejected after fade-in', { origin });
+    }
+  }
+
+  private repositionShipForAtmosphereExit(context: LandingApproachContext): void {
+    if (!this.spaceship || !context) {
+      return;
+    }
+    const center = this.resolvePlanetCenterFromContext(context)
+      ?? context.surfacePoint
+      ?? { x: 0, y: 0, z: 0 };
+    const normalSource = context.surfaceNormal ?? this.deriveLandingNormalFromContext(context);
+    const normal = this.normalize(normalSource);
+    const baseRadius = Math.max(
+      100,
+      context.radius ?? 0,
+      this.atmosphereSceneState?.groundRadius ?? 0,
+    );
+    const target = { ...center };
+    this.placeShipAtPosition(target);
+    const lookDistance = Math.max(120, baseRadius * 0.5);
+    const lookTarget = {
+      x: target.x + normal.x * lookDistance,
+      y: target.y + normal.y * lookDistance,
+      z: target.z + normal.z * lookDistance,
+    };
+    try { this.spaceship.lookAt(lookTarget, normal); } catch {}
+    try { this.spaceship.updateModelMatrix(); } catch {}
+    if (this.spaceship.boundingSphere) {
+      this.spaceship.boundingSphere.center = { ...this.spaceship.position };
     }
   }
 
@@ -4019,6 +4237,20 @@ export class GameEngine {
       Math.min(1, this.atmosphereEntryFadeRemainingMs / this.ATMOSPHERE_ENTRY_FADE_MS)
     );
     if (alpha <= 0) {
+      return;
+    }
+    this.overlayRenderer.drawSolid([0, 0, 0], alpha);
+  }
+
+  private renderAtmosphereExitTransitionOverlay(): void {
+    if (!this.overlayRenderer) {
+      return;
+    }
+    if (!this.atmosphereExitTransition.active || this.atmosphereExitTransition.stage === 'idle') {
+      return;
+    }
+    const alpha = this.clamp(this.atmosphereExitTransition.alpha, 0, 1);
+    if (alpha <= 1e-3) {
       return;
     }
     this.overlayRenderer.drawSolid([0, 0, 0], alpha);
@@ -5459,6 +5691,11 @@ export class GameEngine {
     if (!this.spaceship) {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'Spaceship is undefined in update method');
       return;
+    }
+
+    this.updateAtmosphereExitTransition(deltaTime);
+    if (this.isAtmosphereExitTransitionBlocking()) {
+      this.enforceAtmosphereExitShipHold();
     }
 
     if (this.atmosphereEntryFadeRemainingMs > 0) {
@@ -8537,6 +8774,10 @@ export class GameEngine {
     this.renderAtmosphereEntryFadeOverlay();
   } catch {}
 
+  try {
+    this.renderAtmosphereExitTransitionOverlay();
+  } catch {}
+
   // Draw red impact vignette last (on top)
   try {
     if (this.overlayRenderer && this.impactVignetteLevel > 0) {
@@ -10653,17 +10894,19 @@ export class GameEngine {
    */
   private areSpellGameplayInputsLocked(): boolean {
     try {
-      return this.spellIOCoordinator?.areGameplayInputsLocked() ?? this.animationManager.isBlockingInputs();
+      const spellLocked = this.spellIOCoordinator?.areGameplayInputsLocked?.() ?? false;
+      return spellLocked || this.animationManager.isBlockingInputs() || this.isAtmosphereExitTransitionBlocking();
     } catch {
-      return this.animationManager.isBlockingInputs();
+      return this.animationManager.isBlockingInputs() || this.isAtmosphereExitTransitionBlocking();
     }
   }
 
   private arePanelsLockedBySpell(): boolean {
     try {
-      return this.spellIOCoordinator?.arePanelsLocked() ?? this.animationManager.isBlockingInputs();
+      const panelLocked = this.spellIOCoordinator?.arePanelsLocked?.() ?? false;
+      return panelLocked || this.animationManager.isBlockingInputs() || this.isAtmosphereExitTransitionBlocking();
     } catch {
-      return this.animationManager.isBlockingInputs();
+      return this.animationManager.isBlockingInputs() || this.isAtmosphereExitTransitionBlocking();
     }
   }
 
