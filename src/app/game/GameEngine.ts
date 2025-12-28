@@ -163,6 +163,12 @@ interface ShipKineticsSnapshot {
   isThrusting: boolean;
 }
 
+interface ShipDynamicsBaseline {
+  maxSpeed: number;
+  acceleration: number;
+  deceleration: number;
+}
+
 export interface AtmosphereWeatherEffectsState {
   active: boolean;
   visibilityCurrent: number;
@@ -624,6 +630,8 @@ export class GameEngine {
   private voidCocoonShieldStartMs: number = 0;
   private voidCocoonShieldGeometry: { vbo: WebGLBuffer | null; ibo: WebGLBuffer | null; indexCount: number } | null = null;
   private cachedSpeedRiteRemainingSec: number | null = null;
+  private shipDynamicsBaseline: ShipDynamicsBaseline = { maxSpeed: 10, acceleration: 2, deceleration: 2.5 };
+  private shipDynamicsBaselineInitialized = false;
 
   // Material Disruption Rite beam animation
   private disruptionBeam: {
@@ -5348,6 +5356,7 @@ export class GameEngine {
       }
 
       this.logger.log(LogLevel.INFO, LogCategory.GAME_INITIALIZATION, 'Spaceship created successfully', { position: this.spaceship.position });
+      this.refreshShipDynamicsBaseline(true);
     } catch (error) {
       this.logger.log(LogLevel.ERROR, LogCategory.GAME_INITIALIZATION, 'Error creating spaceship', error);
       throw error;
@@ -6110,7 +6119,7 @@ export class GameEngine {
         }
         // If at/near cap, pressing '+' shouldn't create an acceleration bump: treat as cruising
         // Treat as cruising when at cap (100% or 200% if rite active)
-        const riteActive = !!(this.speedRiteUntilMs && performance.now() < (this.speedRiteUntilMs || 0));
+        const riteActive = this.isSpeedRiteActive();
         const atCap = riteActive ? (speedOverBase >= 1.995) : (speed / Math.max(1e-6, this.spaceship.maxSpeed) >= 0.995);
         if (atCap && state === ThrusterState.ACCELERATING) {
           accelNorm = 0.15;
@@ -6246,29 +6255,30 @@ export class GameEngine {
       } catch {}
     } catch {}
 
+    this.refreshShipDynamicsBaseline();
+
     // Timed spell upkeep: expire or compute remaining time for HUD
     let speedRiteRemainingSec: number | null = null;
+    const now = performance.now();
     if (this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs)) {
-      const now = performance.now();
       if (now >= this.speedRiteUntilMs) {
         // Expired: restore original max speed if known
-        if (this.speedRiteOriginalMax !== null) {
-          this.spaceship.maxSpeed = this.speedRiteOriginalMax;
-          // Clamp target/current to new cap to avoid overshoot visuals
-          this.spaceship.targetSpeed = Math.min(this.spaceship.targetSpeed, this.spaceship.maxSpeed);
-          this.spaceship.currentSpeed = Math.min(this.spaceship.currentSpeed, this.spaceship.maxSpeed);
-        }
+        const baseline = this.getShipDynamicsBaseline();
+        const restoredMax = this.speedRiteOriginalMax ?? baseline.maxSpeed;
+        this.spaceship.maxSpeed = restoredMax;
+        // Clamp target/current to new cap to avoid overshoot visuals
+        this.spaceship.targetSpeed = Math.min(this.spaceship.targetSpeed, this.spaceship.maxSpeed);
+        this.spaceship.currentSpeed = Math.min(this.spaceship.currentSpeed, this.spaceship.maxSpeed);
         // Restore accel/decel baselines if known
-        if (this.speedRiteOriginalAccel !== null) {
-          this.spaceship.acceleration = this.speedRiteOriginalAccel;
-        }
-        if (this.speedRiteOriginalDecel !== null) {
-          this.spaceship.deceleration = this.speedRiteOriginalDecel;
-        }
+        const restoredAccel = this.speedRiteOriginalAccel ?? baseline.acceleration;
+        const restoredDecel = this.speedRiteOriginalDecel ?? baseline.deceleration;
+        this.spaceship.acceleration = restoredAccel;
+        this.spaceship.deceleration = restoredDecel;
         this.speedRiteUntilMs = null;
         this.speedRiteOriginalMax = null;
         this.speedRiteOriginalAccel = null;
         this.speedRiteOriginalDecel = null;
+        this.refreshShipDynamicsBaseline(true);
       } else {
         // Use floor to avoid showing a lingering "00:01" when < 1s remains
         speedRiteRemainingSec = Math.max(0, Math.floor((this.speedRiteUntilMs - now) / 1000));
@@ -6280,7 +6290,6 @@ export class GameEngine {
       }
     } else {
       this.cachedSpeedRiteRemainingSec = null;
-      const now = performance.now();
       if (this.voidCocoonActiveUntilMs && now >= this.voidCocoonActiveUntilMs) {
         this.voidCocoonActiveUntilMs = null;
         this.voidCocoonLastImpactMs = 0;
@@ -13003,26 +13012,61 @@ export class GameEngine {
     } catch {}
   }
 
+  private isSpeedRiteActive(now: number = performance.now()): boolean {
+    return !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && now < this.speedRiteUntilMs);
+  }
+
+  private refreshShipDynamicsBaseline(force: boolean = false): void {
+    if (!this.spaceship) {
+      return;
+    }
+    const now = performance.now();
+    if (!force && (this.isSpeedRiteActive(now) || this.takeoffSequenceActive || this.landingSequenceActive || this.isAtmosphereExitTransitionActive())) {
+      return;
+    }
+    const next: ShipDynamicsBaseline = {
+      maxSpeed: Number.isFinite(this.spaceship.maxSpeed) ? this.spaceship.maxSpeed : this.shipDynamicsBaseline.maxSpeed,
+      acceleration: Number.isFinite(this.spaceship.acceleration) ? this.spaceship.acceleration : this.shipDynamicsBaseline.acceleration,
+      deceleration: Number.isFinite(this.spaceship.deceleration) ? this.spaceship.deceleration : this.shipDynamicsBaseline.deceleration,
+    };
+    const changed = !this.shipDynamicsBaselineInitialized
+      || Math.abs(next.maxSpeed - this.shipDynamicsBaseline.maxSpeed) > 1e-3
+      || Math.abs(next.acceleration - this.shipDynamicsBaseline.acceleration) > 1e-3
+      || Math.abs(next.deceleration - this.shipDynamicsBaseline.deceleration) > 1e-3;
+    if (force || changed) {
+      this.shipDynamicsBaseline = next;
+      this.shipDynamicsBaselineInitialized = true;
+    }
+  }
+
+  private getShipDynamicsBaseline(): ShipDynamicsBaseline {
+    if (!this.shipDynamicsBaselineInitialized) {
+      this.refreshShipDynamicsBaseline(true);
+    }
+    return { ...this.shipDynamicsBaseline };
+  }
+
   /** Apply the Double Phased Time Rite: doubles maxSpeed for a duration (default 2 minutes) */
   public applySpeedRite(durationMs: number = 120000): void {
     if (!this.spaceship) return;
     const now = performance.now();
+    const baseline = this.getShipDynamicsBaseline();
     // Cache original max once (first activation)
     if (this.speedRiteOriginalMax === null || !isFinite(this.speedRiteOriginalMax)) {
-      this.speedRiteOriginalMax = this.spaceship.maxSpeed;
+      this.speedRiteOriginalMax = baseline.maxSpeed;
     }
     if (this.speedRiteOriginalAccel === null || !isFinite(this.speedRiteOriginalAccel)) {
-      this.speedRiteOriginalAccel = this.spaceship.acceleration;
+      this.speedRiteOriginalAccel = baseline.acceleration;
     }
     if (this.speedRiteOriginalDecel === null || !isFinite(this.speedRiteOriginalDecel)) {
-      this.speedRiteOriginalDecel = this.spaceship.deceleration;
+      this.speedRiteOriginalDecel = baseline.deceleration;
     }
     // Apply doubled max speed from the original baseline
-    const base = this.speedRiteOriginalMax ?? this.spaceship.maxSpeed;
+    const base = this.speedRiteOriginalMax ?? baseline.maxSpeed;
     this.spaceship.maxSpeed = base * 2;
     // Double accel/decel from their baselines
-    const baseA = this.speedRiteOriginalAccel ?? this.spaceship.acceleration;
-    const baseD = this.speedRiteOriginalDecel ?? this.spaceship.deceleration;
+    const baseA = this.speedRiteOriginalAccel ?? baseline.acceleration;
+    const baseD = this.speedRiteOriginalDecel ?? baseline.deceleration;
     this.spaceship.acceleration = baseA * 2;
     this.spaceship.deceleration = baseD * 2;
     // Extend/refresh duration
@@ -13543,7 +13587,7 @@ export class GameEngine {
       : null;
     const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
     const speedPctExtended = (this.spaceship.currentSpeed / Math.max(1e-6, baseMax)) * 100; // 0..200 when jumping/rite
-    const riteActive = !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && now < this.speedRiteUntilMs);
+    const riteActive = this.isSpeedRiteActive(now);
     const voidJumpActive = !!this.voidJumpActive;
     const speedForHud = voidJumpActive ? Math.max(0, Math.min(100, speedPctExtended)) : Math.max(0, Math.min(200, speedPctExtended));
     const flightVectorReticle = this.buildFlightVectorReticleState(speedForHud);
@@ -13631,8 +13675,9 @@ export class GameEngine {
       }
     }
 
-    if (this.speedRiteUntilMs && now < this.speedRiteUntilMs) {
-      const seconds = (this.speedRiteUntilMs - now) / 1000;
+    const speedRiteUntil = this.speedRiteUntilMs;
+    if (speedRiteUntil && this.isSpeedRiteActive(now)) {
+      const seconds = (speedRiteUntil - now) / 1000;
       if (seconds > 0) {
         candidates.push({
           priority: 3,
