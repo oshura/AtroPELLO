@@ -254,6 +254,9 @@ export class GameEngine {
   public overlayRenderer: ScreenOverlayRenderer | null = null;
   private atmosphereEntryFadeRemainingMs: number = 0;
   private atmosphereExitTransition: AtmosphereExitTransitionState = this.createDefaultAtmosphereExitTransitionState();
+  private atmosphereExitGlideDirection: Vector3 | null = null;
+  private atmosphereExitSurfaceNormal: Vector3 | null = null;
+  private atmosphereExitVoidEnergyPrevPaused: boolean | null = null;
   private targetOutline2D: TargetOutline2DRenderer | null = null;
   public voidJumpActive: boolean = false;
   public collisionsDisabled: boolean = false;
@@ -317,6 +320,8 @@ export class GameEngine {
   private readonly ATMOSPHERE_POST_LANDING_IMPULSE = 3;
   private readonly ATMOSPHERE_ENTRY_FADE_MS = 1900;
   private readonly ATMOSPHERE_AUTO_TAKEOFF_ALTITUDE = 1000;
+  private readonly ATMOSPHERE_EXIT_SURFACE_OFFSET = 50;
+  private readonly ATMOSPHERE_EXIT_REENTRY_SPEED = 5;
   private readonly ATMOSPHERE_GROUND_COLLISION_PADDING = 1;
   private readonly ATMOSPHERE_AUTO_LAND_VERTICAL_SPEED_MAX = 1;
   private readonly ATMOSPHERE_AUTO_LAND_RELEASE_SPEED = 0.4;
@@ -3576,6 +3581,9 @@ export class GameEngine {
     if (!this.isAtmosphereExitTransitionBlocking() || !this.spaceship) {
       return;
     }
+    if (this.atmosphereExitTransition.stage === 'fade-in') {
+      return;
+    }
     const ship = this.spaceship;
     ship.targetSpeed = 0;
     ship.currentSpeed = 0;
@@ -3599,15 +3607,30 @@ export class GameEngine {
 
   private handleAtmosphereExitBlackoutStep(origin: 'auto' | 'manual'): void {
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Executing atmosphere exit blackout step', { origin });
+    const sourceContext = this.landingTouchdownContext ?? this.landingStatus.context ?? null;
+    let sampledContext = sourceContext ? this.sampleLandingContextSurface(sourceContext) : null;
+    if (sampledContext) {
+      this.landingTouchdownContext = sampledContext;
+    } else {
+      sampledContext = sourceContext;
+    }
     try {
       this.exitAtmosphereScene();
     } catch (error) {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to exit atmosphere scene during blackout', { error });
     }
     this.setLandingDamageSuppressed(true, 'atmo-exit-transition');
-    const context = this.landingTouchdownContext ?? this.landingStatus.context ?? null;
-    if (context) {
-      this.repositionShipForAtmosphereExit(context);
+    if (this.spaceship) {
+      this.atmosphereExitVoidEnergyPrevPaused = !!this.spaceship.voidEnergyPaused;
+      this.spaceship.voidEnergyPaused = true;
+    } else {
+      this.atmosphereExitVoidEnergyPrevPaused = null;
+    }
+    if (sampledContext) {
+      this.repositionShipForAtmosphereExit(sampledContext);
+    } else {
+      this.atmosphereExitGlideDirection = null;
+      this.atmosphereExitSurfaceNormal = null;
     }
     if (this.camera) {
       try { this.camera.setCameraMode(CameraMode.COCKPIT); } catch {}
@@ -3615,46 +3638,95 @@ export class GameEngine {
   }
 
   private handleAtmosphereExitFadeInStart(origin: 'auto' | 'manual'): void {
-    if (!this.landingTouchdownContext) {
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit fade-in lacks landing context', { origin });
-      return;
+    const context = this.landingTouchdownContext ?? this.landingStatus.context ?? null;
+    const ship = this.spaceship;
+    if (ship) {
+      const glideDir = this.resolveAtmosphereExitGlideDirection();
+      const targetSpeed = this.ATMOSPHERE_EXIT_REENTRY_SPEED;
+      ship.velocity = {
+        x: glideDir.x * targetSpeed,
+        y: glideDir.y * targetSpeed,
+        z: glideDir.z * targetSpeed,
+      };
+      ship.currentSpeed = targetSpeed;
+      ship.targetSpeed = targetSpeed;
+      ship.thrusterState = targetSpeed > 0 ? ThrusterState.CRUISING : ThrusterState.IDLE;
+      ship.isThrusting = targetSpeed > 0;
+      try { ship.updateModelMatrix(); } catch {}
+    } else {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Atmosphere exit fade-in lacks spaceship reference', { origin });
     }
-    const accepted = this.animationManager.startTakeoffSequence(this, this.landingTouchdownContext, {
-      phase: 'atmo-exit',
-      suppressOverlay: true,
-    });
-    if (!accepted) {
-      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Takeoff animation rejected after fade-in', { origin });
+    if (this.spaceship) {
+      const resumePaused = this.atmosphereExitVoidEnergyPrevPaused;
+      this.spaceship.voidEnergyPaused = resumePaused ?? false;
     }
+    this.atmosphereExitVoidEnergyPrevPaused = null;
+    this.completeAtmosphereExitAfterGlide(origin, context);
   }
 
-  private repositionShipForAtmosphereExit(context: LandingApproachContext): void {
+  private resolveAtmosphereExitGlideDirection(): Vector3 {
+    if (this.atmosphereExitGlideDirection) {
+      return { ...this.atmosphereExitGlideDirection };
+    }
+    const normal = this.atmosphereExitSurfaceNormal ?? { x: 0, y: 1, z: 0 };
+    const fallback = this.buildPerpendicularGroundDirection(normal);
+    this.atmosphereExitGlideDirection = fallback;
+    return { ...fallback };
+  }
+
+  private completeAtmosphereExitAfterGlide(origin: 'auto' | 'manual', context?: LandingApproachContext | null): void {
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Atmosphere exit glide finalized', {
+      origin,
+      targetSpeed: this.ATMOSPHERE_EXIT_REENTRY_SPEED,
+    });
+    this.notifyTakeoffSequenceFinished('completed', context ?? this.landingTouchdownContext, 'atmo-exit');
+    this.atmosphereExitGlideDirection = null;
+    this.atmosphereExitSurfaceNormal = null;
+  }
+
+  private repositionShipForAtmosphereExit(context: LandingApproachContext | null): void {
     if (!this.spaceship || !context) {
+      this.atmosphereExitSurfaceNormal = null;
+      this.atmosphereExitGlideDirection = null;
       return;
     }
     const center = this.resolvePlanetCenterFromContext(context)
       ?? context.surfacePoint
       ?? { x: 0, y: 0, z: 0 };
-    const normalSource = context.surfaceNormal ?? this.deriveLandingNormalFromContext(context);
-    const normal = this.normalize(normalSource);
-    const baseRadius = Math.max(
-      100,
-      context.radius ?? 0,
-      this.atmosphereSceneState?.groundRadius ?? 0,
-    );
-    const target = { ...center };
+    const normal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
+    const radius = Math.max(1, context.radius ?? 0);
+    const surfacePoint = context.surfacePoint ?? {
+      x: center.x + normal.x * radius,
+      y: center.y + normal.y * radius,
+      z: center.z + normal.z * radius,
+    };
+    const shipRadius = Math.max(0, this.spaceship.boundingSphere?.radius ?? 0);
+    const clearance = shipRadius + this.ATMOSPHERE_EXIT_SURFACE_OFFSET;
+    const target = {
+      x: surfacePoint.x + normal.x * clearance,
+      y: surfacePoint.y + normal.y * clearance,
+      z: surfacePoint.z + normal.z * clearance,
+    };
     this.placeShipAtPosition(target);
-    const lookDistance = Math.max(120, baseRadius * 0.5);
+    const forward = this.normalize(this.spaceship.forwardDirection || normal);
+    let tangent = this.projectOntoPlane(forward, normal);
+    if (this.vectorLength(tangent) < 1e-3) {
+      tangent = this.buildPerpendicularGroundDirection(normal);
+    } else {
+      tangent = this.normalize(tangent);
+    }
     const lookTarget = {
-      x: target.x + normal.x * lookDistance,
-      y: target.y + normal.y * lookDistance,
-      z: target.z + normal.z * lookDistance,
+      x: target.x + tangent.x,
+      y: target.y + tangent.y,
+      z: target.z + tangent.z,
     };
     try { this.spaceship.lookAt(lookTarget, normal); } catch {}
     try { this.spaceship.updateModelMatrix(); } catch {}
     if (this.spaceship.boundingSphere) {
       this.spaceship.boundingSphere.center = { ...this.spaceship.position };
     }
+    this.atmosphereExitSurfaceNormal = normal;
+    this.atmosphereExitGlideDirection = tangent;
   }
 
   private updateAtmosphereAutoLandingCamera(_deltaTime: number): void {
