@@ -276,9 +276,6 @@ export class GameEngine {
   private domCanvas: HTMLCanvasElement | null = null;
   private panelCursorOverlay: PanelCursorOverlay | null = null;
   private flightVectorOverlay: FlightVectorReticleOverlay | null = null;
-  private cursorHidden: boolean = false;
-  private cursorIdleTimerId: number | null = null;
-  private readonly CURSOR_IDLE_TIMEOUT_MS = 5000;
   // Defers a map selection when the user clicks immediately after opening the map
   // before the id->target mapping has been rebuilt in the first render pass.
   private pendingMapSelectId: string | null = null;
@@ -14096,70 +14093,16 @@ export class GameEngine {
    * Hide OS cursor when Grimoire is enabled; restore otherwise
    */
   private updateCanvasCursor(): void {
-    if (!this.domCanvas) {
-      return;
-    }
-    const panelActive = this.isAnyPanelActive();
-    this.clearCursorIdleTimer();
-    this.setCanvasCursorHidden(false);
-
-    if (panelActive) {
-      return;
-    }
-
-    this.scheduleCursorIdleHide();
-  }
-
-  private handlePointerActivity(): void {
-    if (!this.domCanvas) {
-      return;
-    }
-    this.setCanvasCursorHidden(false);
-    this.clearCursorIdleTimer();
-    if (!this.isAnyPanelActive()) {
-      this.scheduleCursorIdleHide();
-    }
-  }
-
-  private scheduleCursorIdleHide(): void {
-    if (typeof window === 'undefined') {
-      return;
-    }
-    this.clearCursorIdleTimer();
-    this.cursorIdleTimerId = window.setTimeout(() => {
-      this.cursorIdleTimerId = null;
-      if (!this.isAnyPanelActive()) {
-        this.setCanvasCursorHidden(true);
-      }
-    }, this.CURSOR_IDLE_TIMEOUT_MS);
-  }
-
-  private clearCursorIdleTimer(): void {
-    if (this.cursorIdleTimerId === null) {
-      return;
-    }
-    if (typeof window !== 'undefined') {
-      window.clearTimeout(this.cursorIdleTimerId);
-    }
-    this.cursorIdleTimerId = null;
-  }
-
-  private setCanvasCursorHidden(hidden: boolean): void {
-    if (!this.domCanvas || this.cursorHidden === hidden) {
-      return;
-    }
-    this.cursorHidden = hidden;
     try {
-      this.domCanvas.style.cursor = hidden ? 'none' : '';
+      if (!this.domCanvas) return;
+      const gOn = !!(this.grimoirePanel && this.grimoirePanel.isEnabled());
+      const invOn = !!(this.inventoryPanel && this.inventoryPanel.isEnabled());
+      if (gOn || invOn) {
+        this.domCanvas.style.cursor = 'none';
+      } else {
+        this.domCanvas.style.cursor = '';
+      }
     } catch {}
-  }
-
-  private isAnyPanelActive(): boolean {
-    return !!(
-      (this.systemPanel && this.systemPanel.isEnabled()) ||
-      (this.grimoirePanel && this.grimoirePanel.isEnabled()) ||
-      (this.inventoryPanel && this.inventoryPanel.isEnabled())
-    );
   }
 
   private syncPanelCursorOverlay(): void {
@@ -14250,10 +14193,7 @@ export class GameEngine {
       onInventoryWheel: (deltaY, clientX, clientY) => this.handleInventoryWheel(deltaY, clientX, clientY),
       
       // 3D targeting (when no panel active)
-      on3DClick: (event) => this.handle3DClick(event),
-
-      // Pointer activity for cursor auto-hide system
-      onPointerActivity: () => this.handlePointerActivity()
+      on3DClick: (event) => this.handle3DClick(event)
     });
 
     this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'PanelEventCoordinator initialized successfully');
