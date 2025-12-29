@@ -276,6 +276,9 @@ export class GameEngine {
   private domCanvas: HTMLCanvasElement | null = null;
   private panelCursorOverlay: PanelCursorOverlay | null = null;
   private flightVectorOverlay: FlightVectorReticleOverlay | null = null;
+  private cursorHidden: boolean = false;
+  private cursorIdleTimerId: number | null = null;
+  private readonly CURSOR_IDLE_TIMEOUT_MS = 5000;
   // Defers a map selection when the user clicks immediately after opening the map
   // before the id->target mapping has been rebuilt in the first render pass.
   private pendingMapSelectId: string | null = null;
@@ -350,6 +353,7 @@ export class GameEngine {
   private readonly ATMOSPHERE_GROUND_DAMAGE_SPEED_MAX = 10;
   private readonly ATMOSPHERE_GROUND_DAMAGE_MIN = 1;
   private readonly ATMOSPHERE_GROUND_DAMAGE_MAX = 100;
+  private readonly ATMOSPHERE_GRAVITY_DEFAULT_SCALE = 3;
   private readonly ATMOSPHERE_IMPACT_PROBE_DURATION_MS = 2000;
   private readonly ATMOSPHERE_IMPACT_PROBE_LOG_INTERVAL_MS = 120;
   private readonly SPACE_THRUSTER_CLIP = 'sfx_thruster';
@@ -1789,6 +1793,10 @@ export class GameEngine {
       this.spaceship.boundingSphere.center = { ...this.spaceship.position };
     }
     this.lastShipPos = { ...this.spaceship.position };
+    try {
+      // Evitar que el recalculo de Void Energy cuente este teletransporte
+      this.spaceship.resetVoidEnergyBaseline();
+    } catch {}
   }
 
   private captureShipKineticsSnapshot(): ShipKineticsSnapshot | null {
@@ -9212,9 +9220,23 @@ export class GameEngine {
     if (!this.spaceship || !this.atmosphereSceneState.active || !this.atmosphereSceneState.context) {
       return;
     }
+    const landingHoldActive = this.landingPanelAwaitingUser && this.landingTouchdownContext && !this.takeoffSequenceActive;
+    if (landingHoldActive) {
+      const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
+      const speedFactor = this.computeAtmosphereGravitySpeedFactor(speed);
+      this.atmosphereGravityTelemetry = {
+        altitude: 0,
+        gravityPerSecond: 0,
+        finalGravity: 0,
+        speedFactor,
+      };
+      return;
+    }
+    const context = this.atmosphereSceneState.context;
     const center = this.atmosphereSceneState.center;
     const groundRadius = this.atmosphereSceneState.groundRadius;
     const skyRadius = this.atmosphereSceneState.skyRadius;
+    const gravityScale = this.getAtmosphereGravityScaleForPlanet(context?.planetType);
 
     // Vector desde el centro hasta la nave
     const dx = this.spaceship.position.x - center.x;
@@ -9227,15 +9249,16 @@ export class GameEngine {
       return;
     }
 
-    // Altura sobre la superficie (distFromCenter - groundRadius)
-    const altitude = distFromCenter - groundRadius;
+    // Altura sobre la esfera base (sin relieve)
+    const shellAltitude = distFromCenter - groundRadius;
+    const atmosphereThickness = Math.max(1, skyRadius - groundRadius);
 
-    // La gravedad solo actúa dentro de la atmósfera (entre groundRadius y skyRadius)
-    if (altitude < 0 || altitude > (skyRadius - groundRadius)) {
+    // La gravedad solo actúa mientras la nave permanezca dentro del domo atmosférico
+    if (shellAltitude > atmosphereThickness) {
       const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
       const speedFactor = this.computeAtmosphereGravitySpeedFactor(speed);
       this.atmosphereGravityTelemetry = {
-        altitude,
+        altitude: shellAltitude,
         gravityPerSecond: 0,
         finalGravity: 0,
         speedFactor,
@@ -9243,10 +9266,13 @@ export class GameEngine {
       return;
     }
 
+    // Altitud real respecto a la superficie procedural (incluye relieve y radio del ship)
+    const altitude = Math.max(0, this.computeAltitudeAboveGround());
+
     // Factor de intensidad: máxima (1.0) cerca de la superficie, decae hacia el límite del cielo
-    const maxHeight = Math.max(1, skyRadius - groundRadius);
-    const MIN_FALL_RATE = 10.0; // unidades/segundo a 1000u de altura (o punto máximo disponible)
-    const MAX_FALL_RATE = 30.0; // unidades/segundo cerca del suelo (≈1u de altura)
+    const maxHeight = atmosphereThickness;
+    const MIN_FALL_RATE = 10.0; // unidades/segundo base a 1000u (se multiplica por gravityScale)
+    const MAX_FALL_RATE = 30.0; // unidades/segundo base cerca del suelo (se multiplica por gravityScale)
     const lowReference = 1;
     const highReference = Math.max(lowReference + 1, Math.min(1000, maxHeight));
     const interiorRange = Math.max(1, highReference - lowReference);
@@ -9260,11 +9286,12 @@ export class GameEngine {
     const gravityPerSecond = innerFallRate * outerFalloff;
     const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
     const speedFactor = this.computeAtmosphereGravitySpeedFactor(speed);
-    const finalGravity = gravityPerSecond * speedFactor;
+    const scaledGravity = gravityPerSecond * speedFactor * gravityScale;
+    const finalGravity = Math.max(0, scaledGravity);
     this.atmosphereGravityTelemetry = {
       altitude,
       gravityPerSecond,
-      finalGravity: Math.max(0, finalGravity),
+      finalGravity,
       speedFactor,
     };
     if (gravityPerSecond <= 0 || finalGravity <= 0) {
@@ -9282,6 +9309,25 @@ export class GameEngine {
     this.spaceship.externalForces.x += dirX * velocityChange;
     this.spaceship.externalForces.y += dirY * velocityChange;
     this.spaceship.externalForces.z += dirZ * velocityChange;
+  }
+
+  private getAtmosphereGravityScaleForPlanet(type?: PlanetType): number {
+    switch (type) {
+      case PlanetType.Dwarf:
+        return 1;
+      case PlanetType.Protoplanet:
+        return 0;
+      case PlanetType.Ringed:
+        return 5;
+      case PlanetType.Giant:
+      case PlanetType.Sun:
+        return 10;
+      case PlanetType.Tierra:
+      case PlanetType.Planetoid:
+        return 3;
+      default:
+        return this.ATMOSPHERE_GRAVITY_DEFAULT_SCALE;
+    }
   }
 
   /**
@@ -11430,8 +11476,9 @@ export class GameEngine {
   }
 
   private initiateSpellCast(spell: SpellType, target: ITargetable | null): void {
-    if (this.camera && this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
-      this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+    const desiredCamera = spell === SpellType.SPEED ? CameraMode.COCKPIT : CameraMode.INMOVILE_EXTERNAL;
+    if (this.camera && this.camera.getCurrentMode() !== desiredCamera) {
+      try { this.camera.setCameraMode(desiredCamera); } catch {}
     }
     const precastDelayMs = this.getPrecastChantDurationMs();
     const requiresChant = spell !== SpellType.SPEED;
@@ -14049,16 +14096,70 @@ export class GameEngine {
    * Hide OS cursor when Grimoire is enabled; restore otherwise
    */
   private updateCanvasCursor(): void {
-    try {
-      if (!this.domCanvas) return;
-      const gOn = !!(this.grimoirePanel && this.grimoirePanel.isEnabled());
-      const invOn = !!(this.inventoryPanel && this.inventoryPanel.isEnabled());
-      if (gOn || invOn) {
-        this.domCanvas.style.cursor = 'none';
-      } else {
-        this.domCanvas.style.cursor = '';
+    if (!this.domCanvas) {
+      return;
+    }
+    const panelActive = this.isAnyPanelActive();
+    this.clearCursorIdleTimer();
+    this.setCanvasCursorHidden(false);
+
+    if (panelActive) {
+      return;
+    }
+
+    this.scheduleCursorIdleHide();
+  }
+
+  private handlePointerActivity(): void {
+    if (!this.domCanvas) {
+      return;
+    }
+    this.setCanvasCursorHidden(false);
+    this.clearCursorIdleTimer();
+    if (!this.isAnyPanelActive()) {
+      this.scheduleCursorIdleHide();
+    }
+  }
+
+  private scheduleCursorIdleHide(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    this.clearCursorIdleTimer();
+    this.cursorIdleTimerId = window.setTimeout(() => {
+      this.cursorIdleTimerId = null;
+      if (!this.isAnyPanelActive()) {
+        this.setCanvasCursorHidden(true);
       }
+    }, this.CURSOR_IDLE_TIMEOUT_MS);
+  }
+
+  private clearCursorIdleTimer(): void {
+    if (this.cursorIdleTimerId === null) {
+      return;
+    }
+    if (typeof window !== 'undefined') {
+      window.clearTimeout(this.cursorIdleTimerId);
+    }
+    this.cursorIdleTimerId = null;
+  }
+
+  private setCanvasCursorHidden(hidden: boolean): void {
+    if (!this.domCanvas || this.cursorHidden === hidden) {
+      return;
+    }
+    this.cursorHidden = hidden;
+    try {
+      this.domCanvas.style.cursor = hidden ? 'none' : '';
     } catch {}
+  }
+
+  private isAnyPanelActive(): boolean {
+    return !!(
+      (this.systemPanel && this.systemPanel.isEnabled()) ||
+      (this.grimoirePanel && this.grimoirePanel.isEnabled()) ||
+      (this.inventoryPanel && this.inventoryPanel.isEnabled())
+    );
   }
 
   private syncPanelCursorOverlay(): void {
@@ -14149,7 +14250,10 @@ export class GameEngine {
       onInventoryWheel: (deltaY, clientX, clientY) => this.handleInventoryWheel(deltaY, clientX, clientY),
       
       // 3D targeting (when no panel active)
-      on3DClick: (event) => this.handle3DClick(event)
+      on3DClick: (event) => this.handle3DClick(event),
+
+      // Pointer activity for cursor auto-hide system
+      onPointerActivity: () => this.handlePointerActivity()
     });
 
     this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'PanelEventCoordinator initialized successfully');
