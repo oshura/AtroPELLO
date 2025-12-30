@@ -1,0 +1,10 @@
+Navega a http://localhost:4200/
+[vite] connecting... client:733:9
+[vite] connected. client:827:12
+NG0505: Angular hydration was requested on the client, but there was no serialized information present in the server response, thus hydration was not enabled. Make sure the `provideClientHydration()` is included into the list of providers in the server part of the application configuration. Find more at https://v20.angular.dev/errors/NG0505 chunk-CRFM4M2Y.js:14652:13
+Se ha impedido que un AudioContext se inicie automáticamente. Debe crearse o reanudarse después de un gesto del usuario en la página. main.js:1571:16
+[21:27:02.942Z][DEBUG][DEBUG] Force init - bypassing SSR detection for debugging <empty string> chunk-EHKEHYIB.js:141:23
+Angular is running in development mode. chunk-CRFM4M2Y.js:14648:13
+NG0913: An image with src http://localhost:4200/assets/Wiki.png is the Largest Contentful Paint (LCP) element but was given a "loading" value of "lazy", which can negatively impact application loading performance. This warning can be addressed by changing the loading value of the LCP image to "eager", or by using the NgOptimizedImage directive's prioritization utilities. For more information about addressing or disabling this warning, see https://angular.dev/errors/NG0913. Find more at https://v20.angular.dev/errors/NG0913 chunk-CRFM4M2Y.js:24831:11
+[21:27:03.580Z][INFO][TEXTURE] Metallic texture created <empty string> chunk-EHKEHYIB.js:138:23
+[21:27:03.580Z][INFO][TEXTURE] Gradient texture created <empty string> chunk-EHKEHYIB.js:138:23
