@@ -54,6 +54,14 @@ Este documento reemplaza al plan `documentation/plans/planet-atmosphere-reboot.m
 - La bitácora “Sesión atmósfera ligera — Feb 2025” en `Resumen_Proyecto_y_Progreso.md` cubre los flujos completos (descenso, vuelo bajo, salida, landing manual, auto-landing).
 - La wiki de la nave (`src/app/wiki/pages/spaceship/spaceship.ts`) documenta: impulso automático, cámara bloqueada, piloto verde persistente, auto-takeoff y flujo simplificado en atmósfera.
 
+### Telemetría HUD/Atmósfera (QA)
+1. Abre la consola de debug en el juego y ejecuta `Debug.enableLog('TEXTURE')` para activar el volcado de mezclas en tiempo real.
+2. Ejecuta `Debug.Atmosphere.setTextureDebug(true)` para que `AtmosphereSceneManager` regenere el color buffer con estadísticas por muestreo.
+3. Vuela sobre Marte durante al menos 20 s manteniendo altitudes entre 50 u y 350 u; el motor imprimirá cada recálculo tanto en consola como en `logs/logs.log`.
+4. Verifica que los mensajes muestren `avgMix` entre 0.28 y 0.32, `texturedRatio = 1` y `contrastRange[1] ≥ 0.25`. También debe aparecer `HUDTexture updated` sin errores WebGL.
+
+Si cualquiera de los valores sale de rango, repite la pasada reduciendo la altitud o revisando que el debug siga habilitado; para revertir el tracing basta con volver a llamar a `Debug.enableLog('TEXTURE', false)` y `Debug.Atmosphere.setTextureDebug(false)`.
+
 ### 7. Clima estratificado y feedback sensorial
 - `AtmosphereWeatherService` mantiene cuatro capas (superficie/baja/media/exósfera) con estados "calma" y eventos dedicados (niebla, lluvia, tormenta eléctrica, polvo, meteoros). Cada evento expone `AtmosphereWeatherSnapshot` con `layerId`, drift, turbulencia, visibilidad objetivo y cues de audio.
 - `GameEngine` consume el snapshot para actualizar `AtmosphereWeatherEffectsState`: aplica drift progresivo (`applyAtmosphereProgressiveDrift()`), jitter en nave/cámara, modula gravedad, atenúa impactos (HUD lanza «Absorción atmosférica») y calcula filtros (`renderWeatherCameraFilters()`) + flash de relámpago.

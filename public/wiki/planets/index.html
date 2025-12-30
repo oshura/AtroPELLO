@@ -126,6 +126,19 @@
         </div>
       </section>
 
+      <section class="section" id="mars-terrain">
+        <h2>Cómo interpretar el terreno de Marte</h2>
+        <p>Las tormentas permanentes de Marte aplastan la paleta, pero ahora el suelo genera pistas visuales muy nítidas. Úsalas para navegar incluso cuando la visibilidad cae.</p>
+        <ul>
+          <li>Los halos ámbar y las vetas crema marcan crestas seguras: apunta el morro a cualquier brillo cálido para sobrevolar dunas sin rozar el casco.</li>
+          <li>Los cráteres se leen como sombras circulares con un anillo claro alrededor; recorta por el anillo si quieres ganar altura rápida o evita el círculo oscuro cuando prepares un aterrizaje manual.</li>
+          <li>Si todo luce plano, baja a menos de 350&nbsp;u y espera dos segundos: los patrones se recalculan y verás mosaicos repetidos de cráter/veta/duna que sirven como “balizas” cada pocos kilómetros.</li>
+          <li>El panel de telemetría atmosférica (HUD) muestra una barra de mezcla TEXTURE: mientras se mantenga en la franja verde (~30&nbsp;%), el relieve se ve correcto. Si salta al amarillo, reduce velocidad y altitud hasta que vuelva a estabilizarse.</li>
+          <li>Durante tormentas de polvo, el filtro se aclara automáticamente para que los halos calientes atraviesen la nube; si pierdes referencias, mantén la altitud indicada en el HUD y sigue el último brillo visible.</li>
+        </ul>
+        <p><strong>Tip QA:</strong> si necesitas datos exactos, abre la consola e introduce <code>Debug.enableLog('TEXTURE')</code> seguido de <code>Debug.Atmosphere.setTextureDebug(true)</code>. Las lecturas «avgMix» deberían quedarse cerca del 30&nbsp;% y el log mostrará «HUDTexture updated» sin errores.</p>
+      </section>
+
       <section class="section" id="landing">
         <h2>Checklist de aterrizaje manual</h2>
         <ol>

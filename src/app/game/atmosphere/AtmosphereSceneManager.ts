@@ -461,6 +461,9 @@ export class AtmosphereSceneManager {
       b = this.clamp01(b * (1 + peakGlow * 0.25) + 0.03 * peakGlow);
     }
 
+    const baseR = r;
+    const baseG = g;
+    const baseB = b;
     const textureInfluence = this.computeTextureInfluence(height, detailFactor, ridge) * this.surfaceOptions.textureInfluence;
     let appliedPattern: AtmosphereTexturePattern | null = null;
     let appliedMix = 0;
@@ -485,6 +488,12 @@ export class AtmosphereSceneManager {
       appliedMix = mixStrength;
       appliedContrast = Math.abs(contrast);
       appliedTileFrequency = tileFrequency;
+    }
+    const palettePreserve = this.computePalettePreserve(height, ridge);
+    if (palettePreserve > 1e-3) {
+      r = this.lerp(r, baseR, palettePreserve);
+      g = this.lerp(g, baseG, palettePreserve * 0.98);
+      b = this.lerp(b, baseB, palettePreserve * 0.95);
     }
     this.recordTextureDebugSample(
       appliedPattern,
@@ -673,15 +682,16 @@ export class AtmosphereSceneManager {
   }
 
   private computeTextureInfluence(height: number, detailFactor: number, ridge: number): number {
-    let influence = 0.35 + detailFactor * 0.75;
-    if (height < 0.35) {
-      influence += 0.35;
-    } else if (height > 0.78) {
-      influence *= 0.75;
-    }
-    influence += (1 - height) * 0.08;
-    influence *= 1 - this.clamp01(ridge * 0.35);
-    return this.clamp01(influence);
+    const lowlandBias = height < 0.3 ? this.lerp(0.18, 0.32, 1 - height / 0.3) : 0;
+    const highlandDamp = height > 0.7 ? this.lerp(0.15, 0.35, (height - 0.7) / 0.3) : 0;
+    let influence = 0.22 + detailFactor * 0.45 + lowlandBias - highlandDamp;
+    influence += (1 - height) * 0.04;
+    const ridgeSuppression = 1 - this.clamp01(ridge * 0.55);
+    influence *= ridgeSuppression;
+    const altitudeCap = this.lerp(0.58, 0.42, this.clamp01(height));
+    const detailCap = this.lerp(0.62, 0.52, this.clamp01(detailFactor));
+    const dynamicCap = Math.min(altitudeCap, detailCap);
+    return this.clamp01(Math.min(influence, dynamicCap));
   }
 
   private resolvePatternTint(
@@ -730,25 +740,31 @@ export class AtmosphereSceneManager {
   private resolvePatternMixBoost(pattern: AtmosphereTexturePattern, height: number): number {
     switch (pattern) {
       case 'crater':
-        return 1.35 - this.clamp01(height) * 0.3;
+        return 1.08 - this.clamp01(height) * 0.18;
       case 'sand':
-        return 1 + this.smoothstep(0.45, 0.85, height) * 0.35;
+        return 0.95 + this.smoothstep(0.45, 0.85, height) * 0.25;
       case 'rock':
       default:
-        return 1.05;
+        return 1.0;
     }
   }
 
   private resolvePatternContrast(pattern: AtmosphereTexturePattern, height: number): number {
     switch (pattern) {
       case 'crater':
-        return 1.9 - this.clamp01(height) * 0.6;
+        return 2.05 - this.clamp01(height) * 0.55;
       case 'sand':
-        return 1.15 + this.smoothstep(0.5, 0.9, height) * 0.25;
+        return 1.2 + this.smoothstep(0.5, 0.9, height) * 0.3;
       case 'rock':
       default:
-        return 1.25;
+        return 1.3;
     }
+  }
+
+  private computePalettePreserve(height: number, ridge: number): number {
+    const ridgeBias = this.smoothstep(0.35, 0.85, ridge) * 0.35;
+    const heightBias = this.smoothstep(0.45, 0.9, height) * 0.4;
+    return this.clamp01(0.08 + ridgeBias + heightBias);
   }
 
   private strataNoise(theta: number, phi: number): number {
