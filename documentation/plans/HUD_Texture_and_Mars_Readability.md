@@ -7,7 +7,7 @@
 - Deberemos mantener sincronizadas `documentation/Modo_Atmosferico.md`, `documentation/Resumen_Proyecto_y_Progreso.md` y la wiki de jugador (`public/wiki/...`) según los ajustes que aterricen.
 
 ## Findings
-1. **Pipeline HUD inestable**: `HUDTexture.updateTexture()` (ver [src/app/game/hud/HUDTexture.ts](../..//src/app/game/hud/HUDTexture.ts#L47-L103)) invoca `gl.texImage2D` mientras el estado GL está contaminado por el render de cabina. Los logs muestran que inmediatamente después `setupHUDRenderingState()` intenta escribir uniforms (`u_texture`, `u_opacity`) y el driver devuelve "UniformLocation is not from the current active Program", señal de que `gl.useProgram(hudProgram)` se pierde entre llamadas o que los uniforms se almacenan de un programa antiguo.
+1. **Pipeline HUD inestable**: `HUDTexture.updateTexture()` (ver [src/app/game/hud/HUDTexture.ts](../..//src/app/game/hud/HUDTexture.ts#L47-L103)) invoca `gl.texImage2D` mientras el estado GL está contaminado por el render de cabina. Los logs recientes (`logs/logs1.log`, 18:15:52Z) muestran que incluso antes de tocar la textura ya hay un `GL_INVALID_OPERATION` pendiente y el driver insiste con "UniformLocation is not from the current active Program" al aplicar `u_texture`/`u_opacity`. En la sesión anterior añadimos snapshots y guardados de estado, pero el análisis de FPS demostró que solo añadían coste sin resolver el origen: las ubicaciones de uniformes se vuelven obsoletas cuando el HUD recompila su programa (por hot reload) y seguimos reutilizando los punteros antiguos.
 2. **Estado de shader sin restaurar**: `HUDManager.render()` selecciona entre `hudProgram` y `litProgram`, pero no guarda/restaura el programa previo del motor. Si otra parte del frame llama a `ShaderManager.useBasicProgram()` antes de que el HUD termine de subir texturas, las uniform locations dejan de ser válidas aunque sigamos usando los punteros cacheados.
 3. **Texturas atmosféricas saturadas**: El muestreo en `sampleGroundColor()` (ver [src/app/game/atmosphere/AtmosphereSceneManager.ts](../..//src/app/game/atmosphere/AtmosphereSceneManager.ts#L250-L420)) calcula `mixStrength = clamp(textureInfluence * patternEnergy * resolvePatternMixBoost())`. Entre `textureInfluence` (0.35 + 0.75 * detailFactor + bonuses por altura) y `resolvePatternMixBoost('crater')` (1.35 - altura*0.3) el producto raramente baja de 0.8, por lo que los patrones reemplazan al color base sin dejar relieve observable aunque la telemetría confirme `texturedSamples === vertexSamples`.
 
@@ -31,14 +31,15 @@
 ## Plan de trabajo
 
 ### Fase 1 — Diagnóstico/telemetría WebGL
-- [ ] Reproducir el error capturando `gl.getError()` y `gl.getParameter(this.gl.CURRENT_PROGRAM)` antes y después de `HUDTexture.updateTexture()`.
-- [ ] Añadir logs temporales en `ShaderManager` para detectar cuándo se recompila `hudProgram` y si `hudUniforms` siguen apuntando al programa correcto.
+- [x] Reproducir el error capturando `gl.getError()` y `gl.getParameter(this.gl.CURRENT_PROGRAM)` antes y después de `HUDTexture.updateTexture()`.
+- [x] Añadir logs temporales en `ShaderManager` para detectar cuándo se recompila `hudProgram` y si `hudUniforms` siguen apuntando al programa correcto.
 
 ### Fase 2 — Corrección pipeline HUD
-- [ ] Encapsular `HUDTexture.updateTexture()` para que guarde/restaure: programa activo, unidad de textura activa y bandera `UNPACK_FLIP_Y_WEBGL`. Añadir `gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1)` para evitar `GL_INVALID_OPERATION` con canvas.
-- [ ] En `HUDManager.render()`, capturar el programa activo antes de `useProgram`, y restaurarlo tras dibujar el HUD. Invalidar/volver a resolver uniforms cuando `hudProgram` cambie.
-- [ ] Ajustar `setupHUDRenderingState()` para validar que `shaderManager.hudUniforms` pertenecen al programa actual (comparar via `gl.getUniformLocation`) antes de llamar a `gl.uniform*`.
-- [ ] Añadir una ruta de fallback limpia que evite llamar a uniforms del HUD cuando `useHUDShader === false`, eliminando los warnings del driver.
+- [x] Resolver las ubicaciones de `u_modelMatrix`, `u_viewMatrix`, `u_projectionMatrix`, `u_texture` y `u_opacity` directamente desde `HUDManager` cada vez que se activa el shader, evitando caches obsoletos.
+- [x] Actualizar `setupHUDRenderingState()` y `setupHUDMatrices()` para trabajar con esas ubicaciones puntuales y omitir cualquier `gl.uniform*` cuando la ubicación no sea válida, manteniendo el pipeline mínimo (sin snapshots ni push/pop masivos).
+- [x] Restaurar el programa WebGL previo al salir de `HUDManager.render()` para no dejar el HUD como programa activo y contaminar los uniforms del render principal.
+- [x] Ampliar la instrumentación en `WebGLService` para envolver todos los setters de uniforms, loggear el ID del programa esperado/actual y así localizar qué subsistema deja ubicaciones obsoletas.
+- [x] Validar que, con `Debug.HUD.setLogsEnabled(true)`, la consola deja de reportar `UniformLocation is not from the current active Program` y que `HUDTexture.updateTexture()` ya no recibe `GL_INVALID_OPERATION`.
 
 ### Fase 3 — Rebalanceo visual en Marte
 - [ ] Reducir `textureInfluence` base en `computeTextureInfluence()` y aplicar un clamp superior dependiente de altura/detalle para que `mixStrength` rara vez supere 0.6.
