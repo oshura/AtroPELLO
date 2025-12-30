@@ -13,6 +13,9 @@
 	- Enemy(xq hay lesserBeing en el planeta):
 		- Luchar con lesserBeing para destruirlo. +50PX. COR a tope, SALUD a la mitad de lo que tenia el PJ.
  
+ - On-Planet:
+	
+ 
  - Comercio y adquisicion de sellos
 	- Efectos de slots auxiliares: 
 		- Cargar void energy de la radiación solar.
@@ -89,3 +92,4 @@ npm run build --production
 
 
 
+He aterrizado en el suelo, y por alguna razón, al llevar activo el speed rune spell, al despegar, la 'base' de velocidad maxima de la nave quedó en 20u en lugar de sus 10u habituales. Lo que sí que ví es que no estaba ya activo el hechizo al despegar, pero la velocidad habia quedado duplicada. Creo que es por haber terminado el efecto mientras estamos aterrizados (landed) con el dialogo de landing abierto. Mira por ahi a ver si lo arreglas.

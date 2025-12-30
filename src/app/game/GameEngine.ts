@@ -94,6 +94,7 @@ import {
   AtmosphereSceneManager,
   AtmosphereSceneState,
 } from './atmosphere/AtmosphereSceneManager';
+import { AtmosphereTextureFactory } from './atmosphere/AtmosphereTextureFactory';
 import { AtmosphereWeatherService, AtmosphereWeatherSnapshot, AtmosphereWeatherEventType } from './atmosphere/AtmosphereWeatherService';
 import { calculateAtmosphereAttitude } from './utils/atmosphere-attitude.util';
 import {
@@ -350,6 +351,7 @@ export class GameEngine {
   private readonly ATMOSPHERE_GROUND_DAMAGE_SPEED_MAX = 10;
   private readonly ATMOSPHERE_GROUND_DAMAGE_MIN = 1;
   private readonly ATMOSPHERE_GROUND_DAMAGE_MAX = 100;
+  private readonly ATMOSPHERE_GRAVITY_DEFAULT_SCALE = 3;
   private readonly ATMOSPHERE_IMPACT_PROBE_DURATION_MS = 2000;
   private readonly ATMOSPHERE_IMPACT_PROBE_LOG_INTERVAL_MS = 120;
   private readonly SPACE_THRUSTER_CLIP = 'sfx_thruster';
@@ -414,6 +416,7 @@ export class GameEngine {
   private sunExposureTimerMs: number = 0;
   private pendingLandingPanelTimer: ReturnType<typeof setTimeout> | null = null;
   // Atmosphere scene management
+  private atmosphereTextureFactory: AtmosphereTextureFactory | null = null;
   private atmosphereSceneManager: AtmosphereSceneManager | null = null;
   private atmosphereSceneState: AtmosphereSceneState = {
     active: false,
@@ -471,6 +474,7 @@ export class GameEngine {
   private weatherLightningFlashColor: [number, number, number] = [1, 1, 1];
   private weatherLightningShockStrength = 0;
   private weatherLightningVisualCooldownMs = 0;
+  private atmosphereReadabilityOverlayEnabled = true;
   // Atmosphere audio SFX
   private atmosphereAirRushHandle: ReturnType<AudioEngineService['play']> | null = null;
   private atmosphereStallHandle: ReturnType<AudioEngineService['play']> | null = null;
@@ -1789,6 +1793,10 @@ export class GameEngine {
       this.spaceship.boundingSphere.center = { ...this.spaceship.position };
     }
     this.lastShipPos = { ...this.spaceship.position };
+    try {
+      // Evitar que el recalculo de Void Energy cuente este teletransporte
+      this.spaceship.resetVoidEnergyBaseline();
+    } catch {}
   }
 
   private captureShipKineticsSnapshot(): ShipKineticsSnapshot | null {
@@ -4274,120 +4282,120 @@ export class GameEngine {
       case PlanetType.Tierra:
         return {
           key: 'tierra',
-          ground: [0.32, 0.44, 0.29],
-          sky: [0.24, 0.44, 0.72],
+          ground: [0.26, 0.40, 0.22],
+          sky: [0.18, 0.40, 0.68],
           palette: {
-            lowlands: [0.30, 0.40, 0.28],
-            highlands: [0.50, 0.56, 0.38],
-            dunes: [0.58, 0.47, 0.32],
-            polar: [0.86, 0.90, 0.96],
-            strata: [0.42, 0.52, 0.34],
-            valleys: [0.18, 0.32, 0.18],
-            plains: [0.32, 0.45, 0.29],
-            midlands: [0.48, 0.58, 0.38],
-            peaks: [0.76, 0.80, 0.74],
+            lowlands: [0.08, 0.16, 0.08],
+            highlands: [0.52, 0.68, 0.34],
+            dunes: [0.74, 0.54, 0.28],
+            polar: [0.92, 0.96, 0.98],
+            strata: [0.36, 0.44, 0.30],
+            valleys: [0.05, 0.12, 0.06],
+            plains: [0.22, 0.38, 0.18],
+            midlands: [0.44, 0.58, 0.30],
+            peaks: [0.88, 0.92, 0.80],
           },
         };
       case PlanetType.Gaseous:
         return {
           key: 'gaseous',
-          ground: [0.24, 0.30, 0.52],
-          sky: [0.12, 0.18, 0.42],
+          ground: [0.18, 0.26, 0.58],
+          sky: [0.10, 0.16, 0.40],
           palette: {
-            lowlands: [0.20, 0.26, 0.40],
-            highlands: [0.38, 0.42, 0.66],
-            dunes: [0.52, 0.48, 0.74],
-            polar: [0.64, 0.74, 0.96],
-            strata: [0.30, 0.34, 0.60],
-            valleys: [0.16, 0.20, 0.36],
-            plains: [0.24, 0.32, 0.48],
-            midlands: [0.36, 0.44, 0.62],
-            peaks: [0.70, 0.78, 0.94],
+            lowlands: [0.08, 0.14, 0.36],
+            highlands: [0.46, 0.66, 0.92],
+            dunes: [0.42, 0.48, 0.88],
+            polar: [0.78, 0.86, 0.98],
+            strata: [0.20, 0.32, 0.62],
+            valleys: [0.04, 0.08, 0.28],
+            plains: [0.16, 0.30, 0.52],
+            midlands: [0.28, 0.46, 0.74],
+            peaks: [0.84, 0.92, 0.98],
           },
         };
       case PlanetType.Giant:
         return {
           key: 'giant',
-          ground: [0.58, 0.42, 0.26],
-          sky: [0.36, 0.20, 0.50],
+          ground: [0.62, 0.34, 0.22],
+          sky: [0.40, 0.18, 0.48],
           palette: {
-            lowlands: [0.44, 0.30, 0.18],
-            highlands: [0.72, 0.52, 0.36],
-            dunes: [0.82, 0.60, 0.40],
-            polar: [0.94, 0.82, 0.70],
-            strata: [0.52, 0.32, 0.26],
-            valleys: [0.42, 0.24, 0.14],
-            plains: [0.58, 0.36, 0.22],
-            midlands: [0.74, 0.48, 0.30],
-            peaks: [0.90, 0.66, 0.42],
+            lowlands: [0.20, 0.08, 0.04],
+            highlands: [0.88, 0.54, 0.30],
+            dunes: [0.94, 0.66, 0.32],
+            polar: [0.96, 0.86, 0.70],
+            strata: [0.54, 0.26, 0.18],
+            valleys: [0.12, 0.05, 0.03],
+            plains: [0.42, 0.18, 0.10],
+            midlands: [0.68, 0.34, 0.18],
+            peaks: [0.98, 0.82, 0.60],
           },
         };
       case PlanetType.Ringed:
         return {
           key: 'ringed',
-          ground: [0.40, 0.32, 0.28],
-          sky: [0.22, 0.18, 0.38],
+          ground: [0.36, 0.30, 0.24],
+          sky: [0.20, 0.16, 0.34],
           palette: {
-            lowlands: [0.32, 0.26, 0.22],
-            highlands: [0.54, 0.46, 0.38],
-            dunes: [0.68, 0.52, 0.36],
-            polar: [0.82, 0.78, 0.72],
-            strata: [0.48, 0.38, 0.32],
-            valleys: [0.30, 0.22, 0.20],
-            plains: [0.44, 0.34, 0.30],
-            midlands: [0.58, 0.46, 0.38],
-            peaks: [0.78, 0.68, 0.60],
+            lowlands: [0.12, 0.10, 0.10],
+            highlands: [0.70, 0.60, 0.48],
+            dunes: [0.78, 0.60, 0.32],
+            polar: [0.90, 0.86, 0.78],
+            strata: [0.42, 0.34, 0.28],
+            valleys: [0.10, 0.08, 0.08],
+            plains: [0.28, 0.22, 0.18],
+            midlands: [0.48, 0.40, 0.32],
+            peaks: [0.96, 0.90, 0.78],
           },
         };
       case PlanetType.Dwarf:
         return {
           key: 'dwarf',
-          ground: [0.44, 0.28, 0.22],
-          sky: [0.28, 0.22, 0.38],
+          ground: [0.48, 0.26, 0.18],
+          sky: [0.26, 0.16, 0.32],
           palette: {
-            lowlands: [0.46, 0.30, 0.26],
-            highlands: [0.74, 0.50, 0.38],
-            dunes: [0.78, 0.48, 0.32],
-            polar: [0.90, 0.72, 0.62],
-            strata: [0.64, 0.38, 0.28],
-            valleys: [0.28, 0.14, 0.12],
-            plains: [0.46, 0.24, 0.18],
-            midlands: [0.62, 0.38, 0.26],
-            peaks: [0.86, 0.62, 0.42],
+            lowlands: [0.06, 0.04, 0.04],
+            highlands: [0.78, 0.46, 0.30],
+            dunes: [0.86, 0.48, 0.26],
+            polar: [0.94, 0.70, 0.56],
+            strata: [0.66, 0.34, 0.22],
+            valleys: [0.04, 0.02, 0.02],
+            plains: [0.28, 0.12, 0.10],
+            midlands: [0.54, 0.28, 0.18],
+            peaks: [0.96, 0.78, 0.54],
           },
         };
       case PlanetType.Protoplanet:
         return {
           key: 'protoplanet',
-          ground: [0.42, 0.36, 0.30],
-          sky: [0.26, 0.28, 0.36],
+          ground: [0.44, 0.34, 0.26],
+          sky: [0.24, 0.26, 0.34],
           palette: {
-            lowlands: [0.34, 0.28, 0.24],
-            highlands: [0.52, 0.44, 0.36],
-            dunes: [0.60, 0.48, 0.32],
-            polar: [0.70, 0.66, 0.60],
-            strata: [0.44, 0.32, 0.28],
-            valleys: [0.28, 0.22, 0.18],
-            plains: [0.42, 0.32, 0.24],
-            midlands: [0.55, 0.42, 0.32],
-            peaks: [0.74, 0.58, 0.44],
+            lowlands: [0.14, 0.10, 0.10],
+            highlands: [0.78, 0.58, 0.42],
+            dunes: [0.86, 0.60, 0.32],
+            polar: [0.92, 0.86, 0.74],
+            strata: [0.48, 0.34, 0.26],
+            valleys: [0.12, 0.08, 0.08],
+            plains: [0.32, 0.22, 0.18],
+            midlands: [0.56, 0.40, 0.30],
+            peaks: [0.94, 0.78, 0.56],
           },
         };
       default:
         return {
           key: 'default',
-          ground: [0.38, 0.33, 0.30],
-          sky: [0.08, 0.12, 0.24],
+          ground: [0.40, 0.30, 0.28],
+          sky: [0.10, 0.14, 0.26],
           palette: {
-            lowlands: [0.32, 0.28, 0.24],
-            highlands: [0.48, 0.42, 0.36],
-            dunes: [0.58, 0.46, 0.34],
-            polar: [0.78, 0.78, 0.82],
-            strata: [0.44, 0.36, 0.30],
-            valleys: [0.30, 0.24, 0.22],
-            plains: [0.44, 0.34, 0.28],
-            midlands: [0.58, 0.44, 0.34],
-            peaks: [0.78, 0.64, 0.54],
+            lowlands: [0.14, 0.12, 0.12],
+            highlands: [0.80, 0.60, 0.48],
+            dunes: [0.82, 0.58, 0.30],
+            polar: [0.94, 0.92, 0.88],
+            strata: [0.44, 0.34, 0.28],
+            valleys: [0.10, 0.08, 0.08],
+            plains: [0.32, 0.24, 0.20],
+            midlands: [0.56, 0.40, 0.32],
+            peaks: [0.96, 0.84, 0.72],
           },
         };
     }
@@ -4485,14 +4493,62 @@ export class GameEngine {
     if (!this.overlayRenderer || !this.isAtmosphereSceneActive()) {
       return;
     }
+    if (!this.atmosphereReadabilityOverlayEnabled) {
+      return;
+    }
+    const readabilityState = this.atmosphereSceneManager?.getSurfaceReadabilityState();
+    const overlaySoftCap = readabilityState?.overlaySoftCap ?? 0.85;
+    const highlightColor = readabilityState?.highlightColor;
+    const emphasis = readabilityState?.emphasis ?? 0;
+
     if (this.weatherOverlayAlpha > 1e-3) {
-      const alpha = this.clamp(this.weatherOverlayAlpha, 0, 0.85);
-      this.overlayRenderer.drawSolid(this.weatherOverlayColor, alpha);
+      const overlayColor: [number, number, number] = [
+        this.weatherOverlayColor[0],
+        this.weatherOverlayColor[1],
+        this.weatherOverlayColor[2],
+      ];
+      if (highlightColor && emphasis > 1e-3) {
+        const mix = 0.18 + emphasis * 0.32;
+        overlayColor[0] = this.lerpScalar(overlayColor[0], highlightColor[0], mix);
+        overlayColor[1] = this.lerpScalar(overlayColor[1], highlightColor[1], mix * 0.85);
+        overlayColor[2] = this.lerpScalar(overlayColor[2], highlightColor[2], mix * 0.65);
+      }
+      const alpha = this.clamp(this.weatherOverlayAlpha, 0, overlaySoftCap);
+      if (alpha > 1e-3) {
+        this.overlayRenderer.drawSolid(overlayColor, alpha);
+      }
     }
     if (this.weatherLightningFlashAlpha > 1e-3) {
       const flashAlpha = Math.min(1, this.weatherLightningFlashAlpha);
       this.overlayRenderer.drawSolid(this.weatherLightningFlashColor, flashAlpha);
     }
+  }
+
+  public setAtmosphereTextureDebugLogging(enabled: boolean): void {
+    if (!this.atmosphereSceneManager) {
+      return;
+    }
+    this.atmosphereSceneManager.setTextureDebugLogging(enabled);
+    this.logger.log(LogLevel.INFO, LogCategory.TEXTURE, 'Atmosphere texture debug logging', {
+      enabled,
+    });
+  }
+
+  public setAtmosphereReadabilityOverlayEnabled(enabled: boolean): void {
+    this.atmosphereReadabilityOverlayEnabled = !!enabled;
+    this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Atmosphere readability overlay', {
+      enabled: this.atmosphereReadabilityOverlayEnabled,
+    });
+  }
+
+  public setAtmosphereExteriorDetailLocked(enabled: boolean): void {
+    if (!this.atmosphereSceneManager) {
+      return;
+    }
+    this.atmosphereSceneManager.setExteriorDetailLocked(enabled);
+    this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Atmosphere exterior detail lock', {
+      enabled,
+    });
   }
 
   private renderParticleEffectsLayer(): void {
@@ -4734,7 +4790,12 @@ export class GameEngine {
         this.logger.log(LogLevel.ERROR, LogCategory.SHADERS, 'No se pudieron inicializar los shaders');
         return false;
       }
-      this.atmosphereSceneManager = new AtmosphereSceneManager(this.gl, this.shaderManager);
+      this.atmosphereTextureFactory = new AtmosphereTextureFactory();
+      this.atmosphereSceneManager = new AtmosphereSceneManager(
+        this.gl,
+        this.shaderManager,
+        this.atmosphereTextureFactory,
+      );
 
       // Inicializar gestor de texturas
       this.textureManager = new TextureManager(this.gl);
@@ -4980,6 +5041,15 @@ export class GameEngine {
         w.Debug.Atmosphere.setCloudsEnabled = (v: boolean) => {
           this.atmosphereCloudsEnabled = v !== false;
           this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Atmosphere clouds toggle', { value: this.atmosphereCloudsEnabled });
+        };
+        w.Debug.Atmosphere.setTextureDebug = (v: boolean) => {
+          this.setAtmosphereTextureDebugLogging(v !== false);
+        };
+        w.Debug.Atmosphere.setReadabilityOverlayEnabled = (v: boolean) => {
+          this.setAtmosphereReadabilityOverlayEnabled(v !== false);
+        };
+        w.Debug.Atmosphere.setExteriorDetailLocked = (v: boolean) => {
+          this.setAtmosphereExteriorDetailLocked(v !== false);
         };
         w.Debug.Atmosphere.snapshot = () => {
           try {
@@ -9212,9 +9282,23 @@ export class GameEngine {
     if (!this.spaceship || !this.atmosphereSceneState.active || !this.atmosphereSceneState.context) {
       return;
     }
+    const landingHoldActive = this.landingPanelAwaitingUser && this.landingTouchdownContext && !this.takeoffSequenceActive;
+    if (landingHoldActive) {
+      const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
+      const speedFactor = this.computeAtmosphereGravitySpeedFactor(speed);
+      this.atmosphereGravityTelemetry = {
+        altitude: 0,
+        gravityPerSecond: 0,
+        finalGravity: 0,
+        speedFactor,
+      };
+      return;
+    }
+    const context = this.atmosphereSceneState.context;
     const center = this.atmosphereSceneState.center;
     const groundRadius = this.atmosphereSceneState.groundRadius;
     const skyRadius = this.atmosphereSceneState.skyRadius;
+    const gravityScale = this.getAtmosphereGravityScaleForPlanet(context?.planetType);
 
     // Vector desde el centro hasta la nave
     const dx = this.spaceship.position.x - center.x;
@@ -9227,15 +9311,16 @@ export class GameEngine {
       return;
     }
 
-    // Altura sobre la superficie (distFromCenter - groundRadius)
-    const altitude = distFromCenter - groundRadius;
+    // Altura sobre la esfera base (sin relieve)
+    const shellAltitude = distFromCenter - groundRadius;
+    const atmosphereThickness = Math.max(1, skyRadius - groundRadius);
 
-    // La gravedad solo actúa dentro de la atmósfera (entre groundRadius y skyRadius)
-    if (altitude < 0 || altitude > (skyRadius - groundRadius)) {
+    // La gravedad solo actúa mientras la nave permanezca dentro del domo atmosférico
+    if (shellAltitude > atmosphereThickness) {
       const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
       const speedFactor = this.computeAtmosphereGravitySpeedFactor(speed);
       this.atmosphereGravityTelemetry = {
-        altitude,
+        altitude: shellAltitude,
         gravityPerSecond: 0,
         finalGravity: 0,
         speedFactor,
@@ -9243,10 +9328,13 @@ export class GameEngine {
       return;
     }
 
+    // Altitud real respecto a la superficie procedural (incluye relieve y radio del ship)
+    const altitude = Math.max(0, this.computeAltitudeAboveGround());
+
     // Factor de intensidad: máxima (1.0) cerca de la superficie, decae hacia el límite del cielo
-    const maxHeight = Math.max(1, skyRadius - groundRadius);
-    const MIN_FALL_RATE = 10.0; // unidades/segundo a 1000u de altura (o punto máximo disponible)
-    const MAX_FALL_RATE = 30.0; // unidades/segundo cerca del suelo (≈1u de altura)
+    const maxHeight = atmosphereThickness;
+    const MIN_FALL_RATE = 10.0; // unidades/segundo base a 1000u (se multiplica por gravityScale)
+    const MAX_FALL_RATE = 30.0; // unidades/segundo base cerca del suelo (se multiplica por gravityScale)
     const lowReference = 1;
     const highReference = Math.max(lowReference + 1, Math.min(1000, maxHeight));
     const interiorRange = Math.max(1, highReference - lowReference);
@@ -9260,11 +9348,12 @@ export class GameEngine {
     const gravityPerSecond = innerFallRate * outerFalloff;
     const speed = Math.abs(this.spaceship.currentSpeed ?? 0);
     const speedFactor = this.computeAtmosphereGravitySpeedFactor(speed);
-    const finalGravity = gravityPerSecond * speedFactor;
+    const scaledGravity = gravityPerSecond * speedFactor * gravityScale;
+    const finalGravity = Math.max(0, scaledGravity);
     this.atmosphereGravityTelemetry = {
       altitude,
       gravityPerSecond,
-      finalGravity: Math.max(0, finalGravity),
+      finalGravity,
       speedFactor,
     };
     if (gravityPerSecond <= 0 || finalGravity <= 0) {
@@ -9282,6 +9371,25 @@ export class GameEngine {
     this.spaceship.externalForces.x += dirX * velocityChange;
     this.spaceship.externalForces.y += dirY * velocityChange;
     this.spaceship.externalForces.z += dirZ * velocityChange;
+  }
+
+  private getAtmosphereGravityScaleForPlanet(type?: PlanetType): number {
+    switch (type) {
+      case PlanetType.Dwarf:
+        return 1;
+      case PlanetType.Protoplanet:
+        return 0;
+      case PlanetType.Ringed:
+        return 5;
+      case PlanetType.Giant:
+      case PlanetType.Sun:
+        return 10;
+      case PlanetType.Tierra:
+      case PlanetType.Planetoid:
+        return 3;
+      default:
+        return this.ATMOSPHERE_GRAVITY_DEFAULT_SCALE;
+    }
   }
 
   /**
@@ -11430,8 +11538,9 @@ export class GameEngine {
   }
 
   private initiateSpellCast(spell: SpellType, target: ITargetable | null): void {
-    if (this.camera && this.camera.getCurrentMode() !== CameraMode.INMOVILE_EXTERNAL) {
-      this.camera.setCameraMode(CameraMode.INMOVILE_EXTERNAL);
+    const desiredCamera = spell === SpellType.SPEED ? CameraMode.COCKPIT : CameraMode.INMOVILE_EXTERNAL;
+    if (this.camera && this.camera.getCurrentMode() !== desiredCamera) {
+      try { this.camera.setCameraMode(desiredCamera); } catch {}
     }
     const precastDelayMs = this.getPrecastChantDurationMs();
     const requiresChant = spell !== SpellType.SPEED;
@@ -13383,6 +13492,7 @@ export class GameEngine {
       this.atmosphereSceneManager.dispose();
       this.atmosphereSceneManager = null;
     }
+    this.atmosphereTextureFactory = null;
     this.restoreMusicAfterAtmosphere();
     this.atmosphereSceneState = this.createDefaultAtmosphereSceneState();
     

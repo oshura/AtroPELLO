@@ -1282,12 +1282,26 @@ export class ShaderManager {
     if (loc) this.gl.uniform1f(loc, 1.0);
   }
 
+  /** Garantiza que el programa esperado esté activo antes de escribir uniforms */
+  private ensureProgramActive(program: WebGLProgram | null, label: string): void {
+    if (!this.gl || !program) {
+      return;
+    }
+
+    const currentProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM) as WebGLProgram | null;
+    if (currentProgram !== program) {
+      this.gl.useProgram(program);
+      GameLogger.trace(LogCategory.SHADERS, 'Reactivando shader para escritura de uniformes', { label });
+    }
+  }
+
   /**
    * Establece las matrices para el programa básico
    */
   public setBasicMatrices(modelMatrix: Float32Array, viewMatrix: Float32Array, projectionMatrix: Float32Array): void {
     if (!this.gl || !this.basicProgram) return;
 
+    this.ensureProgramActive(this.basicProgram, 'setBasicMatrices');
     this.gl.uniformMatrix4fv(this.basicUniforms['modelMatrix'], false, modelMatrix);
     this.gl.uniformMatrix4fv(this.basicUniforms['viewMatrix'], false, viewMatrix);
     this.gl.uniformMatrix4fv(this.basicUniforms['projectionMatrix'], false, projectionMatrix);
@@ -1304,6 +1318,7 @@ export class ShaderManager {
   ): void {
     if (!this.gl || !this.litProgram) return;
 
+    this.ensureProgramActive(this.litProgram, 'setLitMatrices');
     this.gl.uniformMatrix4fv(this.litUniforms['modelMatrix'], false, modelMatrix);
     this.gl.uniformMatrix4fv(this.litUniforms['viewMatrix'], false, viewMatrix);
     this.gl.uniformMatrix4fv(this.litUniforms['projectionMatrix'], false, projectionMatrix);
@@ -1321,6 +1336,7 @@ export class ShaderManager {
   ): void {
     if (!this.gl || !this.litProgram) return;
 
+    this.ensureProgramActive(this.litProgram, 'setLighting');
     this.gl.uniform3fv(this.litUniforms['lightDirection'], lightDirection);
     this.gl.uniform3fv(this.litUniforms['lightColor'], lightColor);
     this.gl.uniform3fv(this.litUniforms['ambientColor'], ambientColor);
@@ -1330,6 +1346,7 @@ export class ShaderManager {
   /** Establece parámetros especulares y cámara para el shader lit */
   public setSpecular(cameraPos: Float32Array, specularStrength: number, shininess: number): void {
     if (!this.gl || !this.litProgram) return;
+    this.ensureProgramActive(this.litProgram, 'setSpecular');
     this.gl.uniform3fv(this.litUniforms['cameraPos'], cameraPos);
     this.gl.uniform1f(this.litUniforms['specularStrength'], specularStrength);
     this.gl.uniform1f(this.litUniforms['shininess'], shininess);
@@ -1338,6 +1355,7 @@ export class ShaderManager {
   /** Configura una luz puntual emisiva opcional para el shader lit */
   public setPointLightLit(pos: Float32Array, color: Float32Array, intensity: number, radius: number, twoSided: boolean): void {
     if (!this.gl || !this.litProgram) return;
+    this.ensureProgramActive(this.litProgram, 'setPointLightLit');
     if (this.litUniforms['pointPos']) this.gl.uniform3fv(this.litUniforms['pointPos'], pos);
     if (this.litUniforms['pointColor']) this.gl.uniform3fv(this.litUniforms['pointColor'], color);
     if (this.litUniforms['pointIntensity']) this.gl.uniform1f(this.litUniforms['pointIntensity'], intensity);
@@ -1350,6 +1368,7 @@ export class ShaderManager {
    */
   public setLitColor(color: Float32Array): void {
     if (!this.gl || !this.litProgram) return;
+    this.ensureProgramActive(this.litProgram, 'setLitColor');
     this.gl.uniform3fv(this.litUniforms['baseColor'], color);
   }
 
@@ -1358,6 +1377,7 @@ export class ShaderManager {
    */
   public setLitOpacity(alpha: number): void {
     if (!this.gl || !this.litProgram) return;
+    this.ensureProgramActive(this.litProgram, 'setLitOpacity');
     const loc = this.litUniforms['opacity'];
     if (loc) this.gl.uniform1f(loc, alpha);
   }
@@ -1381,6 +1401,7 @@ export class ShaderManager {
   ): void {
     if (!this.gl || !this.texturedProgram) return;
 
+    this.ensureProgramActive(this.texturedProgram, 'setTexturedMatrices');
     this.gl.uniformMatrix4fv(this.texturedUniforms['modelMatrix'], false, modelMatrix);
     this.gl.uniformMatrix4fv(this.texturedUniforms['viewMatrix'], false, viewMatrix);
     this.gl.uniformMatrix4fv(this.texturedUniforms['projectionMatrix'], false, projectionMatrix);
@@ -1399,6 +1420,7 @@ export class ShaderManager {
   ): void {
     if (!this.gl || !this.texturedProgram) return;
 
+    this.ensureProgramActive(this.texturedProgram, 'setTexturedLighting');
     this.gl.uniform3fv(this.texturedUniforms['lightDirection'], lightDirection);
     this.gl.uniform3fv(this.texturedUniforms['lightColor'], lightColor);
     this.gl.uniform3fv(this.texturedUniforms['ambientColor'], ambientColor);
@@ -1409,6 +1431,7 @@ export class ShaderManager {
   /** Configura una luz puntual emisiva opcional para el shader texturizado */
   public setPointLightTextured(pos: Float32Array, color: Float32Array, intensity: number, radius: number, twoSided: boolean): void {
     if (!this.gl || !this.texturedProgram) return;
+    this.ensureProgramActive(this.texturedProgram, 'setPointLightTextured');
     if (this.texturedUniforms['pointPos']) this.gl.uniform3fv(this.texturedUniforms['pointPos'], pos);
     if (this.texturedUniforms['pointColor']) this.gl.uniform3fv(this.texturedUniforms['pointColor'], color);
     if (this.texturedUniforms['pointIntensity']) this.gl.uniform1f(this.texturedUniforms['pointIntensity'], intensity);
@@ -1422,6 +1445,7 @@ export class ShaderManager {
   public setTexturedTextures(metallicTexture: WebGLTexture, gradientTexture: WebGLTexture): void {
     if (!this.gl || !this.texturedProgram) return;
 
+    this.ensureProgramActive(this.texturedProgram, 'setTexturedTextures');
     // Activar y vincular textura metálica en slot 0
     this.gl.activeTexture(this.gl.TEXTURE0);
     this.gl.bindTexture(this.gl.TEXTURE_2D, metallicTexture);

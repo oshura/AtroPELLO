@@ -38,6 +38,9 @@ export interface PanelEventCallbacks {
   
   // 3D targeting callback (when no panel is active)
   on3DClick?: (event: MouseEvent) => void;
+
+  // Pointer activity notifications (any canvas interaction)
+  onPointerActivity?: () => void;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -117,6 +120,7 @@ export class PanelEventCoordinator {
    * Route mouse clicks based on active panel
    */
   private handleClick(event: MouseEvent): void {
+    this.callbacks.onPointerActivity?.();
     if (event.button !== 0) {
       return;
     }
@@ -150,6 +154,7 @@ export class PanelEventCoordinator {
   }
 
   private handlePointerDown(event: MouseEvent): void {
+    this.callbacks.onPointerActivity?.();
     if (this.inputsBlocked) {
       event.preventDefault();
       event.stopPropagation();
@@ -174,6 +179,7 @@ export class PanelEventCoordinator {
   }
 
   private handlePointerUp(event: MouseEvent): void {
+    this.callbacks.onPointerActivity?.();
     if (this.inputsBlocked) {
       event.preventDefault();
       event.stopPropagation();
@@ -198,6 +204,7 @@ export class PanelEventCoordinator {
   }
 
   private handleContextMenu(event: MouseEvent): void {
+    this.callbacks.onPointerActivity?.();
     if (this.mapEnabled || this.grimoireEnabled || this.inventoryEnabled) {
       event.preventDefault();
       event.stopPropagation();
@@ -208,6 +215,7 @@ export class PanelEventCoordinator {
    * Route mouse movement to appropriate panel
    */
   private handleMouseMove(event: MouseEvent): void {
+    this.callbacks.onPointerActivity?.();
     if (this.inputsBlocked) {
       return;
     }
@@ -231,6 +239,7 @@ export class PanelEventCoordinator {
    * Route mouse wheel events (only for map zoom)
    */
   private handleWheel(event: WheelEvent): void {
+    this.callbacks.onPointerActivity?.();
     if (this.inputsBlocked) {
       event.preventDefault();
       event.stopPropagation();

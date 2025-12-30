@@ -29,9 +29,25 @@
         <ul>
           <li>Cada tipo de planeta mezcla cuatro zonas cromáticas (valle, planicie, media montaña, picos) más dunas y casquetes.</li>
           <li>El heightmap procedural usa dos capas de ruido: una desplaza la malla y la otra dibuja vetas/desiertos.</li>
+          <li>Cuando el relieve baja del 25&nbsp;% el terreno se vuelve casi carbón y aparecen cráteres/ondas automáticamente; si sigues viendo un color plano, desciende un poco más y la textura saltará sin tocar ajustes QA.</li>
           <li>Las zonas polares mezclan tonos fríos; las latitudes bajas mezclan arenas o brea según el bioma.</li>
           <li>El horizonte artificial y el terreno comparten normal, así no hay popping cuando termina la animación de landing.</li>
         </ul>
+      </section>
+
+      <section class="section" id="lectura-relieve">
+        <h2>Cómo leer crestas con clima severo</h2>
+        <p>El suelo atmosférico ahora destaca las crestas y dunas con un halo ámbar. Si ves luz dorada es porque ese punto está “mirando” al cielo, y por lo general significa que puedes pasar por encima sin chocar.</p>
+        <ul>
+          <li>Los picos brillan de blanco cálido cuando superan la media montaña. Si dejan de brillar es que entraste en un valle o cañón.</li>
+          <li>Los parches grises con vetas diagonales indican roca firme; los parches anaranjados muy suaves son arena suelta. Úsalos para aterrizar en diagonal sin que la nave rebote.</li>
+          <li>Cuando hay niebla o polvo, el filtro se aclara automáticamente y nunca cubre todo el domo: la misma luz cálida de las crestas atraviesa la nube, de modo que siempre conservas líneas de horizonte.</li>
+          <li>El color también codifica la altura: basalto casi negro en las cuencas, verdes/óxidos intensos en planicies y crema brillante en cumbres. Si ves un degradado verde→ámbar→crema significa que estás encarando una pendiente real.</li>
+          <li>Los cráteres se ven como sombras circulares oscuras; las vetas de roca son diagonales marcadas y las dunas muestran ondas claras. Si no distingues texturas, baja un poco más: ahora se mezclan con más contraste y aparecen incluso a 400&nbsp;u del suelo.</li>
+          <li>Las zonas negras perfectas son pozos de cráter (centro oscuro) y casi siempre están rodeadas por un anillo claro: apúntale al anillo si quieres sobrevolarlo o evita el círculo completo si aterrizas en manual.</li>
+          <li>Los parches se repiten como mosaicos, así que cada pocos kilómetros verás otro conjunto de cráter + halo o dunas onduladas: si no aparece uno tras un tramo largo, desciende un poco y la textura siguiente saltará.</li>
+        </ul>
+        <p>Consejo: si estás volando casi a ciegas, apunta el morro hacia el último brillo cálido visible y mantén la altitud especificada por el HUD; el filtro te dejará ver suficiente borde para recuperar la trayectoria.</p>
       </section>
 
       <section class="section" id="tipos">
@@ -108,6 +124,19 @@
             <p>Último planeta principal; más allá, solo espacio profundo.</p>
           </article>
         </div>
+      </section>
+
+      <section class="section" id="mars-terrain">
+        <h2>Cómo interpretar el terreno de Marte</h2>
+        <p>Las tormentas permanentes de Marte aplastan la paleta, pero ahora el suelo genera pistas visuales muy nítidas. Úsalas para navegar incluso cuando la visibilidad cae.</p>
+        <ul>
+          <li>Los halos ámbar y las vetas crema marcan crestas seguras: apunta el morro a cualquier brillo cálido para sobrevolar dunas sin rozar el casco.</li>
+          <li>Los cráteres se leen como sombras circulares con un anillo claro alrededor; recorta por el anillo si quieres ganar altura rápida o evita el círculo oscuro cuando prepares un aterrizaje manual.</li>
+          <li>Si todo luce plano, baja a menos de 350&nbsp;u y espera dos segundos: los patrones se recalculan y verás mosaicos repetidos de cráter/veta/duna que sirven como “balizas” cada pocos kilómetros.</li>
+          <li>El panel de telemetría atmosférica (HUD) muestra una barra de mezcla TEXTURE: mientras se mantenga en la franja verde (~30&nbsp;%), el relieve se ve correcto. Si salta al amarillo, reduce velocidad y altitud hasta que vuelva a estabilizarse.</li>
+          <li>Durante tormentas de polvo, el filtro se aclara automáticamente para que los halos calientes atraviesen la nube; si pierdes referencias, mantén la altitud indicada en el HUD y sigue el último brillo visible.</li>
+        </ul>
+        <p><strong>Tip QA:</strong> si necesitas datos exactos, abre la consola e introduce <code>Debug.enableLog('TEXTURE')</code> seguido de <code>Debug.Atmosphere.setTextureDebug(true)</code>. Las lecturas «avgMix» deberían quedarse cerca del 30&nbsp;% y el log mostrará «HUDTexture updated» sin errores.</p>
       </section>
 
       <section class="section" id="landing">

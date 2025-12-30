@@ -106,6 +106,7 @@
           </article>
         </div>
         <p class="note">La rueda del ratón ajusta el zoom; el vector de vuelo se dibuja directamente sobre la pantalla y cambia con tu velocidad.</p>
+        <p class="note">En vuelo libre el cursor desaparece solo tras 5&nbsp;s sin moverlo; cualquier gesto sobre el canvas o abrir un panel lo trae de vuelta al momento.</p>
       </section>
 
       <section class="section" id="hud-marquee">
@@ -180,6 +181,7 @@
       <section class="section" id="impactos">
         <h2>Impactos contra el suelo</h2>
         <ul>
+          <li>La gravedad atmosférica se adapta al planeta: la base son 10&nbsp;u/s (a 1000&nbsp;u) y 30&nbsp;u/s (pegado al suelo), pero los Dwarf mantienen ×1, los Protoplanet reducen a ×0, los Ringed aplican ×5, los Giant y los soles aplican ×10 y las Tierras / Planetoids siguen en ×3 (valor por defecto para el resto). A 3&nbsp;u/s sólo sientes el 35&nbsp;% del tirón y desaparece al superar 5&nbsp;u/s.</li>
           <li>Rebote físico inmediato con restitución 0.28 y amortiguación lateral 0.65.</li>
           <li>Daño lineal: 1&nbsp;HP a 1&nbsp;u/s → 100&nbsp;HP a 10&nbsp;u/s.</li>
           <li>La nave no puede atravesar promontorios: las colisiones consultan el mismo relieve que ves en pantalla, así que cualquier protuberancia real detiene el fuselaje justo donde toca.</li>
@@ -204,6 +206,7 @@
           <li>Impactos duros generan aviso «Impacto atmosférico» y daño proporcional.</li>
           <li>El panel de aterrizaje corta loops de clima y deja solo el siseo de viento hasta que cierres. La nave queda completamente fijada al suelo: no recibe empujes del auto-vector ni deriva por turbulencia, y la cámara permanece clavada en la toma cinematográfica (con la nariz anclada) hasta que pulses “Quedarse” o “Despegar”, así que el mismo plano acompaña todo el menú.</li>
           <li>Cuando pulses <strong>Despegar</strong>, la nave se eleva unos 50&nbsp;u con una coreografía breve, despliega las alas (progreso 1&nbsp;→&nbsp;0) hasta desbloquearlas a 90° exactos, deja que la base salga del casco mientras el thruster gana potencia, mantiene <em>currentSpeed</em> en ≈5&nbsp;u/s y te devuelve los mandos en cámara de cabina. Durante los primeros 5&nbsp;s la cámara conserva la toma cinematográfica de landing y sigue al fuselaje con el mismo encuadre, de modo que ves cómo sale del suelo antes de que el modo cabina vuelva a conectarse. Durante ese spool el pico vuelve a alzarse gradualmente, así que notarás cómo el anclaje desaparece justo antes de recuperar el control.</li>
+          <li>La transición sistema solar → atmósfera tampoco te descuenta Void Energy. El contador queda congelado durante la cinemática y el engine reancla la muestra justo al recuperar los mandos, así que el salto hasta la capa de entrada sale totalmente gratis.</li>
           <li>Al superar 1000&nbsp;u (o el clearance indicado) la transición de salida se limita al fade: la pantalla cae a negro, el engine muestrea de nuevo el planeta y coloca la nave exactamente en el perímetro exterior, a 50&nbsp;u sobre la superficie y perfectamente nivelada con el horizonte. La Void Energy queda pausada durante el desplazamiento automático, así que no pierdes ni una unidad por el salto. El fade-in ya te muestra en el sistema solar, en cámara de cabina, avanzando a 5&nbsp;u/s tangencialmente al planeta; recuperas los mandos en ese mismo instante y la nave continúa el despegue sin ninguna cinemática adicional.</li>
         </ol>
       </section>
