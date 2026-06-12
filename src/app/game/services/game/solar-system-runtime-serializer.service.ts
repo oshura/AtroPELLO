@@ -1,12 +1,12 @@
 import { Injectable } from '@angular/core';
-import { EyeState, SolarSystemSnapshot } from '../../types/solar-system.types';
+import { EyeState, PlanetSnapshot, SolarSystemSnapshot } from '../../types/solar-system.types';
 import { GameInitializer } from '../../../services/game/game-initializer.service';
 import { PortalPersistenceService } from './portal-persistence.service';
 import { GameStateStore } from '../../../services/game/game-state.store';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
 import { GameEngine } from '../../GameEngine';
 import { SolarSystemSerializer } from './solar-system-serializer';
-import { PlanetIntelStatus, PlanetMissionState, PlanetResourceStock } from '../../types/planet-intel.types';
+import { capturePlanetSnapshot, isSunInstance } from './planet-state.codec';
 import { GameObjectAnimosity } from '../../types/animosity.types';
 import { LesserBeingInstanceSnapshot } from '../../types/cosmic-life.types';
 
@@ -16,41 +16,6 @@ interface RuntimeSunState {
   position: { x: number; y: number; z: number };
   scale?: { x: number; y: number; z: number };
   radius?: number;
-}
-
-interface RuntimePlanetState {
-  id: string;
-  customName?: string;
-  position: { x: number; y: number; z: number };
-  scale?: { x: number; y: number; z: number };
-  radius?: number;
-  planetType?: string;
-  baseColorName?: string;
-  probabilityOfLifePct?: number;
-  orbitCenter?: { x: number; y: number; z: number };
-  semiMajor?: number;
-  semiMinor?: number;
-  orbitOrientation?: number;
-  orbitAngle?: number;
-  orbitAngularSpeed?: number;
-  orbitNormal?: { x: number; y: number; z: number };
-  orbitU?: { x: number; y: number; z: number };
-  inhabitants?: string;
-  lesserBeing?: string | null;
-  visited?: boolean;
-  lifeScanned?: boolean;
-  creatureScanned?: boolean;
-  hasArtifact?: boolean;
-  artifactIntelStatus?: PlanetIntelStatus;
-  hasVoidMass?: boolean;
-  voidMassCapacity?: number;
-  voidMassRemaining?: number;
-  voidMassIntelStatus?: PlanetIntelStatus;
-  civilizationIntelStatus?: PlanetIntelStatus;
-  lesserBeingIntelStatus?: PlanetIntelStatus;
-  pendingMission?: PlanetMissionState | null;
-  resourceStock?: PlanetResourceStock;
-  animosity?: string;
 }
 
 interface RuntimeClusterState {
@@ -108,7 +73,9 @@ export class SolarSystemRuntimeSerializerService {
     try {
       const snapshot = SolarSystemSerializer.fromState({
         sun: this.captureSun(),
-        planets: this.capturePlanets(),
+        planets: [],
+        // Capturados por el códec (fuente única de campos persistentes de planeta).
+        planetSnapshots: this.capturePlanets(),
         clusters: this.captureClusters(resolvedEngine),
         portals: this.capturePortals(),
         planetDebris: this.capturePlanetDebris(resolvedEngine)
@@ -166,41 +133,12 @@ export class SolarSystemRuntimeSerializerService {
     };
   }
 
-  private capturePlanets(): RuntimePlanetState[] {
-    return this.gameState.planets.map((planet: any) => ({
-      id: planet.id,
-      customName: planet.customName,
-      position: this.cloneVec(planet.position) ?? { x: 0, y: 0, z: 0 },
-      scale: this.cloneVec(planet.scale),
-      radius: typeof planet.radius === 'number' ? planet.radius : (planet.scale?.x ?? undefined),
-      planetType: planet.planetType,
-      baseColorName: planet.baseColorName,
-      probabilityOfLifePct: planet.probabilityOfLifePct,
-      orbitCenter: this.cloneVec(planet.orbitCenter),
-      semiMajor: planet.semiMajor,
-      semiMinor: planet.semiMinor,
-      orbitOrientation: planet.orbitOrientation,
-      orbitAngle: planet.orbitAngle,
-      orbitAngularSpeed: planet.orbitAngularSpeed,
-      orbitNormal: this.cloneVec(planet.orbitNormal),
-      orbitU: this.cloneVec(planet.orbitU),
-      inhabitants: planet.inhabitants,
-      lesserBeing: planet.lesserBeing,
-      visited: planet.visited,
-      lifeScanned: planet.lifeScanned,
-      creatureScanned: planet.creatureScanned,
-      hasArtifact: planet.hasArtifact,
-      artifactIntelStatus: planet.artifactIntelStatus,
-      hasVoidMass: planet.hasVoidMass,
-      voidMassCapacity: planet.voidMassCapacity,
-      voidMassRemaining: planet.voidMassRemaining,
-      voidMassIntelStatus: planet.voidMassIntelStatus,
-      civilizationIntelStatus: planet.civilizationIntelStatus,
-      lesserBeingIntelStatus: planet.lesserBeingIntelStatus,
-      pendingMission: planet.pendingMission ? { ...planet.pendingMission } : null,
-      resourceStock: planet.resourceStock ? { ...planet.resourceStock } : undefined,
-      animosity: planet.animosity
-    }));
+  private capturePlanets(): PlanetSnapshot[] {
+    // El sol vive dentro de gameState.planets (deuda F4): se excluye aquí porque ya se
+    // captura por separado en captureSun(); de lo contrario se duplicaría al re-aplicar.
+    return this.gameState.planets
+      .filter(planet => !isSunInstance(planet))
+      .map(planet => capturePlanetSnapshot(planet));
   }
 
   private captureClusters(engine: GameEngine): RuntimeClusterState[] {

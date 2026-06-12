@@ -52,7 +52,13 @@ export class SolarSystemService {
     try { return this.generator.generateUniquePlanetName(); } catch { return 'Unnamed'; }
   }
 
-  /** Apply a snapshot: clears current system objects and instantiates new ones; returns portal info created. */
+  /**
+   * Apply a snapshot: clears current system objects and instantiates new ones; returns portal info created.
+   *
+   * @deprecated Copia paralela de GameEngine.applySolarSystemSnapshot (la ruta viva).
+   * No añadir lógica aquí: se eliminará en la Fase 6 del plan (docs/ARQUITECTURA.md).
+   * Cualquier campo nuevo de planeta va a planet-state.codec.ts, no a este método.
+   */
   apply(snapshot: SolarSystemSnapshot, engine: GameEngine): { portalsCreated: PortalSnapshot[] } {
     GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'Applying solar system snapshot', { id: snapshot.id, planets: snapshot.planets.length, clusters: snapshot.clusters?.length || 0 });
 

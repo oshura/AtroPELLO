@@ -28,6 +28,12 @@ export class SpaceshipDebugCollector {
   initialize(gameEngine: GameEngine): void {
     this.gameEngine = gameEngine;
     this.debugOverlay.initialize();
+    this.debugOverlay.registerAtmosphereWireframeController(
+      () => !!this.gameEngine?.isAtmosphereWireframeEnabled?.(),
+      (enabled: boolean) => {
+        this.gameEngine?.setAtmosphereWireframeEnabled?.(enabled);
+      },
+    );
   }
 
   /**

@@ -35,6 +35,9 @@ export class DebugOverlayService {
   private isVisible: boolean = false;
   private updateInterval: number | null = null;
   private currentData: SpaceshipDebugData | null = null;
+  private wireframeEnabled: boolean = false;
+  private wireframeGetter?: () => boolean;
+  private wireframeSetter?: (enabled: boolean) => void;
 
   constructor(@Inject(PLATFORM_ID) private platformId: Object) {}
 
@@ -47,6 +50,13 @@ export class DebugOverlayService {
     }
 
     this.createOverlayElement();
+  }
+
+  registerAtmosphereWireframeController(getter: () => boolean, setter: (enabled: boolean) => void): void {
+    this.wireframeGetter = getter;
+    this.wireframeSetter = setter;
+    this.wireframeEnabled = this.getWireframeState();
+    this.refreshWireframeUI();
   }
 
   /**
@@ -71,6 +81,13 @@ export class DebugOverlayService {
         <button id="debug-toggle" title="Toggle Debug Overlay">×</button>
       </div>
       <div class="debug-content">
+        <div class="debug-section debug-section--controls">
+          <h4>🪐 Terreno</h4>
+          <div class="debug-controls">
+            <button id="wireframe-toggle" class="debug-btn">Wireframe</button>
+            <span id="wireframe-status" class="debug-tag">OFF</span>
+          </div>
+        </div>
         <div class="debug-section">
           <h4>📍 Position (Cartesian)</h4>
           <div class="debug-values">
@@ -196,6 +213,40 @@ export class DebugOverlayService {
         text-transform: uppercase;
       }
 
+      #debug-overlay .debug-section--controls {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+      }
+
+      #debug-overlay .debug-controls {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      #debug-overlay .debug-btn {
+        background: #111;
+        color: #00ff00;
+        border: 1px solid #00ff00;
+        padding: 4px 8px;
+        border-radius: 4px;
+        cursor: pointer;
+      }
+
+      #debug-overlay .debug-btn:hover {
+        background: #00ff00;
+        color: #000;
+      }
+
+      #debug-overlay .debug-tag {
+        padding: 2px 6px;
+        border-radius: 4px;
+        border: 1px solid #00ff00;
+        font-size: 10px;
+      }
+
       #debug-overlay .debug-values {
         display: flex;
         flex-direction: column;
@@ -231,6 +282,18 @@ export class DebugOverlayService {
     if (toggleButton) {
       toggleButton.addEventListener('click', () => {
         this.hide();
+      });
+    }
+
+    const wireframeButton = this.overlayElement.querySelector('#wireframe-toggle');
+    if (wireframeButton) {
+      wireframeButton.addEventListener('click', () => {
+        const next = !this.getWireframeState();
+        this.wireframeEnabled = next;
+        if (this.wireframeSetter) {
+          this.wireframeSetter(next);
+        }
+        this.refreshWireframeUI();
       });
     }
   }
@@ -362,6 +425,25 @@ export class DebugOverlayService {
       this.show();
     }
     return this.isVisible;
+  }
+
+  private refreshWireframeUI(): void {
+    if (!this.overlayElement) {
+      return;
+    }
+    const status = this.overlayElement.querySelector('#wireframe-status');
+    if (status) {
+      status.textContent = this.getWireframeState() ? 'ON' : 'OFF';
+    }
+  }
+
+  private getWireframeState(): boolean {
+    try {
+      if (this.wireframeGetter) {
+        return !!this.wireframeGetter();
+      }
+    } catch {}
+    return this.wireframeEnabled;
   }
 
   /**

@@ -21,6 +21,7 @@ import { HumanSolarSystemService } from './services/game/human-solar-system.serv
 import { PortalPersistenceService } from './services/game/portal-persistence.service';
 import { PortalRegistryService } from './services/game/portal-registry.service';
 import { SolarSystemRuntimeSerializerService } from './services/game/solar-system-runtime-serializer.service';
+import { applyPlanetSnapshotFields, defaultColorForKind, normalizePlanetKind } from './services/game/planet-state.codec';
 import { PORTAL_SNAPSHOT_LABELS } from './constants/portal-snapshot-labels';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
@@ -101,6 +102,7 @@ import {
   computeAtmosphereDetailFactor,
   sampleAtmosphereSurfaceRadius,
   sampleAtmosphereSurfaceRadiusAlongNormal,
+  terrainSeedFromPlanetId,
 } from './atmosphere/terrain-sampler';
 
 interface AuxiliaryAbilityRuntime {
@@ -431,6 +433,7 @@ export class GameEngine {
     groundPaletteKey: 'atmo-ground-default',
     entryAltitude: 0,
     lastUpdatedMs: 0,
+    terrainSeed: 0,
   };
   private atmosphereGroundContactActive: boolean = false;
   private atmosphereAutoLandingLockActive: boolean = false;
@@ -441,6 +444,7 @@ export class GameEngine {
   private atmosphereWeatherEffects: AtmosphereWeatherEffectsState = this.createDefaultAtmosphereWeatherEffectsState();
   private atmosphereFogEnabled: boolean = true;
   private atmosphereCloudsEnabled: boolean = true;
+  private atmosphereWireframeEnabled: boolean = false;
   private atmosphereAutoVectorCurrent = 0;
   private atmosphereAutoVectorSuppressedUntilMs = 0;
   private atmosphereTelemetrySnapshot: AtmosphereTelemetryPayload | null = null;
@@ -1564,8 +1568,13 @@ export class GameEngine {
     const detailAltitude = Number.isFinite(altitudeSample)
       ? Math.max(0, altitudeSample)
       : Math.max(0, Number.isFinite(context.distanceToSurface) ? context.distanceToSurface : 0);
-    const detailFactor = computeAtmosphereDetailFactor(detailAltitude);
-    const sampledSurface = sampleAtmosphereSurfaceRadiusAlongNormal(normal, baseSurfaceRadius, detailFactor);
+    const detailFactor = this.resolveAtmosphereDetailFactor(detailAltitude);
+    const sampledSurface = sampleAtmosphereSurfaceRadiusAlongNormal(
+      normal,
+      baseSurfaceRadius,
+      detailFactor,
+      state?.terrainSeed ?? 0
+    );
     const surfaceRadius = Number.isFinite(sampledSurface)
       ? Math.max(sampledSurface, baseSurfaceRadius)
       : baseSurfaceRadius;
@@ -1963,6 +1972,8 @@ export class GameEngine {
       groundPaletteKey: palette.paletteKey,
       entryAltitude,
       lastUpdatedMs: now,
+      // Terreno determinista por planeta: misma semilla ⇒ mismas montañas/valles en cada visita.
+      terrainSeed: terrainSeedFromPlanetId(context.planetId),
     };
     this.configureAtmosphereWeather(this.atmosphereSceneState);
     this.atmosphereGroundContactActive = false;
@@ -3332,11 +3343,12 @@ export class GameEngine {
     }
     const shipRadius = Math.max(0, this.spaceship.boundingSphere?.radius ?? 0);
     const baseAltitude = Math.max(0, distFromCenter - state.groundRadius);
-    const detailFactor = computeAtmosphereDetailFactor(baseAltitude);
+    const detailFactor = this.resolveAtmosphereDetailFactor(baseAltitude);
     const surfaceRadius = sampleAtmosphereSurfaceRadius({
       offset,
       groundRadius: state.groundRadius,
       detailFactor,
+      seed: state.terrainSeed,
     });
     const collisionRadius = surfaceRadius + shipRadius;
     const isColliding = distFromCenter <= collisionRadius;
@@ -3804,10 +3816,10 @@ export class GameEngine {
       state.groundCollisionRadius || 0,
       Math.max(0, context.radius ?? 0)
     );
-    const detailFactor = computeAtmosphereDetailFactor(Math.max(0, this.computeAltitudeAboveGround()));
+    const detailFactor = this.resolveAtmosphereDetailFactor(Math.max(0, this.computeAltitudeAboveGround()));
     const sampledSurface = hasContactSurface
       ? contactSurfaceRadius
-      : sampleAtmosphereSurfaceRadiusAlongNormal(normal, baseSurfaceRadius, detailFactor);
+      : sampleAtmosphereSurfaceRadiusAlongNormal(normal, baseSurfaceRadius, detailFactor, state.terrainSeed);
     const safeSurfaceRadius = Number.isFinite(sampledSurface)
       ? Math.max(sampledSurface, baseSurfaceRadius)
       : baseSurfaceRadius;
@@ -4412,6 +4424,19 @@ export class GameEngine {
   /**
    * Calcula la altitud sobre el suelo (no sobre el centro del planeta)
    */
+  /**
+   * Detail factor para muestrear el terreno: usa el valor realmente aplicado a la malla
+   * (AtmosphereSceneManager) para que física y geometría dibujada coincidan; si la malla
+   * aún no se ha renderizado, cae al cálculo por altitud.
+   */
+  private resolveAtmosphereDetailFactor(baseAltitude: number): number {
+    const applied = this.atmosphereSceneManager?.getAppliedGroundDetailFactor?.();
+    if (typeof applied === 'number') {
+      return applied;
+    }
+    return computeAtmosphereDetailFactor(Math.max(0, baseAltitude));
+  }
+
   private computeAltitudeAboveGround(): number {
     if (!this.spaceship || !this.isAtmosphereSceneActive()) {
       return 0;
@@ -4429,11 +4454,12 @@ export class GameEngine {
     }
     const shipRadius = Math.max(0, this.spaceship.boundingSphere?.radius ?? 0);
     const baseAltitude = Math.max(0, distFromCenter - state.groundRadius);
-    const detailFactor = computeAtmosphereDetailFactor(baseAltitude);
+    const detailFactor = this.resolveAtmosphereDetailFactor(baseAltitude);
     const surfaceRadius = sampleAtmosphereSurfaceRadius({
       offset,
       groundRadius: state.groundRadius,
       detailFactor,
+      seed: state.terrainSeed,
     });
     return Math.max(0, distFromCenter - surfaceRadius - shipRadius);
   }
@@ -4549,6 +4575,20 @@ export class GameEngine {
     this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Atmosphere exterior detail lock', {
       enabled,
     });
+  }
+
+  public setAtmosphereWireframeEnabled(enabled: boolean): void {
+    this.atmosphereWireframeEnabled = !!enabled;
+    if (this.atmosphereSceneManager) {
+      this.atmosphereSceneManager.setWireframeEnabled(this.atmosphereWireframeEnabled);
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.DEBUG, 'Atmosphere wireframe overlay', {
+      enabled: this.atmosphereWireframeEnabled,
+    });
+  }
+
+  public isAtmosphereWireframeEnabled(): boolean {
+    return this.atmosphereWireframeEnabled;
   }
 
   private renderParticleEffectsLayer(): void {
@@ -4796,6 +4836,7 @@ export class GameEngine {
         this.shaderManager,
         this.atmosphereTextureFactory,
       );
+      this.atmosphereSceneManager.setWireframeEnabled(this.atmosphereWireframeEnabled);
 
       // Inicializar gestor de texturas
       this.textureManager = new TextureManager(this.gl);
@@ -5119,30 +5160,28 @@ export class GameEngine {
       }
     } catch (e) { this.logger.log(LogLevel.ERROR, LogCategory.SOLAR_SYSTEM_GENERATION, 'Sun instantiation failed', e); }
 
-    // Planets
-    const pickColor = (k?: string): any => {
-      const x = String(k || '').toLowerCase();
-      if (x === 'ringed') return 'gris';
-      if (x === 'gaseous') return 'azul_hielo';
-      if (x === 'giant') return 'marron';
-      if (x === 'dwarf') return 'gris';
-      if (x === 'protoplanet') return 'gris';
-      if (x === 'terrestrial' || x === 'rocky') return 'azul_marino';
-      return 'marron';
-    };
+    // Planets — la construcción de la subclase queda aquí; los campos persistentes
+    // se aplican vía planet-state.codec (fuente única, ver docs/ARQUITECTURA.md §4.3).
     for (const p of snapshot.planets) {
       try {
-        const kind = String(p.kind || '').toLowerCase();
+        const kind = String(normalizePlanetKind(p.kind, p.baseColorName) ?? '').toLowerCase();
+        // Snapshots legacy serializaban también el sol dentro de planets[]; se omite aquí
+        // porque snapshot.sun ya lo instancia (evita un planeta fantasma bajo el sol).
+        if (kind === 'sun' || (snapshot.sun && p.id === snapshot.sun.id)) {
+          continue;
+        }
         // Prefer explicit snapshot color when provided; else pick by kind
-        const snapshotColor = (p as any).baseColorName as any;
-        const color: any = snapshotColor || pickColor(kind);
+        const color: any = p.baseColorName || defaultColorForKind(kind);
         const pos = { ...p.position };
-        const snapshotRadius = Number.isFinite(p.radius) ? Math.max(1, p.radius || 1) : 1000;
+        // Construir con el radio ORIGINAL: usar el radio visible (encogido por void mass)
+        // como initialRadius provocaba doble encogimiento en cada re-aplicación del snapshot.
+        const baseRadius = Number.isFinite(p.initialRadius) ? p.initialRadius! : p.radius;
+        const snapshotRadius = Number.isFinite(baseRadius) ? Math.max(1, baseRadius || 1) : 1000;
         let planetObj: Planet;
         // Special cases for handcrafted system
         if (p.id === 'planet-earth') {
           // Force canonical Earth base color 'azul_marino' to keep split hemisphere tint/texture
-          const earthColor: any = (snapshotColor || 'azul_marino');
+          const earthColor: any = (p.baseColorName || 'azul_marino');
           const earthDebrisCount = persistedDebrisPlanets.has(p.id) ? 0 : 320;
           const created = EarthSplitPlanet.createWithDebris('planet-earth', earthColor, p.radius || 400, pos, 150, earthDebrisCount);
           planetObj = created.planet as Planet;
@@ -5168,69 +5207,7 @@ export class GameEngine {
             default: planetObj = new Planet(p.id, color, snapshotRadius, pos); break;
           }
         }
-        if (p.name) planetObj.customName = p.name;
-        if (typeof p.probabilityOfLifePct === 'number') (planetObj as any).probabilityOfLifePct = p.probabilityOfLifePct;
-        planetObj.assignInhabitantsFromProbability();
-        if (typeof p.inhabitants === 'string') {
-          planetObj.inhabitants = p.inhabitants as PlanetInhabitants;
-        }
-        if (typeof p.lesserBeing !== 'undefined') {
-          planetObj.lesserBeing = (p.lesserBeing as LesserBeing | null) ?? null;
-        }
-        if (typeof p.hasArtifact === 'boolean') {
-          planetObj.hasArtifact = p.hasArtifact;
-        }
-        if (typeof p.artifactIntelStatus === 'string') {
-          planetObj.artifactIntelStatus = p.artifactIntelStatus as any;
-        }
-        if (typeof p.civilizationIntelStatus === 'string') {
-          planetObj.civilizationIntelStatus = p.civilizationIntelStatus as any;
-        }
-        if (typeof p.lesserBeingIntelStatus === 'string') {
-          planetObj.lesserBeingIntelStatus = p.lesserBeingIntelStatus as any;
-        }
-        if (typeof p.pendingMission !== 'undefined') {
-          planetObj.pendingMission = p.pendingMission as any;
-        }
-        if (p.resourceStock) {
-          planetObj.resourceStock = { ...planetObj.resourceStock, ...p.resourceStock };
-        }
-        if (typeof p.visited === 'boolean') {
-          planetObj.visited = p.visited;
-        }
-        if (typeof p.lifeScanned === 'boolean') {
-          planetObj.lifeScanned = p.lifeScanned;
-        }
-        if (typeof p.creatureScanned === 'boolean') {
-          planetObj.creatureScanned = p.creatureScanned;
-        }
-        if (typeof p.animosity === 'string' && typeof (planetObj as any).setAnimosity === 'function') {
-          try { (planetObj as any).setAnimosity(p.animosity); } catch {}
-        }
-        if (p.orbit) {
-          planetObj.orbitCenter = { ...(p.orbit.center || { x: 0, y: 0, z: 0 }) } as any;
-          planetObj.semiMajor = p.orbit.semiMajor;
-          planetObj.semiMinor = p.orbit.semiMinor;
-          planetObj.orbitOrientation = p.orbit.orientation || 0;
-          planetObj.orbitAngle = p.orbit.angle || 0;
-          planetObj.orbitAngularSpeed = p.orbit.angularSpeed || planetObj.orbitAngularSpeed;
-          (planetObj as any).orbitNormal = { ...(p.orbit.normal || { x: 0, y: 1, z: 0 }) };
-          (planetObj as any).orbitU = { ...(p.orbit.u || { x: 1, y: 0, z: 0 }) };
-        }
-        // Preserve serialized void-mass metadata so handcrafted/procedural systems stay in sync.
-        const hasVoidMassFields = typeof p.voidMassCapacity === 'number' || typeof p.voidMassRemaining === 'number';
-        if (hasVoidMassFields) {
-          const capacity = Number.isFinite(p.voidMassCapacity) ? Math.max(0, p.voidMassCapacity!)
-            : Math.max(0, Number.isFinite(p.voidMassRemaining) ? p.voidMassRemaining! : 0);
-          const remaining = Number.isFinite(p.voidMassRemaining) ? Math.max(0, p.voidMassRemaining!) : undefined;
-          planetObj.setVoidMassLevels(capacity, remaining);
-        } else if (typeof p.hasVoidMass === 'boolean' && p.hasVoidMass) {
-          const fallbackCapacity = Math.max(1, Math.round((planetObj.initialRadius || 100) * 0.25));
-          planetObj.setVoidMassLevels(fallbackCapacity, fallbackCapacity);
-        }
-        if (typeof p.voidMassIntelStatus !== 'undefined') {
-          planetObj.voidMassIntelStatus = p.voidMassIntelStatus;
-        }
+        applyPlanetSnapshotFields(planetObj, p);
         // Ensure a sensible default spin so debris belts rotate with their parent
         try {
           const kindSpin = ((): number => {
@@ -5243,7 +5220,8 @@ export class GameEngine {
             (planetObj as any).angularVelocity.y = kindSpin;
           }
           // Apply a reasonable axial tilt to ringed planets to incline the ring
-          if (p.id === 'planet-saturn' || kind === 'ringed') {
+          // (solo si el snapshot no trae el tilt persistido — el códec ya lo aplicó si venía).
+          if (p.axialTiltRad === undefined && (p.id === 'planet-saturn' || kind === 'ringed')) {
             (planetObj as any).axialTiltRad = (26.7 * Math.PI) / 180;
           }
         } catch {}
@@ -9606,6 +9584,7 @@ export class GameEngine {
       groundPaletteKey: 'atmo-ground-default',
       entryAltitude: 0,
       lastUpdatedMs: 0,
+      terrainSeed: 0,
     };
   }
 

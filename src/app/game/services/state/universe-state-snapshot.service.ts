@@ -3,7 +3,12 @@ import type { GameEngine } from '../../../game/GameEngine';
 import { PortalPersistenceService } from '../game/portal-persistence.service';
 import { GameStateStore } from '../../../services/game/game-state.store';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
-import { ClusterSnapshot, PortalSnapshot, SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, OrbitParams, EyeState } from '../../types/solar-system.types';
+import { ClusterSnapshot, PortalSnapshot, SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, EyeState } from '../../types/solar-system.types';
+import {
+  capturePlanetSnapshot,
+  planetCustomMetaFromSnapshot,
+  planetSnapshotFromCustomMeta,
+} from '../game/planet-state.codec';
 import {
   GameStartContext,
   HealthSnapshot,
@@ -315,33 +320,9 @@ export class UniverseStateSnapshotService {
   }
 
   private buildPlanetMetadata(planet: Planet | Sun): Record<string, any> | undefined {
-    const metadata = {
-      name: planet.customName ?? planet.getDisplayName?.() ?? planet.id,
-      customName: planet.customName ?? undefined,
-      planetType: planet.planetType,
-      baseColorName: planet.baseColorName,
-      probabilityOfLifePct: planet.probabilityOfLifePct,
-      inhabitants: planet.inhabitants,
-      lesserBeing: planet.lesserBeing ?? null,
-      visited: planet.visited,
-      lifeScanned: planet.lifeScanned,
-      creatureScanned: planet.creatureScanned,
-      hasArtifact: planet.hasArtifact,
-      artifactIntelStatus: planet.artifactIntelStatus,
-      hasVoidMass: planet.hasVoidMass,
-      voidMassCapacity: planet.voidMassCapacity,
-      voidMassRemaining: planet.voidMassRemaining,
-      voidMassIntelStatus: planet.voidMassIntelStatus,
-      civilizationIntelStatus: planet.civilizationIntelStatus,
-      lesserBeingIntelStatus: planet.lesserBeingIntelStatus,
-      pendingMission: planet.pendingMission ? this.cloneJsonValue(planet.pendingMission) : undefined,
-      resourceStock: planet.resourceStock ? this.cloneJsonValue(planet.resourceStock) : undefined,
-      orbit: this.cloneOrbitParamsFromPlanet(planet),
-      axialTiltRad: planet.axialTiltRad,
-      initialRadius: planet.initialRadius,
-      animosity: planet.animosity
-    };
-    return this.removeUndefined(metadata);
+    // Fuente única de campos persistentes: planet-state.codec (ver docs/ARQUITECTURA.md §4.3).
+    const metadata = planetCustomMetaFromSnapshot(capturePlanetSnapshot(planet));
+    return Object.keys(metadata).length ? metadata : undefined;
   }
 
   private captureOrientation(obj: GameObject): OrientationSnapshot | null {
@@ -540,48 +521,17 @@ export class UniverseStateSnapshotService {
   }
 
   private extractPlanetSnapshots(objects: SerializedGameObjectState[]): PlanetSnapshot[] {
+    // Lectura delegada al códec: entiende claves canónicas y legacy de saves schema 1.
     return objects
       .filter(obj => this.isPlanetType(obj.type))
-      .map(obj => {
-        const custom = obj.custom ?? {};
-        const snapshot: PlanetSnapshot = {
+      .map(obj => planetSnapshotFromCustomMeta(
+        {
           id: obj.id,
-          name: typeof custom['name'] === 'string' ? custom['name'] : obj.id,
-          kind: custom['planetType'] ?? obj.type,
           position: this.cloneVec(obj.position) ?? { x: 0, y: 0, z: 0 },
-          radius: this.deriveRadius(obj, 250)
-        };
-
-        const orbit = this.normalizeOrbitMetadata(custom['orbit']);
-        if (orbit) snapshot.orbit = orbit;
-        if (typeof custom['baseColorName'] === 'string') snapshot.baseColorName = custom['baseColorName'];
-        const probLife = this.parseNumber(custom['probabilityOfLifePct']);
-        if (probLife !== undefined) snapshot.probabilityOfLifePct = probLife;
-        if (custom['inhabitants']) snapshot.inhabitants = custom['inhabitants'];
-        if (custom['lesserBeing'] !== undefined) snapshot.lesserBeing = custom['lesserBeing'];
-        const visited = this.parseBoolean(custom['visited']);
-        if (visited !== undefined) snapshot.visited = visited;
-        const lifeScanned = this.parseBoolean(custom['lifeScanned']);
-        if (lifeScanned !== undefined) snapshot.lifeScanned = lifeScanned;
-        const creatureScanned = this.parseBoolean(custom['creatureScanned']);
-        if (creatureScanned !== undefined) snapshot.creatureScanned = creatureScanned;
-        const hasArtifact = this.parseBoolean(custom['hasArtifact']);
-        if (hasArtifact !== undefined) snapshot.hasArtifact = hasArtifact;
-        if (custom['artifactIntelStatus']) snapshot.artifactIntelStatus = custom['artifactIntelStatus'];
-        const hasVoidMass = this.parseBoolean(custom['hasVoidMass']);
-        if (hasVoidMass !== undefined) snapshot.hasVoidMass = hasVoidMass;
-        const voidCapacity = this.parseNumber(custom['voidMassCapacity']);
-        if (voidCapacity !== undefined) snapshot.voidMassCapacity = voidCapacity;
-        const voidRemaining = this.parseNumber(custom['voidMassRemaining']);
-        if (voidRemaining !== undefined) snapshot.voidMassRemaining = voidRemaining;
-        if (custom['voidMassIntelStatus']) snapshot.voidMassIntelStatus = custom['voidMassIntelStatus'];
-        if (custom['civilizationIntelStatus']) snapshot.civilizationIntelStatus = custom['civilizationIntelStatus'];
-        if (custom['lesserBeingIntelStatus']) snapshot.lesserBeingIntelStatus = custom['lesserBeingIntelStatus'];
-        if (custom['pendingMission'] !== undefined) snapshot.pendingMission = this.cloneJsonValue(custom['pendingMission']);
-        if (custom['resourceStock']) snapshot.resourceStock = this.cloneJsonValue(custom['resourceStock']);
-        if (custom['animosity']) snapshot.animosity = custom['animosity'];
-        return snapshot;
-      });
+          radius: this.deriveRadius(obj, 250),
+        },
+        obj.custom
+      ));
   }
 
   private extractClusterSnapshots(objects: SerializedGameObjectState[]): ClusterSnapshot[] {
@@ -660,58 +610,6 @@ export class UniverseStateSnapshotService {
     return PLANET_TYPES.has(type);
   }
 
-  private cloneOrbitParamsFromPlanet(planet: Planet | Sun): OrbitParams {
-    return {
-      center: this.cloneVec(planet.orbitCenter) ?? { x: 0, y: 0, z: 0 },
-      semiMajor: planet.semiMajor,
-      semiMinor: planet.semiMinor,
-      orientation: planet.orbitOrientation,
-      angle: planet.orbitAngle,
-      angularSpeed: planet.orbitAngularSpeed,
-      normal: this.cloneVec(planet.orbitNormal) ?? undefined,
-      u: this.cloneVec(planet.orbitU) ?? undefined
-    };
-  }
-
-  private normalizeOrbitMetadata(raw: any): OrbitParams | undefined {
-    if (!raw) {
-      return undefined;
-    }
-    const center = this.cloneVec(raw.center) ?? undefined;
-    const semiMajor = this.parseNumber(raw.semiMajor);
-    const semiMinor = this.parseNumber(raw.semiMinor) ?? semiMajor;
-    const orientation = this.parseNumber(raw.orientation) ?? 0;
-    if (!center || semiMajor === undefined || semiMinor === undefined) {
-      return undefined;
-    }
-    const orbit: OrbitParams = {
-      center,
-      semiMajor,
-      semiMinor,
-      orientation
-    };
-    const angle = this.parseNumber(raw.angle);
-    if (angle !== undefined) orbit.angle = angle;
-    const angularSpeed = this.parseNumber(raw.angularSpeed);
-    if (angularSpeed !== undefined) orbit.angularSpeed = angularSpeed;
-    const normal = this.cloneVec(raw.normal);
-    if (normal) orbit.normal = normal;
-    const u = this.cloneVec(raw.u);
-    if (u) orbit.u = u;
-    return orbit;
-  }
-
-  private parseNumber(value: any): number | undefined {
-    if (typeof value !== 'number' || !Number.isFinite(value)) {
-      return undefined;
-    }
-    return value;
-  }
-
-  private parseBoolean(value: any): boolean | undefined {
-    return typeof value === 'boolean' ? value : undefined;
-  }
-
   private removeUndefined(metadata: Record<string, any>): Record<string, any> | undefined {
     const result: Record<string, any> = {};
     for (const [key, value] of Object.entries(metadata)) {
@@ -734,16 +632,6 @@ export class UniverseStateSnapshotService {
     return clone;
   }
 
-  private cloneJsonValue<T>(value: T): T {
-    if (value === undefined || value === null) {
-      return value;
-    }
-    try {
-      return JSON.parse(JSON.stringify(value)) as T;
-    } catch {
-      return value;
-    }
-  }
 
   private cloneVec(vec?: Vector3 | null): Vector3 | null {
     if (!vec) return null;

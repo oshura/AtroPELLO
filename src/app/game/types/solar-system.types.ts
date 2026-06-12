@@ -47,6 +47,14 @@ export interface PlanetSnapshot {
   pendingMission?: PlanetMissionState | null;
   resourceStock?: PlanetResourceStock;
   animosity?: string;
+  /** Inclinación axial en radianes (persistida para que sobreviva a save/load). */
+  axialTiltRad?: number;
+  /**
+   * Radio original de construcción. `radius` es el radio VISIBLE actual (puede estar
+   * encogido por cosecha de void mass); reconstruir con `radius` como initialRadius
+   * provocaba doble encogimiento acumulativo en cada save/load o salto de portal.
+   */
+  initialRadius?: number;
 }
 
 export interface ClusterSnapshot {

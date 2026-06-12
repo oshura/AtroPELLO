@@ -1,6 +1,7 @@
 import { SolarSystemSnapshot, PlanetSnapshot, SunSnapshot, ClusterSnapshot, PlanetDebrisSnapshot } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
 import { PlanetIntelStatus, PlanetMissionState, PlanetResourceStock } from '../../types/planet-intel.types';
+import { normalizePlanetKind } from './planet-state.codec';
 
 function vec(x:number,y:number,z:number): Vector3 { return { x,y,z }; }
 
@@ -67,6 +68,12 @@ export class SolarSystemSerializer {
       preventsLesserIncursions?: boolean;
     }>;
     planetDebris?: Array<{ id: string; planetId: string; localOffset: Vector3; size?: number; type?: string }>;
+    /**
+     * Snapshots de planeta YA construidos por planet-state.codec (ruta preferente).
+     * Si se proporciona, `planets` se ignora; el mapeo POJO de abajo es legacy y
+     * desaparecerá cuando SolarSystemService deje de usarlo (Fase 6).
+     */
+    planetSnapshots?: PlanetSnapshot[];
   }): SolarSystemSnapshot {
     const sun: SunSnapshot = state.sun ? {
       id: state.sun.id,
@@ -75,29 +82,11 @@ export class SolarSystemSerializer {
       radius: state.sun.radius ?? state.sun.scale?.x ?? 1800
     } : { id: 'sol', position: vec(0,0,0), radius: 1800 };
 
-    const planets: PlanetSnapshot[] = state.planets.map(p => ({
+    const planets: PlanetSnapshot[] = state.planetSnapshots ?? state.planets.map(p => ({
       id: p.id,
       name: p.customName,
-      // Normalizar 'kind' para consumo de generadores posteriores.
-      // El motor procedural espera valores en inglés en minúsculas: 'ringed','gaseous','giant','dwarf','protoplanet','terrestrial','rocky'.
-      // Los enum y strings internos pueden venir como 'Tierra','Planetoid','Ringed','Gaseous','Giant','Dwarf','Protoplanet'.
-      kind: (() => {
-        const raw = (p.planetType || '').toString();
-        const x = raw.toLowerCase();
-        if (!x) return undefined;
-        if (x === 'tierra') return 'terrestrial';
-        if (x === 'planetoid') return 'rocky'; // mapeo aproximado
-        // Mantener ya compatibles
-        if (x === 'ringed') return 'ringed';
-        if (x === 'gaseous') return 'gaseous';
-        if (x === 'giant') return 'giant';
-        if (x === 'dwarf') return 'dwarf';
-        if (x === 'protoplanet') return 'protoplanet';
-        if (x === 'sun') return 'sun';
-        // Fallback: si el color sugiere oceánico usar 'terrestrial'
-        if (p.baseColorName === 'azul_marino') return 'terrestrial';
-        return x; // dejar valor original si no coincide
-      })(),
+      // Normalización canónica delegada al códec (fuente única, ver planet-state.codec.ts).
+      kind: normalizePlanetKind(p.planetType, p.baseColorName),
       baseColorName: p.baseColorName,
       position: { ...p.position },
       radius: p.radius ?? p.scale?.x ?? 1000,

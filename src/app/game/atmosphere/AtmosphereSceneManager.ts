@@ -6,12 +6,24 @@ import { AtmosphereWeatherSnapshot } from './AtmosphereWeatherService';
 import { AtmosphereTextureFactory, AtmosphereTexturePattern } from './AtmosphereTextureFactory';
 import { GameLogger } from '../utils/GameLogger';
 import { LogCategory } from '../../services/logging.service';
+import {
+  ATMOSPHERE_TERRAIN_LAT_SEGMENTS,
+  ATMOSPHERE_TERRAIN_LON_SEGMENTS,
+  TerrainField,
+  computeAtmosphereDetailFactor,
+  computeDetailMultiplier,
+  computeVertexUnitRadius,
+  getTerrainField,
+  sampleTerrainVertex,
+} from './terrain-sampler';
 
 interface SphereMesh {
   vbo: WebGLBuffer;
   cbo: WebGLBuffer;
   ibo: WebGLBuffer;
+  edgeIbo?: WebGLBuffer;
   indexCount: number;
+  edgeIndexCount?: number;
   vertexCount: number;
   lastColorKey: string | null;
   hasRelief?: boolean;
@@ -24,6 +36,8 @@ interface SphereMesh {
   lastDetailFactor?: number;
   ridgeMask?: Float32Array;
   uv?: Float32Array;
+  /** Semilla con la que se generó el relieve (solo mallas con relieve). */
+  terrainSeed?: number;
 }
 
 interface SurfaceReadabilityOptions {
@@ -86,6 +100,8 @@ export interface AtmosphereSceneState {
   groundPaletteKey: string;
   entryAltitude: number;
   lastUpdatedMs: number;
+  /** Semilla del terreno del planeta activo (0 = legacy). Cambiarla reconstruye la malla. */
+  terrainSeed: number;
 }
 
 export interface AtmosphereRenderOptions {
@@ -119,9 +135,6 @@ export class AtmosphereSceneManager {
   private lowCloudMesh: SphereMesh | null = null;
   private highCloudMesh: SphereMesh | null = null;
   private readonly WEATHER_LAYERS_ENABLED = false;
-  private readonly DETAIL_START_ALTITUDE = 600;
-  private readonly DETAIL_FULL_ALTITUDE = 80;
-  private readonly DETAIL_EXTRUSION_SCALE = 0.08;
   private readonly SKY_FADE_START_ALTITUDE = 300;
   private readonly skyBlendTarget = new Float32Array([0.78, 0.88, 1.0]);
   private readonly FOG_ALTITUDE_MAX = 900;
@@ -134,6 +147,9 @@ export class AtmosphereSceneManager {
   private readonly stormTint = new Float32Array([0.28, 0.32, 0.45]);
   private readonly meteorTint = new Float32Array([0.98, 0.66, 0.45]);
   private readonly ridgeHighlightTarget = new Float32Array([0.98, 0.97, 0.92]);
+  private wireframeEnabled = true;
+  private readonly wireframeRadiusScale = 1.0004;
+  private readonly wireframeColor = new Float32Array([0, 0, 0]);
   private skyColorScratch: Float32Array | null = null;
   private groundLightingScratch = new Float32Array(3);
   private fogTopScratch = new Float32Array(3);
@@ -184,6 +200,17 @@ export class AtmosphereSceneManager {
     });
   }
 
+  public setWireframeEnabled(enabled: boolean): void {
+    this.wireframeEnabled = !!enabled;
+    GameLogger.info(LogCategory.DEBUG, 'Atmosphere wireframe overlay', {
+      enabled: this.wireframeEnabled,
+    });
+  }
+
+  public isWireframeEnabled(): boolean {
+    return this.wireframeEnabled;
+  }
+
   public setExteriorDetailLocked(enabled: boolean): void {
     this.exteriorDetailLocked = !!enabled;
     if (this.groundMesh) {
@@ -196,27 +223,26 @@ export class AtmosphereSceneManager {
   }
 
   public dispose(): void {
-    if (!this.gl) {
-      this.groundMesh = null;
-      this.skyMesh = null;
-      return;
-    }
-    const destroy = (mesh: SphereMesh | null) => {
-      if (!mesh) return;
-      if (mesh.vbo) this.gl!.deleteBuffer(mesh.vbo);
-      if (mesh.cbo) this.gl!.deleteBuffer(mesh.cbo);
-      if (mesh.ibo) this.gl!.deleteBuffer(mesh.ibo);
-    };
-    destroy(this.groundMesh);
-    destroy(this.skyMesh);
-    destroy(this.fogMesh);
-    destroy(this.lowCloudMesh);
-    destroy(this.highCloudMesh);
+    this.destroyMesh(this.groundMesh);
+    this.destroyMesh(this.skyMesh);
+    this.destroyMesh(this.fogMesh);
+    this.destroyMesh(this.lowCloudMesh);
+    this.destroyMesh(this.highCloudMesh);
     this.groundMesh = null;
     this.skyMesh = null;
     this.fogMesh = null;
     this.lowCloudMesh = null;
     this.highCloudMesh = null;
+  }
+
+  private destroyMesh(mesh: SphereMesh | null): void {
+    if (!mesh || !this.gl) {
+      return;
+    }
+    if (mesh.vbo) this.gl.deleteBuffer(mesh.vbo);
+    if (mesh.cbo) this.gl.deleteBuffer(mesh.cbo);
+    if (mesh.ibo) this.gl.deleteBuffer(mesh.ibo);
+    if (mesh.edgeIbo) this.gl.deleteBuffer(mesh.edgeIbo);
   }
 
   public render(
@@ -228,7 +254,7 @@ export class AtmosphereSceneManager {
     if (!this.gl || !this.shaderManager || !camera || !state?.active || !state.context) {
       return;
     }
-    if (!this.ensureMeshes()) {
+    if (!this.ensureMeshes(state.terrainSeed ?? 0)) {
       return;
     }
 
@@ -259,6 +285,15 @@ export class AtmosphereSceneManager {
     this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.groundMesh!.ibo);
     this.uploadGroundMaterial(this.groundMesh!, state, detailFactor, lightingFactor);
     this.drawSphere(this.groundMesh!, state.center, state.groundRadius, camera);
+
+    // Wireframe overlay (edge lines over the textured surface)
+    if (this.wireframeEnabled) {
+      const edgeBuffer = this.groundMesh!.edgeIbo ?? this.groundMesh!.ibo;
+      const edgeCount = this.groundMesh!.edgeIndexCount ?? this.groundMesh!.indexCount;
+      if (edgeBuffer && edgeCount) {
+        this.drawWireframe(this.groundMesh!, edgeBuffer, edgeCount, state.center, state.groundRadius * this.wireframeRadiusScale, camera);
+      }
+    }
     if (!groundCullWasEnabled) {
       this.gl.disable(this.gl.CULL_FACE);
     } else {
@@ -289,12 +324,17 @@ export class AtmosphereSceneManager {
     }
   }
 
-  private ensureMeshes(): boolean {
+  private ensureMeshes(terrainSeed: number): boolean {
     if (!this.gl) {
       return false;
     }
+    // El relieve depende de la semilla del planeta: si cambió, la malla del suelo se reconstruye.
+    if (this.groundMesh && (this.groundMesh.terrainSeed ?? 0) !== (terrainSeed ?? 0)) {
+      this.destroyMesh(this.groundMesh);
+      this.groundMesh = null;
+    }
     if (!this.groundMesh) {
-      this.groundMesh = this.buildSphere(true);
+      this.groundMesh = this.buildSphere(true, terrainSeed);
     }
     if (!this.skyMesh) {
       this.skyMesh = this.buildSphere(false);
@@ -311,17 +351,6 @@ export class AtmosphereSceneManager {
       }
     }
     return !!(this.groundMesh && this.skyMesh);
-  }
-
-  private terrainNoise(theta: number, phi: number): number {
-    const freq1 = 4.2;
-    const freq2 = 11.7;
-    const freq3 = 23.5;
-    const octave1 = Math.sin(theta * freq1) * Math.cos(phi * freq1);
-    const octave2 = Math.sin(theta * freq2 + 1.3) * Math.cos(phi * freq2 - 0.7) * 0.5;
-    const octave3 = Math.sin(theta * freq3 + 2.1) * Math.cos(phi * freq3 + 1.9) * 0.25;
-    const raw = octave1 + octave2 + octave3;
-    return Math.max(-1.0, Math.min(1.0, raw));
   }
 
   private uploadGroundMaterial(
@@ -767,22 +796,6 @@ export class AtmosphereSceneManager {
     return this.clamp01(0.08 + ridgeBias + heightBias);
   }
 
-  private strataNoise(theta: number, phi: number): number {
-    const bands = Math.sin(theta * 3.2 + Math.cos(phi * 1.5));
-    const streaks = Math.sin(phi * 14.0 + Math.sin(theta * 2.4));
-    return bands * 0.65 + streaks * 0.35;
-  }
-
-  private microDetailNoise(theta: number, phi: number): number {
-    const highFreq = Math.sin(theta * 27.0 + phi * 13.0);
-    const cross = Math.cos(theta * 9.0 - phi * 21.0);
-    return highFreq * 0.7 + cross * 0.3;
-  }
-
-  private normalizeNoise(value: number): number {
-    return Math.max(0, Math.min(1, (value + 1) * 0.5));
-  }
-
   private smoothstep(min: number, max: number, value: number): number {
     const t = this.clamp01((value - min) / Math.max(1e-6, max - min));
     return t * t * (3 - 2 * t);
@@ -829,14 +842,13 @@ export class AtmosphereSceneManager {
     }
     const clamped = this.clamp01(detailFactor);
     const last = mesh.lastDetailFactor;
-    if (last !== undefined && Math.abs(clamped - last) < 0.01) {
+    if (last !== undefined && last >= 0 && Math.abs(clamped - last) < 0.01) {
       return;
     }
     const scratch = mesh.detailScratch;
     const base = mesh.basePositions;
     for (let i = 0; i < mesh.vertexCount; i++) {
-      const noise = (mesh.detailNoise[i] ?? 0.5) - 0.5;
-      const extrusion = 1 + noise * this.DETAIL_EXTRUSION_SCALE * clamped;
+      const extrusion = computeDetailMultiplier(mesh.detailNoise[i] ?? 0.5, clamped);
       const idx = i * 3;
       scratch[idx] = base[idx] * extrusion;
       scratch[idx + 1] = base[idx + 1] * extrusion;
@@ -845,6 +857,15 @@ export class AtmosphereSceneManager {
     this.gl.bindBuffer(this.gl.ARRAY_BUFFER, mesh.vbo);
     this.gl.bufferData(this.gl.ARRAY_BUFFER, scratch, this.gl.DYNAMIC_DRAW);
     mesh.lastDetailFactor = clamped;
+  }
+
+  /**
+   * Detail factor realmente aplicado a la malla del suelo (la física debe usar este valor
+   * para coincidir con la geometría dibujada). null si aún no se ha renderizado.
+   */
+  public getAppliedGroundDetailFactor(): number | null {
+    const value = this.groundMesh?.lastDetailFactor;
+    return typeof value === 'number' && value >= 0 ? value : null;
   }
 
   private computeCameraAltitude(state: AtmosphereSceneState, camera: Camera): number {
@@ -860,14 +881,7 @@ export class AtmosphereSceneManager {
     if (this.exteriorDetailLocked) {
       return 1;
     }
-    if (altitude >= this.DETAIL_START_ALTITUDE) {
-      return 0;
-    }
-    if (altitude <= this.DETAIL_FULL_ALTITUDE) {
-      return 1;
-    }
-    const range = this.DETAIL_START_ALTITUDE - this.DETAIL_FULL_ALTITUDE;
-    return this.clamp01(1 - (altitude - this.DETAIL_FULL_ALTITUDE) / range);
+    return computeAtmosphereDetailFactor(altitude);
   }
 
   private computeLightingFactor(weather: AtmosphereWeatherSnapshot | null): number {
@@ -937,6 +951,40 @@ export class AtmosphereSceneManager {
 
     this.gl.disableVertexAttribArray(positionLoc);
     this.gl.disableVertexAttribArray(colorLoc);
+  }
+
+  private drawWireframe(
+    mesh: SphereMesh,
+    elementBuffer: WebGLBuffer,
+    elementCount: number,
+    center: Vector3,
+    radius: number,
+    camera: Camera,
+  ): void {
+    if (!this.gl || !mesh) {
+      return;
+    }
+    const positionLoc = this.shaderManager.basicAttributes['position'];
+    const colorLoc = this.shaderManager.basicAttributes['color'];
+    if (positionLoc === undefined || colorLoc === undefined) {
+      return;
+    }
+    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, mesh.vbo);
+    this.gl.enableVertexAttribArray(positionLoc);
+    this.gl.vertexAttribPointer(positionLoc, 3, this.gl.FLOAT, false, 0, 0);
+    // Use constant color for wireframe to avoid re-uploading buffers
+    this.gl.disableVertexAttribArray(colorLoc);
+    this.gl.vertexAttrib3fv(colorLoc, this.wireframeColor);
+    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, elementBuffer);
+
+    this.shaderManager.setBasicMatrices(
+      this.buildModelMatrix(center, radius),
+      camera.viewMatrix,
+      camera.projectionMatrix,
+    );
+
+    this.gl.drawElements(this.gl.LINES, elementCount, this.gl.UNSIGNED_SHORT, 0);
+    this.gl.enableVertexAttribArray(colorLoc);
   }
 
   private buildModelMatrix(center: Vector3, radius: number): Float32Array {
@@ -1235,13 +1283,25 @@ export class AtmosphereSceneManager {
     return index;
   }
 
-  private buildSphere(withRelief: boolean): SphereMesh | null {
+  private addEdge(edgeSet: Set<string>, edgeIndices: number[], a: number, b: number): void {
+    const key = a < b ? `${a}-${b}` : `${b}-${a}`;
+    if (edgeSet.has(key)) {
+      return;
+    }
+    edgeSet.add(key);
+    edgeIndices.push(a, b);
+  }
+
+  private buildSphere(withRelief: boolean, terrainSeed: number = 0): SphereMesh | null {
     const gl = this.gl;
     if (!gl) {
       return null;
     }
-    const latSegments = 32;
-    const lonSegments = 64;
+    // El relieve por vértice proviene de terrain-sampler (la MISMA función que usa la
+    // colisión del GameEngine): prohibido reintroducir ruido local aquí.
+    const latSegments = ATMOSPHERE_TERRAIN_LAT_SEGMENTS;
+    const lonSegments = ATMOSPHERE_TERRAIN_LON_SEGMENTS;
+    const field: TerrainField = getTerrainField(terrainSeed);
     const positions: number[] = [];
     const reliefSamples: number[] = [];
     const bandSamples: number[] = [];
@@ -1258,12 +1318,12 @@ export class AtmosphereSceneManager {
         const cosPhi = Math.cos(phi);
         let radius = 1.0;
         if (withRelief) {
-          const reliefNoise = this.terrainNoise(theta, phi);
-          radius = 1.0 + reliefNoise * 0.08;
-          reliefSamples.push(this.normalizeNoise(reliefNoise));
-          bandSamples.push(this.normalizeNoise(this.strataNoise(theta, phi)));
+          const sample = sampleTerrainVertex(field, theta, phi);
+          radius = computeVertexUnitRadius(sample.relief);
+          reliefSamples.push(this.clamp01((sample.relief + 1) * 0.5));
+          bandSamples.push(sample.band01);
           latitudeSamples.push(cosTheta);
-          detailSamples.push(this.normalizeNoise(this.microDetailNoise(theta, phi)));
+          detailSamples.push(sample.micro01);
         }
         const x = cosPhi * sinTheta * radius;
         const y = cosTheta * radius;
@@ -1274,21 +1334,31 @@ export class AtmosphereSceneManager {
     }
     const stride = lonSegments + 1;
     const indices: number[] = [];
+    const edgeIndices: number[] = [];
+    const edgeSet = new Set<string>();
     for (let lat = 0; lat < latSegments; lat++) {
       for (let lon = 0; lon < lonSegments; lon++) {
         const first = lat * stride + lon;
         const second = first + stride;
         indices.push(first, second, first + 1);
         indices.push(second, second + 1, first + 1);
+        this.addEdge(edgeSet, edgeIndices, first, second);
+        this.addEdge(edgeSet, edgeIndices, second, first + 1);
+        this.addEdge(edgeSet, edgeIndices, first + 1, first);
+        this.addEdge(edgeSet, edgeIndices, second + 1, second);
+        this.addEdge(edgeSet, edgeIndices, second + 1, first + 1);
+        this.addEdge(edgeSet, edgeIndices, first + 1, second);
       }
     }
     const vbo = gl.createBuffer();
     const cbo = gl.createBuffer();
     const ibo = gl.createBuffer();
-    if (!vbo || !cbo || !ibo) {
+    const ebo = gl.createBuffer();
+    if (!vbo || !cbo || !ibo || !ebo) {
       if (vbo) gl.deleteBuffer(vbo);
       if (cbo) gl.deleteBuffer(cbo);
       if (ibo) gl.deleteBuffer(ibo);
+      if (ebo) gl.deleteBuffer(ebo);
       return null;
     }
     gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
@@ -1297,6 +1367,8 @@ export class AtmosphereSceneManager {
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(positions.length), gl.DYNAMIC_DRAW);
     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
     gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ebo);
+    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(edgeIndices), gl.STATIC_DRAW);
     const reliefFloat = withRelief ? new Float32Array(reliefSamples) : undefined;
     const ridgeMask = withRelief && reliefFloat
       ? this.computeRidgeMask(reliefFloat, latSegments, lonSegments)
@@ -1305,7 +1377,9 @@ export class AtmosphereSceneManager {
       vbo,
       cbo,
       ibo,
+      edgeIbo: ebo,
       indexCount: indices.length,
+      edgeIndexCount: edgeIndices.length,
       vertexCount: positions.length / 3,
       lastColorKey: null,
       hasRelief: withRelief,
@@ -1318,6 +1392,7 @@ export class AtmosphereSceneManager {
       lastDetailFactor: withRelief ? -1 : undefined,
       ridgeMask,
       uv: withRelief ? new Float32Array(uvSamples) : undefined,
+      terrainSeed: withRelief ? ((terrainSeed ?? 0) >>> 0) : undefined,
     };
   }
 }
