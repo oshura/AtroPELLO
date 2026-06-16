@@ -83,12 +83,28 @@ function normalizeGameStateSection(section: SaveGameGameStateSection): void {
 }
 
 function normalizeUniverseSection(payload: SaveGamePayload): void {
-  const universe = payload.universe ?? { objects: [] };
-  universe.objects = sortSerialized(universe.objects ?? []);
-  universe.portals = sortSerialized(universe.portals ?? []);
-  universe.lesserBeings = sortSerialized(universe.lesserBeings ?? []);
-  universe.custom = rebuildSortedRecord(universe.custom ?? {});
-  payload.universe = universe;
+  const universe = payload.universe;
+  if (!universe) {
+    return;
+  }
+  // Campos volátiles (timestamps/ids generados con Date.now) se neutralizan para comparar.
+  universe.id = 'NORMALIZED';
+  universe.timestamp = 0;
+  universe.planets = sortSerialized(universe.planets ?? []);
+  if (universe.clusters) {
+    universe.clusters = sortSerialized(universe.clusters);
+  }
+  if (universe.portals) {
+    universe.portals = sortSerialized(universe.portals);
+  }
+  if (universe.planetDebris) {
+    universe.planetDebris = sortSerialized(universe.planetDebris);
+  }
+  if (universe.meta) {
+    universe.meta = rebuildSortedRecord(universe.meta);
+    universe.meta['lastRuntimeCaptureAt'] = 0;
+    universe.meta['archivedAt'] = 0;
+  }
 }
 
 function sortSerialized<T extends { id?: string | null }>(entries: T[]): T[] {

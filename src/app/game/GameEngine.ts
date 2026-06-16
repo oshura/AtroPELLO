@@ -22,6 +22,9 @@ import { PortalPersistenceService } from './services/game/portal-persistence.ser
 import { PortalRegistryService } from './services/game/portal-registry.service';
 import { SolarSystemRuntimeSerializerService } from './services/game/solar-system-runtime-serializer.service';
 import { applyPlanetSnapshotFields, defaultColorForKind, normalizePlanetKind } from './services/game/planet-state.codec';
+import { createPortalFromSnapshot } from './services/game/portal-state.codec';
+import { captureLesserBeingSnapshot, cloneLesserBeingSnapshot } from './services/game/lesser-being-state.codec';
+import { resolveSnapshotId, resolveSystemId, resolveSystemKey } from './services/game/system-identity';
 import { PORTAL_SNAPSHOT_LABELS } from './constants/portal-snapshot-labels';
 import { TextureManager } from './TextureManager';
 import { HUDManager } from './hud/HUDManager';
@@ -104,6 +107,33 @@ import {
   sampleAtmosphereSurfaceRadiusAlongNormal,
   terrainSeedFromPlanetId,
 } from './atmosphere/terrain-sampler';
+import {
+  clamp,
+  lerpScalar,
+  smoothStep01,
+  vec3Length,
+  vec3Dot,
+  vec3Cross,
+  vec3Normalize,
+  randomPerpendicularVector,
+} from './math/vector-math';
+import {
+  identityMatrix,
+  translateMatrix,
+  rotateXMatrix,
+  rotateYMatrix,
+  rotateZMatrix,
+  scaleMatrixUniform,
+} from './math/matrix-math';
+import { PlayerProgressionSystem } from './services/state/player-progression-system';
+import { SunProximitySystem } from './services/state/sun-proximity-system';
+import {
+  AgeProgressionOutcome,
+  AgeProgressionSource,
+  HardcoreDeathContext,
+  HardcoreDeathSource,
+  LandingDeathSource,
+} from './types/progression.types';
 
 interface AuxiliaryAbilityRuntime {
   id: string;
@@ -120,25 +150,6 @@ interface PlanetCollapsePayload {
   position: Vector3;
   radius: number;
   clusterCount?: number;
-}
-
-type LandingDeathSource = 'landing-health' | 'landing-sanity';
-type HardcoreDeathSource = 'aging' | LandingDeathSource;
-type AgeProgressionSource = 'loop' | 'landing' | 'debug-overlay';
-
-type AgeProgressionOutcome = ReturnType<CharacterProfileService['addDaysToAge']> & {
-  source: AgeProgressionSource;
-  deathTriggered: boolean;
-  rollsExecuted: number;
-};
-
-interface HardcoreDeathContext {
-  source: HardcoreDeathSource;
-  roll?: number;
-  survivability?: number;
-  ageYears?: number;
-  metadata?: Record<string, unknown>;
-  message?: string;
 }
 
 interface LandingTouchdownOptions {
@@ -415,7 +426,8 @@ export class GameEngine {
   private precisionHoldActive: boolean = false;
   private precisionLatchActive: boolean = false;
   private precastChantDurationMs: number | null = null;
-  private sunExposureTimerMs: number = 0;
+  // Daño por proximidad solar extraído a SunProximitySystem (Fase 5).
+  private sunProximity: SunProximitySystem | null = null;
   private pendingLandingPanelTimer: ReturnType<typeof setTimeout> | null = null;
   // Atmosphere scene management
   private atmosphereTextureFactory: AtmosphereTextureFactory | null = null;
@@ -492,9 +504,6 @@ export class GameEngine {
   private landingPanelAudioFocusActive: boolean = false;
   private landingPanelAudioFocusArmed: boolean = false;
   private landingPanelAwaitingUser: boolean = false;
-  private readonly SUN_DAMAGE_INTERVAL_MS: number = 5000;
-  private readonly SUN_DAMAGE_THRESHOLD: number = 3000;
-  private readonly SUN_DAMAGE_STEP_DISTANCE: number = 100;
   private readonly WEATHER_DRIFT_OFFSET_MAX: number = 750;
   private readonly ZERO_VECTOR: Vector3 = { x: 0, y: 0, z: 0 };
   private readonly ATMOSPHERE_DRIFT_FORCE_MULT = 16;
@@ -530,10 +539,9 @@ export class GameEngine {
   private readonly ATMOSPHERE_BASE_DRAG_PER_SEC = 0.28;
   private readonly ATMOSPHERE_TURBULENCE_DRAG_BONUS = 0.85;
   private readonly ATMOSPHERE_TURBULENCE_ACCEL_PENALTY = 0.35;
-  private readonly AGE_SECONDS_PER_DAY: number = 60; // 1 minuto de juego = 1 día
-  private readonly SURVIVABILITY_DECAY_START_YEAR: number = 50;
-  private ageTimerAccumulatorSec: number = 0;
-  
+  // Progresión del piloto (envejecimiento/supervivencia) extraída a PlayerProgressionSystem (Fase 5.6).
+  private playerProgression: PlayerProgressionSystem | null = null;
+
   // Objetos del juego - MIGRATED TO GameStateStore
   // Acceso via this.gameState.spaceship, this.gameState.independentAsteroids, etc.
   public spaceship!: Spaceship; // Referencia pública para acceso externo
@@ -1689,7 +1697,8 @@ export class GameEngine {
     });
   }
 
-  private collectActiveSuns(): Sun[] {
+  // Público para SunProximitySystem (host). Ver docs/ARQUITECTURA.md Fase 5.
+  public collectActiveSuns(): Sun[] {
     const suns: Sun[] = [];
     const seen = new Set<string>();
     const pushSun = (sun: Sun | null) => {
@@ -3180,29 +3189,17 @@ export class GameEngine {
     this.weatherLightningCooldownMs = Math.max(this.weatherLightningCooldownMs, 1800 + Math.random() * 1200);
   }
 
+  // Helpers matemáticos: delegan en game/math (fuente única, ver docs/ARQUITECTURA.md Fase 5.8).
   private lerpScalar(a: number, b: number, t: number): number {
-    if (t <= 0) {
-      return a;
-    }
-    if (t >= 1) {
-      return b;
-    }
-    return a + (b - a) * t;
+    return lerpScalar(a, b, t);
   }
 
   private smoothStep01(value: number): number {
-    const t = this.clamp(value, 0, 1);
-    return t * t * (3 - 2 * t);
+    return smoothStep01(value);
   }
 
   private clamp(value: number, min: number, max: number): number {
-    if (value < min) {
-      return min;
-    }
-    if (value > max) {
-      return max;
-    }
-    return value;
+    return clamp(value, min, max);
   }
 
   /**
@@ -4704,104 +4701,24 @@ export class GameEngine {
     }
   }
 
-  private getSunRadius(sun: Sun): number {
-    const scaleRadius = Number.isFinite((sun as any)?.scale?.x) ? (sun as any).scale.x : null;
-    const explicitRadius = Number.isFinite((sun as any)?.radius) ? (sun as any).radius : null;
-    const radius = scaleRadius ?? explicitRadius ?? 0;
-    return Math.max(0, radius);
+  /** Lazy-init del sistema de daño solar (sin DI). */
+  private ensureSunProximity(): SunProximitySystem {
+    if (!this.sunProximity) {
+      this.sunProximity = new SunProximitySystem(this.logger);
+    }
+    return this.sunProximity;
   }
 
-  private getSunsWithinDistance(maxDistance: number): Array<{ sun: Sun; distanceToCenter: number; surfaceDistance: number }> {
-    if (!this.spaceship) {
-      return [];
-    }
-    const shipPos = this.spaceship.position;
-    const damaging: Array<{ sun: Sun; distanceToCenter: number; surfaceDistance: number }> = [];
-    for (const sun of this.collectActiveSuns()) {
-      const dx = sun.position.x - shipPos.x;
-      const dy = sun.position.y - shipPos.y;
-      const dz = sun.position.z - shipPos.z;
-      const distanceToCenter = Math.hypot(dx, dy, dz);
-      const surfaceDistance = Math.max(0, distanceToCenter - this.getSunRadius(sun));
-      if (surfaceDistance <= maxDistance) {
-        damaging.push({ sun, distanceToCenter, surfaceDistance });
-      }
-    }
-    return damaging.sort((a, b) => a.surfaceDistance - b.surfaceDistance);
-  }
-
-  private handleSunProximityDamage(deltaTime: number): void {
-    if (!this.spaceship || this.isLandingDamageSuppressed()) {
-      this.sunExposureTimerMs = 0;
-      return;
-    }
-    const nearby = this.getSunsWithinDistance(this.SUN_DAMAGE_THRESHOLD);
-    if (!nearby.length) {
-      this.sunExposureTimerMs = 0;
-      return;
-    }
-
-    this.sunExposureTimerMs += deltaTime * 1000;
-    while (this.sunExposureTimerMs >= this.SUN_DAMAGE_INTERVAL_MS) {
-      this.sunExposureTimerMs -= this.SUN_DAMAGE_INTERVAL_MS;
-      this.applySunDamageTick();
-      if (!this.spaceship || this.spaceship.healthCurrent <= 0) {
-        break;
-      }
-      const stillNear = this.getSunsWithinDistance(this.SUN_DAMAGE_THRESHOLD);
-      if (!stillNear.length) {
-        this.sunExposureTimerMs = 0;
-        break;
-      }
-    }
-  }
-
-  private applySunDamageTick(): void {
-    if (!this.spaceship) {
-      return;
-    }
-    const damaging = this.getSunsWithinDistance(this.SUN_DAMAGE_THRESHOLD);
-    if (!damaging.length) {
-      return;
-    }
-
-    let totalDamage = 0;
-    for (const entry of damaging) {
-      const closeness = Math.max(0, this.SUN_DAMAGE_THRESHOLD - entry.surfaceDistance);
-      const bonus = Math.floor(closeness / this.SUN_DAMAGE_STEP_DISTANCE);
-      totalDamage += 1 + Math.max(0, bonus);
-    }
-
-    if (totalDamage <= 0) {
-      return;
-    }
-
-    const applied = this.applyShipDamage(totalDamage, 'sun-core', 'sun-radiation', {
-      suppressHud: true,
-      sourceObject: damaging[0]?.sun ?? null
-    });
-
-    if (applied <= 0) {
-      return;
-    }
-
-    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Sun proximity damage applied', {
-      totalDamage: applied,
-      damagingSuns: damaging.length,
-      surfaceDistances: damaging.map(d => Math.round(d.surfaceDistance)),
-      centerDistances: damaging.map(d => Math.round(d.distanceToCenter)),
-      healthAfter: this.spaceship?.healthCurrent ?? 0,
-    });
-
+  /** Marquee de peligro (wrapper host para SunProximitySystem). */
+  public emitHazardMarquee(message: string): void {
     try {
-      this.hudManager?.emitMarqueeEvent?.(
-        HudMarqueeEventType.HAZARD,
-        `Radiación solar: -${applied}u (${this.spaceship?.healthCurrent ?? 0}/${this.spaceship?.healthMax ?? 0})`
-      );
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.HAZARD, message);
     } catch {}
+  }
 
-    const vignetteBoost = Math.min(0.4, applied / 25);
-    this.impactVignetteLevel = Math.min(1, this.impactVignetteLevel + vignetteBoost);
+  /** Incrementa el vignette de impacto acotado a 1 (wrapper host). */
+  public addImpactVignette(boost: number): void {
+    this.impactVignetteLevel = Math.min(1, this.impactVignetteLevel + boost);
   }
 
   /**
@@ -5282,20 +5199,8 @@ export class GameEngine {
       try { this.targetCatalog.register(TargetType.PORTAL, [] as any); } catch {}
       for (const p of (snapshot.portals || [])) {
         if (this.gameState.portals.some(ep => ep.id === p.id)) { createdPortals.push(p); continue; }
-        const portal = new Portal(p.id, { ...p.position }, p.radius, this.logger);
-        portal.linkedPortalId = p.linkedPortalId;
-        portal.applyEyeState(p.eyeState);
-        if (p.animosity) {
-          try { portal.setAnimosity(p.animosity); } catch {}
-        }
-        if (typeof p.concordSealActive === 'boolean') {
-          portal.setConcordSealState(
-            p.concordSealActive,
-            p.preventsLesserIncursions ?? portal.preventsLesserIncursions,
-            p.concordSealActivatedAt,
-            { immediateStrength: true }
-          );
-        }
+        // Factory canónica: portal-state.codec (fuente única de campos persistentes).
+        const portal = createPortalFromSnapshot(p, this.logger);
         if (gl && !portal.vertexBuffer) portal.initBuffers(gl as WebGL2RenderingContext);
         this.gameState.portals.push(portal);
         // Register reactive destruction callback
@@ -6015,7 +5920,7 @@ export class GameEngine {
   }
   this.updateAtmosphereAutoLandingCamera(deltaTime);
   this.maintainLandedShipAttachment();
-  this.handleSunProximityDamage(deltaTime);
+  this.ensureSunProximity().tick(deltaTime, this);
 
     // Update independent asteroids (ejected from clusters after collision)
     this.updateIndependentAsteroids(deltaTime);
@@ -7195,8 +7100,7 @@ export class GameEngine {
   // Los efectos de propulsión ahora se manejan en ParticleEffectsService
 
   private normalize(v: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
-    const len = Math.hypot(v.x, v.y, v.z) || 1;
-    return { x: v.x / len, y: v.y / len, z: v.z / len };
+    return vec3Normalize(v);
   }
 
   /**
@@ -8264,40 +8168,19 @@ export class GameEngine {
   }
 
   private vectorLength(vec?: Vector3 | null): number {
-    if (!vec) {
-      return 0;
-    }
-    return Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
+    return vec3Length(vec);
   }
 
   private dotProduct(a: Vector3, b: Vector3): number {
-    return a.x * b.x + a.y * b.y + a.z * b.z;
+    return vec3Dot(a, b);
   }
 
   private crossProduct(a: Vector3, b: Vector3): Vector3 {
-    return {
-      x: a.y * b.z - a.z * b.y,
-      y: a.z * b.x - a.x * b.z,
-      z: a.x * b.y - a.y * b.x,
-    };
+    return vec3Cross(a, b);
   }
 
   private randomPerpendicularVector(normal: Vector3): Vector3 {
-    const safeNormal = this.normalize(normal);
-    let reference: Vector3 = Math.abs(safeNormal.x) < 0.5 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
-    let perpendicular = this.crossProduct(safeNormal, reference);
-    if (this.vectorLength(perpendicular) < 1e-3) {
-      reference = { x: 0, y: 0, z: 1 };
-      perpendicular = this.crossProduct(safeNormal, reference);
-    }
-    perpendicular = this.normalize(perpendicular);
-    const tangent = this.normalize(this.crossProduct(safeNormal, perpendicular));
-    const angle = Math.random() * Math.PI * 2;
-    return this.normalize({
-      x: perpendicular.x * Math.cos(angle) + tangent.x * Math.sin(angle),
-      y: perpendicular.y * Math.cos(angle) + tangent.y * Math.sin(angle),
-      z: perpendicular.z * Math.cos(angle) + tangent.z * Math.sin(angle),
-    });
+    return randomPerpendicularVector(normal);
   }
 
   /**
@@ -8418,111 +8301,23 @@ export class GameEngine {
     }
   }
 
+  /** Lazy-init del sistema de progresión (sin DI para no tocar el constructor del engine). */
+  private ensureProgression(): PlayerProgressionSystem {
+    if (!this.playerProgression) {
+      this.playerProgression = new PlayerProgressionSystem(this.gameState, this.characterProfileService, this.logger);
+    }
+    return this.playerProgression;
+  }
+
   private updateAgeAndSurvivability(deltaTime: number): void {
-    if (deltaTime <= 0) {
-      return;
-    }
-
-    this.ageTimerAccumulatorSec += deltaTime;
-    if (this.ageTimerAccumulatorSec < this.AGE_SECONDS_PER_DAY) {
-      return;
-    }
-
-    const daysToApply = Math.floor(this.ageTimerAccumulatorSec / this.AGE_SECONDS_PER_DAY);
-    this.ageTimerAccumulatorSec -= daysToApply * this.AGE_SECONDS_PER_DAY;
-    if (daysToApply <= 0) {
-      return;
-    }
-
-    const outcome = this.applyAgeProgression(daysToApply, 'loop');
-    if (outcome.deathTriggered) {
-      return;
-    }
+    this.ensureProgression().tickAging(deltaTime, this);
   }
 
   public applyExternalAgeDelta(days: number, source: AgeProgressionSource = 'landing'): AgeProgressionOutcome {
-    return this.applyAgeProgression(days, source);
+    return this.ensureProgression().applyExternalAgeDelta(days, source, this);
   }
 
-  private applyAgeProgression(days: number, source: AgeProgressionSource): AgeProgressionOutcome {
-    const normalizedDays = Math.trunc(days);
-    if (!normalizedDays) {
-      return {
-        daysApplied: 0,
-        yearsBefore: this.gameState.characterProfile.age.years,
-        yearsAfter: this.gameState.characterProfile.age.years,
-        yearsGained: 0,
-        newAge: { ...this.gameState.characterProfile.age },
-        source,
-        deathTriggered: false,
-        rollsExecuted: 0
-      };
-    }
-
-    const ageResult = this.characterProfileService.addDaysToAge(normalizedDays);
-    if (!ageResult.daysApplied) {
-      return { ...ageResult, source, deathTriggered: false, rollsExecuted: 0 };
-    }
-
-    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Age advanced', {
-      source,
-      daysApplied: ageResult.daysApplied,
-      yearsBefore: ageResult.yearsBefore,
-      yearsAfter: ageResult.yearsAfter,
-      yearsGained: ageResult.yearsGained
-    });
-
-    if (ageResult.yearsGained <= 0) {
-      return { ...ageResult, source, deathTriggered: false, rollsExecuted: 0 };
-    }
-
-    let deathTriggered = false;
-    let rollsExecuted = 0;
-
-    for (let year = ageResult.yearsBefore + 1; year <= ageResult.yearsAfter; year++) {
-      if (year > this.SURVIVABILITY_DECAY_START_YEAR) {
-        rollsExecuted++;
-        const before = this.gameState.characterProfile.survivability;
-        const after = this.characterProfileService.adjustSurvivability(-1);
-        this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Survivability decayed due to aging', {
-          source,
-          year,
-          survivabilityBefore: before,
-          survivabilityAfter: after
-        });
-        const rollOutcome = this.performSurvivabilityDeathRoll('aging', after, year);
-        if (rollOutcome.didDie) {
-          deathTriggered = true;
-          break;
-        }
-      }
-    }
-
-    return { ...ageResult, source, deathTriggered, rollsExecuted };
-  }
-
-  private performSurvivabilityDeathRoll(
-    source: 'aging',
-    survivability: number,
-    ageYears: number
-  ): { didDie: boolean; roll: number } {
-    const roll = Math.random() * 100;
-    const survived = roll <= survivability;
-    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Hardcore survivability roll executed', {
-      source,
-      roll: Number(roll.toFixed(2)),
-      survivability,
-      ageYears,
-      survived
-    });
-    if (survived) {
-      return { didDie: false, roll };
-    }
-    this.handleHardcoreDeath({ source, roll, survivability, ageYears });
-    return { didDie: true, roll };
-  }
-
-  private handleHardcoreDeath(context: HardcoreDeathContext): void {
+  public handleHardcoreDeath(context: HardcoreDeathContext): void {
     if (this.deathInProgress || !this.spaceship) {
       return;
     }
@@ -11198,7 +10993,8 @@ export class GameEngine {
     });
   }
 
-  private isLandingDamageSuppressed(): boolean {
+  // Público para SunProximitySystem (host). Ver docs/ARQUITECTURA.md Fase 5.
+  public isLandingDamageSuppressed(): boolean {
     return this.landingDamageSuppressed;
   }
 
@@ -12997,7 +12793,7 @@ export class GameEngine {
       });
       return this.persistRespawnSnapshot(systemId, label);
     }
-    const snapshotId = snapshot.id ?? snapshot.meta?.['proceduralSystemId'] ?? systemId;
+    const snapshotId = resolveSnapshotId(snapshot) ?? systemId;
     return { snapshotId, snapshotLabel: label };
   }
 
@@ -13009,7 +12805,7 @@ export class GameEngine {
     const adoptOverrideLabel = normalizedOverride === PORTAL_SNAPSHOT_LABELS.HUMAN_DEFAULT;
     let label = normalizedOverride || PORTAL_SNAPSHOT_LABELS.RESPAWN_ANCHOR_LATEST;
     const liveSnapshot = this.currentSnapshot;
-    const fallbackId = liveSnapshot?.id ?? liveSnapshot?.meta?.['proceduralSystemId'] ?? systemId;
+    const fallbackId = resolveSnapshotId(liveSnapshot) ?? systemId;
 
     if (!normalizedOverride) {
       try { this.ensureCurrentSnapshotLabel(); } catch {}
@@ -13036,7 +12832,7 @@ export class GameEngine {
     if (serializer) {
       const snapshot = serializer.saveWithLabel(label, this);
       if (snapshot) {
-        const snapshotId = snapshot.id ?? snapshot.meta?.['proceduralSystemId'] ?? systemId;
+        const snapshotId = resolveSnapshotId(snapshot) ?? systemId;
         return { snapshotId, snapshotLabel: label };
       }
       this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Runtime snapshot serializer returned null during respawn persistence', { label, systemId });
@@ -13044,7 +12840,7 @@ export class GameEngine {
 
     const existingSnapshot = this.portalPersistenceService.get(label);
     if (existingSnapshot) {
-      const snapshotId = existingSnapshot.id ?? existingSnapshot.meta?.['proceduralSystemId'] ?? systemId;
+      const snapshotId = resolveSnapshotId(existingSnapshot) ?? systemId;
       return { snapshotId, snapshotLabel: label };
     }
 
@@ -13057,7 +12853,7 @@ export class GameEngine {
       const clone = this.cloneSolarSystemSnapshot(liveSnapshot);
       clone.meta = { ...(clone.meta || {}), snapshotLabel: label };
       clone.meta['proceduralSystemId'] = clone.meta['proceduralSystemId'] ?? systemId;
-      const snapshotId = clone.id ?? clone.meta['proceduralSystemId'] ?? systemId;
+      const snapshotId = resolveSnapshotId(clone) ?? systemId;
       this.portalPersistenceService.save(label, clone);
       this.logger.log(LogLevel.INFO, LogCategory.SOLAR_SYSTEM_GENERATION, 'Respawn anchor snapshot persisted (fallback mode)', {
         label,
@@ -13503,83 +13299,29 @@ export class GameEngine {
   /**
    * Matriz identidad
    */
+  // Helpers de matrices: delegan en game/math (fuente única, ver docs/ARQUITECTURA.md Fase 5.8).
   private identityMatrix(matrix: Float32Array): void {
-    matrix[0] = 1; matrix[1] = 0; matrix[2] = 0; matrix[3] = 0;
-    matrix[4] = 0; matrix[5] = 1; matrix[6] = 0; matrix[7] = 0;
-    matrix[8] = 0; matrix[9] = 0; matrix[10] = 1; matrix[11] = 0;
-    matrix[12] = 0; matrix[13] = 0; matrix[14] = 0; matrix[15] = 1;
+    identityMatrix(matrix);
   }
 
-  /**
-   * Traslación
-   */
   private translateMatrix(matrix: Float32Array, x: number, y: number, z: number): void {
-    matrix[12] += matrix[0] * x + matrix[4] * y + matrix[8] * z;
-    matrix[13] += matrix[1] * x + matrix[5] * y + matrix[9] * z;
-    matrix[14] += matrix[2] * x + matrix[6] * y + matrix[10] * z;
+    translateMatrix(matrix, x, y, z);
   }
 
-  /**
-   * Rotación X
-   */
   private rotateXMatrix(matrix: Float32Array, angle: number): void {
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    const temp = new Float32Array(matrix);
-    
-    matrix[4] = temp[4] * cos + temp[8] * sin;
-    matrix[5] = temp[5] * cos + temp[9] * sin;
-    matrix[6] = temp[6] * cos + temp[10] * sin;
-    matrix[8] = temp[8] * cos - temp[4] * sin;
-    matrix[9] = temp[9] * cos - temp[5] * sin;
-    matrix[10] = temp[10] * cos - temp[6] * sin;
+    rotateXMatrix(matrix, angle);
   }
 
-  /**
-   * Rotación Y
-   */
   private rotateYMatrix(matrix: Float32Array, angle: number): void {
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    const temp = new Float32Array(matrix);
-    
-    matrix[0] = temp[0] * cos - temp[8] * sin;
-    matrix[1] = temp[1] * cos - temp[9] * sin;
-    matrix[2] = temp[2] * cos - temp[10] * sin;
-    matrix[8] = temp[0] * sin + temp[8] * cos;
-    matrix[9] = temp[1] * sin + temp[9] * cos;
-    matrix[10] = temp[2] * sin + temp[10] * cos;
+    rotateYMatrix(matrix, angle);
   }
 
-  /**
-   * Rotación Z
-   */
   private rotateZMatrix(matrix: Float32Array, angle: number): void {
-    const cos = Math.cos(angle);
-    const sin = Math.sin(angle);
-    const temp = new Float32Array(matrix);
-    
-    matrix[0] = temp[0] * cos + temp[4] * sin;
-    matrix[1] = temp[1] * cos + temp[5] * sin;
-    matrix[2] = temp[2] * cos + temp[6] * sin;
-    matrix[4] = temp[4] * cos - temp[0] * sin;
-    matrix[5] = temp[5] * cos - temp[1] * sin;
-    matrix[6] = temp[6] * cos - temp[2] * sin;
+    rotateZMatrix(matrix, angle);
   }
 
-  /**
-   * Escalado uniforme
-   */
   private scaleMatrixUniform(matrix: Float32Array, factor: number): void {
-    matrix[0] *= factor;
-    matrix[1] *= factor;
-    matrix[2] *= factor;
-    matrix[4] *= factor;
-    matrix[5] *= factor;
-    matrix[6] *= factor;
-    matrix[8] *= factor;
-    matrix[9] *= factor;
-    matrix[10] *= factor;
+    scaleMatrixUniform(matrix, factor);
   }
 
   /**
@@ -14958,40 +14700,12 @@ export class GameEngine {
   }
 
   private resolveSystemId(snapshot?: SolarSystemSnapshot | null): string | null {
-    const snap = snapshot ?? this.currentSnapshot;
-    if (!snap) {
-      return null;
-    }
-    if (snap.id && snap.id.trim().length) {
-      return snap.id;
-    }
-    if (snap.sun?.id) {
-      return `sun:${snap.sun.id}`;
-    }
-    return null;
+    // Identidad canónica: system-identity.ts (única fuente, ver docs/ARQUITECTURA.md §4.3).
+    return resolveSystemId(snapshot ?? this.currentSnapshot);
   }
 
   private resolvePersistentSystemKey(snapshot?: SolarSystemSnapshot | null): string | null {
-    const snap = snapshot ?? this.currentSnapshot;
-    if (!snap) {
-      return null;
-    }
-    const meta = snap.meta || {};
-    const candidates: Array<unknown> = [
-      meta['persistentSystemId'],
-      meta['proceduralSystemId'],
-      meta['sourceSystemId'],
-      meta['snapshotLabel'],
-      this.currentSnapshotLabel,
-      snap.id,
-      snap.sun?.id ? `sun:${snap.sun.id}` : null
-    ];
-    for (const value of candidates) {
-      if (typeof value === 'string' && value.trim().length) {
-        return value.trim();
-      }
-    }
-    return null;
+    return resolveSystemKey(snapshot ?? this.currentSnapshot, { fallbackLabel: this.currentSnapshotLabel });
   }
 
   public getPersistentSystemKey(snapshot?: SolarSystemSnapshot | null): string | null {
@@ -15148,7 +14862,7 @@ export class GameEngine {
       return;
     }
 
-    const snapshotId = snapshot.id ?? snapshot.meta?.['proceduralSystemId'] ?? null;
+    const snapshotId = resolveSnapshotId(snapshot);
     this.gameState.syncAnchorSnapshotMeta(targetLabel, { snapshotId });
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Respawn anchor snapshot mirrored', {
       targetLabel,
@@ -15248,23 +14962,10 @@ export class GameEngine {
   }
 
   private snapshotActiveLesserBeings(): LesserBeingInstanceSnapshot[] {
-    const result: LesserBeingInstanceSnapshot[] = [];
-    for (const being of this.lesserBeings) {
-      if (!being || !being.active) {
-        continue;
-      }
-      result.push({
-        id: being.id,
-        type: being.beingType,
-        position: { ...being.position },
-        velocity: { ...being.velocity },
-        forward: { ...being.forwardDirection },
-        hasLanded: being.hasLanded,
-        landedPlanetId: being.landedPlanetId,
-        health: { current: being.healthCurrent, max: being.healthMax }
-      });
-    }
-    return result;
+    // Fuente única: lesser-being-state.codec.
+    return this.lesserBeings
+      .filter(being => being && being.active)
+      .map(being => captureLesserBeingSnapshot(being));
   }
 
   private clearActiveLesserBeings(): void {
@@ -15302,13 +15003,8 @@ export class GameEngine {
     if (!stored.length) {
       const metaPayload = snapshot.meta?.['lesserBeingMemory'];
       if (Array.isArray(metaPayload) && metaPayload.length) {
-        stored = metaPayload.map(raw => ({
-          ...raw,
-          position: { ...raw.position },
-          velocity: raw.velocity ? { ...raw.velocity } : undefined,
-          forward: raw.forward ? { ...raw.forward } : undefined,
-          health: raw.health ? { ...raw.health } : undefined
-        })) as LesserBeingInstanceSnapshot[];
+        // Clonado profundo vía códec (fuente única).
+        stored = (metaPayload as LesserBeingInstanceSnapshot[]).map(raw => cloneLesserBeingSnapshot(raw));
       }
     }
     if (!stored.length) {

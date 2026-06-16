@@ -1,8 +1,8 @@
 import { SaveGameHarness, createGateRiteMismatchHarnessOptions, createRichSaveGameHarnessOptions } from './testing/savegame-harness';
 import { normalizeSaveGamePayload } from './testing/savegame-normalizer';
 import { SaveGamePlayerSection, SaveGameRespawnState } from '../../game/types/save-game.types';
-import { RuntimeSolarSystemState, RuntimeStateSource } from '../../game/types/universe-state.types';
-import { GameObjectType } from '../../game/types/game-object.types';
+import { RuntimeStateSource } from '../../game/types/universe-state.types';
+import { SolarSystemSnapshot } from '../../game/types/solar-system.types';
 import { Vector3 } from '../../types/game.types';
 import { EquipmentSlot, EquipmentSlotState } from '../../game/types/inventory.types';
 
@@ -12,6 +12,20 @@ function vec(x: number, y: number, z: number): Vector3 {
 
 function last<T>(items: T[]): T | undefined {
   return items.length ? items[items.length - 1] : undefined;
+}
+
+/** Snapshot mínimo cuyo systemId canónico es `systemId` (para dirigir targetSystemId). */
+function specUniverse(systemId: string): SolarSystemSnapshot {
+  return {
+    id: `${systemId}-snapshot`,
+    sun: { id: `${systemId}-sun`, position: vec(0, 0, 0), radius: 1500 },
+    planets: [
+      { id: `${systemId}-planet`, kind: 'terrestrial', position: vec(60_000, 0, 0), radius: 400, baseColorName: 'azul_marino' }
+    ],
+    clusters: [],
+    portals: [],
+    meta: { proceduralSystemId: systemId, persistentSystemId: systemId }
+  };
 }
 
 function buildPlayerSection(anchorOverrides?: Partial<SaveGameRespawnState['activeAnchor']>): SaveGamePlayerSection {
@@ -93,27 +107,6 @@ function buildPlayerSection(anchorOverrides?: Partial<SaveGameRespawnState['acti
   };
 }
 
-function buildRuntimeState(systemId: string): RuntimeSolarSystemState {
-  return {
-    systemId,
-    snapshotId: 'runtime-snap',
-    source: RuntimeStateSource.SNAPSHOT,
-    capturedAt: 1_700_000_456_000,
-    payload: {
-      objects: [
-        {
-          id: 'object-ship',
-          type: GameObjectType.SPACESHIP,
-          position: vec(1, 2, 3)
-        }
-      ],
-      portals: [],
-      lesserBeings: [],
-      environment: { ambientScene: 'spec-scene' }
-    }
-  };
-}
-
 describe('GamePersistenceService · harness roundtrip', () => {
   it('round-trips payloads without structural diffs', async () => {
     const harness = new SaveGameHarness();
@@ -123,6 +116,17 @@ describe('GamePersistenceService · harness roundtrip', () => {
     const secondPayload = await harness.save({ reason: 'spec-roundtrip-2' });
 
     expect(normalizeSaveGamePayload(secondPayload)).toEqual(normalizeSaveGamePayload(firstPayload));
+  });
+
+  it('stores the universe as a solar system snapshot (schema v2)', async () => {
+    const harness = new SaveGameHarness();
+    const payload = await harness.save({ reason: 'spec-schema' });
+
+    expect(payload.schemaVersion).toBe(2);
+    expect(Array.isArray(payload.universe.planets)).toBeTrue();
+    expect(payload.universe.sun).toBeTruthy();
+    // Sin segunda representación: no debe haber payload por-objeto.
+    expect((payload.universe as any).objects).toBeUndefined();
   });
 
   it('captures optional UI/audio sections when flags are enabled', async () => {
@@ -143,25 +147,30 @@ describe('GamePersistenceService · harness roundtrip', () => {
 
   it('restores runtime context when loading payloads', async () => {
     const player = buildPlayerSection();
-    const runtimeState = buildRuntimeState(player.respawn.activeAnchor?.systemId ?? 'fallback');
-    const harness = new SaveGameHarness({ player, runtimeState, playerResetState: {
-      position: vec(5, 5, 5),
-      velocity: vec(1, 0, 0),
-      orientation: null,
-      shipHealth: { current: 45, max: 90 },
-      voidEnergy: 42,
-      sanity: 88,
-      vitality: 77,
-      restoredStat: 'void'
-    }});
+    const systemId = player.respawn.activeAnchor?.systemId ?? 'fallback';
+    const harness = new SaveGameHarness({
+      player,
+      universeSnapshot: specUniverse(systemId),
+      systemId,
+      playerResetState: {
+        position: vec(5, 5, 5),
+        velocity: vec(1, 0, 0),
+        orientation: null,
+        shipHealth: { current: 45, max: 90 },
+        voidEnergy: 42,
+        sanity: 88,
+        vitality: 77,
+        restoredStat: 'void'
+      }
+    });
 
     const payload = await harness.save({ reason: 'spec-context' });
     await harness.load(payload, { reason: 'spec-context-load' });
 
     const restartContext = harness.getLastRestartContext();
     expect(restartContext).withContext('restart context should be emitted').not.toBeNull();
-    expect(restartContext?.targetSystemId).toBe(runtimeState.systemId);
-    expect(restartContext?.runtimeState.systemId).toBe(runtimeState.systemId);
+    expect(restartContext?.targetSystemId).toBe(systemId);
+    expect(restartContext?.runtimeState.systemId).toBe(systemId);
     expect(restartContext?.runtimeState.source).toBe(RuntimeStateSource.SNAPSHOT);
     expect(restartContext?.respawnAnchor?.anchorId).toBe(player.respawn.activeAnchor?.anchorId);
     expect(restartContext?.playerState.voidEnergy).toBe(42);
@@ -190,7 +199,7 @@ describe('GamePersistenceService · harness roundtrip', () => {
     const restartContext = harness.getLastRestartContext();
     expect(restartContext?.respawnAnchor?.label).toContain('Helios');
     expect(restartContext?.runtimeState.systemId).toBe('helios-binary');
-    expect(harness.universeService.ensureCalls.some(call => call.systemId === 'helios-binary')).toBeTrue();
+    expect(harness.universeAdapter.adoptCalls.some(call => call.systemId === 'helios-binary')).toBeTrue();
     const applied = last(harness.playerSerializer.appliedSections);
     expect(applied?.inventory.cargoManifest.length ?? 0).toBeGreaterThan(1);
     expect(payload.universe.portals?.some(portal => portal.linkedPortalId)).toBeTrue();
@@ -206,26 +215,27 @@ describe('GamePersistenceService · harness roundtrip', () => {
 
     await harness.load(payload, { reason: 'gate-rite-mismatch-load' });
 
-    const ensureCall = last(harness.universeService.ensureCalls);
-    expect(ensureCall?.systemId).toBe('ringworld-7');
+    const adoptCall = last(harness.universeAdapter.adoptCalls);
+    expect(adoptCall?.systemId).toBe('ringworld-7');
     const restartContext = harness.getLastRestartContext();
     expect(restartContext?.targetSystemId).toBe('ringworld-7');
     expect(restartContext?.runtimeState.systemId).toBe('ringworld-7');
   });
 
-  it('rehydrates the saved system when portal snapshots are missing', async () => {
+  it('adopts the embedded universe snapshot on load (single restoration path)', async () => {
     const harness = new SaveGameHarness(
       createGateRiteMismatchHarnessOptions({ anchorSystemId: 'sol-origin', destinationSystemId: 'ringworld-42' })
     );
-    const payload = await harness.save({ reason: 'rehydration-save' });
-    harness.universeService.setActiveSystemId('human-system', { lock: true });
+    const payload = await harness.save({ reason: 'adopt-save' });
 
-    await harness.load(payload, { reason: 'rehydration-load' });
+    await harness.load(payload, { reason: 'adopt-load' });
 
     const restartContext = harness.getLastRestartContext();
     expect(restartContext?.targetSystemId).toBe(payload.metadata.systemId);
     expect(restartContext?.runtimeState.systemId).toBe(payload.metadata.systemId);
-    const rehydrationCall = last(harness.universeService.payloadRehydrations);
-    expect(rehydrationCall?.systemId).toBe(payload.metadata.systemId);
+    const adoptCall = last(harness.universeAdapter.adoptCalls);
+    expect(adoptCall?.systemId).toBe(payload.metadata.systemId);
+    // El snapshot adoptado es exactamente el embebido en la partida.
+    expect(adoptCall?.snapshot.id).toBe(payload.universe.id);
   });
 });

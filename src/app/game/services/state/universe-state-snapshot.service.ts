@@ -3,42 +3,16 @@ import type { GameEngine } from '../../../game/GameEngine';
 import { PortalPersistenceService } from '../game/portal-persistence.service';
 import { GameStateStore } from '../../../services/game/game-state.store';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
-import { ClusterSnapshot, PortalSnapshot, SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, EyeState } from '../../types/solar-system.types';
-import {
-  capturePlanetSnapshot,
-  planetCustomMetaFromSnapshot,
-  planetSnapshotFromCustomMeta,
-} from '../game/planet-state.codec';
+import { SolarSystemSnapshot } from '../../types/solar-system.types';
+import { resolveSnapshotId, resolveSystemId } from '../game/system-identity';
 import {
   GameStartContext,
-  HealthSnapshot,
   PlayerResetState,
   RuntimeSolarSystemState,
-  RuntimeStateSource,
-  SerializedGameObjectState,
-  SerializedLesserBeingState,
-  SerializedPortalState,
-  SerializedUniversePayload
+  RuntimeStateSource
 } from '../../types/universe-state.types';
-import { RespawnAnchorMetadata, OrientationSnapshot } from '../../types/respawn.types';
-import { GameObject } from '../../GameObject';
-import { GameObjectType } from '../../types/game-object.types';
-import { Vector3 } from '../../../types/game.types';
-import { LesserBeing, LesserBeingInstanceSnapshot } from '../../types/cosmic-life.types';
+import { RespawnAnchorMetadata } from '../../types/respawn.types';
 import { GameInitializer } from '../../../services/game/game-initializer.service';
-import { Planet } from '../../game-objects/Planet';
-import { Sun } from '../../game-objects/Sun';
-import { Portal } from '../../game-objects/Portal';
-
-const PLANET_TYPES = new Set<GameObjectType>([
-  GameObjectType.PLANET,
-  GameObjectType.DWARF_PLANET,
-  GameObjectType.PROTOPLANET,
-  GameObjectType.GIANT_PLANET,
-  GameObjectType.GASEOUS_PLANET,
-  GameObjectType.RINGED_PLANET,
-  GameObjectType.EARTH_SPLIT_PLANET
-]);
 
 export interface EnsureSystemStateOptions {
   snapshot?: SolarSystemSnapshot | null;
@@ -47,14 +21,24 @@ export interface EnsureSystemStateOptions {
   reason?: string;
 }
 
-export interface ReplaceRuntimePayloadOptions {
-  systemId: string;
-  payload: SerializedUniversePayload;
-  snapshotId?: string | null;
+export interface AdoptSnapshotOptions {
+  /** Snapshot embebido en la partida guardada a aplicar como sistema activo. */
+  snapshot: SolarSystemSnapshot;
+  /** Id lógico del sistema destino (normalmente metadata.systemId del savegame). */
+  systemId?: string | null;
+  /** Etiqueta bajo la que persistir el snapshot (se pinea para respawns posteriores). */
   snapshotLabel?: string | null;
   reason?: string;
 }
 
+/**
+ * Coordina la captura y restauración del sistema solar activo en forma de SolarSystemSnapshot.
+ *
+ * Tras la Fase 4 (docs/ARQUITECTURA.md §4.3) hay UNA sola representación del mundo: el snapshot.
+ * - Guardar partida   → `captureCurrentSnapshot()`
+ * - Cargar partida     → `adoptSnapshot()` (mismo camino que cruzar un portal)
+ * - Respawn / portal   → `ensureSystemState()` / `buildRestartContext()`
+ */
 @Injectable({ providedIn: 'root' })
 export class UniverseStateSnapshotService {
   constructor(
@@ -72,68 +56,51 @@ export class UniverseStateSnapshotService {
     return engine;
   }
 
-  /** Returns a RuntimeSolarSystemState describing the system currently loaded in memory. */
-  public captureRuntimeState(systemId?: string): RuntimeSolarSystemState {
-    const resolvedSystemId = systemId ?? this.getCurrentSystemId() ?? 'unknown-system';
-    const payload = this.captureLivePayload(resolvedSystemId);
-    return {
-      systemId: resolvedSystemId,
-      snapshotId: this.getCurrentSnapshotId(),
-      source: RuntimeStateSource.LIVE,
-      capturedAt: Date.now(),
-      payload
-    };
+  /**
+   * Captura el sistema solar activo como snapshot autocontenido (para guardar la partida).
+   * Es la misma representación que se usa al viajar por portal o al reaparecer.
+   */
+  public captureCurrentSnapshot(): SolarSystemSnapshot {
+    const engine = this.engine;
+    const serializer = engine.runtimeSerializer;
+    const snapshot = serializer ? serializer.captureCurrentSnapshot(engine) : this.getCurrentSnapshot();
+    if (!snapshot) {
+      throw new Error('No active solar system snapshot available to capture.');
+    }
+    return this.cloneSnapshot(snapshot);
   }
 
-  /** Builds a runtime descriptor directly from an embedded serialized payload (fallback path). */
-  public buildRuntimeStateFromPayload(
-    systemId: string,
-    payload: SerializedUniversePayload,
-    snapshotId?: string | null,
-    reason?: string
-  ): RuntimeSolarSystemState {
-    if (!payload) {
-      throw new Error('Serialized universe payload is empty.');
+  /**
+   * Adopta un snapshot embebido (de una partida guardada) como sistema activo: lo persiste bajo
+   * una etiqueta pineada y lo aplica al mundo. Es el ÚNICO camino de carga, idéntico a cruzar un
+   * portal. Devuelve el descriptor runtime usado para construir el contexto de reinicio.
+   */
+  public adoptSnapshot(options: AdoptSnapshotOptions): RuntimeSolarSystemState {
+    const snapshot = this.cloneSnapshot(options.snapshot);
+    const systemId = this.firstNonEmpty(options.systemId, resolveSystemId(snapshot)) ?? 'unknown-system';
+    const label = this.normalizeSnapshotLabel(options.snapshotLabel, systemId);
+    snapshot.meta = { ...(snapshot.meta || {}), snapshotLabel: label };
+    this.portalPersistence.save(label, snapshot);
+    this.portalPersistence.pin(label);
+    const applied = this.applySnapshot(snapshot, options.reason ?? 'load-game');
+    if (!applied) {
+      this.logger.log(LogLevel.ERROR, LogCategory.SAVE_SYSTEM, 'Failed to apply embedded savegame snapshot', {
+        systemId,
+        label
+      });
     }
-    this.logger.log(LogLevel.WARN, LogCategory.SOLAR_SYSTEM_GENERATION, 'Using embedded universe payload for runtime state', {
-      systemId,
-      snapshotId: snapshotId ?? null,
-      reason
-    });
+    try {
+      this.gameInitializer.getGameEngine()?.setCurrentSnapshotLabel?.(label, { mutateSnapshot: false });
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.SAVE_SYSTEM, 'Failed to set current snapshot label after adopt', { label, error });
+    }
     return {
       systemId,
-      snapshotId: snapshotId ?? null,
+      snapshotId: resolveSnapshotId(snapshot),
       source: RuntimeStateSource.SNAPSHOT,
       capturedAt: Date.now(),
-      payload
+      payload: null
     };
-  }
-
-  /** Replaces the active runtime by synthesizing a snapshot from a serialized payload. */
-  public replaceRuntimeWithPayload(options: ReplaceRuntimePayloadOptions): RuntimeSolarSystemState {
-    if (!options.payload || !Array.isArray(options.payload.objects)) {
-      throw new Error('Cannot rehydrate runtime because the payload is empty.');
-    }
-    const snapshotId = options.snapshotId?.trim() || `${options.systemId}-rehydrated-${Date.now()}`;
-    const snapshotLabel = this.normalizeSnapshotLabel(options.snapshotLabel, options.systemId);
-    const syntheticSnapshot = this.buildSnapshotFromPayload({
-      systemId: options.systemId,
-      payload: options.payload,
-      snapshotId,
-      snapshotLabel
-    });
-    this.portalPersistence.save(snapshotLabel, syntheticSnapshot);
-    this.portalPersistence.pin(snapshotLabel);
-    const applied = this.applySnapshot(syntheticSnapshot, options.reason ?? 'payload-rehydrate');
-    if (applied) {
-      return applied;
-    }
-    return this.buildRuntimeStateFromPayload(
-      options.systemId,
-      options.payload,
-      snapshotId,
-      `${options.reason ?? 'payload-rehydrate'}:fallback`
-    );
   }
 
   public pinSnapshotLabel(label: string | null | undefined): void {
@@ -154,7 +121,7 @@ export class UniverseStateSnapshotService {
       }
       return {
         systemId,
-        snapshotId: requestedSnapshot.id ?? requestedSnapshot.meta?.['proceduralSystemId'] ?? null,
+        snapshotId: resolveSnapshotId(requestedSnapshot),
         source: RuntimeStateSource.SNAPSHOT,
         capturedAt: Date.now(),
         payload: null
@@ -216,139 +183,6 @@ export class UniverseStateSnapshotService {
     };
   }
 
-  private captureLivePayload(systemId: string): SerializedUniversePayload {
-    return {
-      objects: this.captureGameObjects(),
-      portals: this.capturePortals(),
-      lesserBeings: this.captureLesserBeings(systemId),
-      environment: { ambientScene: (this.engine as any)?.audio?.currentScene ?? null }
-    };
-  }
-
-  private captureGameObjects(): SerializedGameObjectState[] {
-    const objects = this.gameState.getAllObjects();
-    return objects.map(obj => this.serializeGameObject(obj));
-  }
-
-  private capturePortals(): SerializedPortalState[] {
-    return this.gameState.portals.map(portal => ({
-      id: portal.id,
-      position: { ...portal.position },
-      linkedPortalId: portal.linkedPortalId,
-      radius: portal.radius,
-      custom: this.removeUndefined({
-        animosity: portal.animosity,
-        concordSealActive: portal.concordSealActive ?? false,
-        concordSealActivatedAt: portal.concordSealActivatedAt || undefined,
-        preventsLesserIncursions: portal.preventsLesserIncursions || undefined,
-        eyeState: this.cloneEyeState(portal.eyeState),
-        planetColorRef: portal.planetColorRef ? { ...portal.planetColorRef } : undefined
-      })
-    }));
-  }
-
-  private captureLesserBeings(systemId: string): SerializedLesserBeingState[] {
-    const snapshots: LesserBeingInstanceSnapshot[] = this.gameState.getLesserBeingSnapshots(systemId);
-    return snapshots.map(s => ({
-      id: s.id,
-      archetype: s.type,
-      position: { ...s.position },
-      velocity: s.velocity ? { ...s.velocity } : null,
-      custom: this.cloneLesserBeingCustom(s)
-    }));
-  }
-
-  private cloneLesserBeingCustom(snapshot: LesserBeingInstanceSnapshot): Record<string, any> | null {
-    const payload: Record<string, any> = {};
-    if (snapshot.forward) {
-      payload['forward'] = { ...snapshot.forward };
-    }
-    if (snapshot.hasLanded !== undefined) {
-      payload['hasLanded'] = snapshot.hasLanded;
-    }
-    if (snapshot.landedPlanetId) {
-      payload['landedPlanetId'] = snapshot.landedPlanetId;
-    }
-    if (snapshot.health) {
-      payload['health'] = { ...snapshot.health };
-    }
-    if (snapshot.metadata) {
-      payload['metadata'] = { ...snapshot.metadata };
-    }
-    return Object.keys(payload).length ? payload : null;
-  }
-
-  private serializeGameObject(obj: GameObject): SerializedGameObjectState {
-    const position = { ...obj.position };
-    const velocity = obj.velocity ? { ...obj.velocity } : undefined;
-    const scale = obj.scale ? { ...obj.scale } : undefined;
-    const serialized: SerializedGameObjectState = {
-      id: obj.id,
-      type: typeof obj.getType === 'function' ? obj.getType() : GameObjectType.UNKNOWN,
-      position,
-      velocity,
-      scale,
-      orientation: this.captureOrientation(obj),
-      health: this.captureHealth(obj),
-      custom: undefined
-    };
-
-    const custom = this.buildCustomMetadata(obj);
-    if (custom) {
-      serialized.custom = custom;
-    }
-    return serialized;
-  }
-
-  private buildCustomMetadata(obj: GameObject): Record<string, any> | undefined {
-    if (obj instanceof Sun || obj instanceof Planet) {
-      return this.buildPlanetMetadata(obj);
-    }
-    if (obj instanceof Portal) {
-      return this.removeUndefined({
-        animosity: obj.animosity,
-        concordSealActive: obj.concordSealActive ?? false,
-        concordSealActivatedAt: obj.concordSealActivatedAt || undefined,
-        preventsLesserIncursions: obj.preventsLesserIncursions || undefined,
-        eyeState: this.cloneEyeState(obj.eyeState)
-      });
-    }
-    if (obj.animosity) {
-      return { animosity: obj.animosity };
-    }
-    return undefined;
-  }
-
-  private buildPlanetMetadata(planet: Planet | Sun): Record<string, any> | undefined {
-    // Fuente única de campos persistentes: planet-state.codec (ver docs/ARQUITECTURA.md §4.3).
-    const metadata = planetCustomMetaFromSnapshot(capturePlanetSnapshot(planet));
-    return Object.keys(metadata).length ? metadata : undefined;
-  }
-
-  private captureOrientation(obj: GameObject): OrientationSnapshot | null {
-    const asAny = obj as any;
-    if (typeof asAny.getOrientationQuaternion === 'function') {
-      const quatValue = asAny.getOrientationQuaternion();
-      const matrixValue = asAny.getOrientationMatrix?.();
-      return {
-        quaternion: Array.isArray(quatValue) ? (quatValue as [number, number, number, number]) : undefined,
-        matrix: Array.isArray(matrixValue) ? (matrixValue as number[]) : undefined,
-        forward: this.cloneVec(asAny.forwardVector),
-        up: this.cloneVec(asAny.upVector)
-      };
-    }
-    return null;
-  }
-
-  private captureHealth(obj: GameObject): HealthSnapshot | null {
-    const current = (obj as any)?.healthCurrent;
-    const max = (obj as any)?.healthMax;
-    if (typeof current === 'number' && typeof max === 'number') {
-      return { current, max };
-    }
-    return null;
-  }
-
   private applySnapshot(snapshot: SolarSystemSnapshot, reason: string): RuntimeSolarSystemState | null {
     try {
       const applied = this.engine.applySolarSystemSnapshot(snapshot);
@@ -359,7 +193,7 @@ export class UniverseStateSnapshotService {
       });
       return {
         systemId: this.resolveSystemIdFromSnapshot(snapshot) || 'unknown-system',
-        snapshotId: snapshot.id ?? snapshot.meta?.['proceduralSystemId'] ?? null,
+        snapshotId: resolveSnapshotId(snapshot),
         source: RuntimeStateSource.SNAPSHOT,
         capturedAt: Date.now(),
         payload: null
@@ -389,8 +223,7 @@ export class UniverseStateSnapshotService {
       for (const entry of entries) {
         const candidate = this.portalPersistence.get(entry.label);
         if (!candidate) continue;
-        const idMatches = candidate.id === snapshotId || candidate.meta?.['proceduralSystemId'] === snapshotId;
-        if (idMatches) {
+        if (resolveSnapshotId(candidate) === snapshotId) {
           return this.cloneSnapshot(candidate);
         }
       }
@@ -401,14 +234,11 @@ export class UniverseStateSnapshotService {
   }
 
   private getCurrentSystemId(): string | null {
-    const snapshot = this.getCurrentSnapshot();
-    return snapshot ? this.resolveSystemIdFromSnapshot(snapshot) : null;
+    return this.resolveSystemIdFromSnapshot(this.getCurrentSnapshot());
   }
 
   private getCurrentSnapshotId(): string | null {
-    const snapshot = this.getCurrentSnapshot();
-    if (!snapshot) return null;
-    return snapshot.id ?? snapshot.meta?.['proceduralSystemId'] ?? snapshot.meta?.['systemId'] ?? null;
+    return resolveSnapshotId(this.getCurrentSnapshot());
   }
 
   private getCurrentSnapshot(): SolarSystemSnapshot | null {
@@ -417,11 +247,8 @@ export class UniverseStateSnapshotService {
   }
 
   private resolveSystemIdFromSnapshot(snapshot: SolarSystemSnapshot | null): string | null {
-    if (!snapshot) return null;
-    return snapshot.meta?.['proceduralSystemId']
-      || snapshot.meta?.['systemId']
-      || snapshot.id
-      || null;
+    // Identidad canónica: system-identity.ts (única fuente).
+    return resolveSystemId(snapshot);
   }
 
   private cloneSnapshot(snapshot: SolarSystemSnapshot): SolarSystemSnapshot {
@@ -466,175 +293,19 @@ export class UniverseStateSnapshotService {
     return null;
   }
 
-  private buildSnapshotFromPayload(params: {
-    systemId: string;
-    payload: SerializedUniversePayload;
-    snapshotId: string;
-    snapshotLabel: string;
-  }): SolarSystemSnapshot {
-    const objects = Array.isArray(params.payload.objects) ? params.payload.objects : [];
-    const sun = this.extractSunSnapshot(objects, params.systemId);
-    const planets = this.extractPlanetSnapshots(objects);
-    const clusters = this.extractClusterSnapshots(objects);
-    const portals = this.extractPortalSnapshots(params.payload.portals);
-    const lesserBeings = this.extractLesserBeings(params.payload.lesserBeings);
-    const meta: Record<string, any> = {
-      ...(params.payload.custom ? { ...params.payload.custom } : {}),
-      proceduralSystemId: params.systemId,
-      systemId: params.systemId,
-      persistentSystemId: params.snapshotId,
-      snapshotLabel: params.snapshotLabel,
-      reconstructedFromPayload: true
-    };
-    if (params.payload.environment) {
-      meta['environment'] = { ...params.payload.environment };
-    }
-    if (lesserBeings.length) {
-      meta['lesserBeingMemory'] = lesserBeings;
-    }
-    return {
-      id: params.snapshotId,
-      timestamp: Date.now(),
-      sun,
-      planets,
-      clusters: clusters.length ? clusters : undefined,
-      portals: portals.length ? portals : undefined,
-      meta
-    };
-  }
-
-  private extractSunSnapshot(objects: SerializedGameObjectState[], systemId: string): SunSnapshot {
-    const sunObject = objects.find(obj => obj.type === GameObjectType.SUN);
-    if (sunObject) {
-      return {
-        id: sunObject.id || `${systemId}-sun`,
-        name: typeof sunObject.custom?.['name'] === 'string' ? sunObject.custom['name'] : undefined,
-        position: this.cloneVec(sunObject.position) ?? { x: 0, y: 0, z: 0 },
-        radius: this.deriveRadius(sunObject, 1200)
-      };
-    }
-    return {
-      id: `${systemId}-sun`,
-      position: { x: 0, y: 0, z: 0 },
-      radius: 1200
-    };
-  }
-
-  private extractPlanetSnapshots(objects: SerializedGameObjectState[]): PlanetSnapshot[] {
-    // Lectura delegada al códec: entiende claves canónicas y legacy de saves schema 1.
-    return objects
-      .filter(obj => this.isPlanetType(obj.type))
-      .map(obj => planetSnapshotFromCustomMeta(
-        {
-          id: obj.id,
-          position: this.cloneVec(obj.position) ?? { x: 0, y: 0, z: 0 },
-          radius: this.deriveRadius(obj, 250),
-        },
-        obj.custom
-      ));
-  }
-
-  private extractClusterSnapshots(objects: SerializedGameObjectState[]): ClusterSnapshot[] {
-    return objects
-      .filter(obj => obj.type === GameObjectType.CLUSTER)
-      .map(obj => ({
-        id: obj.id,
-        center: this.cloneVec(obj.position) ?? { x: 0, y: 0, z: 0 },
-        direction: this.cloneVec(obj.velocity) ?? { x: 0, y: 1, z: 0 },
-        speed: this.deriveVectorMagnitude(obj.velocity),
-        count: Math.max(5, Number(obj.custom?.['count']) || 12),
-        includeSuper: Boolean(obj.custom?.['includeSuper']),
-        radius: typeof obj.custom?.['radius'] === 'number' ? obj.custom['radius'] : undefined
-      }));
-  }
-
-  private extractPortalSnapshots(serialized?: SerializedPortalState[]): PortalSnapshot[] {
-    if (!Array.isArray(serialized) || !serialized.length) {
-      return [];
-    }
-    return serialized.map(portal => ({
-      id: portal.id,
-      position: this.cloneVec(portal.position) ?? { x: 0, y: 0, z: 0 },
-      radius: portal.radius ?? 350,
-      linkedPortalId: portal.linkedPortalId ?? undefined,
-      eyeState: this.cloneEyeState(portal.custom?.['eyeState']),
-      animosity: portal.custom?.['animosity'],
-      concordSealActive: portal.custom?.['concordSealActive'],
-      concordSealActivatedAt: portal.custom?.['concordSealActivatedAt'],
-      preventsLesserIncursions: portal.custom?.['preventsLesserIncursions']
-    }));
-  }
-
-  private extractLesserBeings(serialized?: SerializedLesserBeingState[]): LesserBeingInstanceSnapshot[] {
-    if (!Array.isArray(serialized) || !serialized.length) {
-      return [];
-    }
-    return serialized.map(entry => ({
-      id: entry.id,
-      type: (entry.archetype as LesserBeing) || LesserBeing.NONE,
-      position: this.cloneVec(entry.position) ?? { x: 0, y: 0, z: 0 },
-      velocity: this.cloneVec(entry.velocity) ?? undefined,
-      forward: this.cloneVec(entry.custom?.['forward']) ?? undefined,
-      hasLanded: Boolean(entry.custom?.['hasLanded']),
-      landedPlanetId: entry.custom?.['landedPlanetId'] ?? null,
-      health: entry.custom?.['health'] ? { ...entry.custom['health'] } : undefined,
-      metadata: entry.custom?.['metadata'] ? { ...entry.custom['metadata'] } : undefined
-    }));
-  }
-
-  private deriveRadius(obj: SerializedGameObjectState, fallback: number): number {
-    const scale = obj.scale;
-    const components = [scale?.x, scale?.y, scale?.z].filter(value => typeof value === 'number') as number[];
-    if (components.length) {
-      const avg = components.reduce((sum, value) => sum + value, 0) / components.length;
-      return Math.max(1, avg);
-    }
-    return fallback;
-  }
-
-  private deriveVectorMagnitude(vec?: Vector3 | null): number {
-    if (!vec) {
-      return 0;
-    }
-    return Math.sqrt(vec.x * vec.x + vec.y * vec.y + vec.z * vec.z);
-  }
-
   private normalizeSnapshotLabel(label: string | null | undefined, systemId: string): string {
     if (typeof label === 'string' && label.trim().length) {
       return label.trim();
     }
-    return `payload-${systemId}`;
+    return `savegame-${systemId}`;
   }
 
-  private isPlanetType(type: GameObjectType): boolean {
-    return PLANET_TYPES.has(type);
-  }
-
-  private removeUndefined(metadata: Record<string, any>): Record<string, any> | undefined {
-    const result: Record<string, any> = {};
-    for (const [key, value] of Object.entries(metadata)) {
-      if (value === undefined) {
-        continue;
+  private firstNonEmpty(...values: Array<string | null | undefined>): string | null {
+    for (const value of values) {
+      if (typeof value === 'string' && value.trim().length) {
+        return value.trim();
       }
-      result[key] = value;
     }
-    return Object.keys(result).length ? result : undefined;
-  }
-
-  private cloneEyeState(state?: EyeState | null): EyeState | undefined {
-    if (!state) {
-      return undefined;
-    }
-    const clone: EyeState = { ...state };
-    if (typeof state.gazeTarget === 'object' && state.gazeTarget !== null) {
-      clone.gazeTarget = { ...(state.gazeTarget as Vector3) };
-    }
-    return clone;
-  }
-
-
-  private cloneVec(vec?: Vector3 | null): Vector3 | null {
-    if (!vec) return null;
-    return { x: vec.x, y: vec.y, z: vec.z };
+    return null;
   }
 }

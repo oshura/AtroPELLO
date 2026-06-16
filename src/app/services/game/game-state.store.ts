@@ -35,6 +35,7 @@ import {
   createEmptyPlanetIntelSnapshot
 } from '../../game/types/planet-intel.types';
 import { LesserBeingInstanceSnapshot } from '../../game/types/cosmic-life.types';
+import { cloneLesserBeingSnapshot } from '../../game/services/game/lesser-being-state.codec';
 import { OrientationSnapshot, RespawnAnchorMetadata } from '../../game/types/respawn.types';
 import { Vector3 } from '../../types/game.types';
 
@@ -554,13 +555,8 @@ export class GameStateStore {
     if (!systemId) {
       return;
     }
-    const cloned = snapshots.map(s => ({
-      ...s,
-      position: { ...s.position },
-      velocity: s.velocity ? { ...s.velocity } : undefined,
-      metadata: s.metadata ? { ...s.metadata } : undefined
-    }));
-    this.lesserBeingMemoryBySystem.set(systemId, cloned);
+    // Clonado profundo vía códec (fuente única; incluye forward/health/metadata).
+    this.lesserBeingMemoryBySystem.set(systemId, snapshots.map(s => cloneLesserBeingSnapshot(s)));
   }
 
   public getLesserBeingSnapshots(systemId: string): LesserBeingInstanceSnapshot[] {
@@ -571,12 +567,7 @@ export class GameStateStore {
     if (!stored) {
       return [];
     }
-    return stored.map(s => ({
-      ...s,
-      position: { ...s.position },
-      velocity: s.velocity ? { ...s.velocity } : undefined,
-      metadata: s.metadata ? { ...s.metadata } : undefined
-    }));
+    return stored.map(s => cloneLesserBeingSnapshot(s));
   }
 
   /** Obtiene el historial completo de lesser beings por sistema (clonado). */

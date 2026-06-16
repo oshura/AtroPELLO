@@ -18,8 +18,8 @@ import {
   RuntimeStateSource
 } from '../../../game/types/universe-state.types';
 import { LoggingService, LogCategory, LogLevel } from '../../logging.service';
-import { UniverseStateSnapshotService, ReplaceRuntimePayloadOptions } from '../../../game/services/state/universe-state-snapshot.service';
-import { SerializedUniversePayload } from '../../../game/types/universe-state.types';
+import { UniverseStateSnapshotService, AdoptSnapshotOptions } from '../../../game/services/state/universe-state-snapshot.service';
+import { resolveSnapshotId, resolveSystemId } from '../../../game/services/game/system-identity';
 import { UserIdentity, UNKNOWN_IDENTITY } from '../../../types/identity';
 import {
   EquipmentSlot,
@@ -39,13 +39,17 @@ import {
   MissionClueTier
 } from '../../../game/types/planet-intel.types';
 import { PlanetInhabitants, LesserBeing, LesserBeingInstanceSnapshot } from '../../../game/types/cosmic-life.types';
-import { SolarSystemSnapshot } from '../../../game/types/solar-system.types';
+import { SolarSystemSnapshot, PortalSnapshot } from '../../../game/types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
 
 export interface SaveGameHarnessOptions {
   player?: SaveGamePlayerSection;
   gameState?: SaveGameGameStateSection;
-  runtimeState?: RuntimeSolarSystemState;
+  /** Snapshot del sistema activo que el adapter "captura" al guardar (v2: una sola representación). */
+  universeSnapshot?: SolarSystemSnapshot;
+  /** Id lógico que devuelve adoptSnapshot al cargar (normalmente = systemId del snapshot). */
+  systemId?: string;
+  snapshotId?: string | null;
   playerResetState?: PlayerResetState;
   identity?: UserIdentity | null;
   token?: string | null;
@@ -57,7 +61,9 @@ export interface SaveGameHarnessOptions {
 interface SaveGameHarnessFixtures {
   playerSection: SaveGamePlayerSection;
   gameStateSection: SaveGameGameStateSection;
-  runtimeState: RuntimeSolarSystemState;
+  universeSnapshot: SolarSystemSnapshot;
+  systemId: string;
+  snapshotId: string | null;
   playerResetState: PlayerResetState;
   identity: UserIdentity | null;
   token: string | null;
@@ -95,8 +101,8 @@ export class SaveGameHarness {
     this.initializer = new HarnessGameInitializerStub(this.engine);
     this.playerSerializer = new HarnessPlayerStateSerializerStub(this.gameState, fixtures.playerSection, fixtures.playerResetState);
     this.gameStateAdapter = new HarnessGameStateSnapshotAdapterStub(fixtures.gameStateSection);
-    this.universeService = new HarnessUniverseStateSnapshotServiceStub(fixtures.runtimeState);
-    this.universeAdapter = new HarnessUniverseStateSnapshotAdapterStub(fixtures.runtimeState);
+    this.universeService = new HarnessUniverseStateSnapshotServiceStub(fixtures.systemId, fixtures.snapshotId);
+    this.universeAdapter = new HarnessUniverseStateSnapshotAdapterStub(fixtures.universeSnapshot, fixtures.systemId);
     this.cloudBridge = new HarnessCloudSessionBridgeStub(fixtures.identity, fixtures.token);
     this.migrationService = new HarnessMigrationServiceStub();
 
@@ -137,9 +143,8 @@ export class SaveGameHarness {
     this.gameStateAdapter.setCapturePayload(section);
   }
 
-  updateRuntimeState(state: RuntimeSolarSystemState): void {
-    this.universeService.setRuntimeState(state);
-    this.universeAdapter.setRuntimeState(state);
+  updateUniverseSnapshot(snapshot: SolarSystemSnapshot): void {
+    this.universeAdapter.setUniverseSnapshot(snapshot);
   }
 }
 
@@ -251,74 +256,21 @@ class HarnessGameStateSnapshotAdapterStub {
 }
 
 class HarnessUniverseStateSnapshotServiceStub {
-  public readonly ensureCalls: Array<{ systemId: string; snapshotLabel?: string | null }> = [];
-  public readonly payloadRehydrations: Array<{ systemId: string; snapshotLabel: string | null }> = [];
   public readonly pinnedLabels = new Set<string>();
-  private runtimeState: RuntimeSolarSystemState;
-  private activeSystemIdOverride: string | null;
-  private activeSystemIdLocked = false;
+  private readonly systemId: string;
+  private readonly snapshotId: string | null;
 
-  constructor(state: RuntimeSolarSystemState) {
-    this.runtimeState = deepClone(state);
-    this.activeSystemIdOverride = state.systemId;
-  }
-
-  setRuntimeState(state: RuntimeSolarSystemState): void {
-    this.runtimeState = deepClone(state);
-    if (!this.activeSystemIdLocked) {
-      this.activeSystemIdOverride = state.systemId;
-    }
-  }
-
-  setActiveSystemId(value: string | null, options?: { lock?: boolean }): void {
-    this.activeSystemIdOverride = value;
-    this.activeSystemIdLocked = options?.lock ?? false;
+  constructor(systemId: string, snapshotId: string | null) {
+    this.systemId = systemId;
+    this.snapshotId = snapshotId;
   }
 
   getActiveSystemId(): string {
-    return this.activeSystemIdOverride ?? this.runtimeState.systemId;
+    return this.systemId;
   }
 
-  captureRuntimeState(): RuntimeSolarSystemState {
-    return deepClone(this.runtimeState);
-  }
-
-  ensureSystemState(systemId: string, options?: { snapshotLabel?: string | null; snapshotId?: string | null }): RuntimeSolarSystemState {
-    this.ensureCalls.push({ systemId, snapshotLabel: options?.snapshotLabel ?? null });
-    const ensured: RuntimeSolarSystemState = {
-      ...deepClone(this.runtimeState),
-      systemId,
-      snapshotId: options?.snapshotId ?? this.runtimeState.snapshotId ?? null,
-      source: options?.snapshotLabel || options?.snapshotId ? RuntimeStateSource.SNAPSHOT : RuntimeStateSource.LIVE,
-      payload: null
-    };
-    if (!this.activeSystemIdLocked) {
-      this.activeSystemIdOverride = systemId;
-    }
-    return ensured;
-  }
-
-  buildRuntimeStateFromPayload(systemId: string, payload: SerializedUniversePayload, snapshotId?: string | null): RuntimeSolarSystemState {
-    return {
-      systemId,
-      snapshotId: snapshotId ?? null,
-      source: RuntimeStateSource.SNAPSHOT,
-      capturedAt: Date.now(),
-      payload: deepClone(payload)
-    };
-  }
-
-  replaceRuntimeWithPayload(options: ReplaceRuntimePayloadOptions): RuntimeSolarSystemState {
-    this.payloadRehydrations.push({ systemId: options.systemId, snapshotLabel: options.snapshotLabel ?? null });
-    this.activeSystemIdOverride = options.systemId;
-    this.activeSystemIdLocked = false;
-    return {
-      systemId: options.systemId,
-      snapshotId: options.snapshotId ?? this.runtimeState.snapshotId ?? null,
-      source: RuntimeStateSource.SNAPSHOT,
-      capturedAt: Date.now(),
-      payload: deepClone(options.payload)
-    };
+  getActiveSnapshotId(): string | null {
+    return this.snapshotId;
   }
 
   pinSnapshotLabel(label: string | null | undefined): void {
@@ -337,31 +289,37 @@ class HarnessUniverseStateSnapshotServiceStub {
 }
 
 class HarnessUniverseStateSnapshotAdapterStub {
-  private runtimeState: RuntimeSolarSystemState;
+  public readonly captureCalls: number[] = [];
+  public readonly adoptCalls: Array<{ systemId: string | null; snapshotLabel: string | null; snapshot: SolarSystemSnapshot }> = [];
+  private universeSnapshot: SolarSystemSnapshot;
+  private readonly fallbackSystemId: string;
 
-  constructor(state: RuntimeSolarSystemState) {
-    this.runtimeState = deepClone(state);
+  constructor(snapshot: SolarSystemSnapshot, fallbackSystemId: string) {
+    this.universeSnapshot = deepClone(snapshot);
+    this.fallbackSystemId = fallbackSystemId;
   }
 
-  setRuntimeState(state: RuntimeSolarSystemState): void {
-    this.runtimeState = deepClone(state);
+  setUniverseSnapshot(snapshot: SolarSystemSnapshot): void {
+    this.universeSnapshot = deepClone(snapshot);
   }
 
-  capture(): RuntimeSolarSystemState {
-    return deepClone(this.runtimeState);
+  captureSnapshot(): SolarSystemSnapshot {
+    this.captureCalls.push(Date.now());
+    return deepClone(this.universeSnapshot);
   }
 
-  restoreFromPayload(params: { systemId: string; payload: SerializedUniversePayload | null | undefined; snapshotId?: string | null; reason?: string }): RuntimeSolarSystemState {
-    if (!params.payload) {
-      throw new Error('HarnessUniverseStateSnapshotAdapterStub requires payload data.');
-    }
+  adoptSnapshot(options: AdoptSnapshotOptions): RuntimeSolarSystemState {
+    const snapshot = deepClone(options.snapshot);
+    const systemId = (options.systemId && options.systemId.trim().length ? options.systemId.trim() : null)
+      ?? resolveSystemId(snapshot)
+      ?? this.fallbackSystemId;
+    this.adoptCalls.push({ systemId, snapshotLabel: options.snapshotLabel ?? null, snapshot });
     return {
-      ...deepClone(this.runtimeState),
-      systemId: params.systemId,
-      snapshotId: params.snapshotId ?? this.runtimeState.snapshotId ?? null,
+      systemId,
+      snapshotId: resolveSnapshotId(snapshot),
       source: RuntimeStateSource.SNAPSHOT,
       capturedAt: Date.now(),
-      payload: deepClone(params.payload)
+      payload: null
     };
   }
 }
@@ -526,38 +484,47 @@ const DEFAULT_GAME_STATE_SECTION: SaveGameGameStateSection = {
   }
 };
 
-const DEFAULT_RUNTIME_STATE: RuntimeSolarSystemState = {
-  systemId: 'sol-1',
-  snapshotId: 'snapshot-001',
-  source: RuntimeStateSource.SNAPSHOT,
-  capturedAt: 1_700_000_000_100,
-  payload: {
-    objects: [
+const DEFAULT_SYSTEM_ID = 'sol-1';
+const DEFAULT_SNAPSHOT_ID = 'snapshot-001';
+
+function buildUniverseSnapshotFixture(systemId: string, snapshotId: string | null, portals: PortalSnapshot[] = []): SolarSystemSnapshot {
+  return {
+    id: snapshotId ?? `${systemId}-snapshot`,
+    sun: { id: `${systemId}-sun`, name: `${systemId} Star`, position: vec(0, 0, 0), radius: 1500 },
+    planets: [
       {
-        id: 'ship-object',
-        type: GameObjectType.SPACESHIP,
-        position: { x: 1, y: 2, z: 3 }
+        id: `${systemId}-planet-1`,
+        name: 'Fixture Prime',
+        kind: 'terrestrial',
+        position: vec(60_000, 0, 0),
+        radius: 400,
+        baseColorName: 'azul_marino',
+        orbit: { center: vec(0, 0, 0), semiMajor: 60_000, semiMinor: 54_000, orientation: 0 }
       }
     ],
-    portals: [],
-    lesserBeings: [],
-    environment: { ambientScene: 'void' }
-  }
-};
+    clusters: [],
+    portals,
+    meta: { proceduralSystemId: systemId, persistentSystemId: systemId }
+  };
+}
+
+const DEFAULT_UNIVERSE_SNAPSHOT: SolarSystemSnapshot = buildUniverseSnapshotFixture(DEFAULT_SYSTEM_ID, DEFAULT_SNAPSHOT_ID);
 
 export function createRichSaveGameHarnessOptions(): SaveGameHarnessOptions {
   const player = buildRichPlayerSection();
   const gameState = buildRichGameStateSection();
-  const runtimeState = buildRichRuntimeState();
+  const universeSnapshot = buildRichUniverseSnapshot();
   const playerResetState = buildRichPlayerResetState();
   return {
     player,
     gameState,
-    runtimeState,
+    universeSnapshot,
+    systemId: 'helios-binary',
+    snapshotId: universeSnapshot.id ?? 'snapshot-helio',
     playerResetState,
     frameCount: 12_600,
     lastFrameTime: 215_000,
-    snapshotLabel: runtimeState.snapshotId ?? 'rich-snapshot',
+    snapshotLabel: universeSnapshot.id ?? 'rich-snapshot',
     identity: UNKNOWN_IDENTITY,
     token: 'token-rich-fixture'
   };
@@ -583,15 +550,13 @@ export function createGateRiteMismatchHarnessOptions(options?: {
     player.respawn.activeAnchor.snapshotId = player.respawn.activeAnchor.snapshotId ?? 'origin-anchor-snapshot';
     player.respawn.lastAnchorLabel = player.respawn.activeAnchor.label;
   }
-  const runtimeState = deepClone({
-    ...DEFAULT_RUNTIME_STATE,
-    systemId: destinationSystemId,
-    snapshotId: destinationSnapshotId ?? undefined
-  });
+  const universeSnapshot = buildUniverseSnapshotFixture(destinationSystemId, destinationSnapshotId ?? null);
   return {
     player,
-    runtimeState,
-    snapshotLabel: runtimeState.snapshotId ?? 'gate-destination-snapshot'
+    universeSnapshot,
+    systemId: destinationSystemId,
+    snapshotId: destinationSnapshotId ?? null,
+    snapshotLabel: universeSnapshot.id ?? 'gate-destination-snapshot'
   };
 }
 
@@ -837,43 +802,46 @@ function buildRichGameStateSection(): SaveGameGameStateSection {
   };
 }
 
-function buildRichRuntimeState(): RuntimeSolarSystemState {
+function buildRichUniverseSnapshot(): SolarSystemSnapshot {
   return {
-    systemId: 'helios-binary',
-    snapshotId: 'snapshot-helio',
-    source: RuntimeStateSource.SNAPSHOT,
-    capturedAt: 1_700_010_600_000,
-    payload: {
-      objects: [
-        { id: 'sun-a', type: GameObjectType.SUN, position: vec(0, 0, 0) },
-        { id: 'sun-b', type: GameObjectType.SUN, position: vec(400, 0, 0) },
-        { id: 'planet-ring', type: GameObjectType.PLANET, position: vec(12_000, 150, -40) },
-        { id: 'planet-earth', type: GameObjectType.PLANET, position: vec(-8_500, -120, 90) },
-        { id: 'cluster-trail', type: GameObjectType.CLUSTER, position: vec(15_000, 500, 0) },
-        { id: 'asteroid-glow', type: GameObjectType.ASTEROID, position: vec(10_500, 220, -10), velocity: vec(-2, 0, 0) }
-      ],
-      portals: [
-        {
-          id: 'portal-alpha',
-          position: vec(5_500, -60, 0),
-          radius: 420,
-          linkedPortalId: 'portal-beta',
-          custom: { concordSealActive: true }
-        },
-        {
-          id: 'portal-beta',
-          position: vec(-11_000, 80, 120),
-          radius: 380,
-          linkedPortalId: 'portal-alpha',
-          custom: { concordSealActive: false }
-        }
-      ],
-      lesserBeings: [
-        { id: 'lb-runtime-1', archetype: LesserBeing.SHOGGOTH, position: vec(11_800, 220, -70) },
-        { id: 'lb-runtime-2', archetype: LesserBeing.VAMPIRO_FUEGO, position: vec(-7_900, -140, 60) }
-      ],
-      environment: { ambientScene: 'binary-dawn' },
-      custom: { gravityWells: 2, trails: true }
+    id: 'snapshot-helio',
+    sun: { id: 'sun-a', name: 'Helios A', position: vec(0, 0, 0), radius: 5_000 },
+    planets: [
+      {
+        id: 'planet-ring',
+        name: 'Aurelia',
+        kind: 'ringed',
+        position: vec(12_000, 150, -40),
+        radius: 950,
+        baseColorName: 'gris',
+        visited: true,
+        hasArtifact: true,
+        orbit: { center: vec(0, 0, 0), semiMajor: 12_000, semiMinor: 11_500, orientation: 0 }
+      },
+      {
+        id: 'planet-earth',
+        name: 'Tellurion',
+        kind: 'terrestrial',
+        position: vec(-8_500, -120, 90),
+        radius: 700,
+        baseColorName: 'azul_marino'
+      }
+    ],
+    clusters: [
+      { id: 'cluster-trail', center: vec(15_000, 500, 0), direction: vec(-1, 0, 0), speed: 5, count: 120, radius: 900, includeSuper: true }
+    ],
+    portals: [
+      { id: 'portal-alpha', position: vec(5_500, -60, 0), radius: 420, linkedPortalId: 'portal-beta', concordSealActive: true },
+      { id: 'portal-beta', position: vec(-11_000, 80, 120), radius: 380, linkedPortalId: 'portal-alpha', concordSealActive: false }
+    ],
+    meta: {
+      proceduralSystemId: 'helios-binary',
+      persistentSystemId: 'helios-binary',
+      elderGod: 'Cthulhu',
+      lesserBeingMemory: [
+        { id: 'lb-runtime-1', type: LesserBeing.SHOGGOTH, position: vec(11_800, 220, -70), hasLanded: false },
+        { id: 'lb-runtime-2', type: LesserBeing.VAMPIRO_FUEGO, position: vec(-7_900, -140, 60), hasLanded: false }
+      ]
     }
   };
 }
@@ -1094,18 +1062,22 @@ function vec(x: number, y: number, z: number): Vector3 {
 function createDefaultHarnessFixtures(options?: Partial<SaveGameHarnessOptions>): SaveGameHarnessFixtures {
   const playerSection = deepClone(options?.player ?? DEFAULT_PLAYER_SECTION);
   const gameStateSection = deepClone(options?.gameState ?? DEFAULT_GAME_STATE_SECTION);
-  const runtimeState = deepClone(options?.runtimeState ?? DEFAULT_RUNTIME_STATE);
+  const universeSnapshot = deepClone(options?.universeSnapshot ?? DEFAULT_UNIVERSE_SNAPSHOT);
   const playerResetState = deepClone(options?.playerResetState ?? DEFAULT_PLAYER_RESET_STATE);
+  const systemId = options?.systemId ?? resolveSystemId(universeSnapshot) ?? DEFAULT_SYSTEM_ID;
+  const snapshotId = options?.snapshotId ?? resolveSnapshotId(universeSnapshot) ?? DEFAULT_SNAPSHOT_ID;
   return {
     playerSection,
     gameStateSection,
-    runtimeState,
+    universeSnapshot,
+    systemId,
+    snapshotId,
     playerResetState,
     identity: options?.identity ?? UNKNOWN_IDENTITY,
     token: options?.token ?? 'token-fixture',
     frameCount: options?.frameCount ?? 1800,
     lastFrameTime: options?.lastFrameTime ?? 30_000,
-    snapshotLabel: options?.snapshotLabel ?? runtimeState.snapshotId ?? 'fixture-snapshot'
+    snapshotLabel: options?.snapshotLabel ?? snapshotId ?? 'fixture-snapshot'
   };
 }
 

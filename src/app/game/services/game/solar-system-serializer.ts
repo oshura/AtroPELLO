@@ -1,4 +1,4 @@
-import { SolarSystemSnapshot, PlanetSnapshot, SunSnapshot, ClusterSnapshot, PlanetDebrisSnapshot } from '../../types/solar-system.types';
+import { SolarSystemSnapshot, PlanetSnapshot, PortalSnapshot, SunSnapshot, ClusterSnapshot, PlanetDebrisSnapshot } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
 import { PlanetIntelStatus, PlanetMissionState, PlanetResourceStock } from '../../types/planet-intel.types';
 import { normalizePlanetKind } from './planet-state.codec';
@@ -67,6 +67,11 @@ export class SolarSystemSerializer {
       concordSealActivatedAt?: number;
       preventsLesserIncursions?: boolean;
     }>;
+    /**
+     * Snapshots de portal YA construidos por portal-state.codec (ruta preferente).
+     * Si se proporciona, `portals` se ignora.
+     */
+    portalSnapshots?: PortalSnapshot[];
     planetDebris?: Array<{ id: string; planetId: string; localOffset: Vector3; size?: number; type?: string }>;
     /**
      * Snapshots de planeta YA construidos por planet-state.codec (ruta preferente).
@@ -138,7 +143,7 @@ export class SolarSystemSerializer {
       type: d.type,
     }));
 
-    const portals = (state.portals || []).map(p => ({
+    const portals: PortalSnapshot[] = state.portalSnapshots ?? (state.portals || []).map(p => ({
       id: p.id,
       position: { ...p.position },
       radius: p.radius,

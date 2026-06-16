@@ -272,16 +272,24 @@ gameplay, ninguna copia de serialización. Round-trip spec de Fase 0 sigue verde
 
 **Criterio de aceptación**: una sola función decide el id; specs de carga de partidas antiguas verdes.
 
-### Fase 4 — Savegame sobre snapshots (≈ 1-2 semanas)
-| # | Tarea | Quién |
+### Fase 4 — Savegame sobre snapshots ✅ HECHA (2026-06-16)
+Sin retrocompatibilidad de saves (decisión del usuario): no hay migración v1→v2; los saves v1 se
+rechazan con `SaveGameSchemaVersionMismatchError`.
+| # | Tarea | Estado |
 |---|---|---|
-| 4.1 | `SaveGamePayload.universe` pasa a transportar `SolarSystemSnapshot` del sistema activo (+ archivo procedural ya existente). `SCHEMA_VERSION = 2` con migración 1→2 en `SaveGameMigrationService` (convertir payload→snapshot usando los códecs, que ya leen claves legacy) | [S] |
-| 4.2 | Borrar `buildSnapshotFromPayload`/`extract*` de `UniverseStateSnapshotService` (quedan obsoletos) y reducir ese servicio a: capturar snapshot, resolver snapshot, construir `GameStartContext` | [S] |
-| 4.3 | Carga = exactamente el mismo camino que cruzar un portal (`ensureSystemState` + `restartWithContext`); muerte/respawn ídem. **Un solo camino de restauración** | [S] |
-| 4.4 | Specs de migración: cargar un save v1 real (fixture JSON) y verificar mundo equivalente | [J] |
+| 4.1 | `SaveGamePayload.universe: SolarSystemSnapshot`; `SCHEMA_VERSION = 2`, `MIN_SUPPORTED = 2` | ✅ |
+| 4.2 | Borradas ~330 líneas de la 2ª representación en `UniverseStateSnapshotService` (`captureRuntimeState`, `captureLivePayload`, `serializeGameObject`, `buildSnapshotFromPayload`, `extract*`, `replaceRuntimeWithPayload`, `buildRuntimeStateFromPayload`). Quedan: `captureCurrentSnapshot`, `adoptSnapshot`, `ensureSystemState`, resolución de snapshots | ✅ |
+| 4.3 | Carga = `adoptSnapshot` (persiste+pinea el snapshot embebido y lo aplica con `applySolarSystemSnapshot`) + `restartWithContext`. **Un solo camino**, idéntico a portal/respawn | ✅ |
+| 4.4 | Harness (`savegame-harness.ts`) y 2 specs reescritos al contrato v2; normalizador adaptado a la forma snapshot | ✅ |
 
-**Criterio de aceptación**: `RuntimeStateSource` y los 3 caminos de restauración convergen en uno;
-fixture v1 carga correctamente.
+**Nota de implementación:** `RuntimeSolarSystemState.payload` (typed `SerializedUniversePayload`) queda
+definido pero siempre `null` — es solo el descriptor que viaja en `GameStartContext`. Los helpers
+`serialized*`/`*FromSerialized` de los códecs y los tipos `SerializedXState` quedan SIN consumidor de
+producción (solo sus specs). Candidatos a borrar en una limpieza posterior (no urgente).
+
+**Verificación manual pendiente (gameplay, requiere arrancar el juego):** guardar partida → recargar la
+pestaña (PortalPersistence en memoria se vacía) → cargar; morir → respawn; cruzar portal → autoguardado.
+El riesgo es bajo porque el camino de carga reusa los métodos del engine ya probados por portal/respawn.
 
 ### Fase 5 — Descomposición de `GameEngine` (≈ 3-4 semanas, incremental)
 Extraer por dominios, en este orden (cada extracción = 1 PR, engine delega sin cambiar firmas públicas):
@@ -303,6 +311,37 @@ Nunca mezclar "mover" con "mejorar" en el mismo PR.
 
 **Criterio de aceptación final**: `GameEngine.ts` < 3.000 líneas y solo orquesta (loop, orden de
 update/render, wiring).
+
+#### Estado y patrón de extracción (2026-06-16)
+**Hecho:**
+- **5.8 `game/math/`** (`vector-math.ts` + `matrix-math.ts`): fuente única de helpers vec/matrix.
+  El engine delega (1 línea cada uno). Con specs propios. Pendiente menor: colisiones usan
+  `Math.hypot` inline con API distinta (no intercambiable sin riesgo) — se deja.
+- **5.6 `PlayerProgressionSystem`** (`game/services/state/player-progression-system.ts`):
+  envejecimiento + tiradas de supervivencia hardcore. **Con tests nuevos** (antes 0 cobertura).
+- **5.4-parcial `SunProximitySystem`** (`game/services/state/sun-proximity-system.ts`):
+  daño por radiación al acercarse a estrellas. Host `SunDamageHost` (engine expone
+  `collectActiveSuns`/`isLandingDamageSuppressed` públicos + wrappers `emitHazardMarquee`/
+  `addImpactVignette`). **Con tests nuevos**. El resto de 5.4 (applyShipDamage, destrucción de
+  objetos, recompensas) sigue en el engine — es un `CombatDamageSystem` futuro.
+
+**Patrón seguro validado (úsalo para las extracciones restantes):**
+1. **Clase plana** (NO `@Injectable`) que el engine instancia con **lazy-init** (`ensureX()`),
+   pasándole los servicios que ya tiene como campos (`gameState`, `logger`, …). **NO se toca el
+   constructor del engine ni `GameInitializer`** → cero riesgo de romper la construcción/DI.
+2. Para efectos colaterales que viven en el engine (muerte, cierre de paneles, FX), se define una
+   **interfaz host** mínima que el engine implementa y se pasa como `this`. Sin `(x as any)`.
+3. Métodos movidos **verbatim**; el engine deja delegadores de 1 línea.
+4. **Añadir tests unitarios** a la clase extraída. Esto es CLAVE: los specs stubean `GameEngine`,
+   así que la lógica que vivía dentro era invisible al test suite; al extraerla a una clase plana
+   se vuelve testeable y la extracción MEJORA la verificación en vez de arriesgarla.
+
+**Nota de riesgo (por qué 5.1-5.5/5.7 no se hicieron a ciegas):** el test suite **stubea
+`GameEngine`**, por lo que regresiones en su construcción, su DI o sus métodos de frame-loop son
+**invisibles a los tests**. Las extracciones grandes de física/aterrizaje/hechizos solo se validan
+de verdad jugando. Se harán siguiendo el patrón de arriba (clase plana + host + tests propios), una
+por PR, con smoke de gameplay. Empezar por las más acotadas y con lógica "calcular + callback" (p.ej.
+daño por proximidad solar, conversión de cargo) antes que la física atmosférica (2.500 líneas).
 
 ### Fase 6 — Limpieza de duplicados restantes (≈ 2 semanas)
 | # | Tarea | Quién |
@@ -385,8 +424,40 @@ Si hay que tocar algo más, la arquitectura ha regresado: abrir issue de deuda i
 |---|---|
 | 0 | Documento ✅ · CLAUDE.md ✅ · `npm run test:headless` ✅ · ESLint/CI y round-trip de savegame-harness pendientes (0.2, 0.3) |
 | 1 | ✅ Implementada (terrain SSOT + semilla por planeta + colisión exacta contra malla + specs) |
-| 2 | ✅ Núcleo implementado (planet codec en las 4 rutas principales + spec round-trip); 2.5 (portal codec), 2.6 (lesser beings) pendientes |
-| 3-7 | Pendientes |
+| 2 | ✅ Completa: planet/portal/lesser-being codecs en TODAS las rutas + specs round-trip. Sin retrocompatibilidad de saves (decisión del usuario 2026-06-13) |
+| 3 | ✅ Completa: `system-identity.ts` (resolveSystemId/resolveSnapshotId/resolveSystemKey) + `SolarSystemMeta` tipado; las 4 precedencias divergentes (engine, PortalPersistence, UniverseStateSnapshot, RuntimeSerializer) ahora delegan en una sola. Spec dedicado. 75 tests verdes |
+| 4 | ✅ Completa: `SaveGamePayload.universe` es ahora un `SolarSystemSnapshot` (schema v2, sin migración v1). Save = `captureCurrentSnapshot`; load = `adoptSnapshot` (mismo camino que portal/respawn). Borradas ~330 líneas de la SEGUNDA representación (payload por-objeto) en UniverseStateSnapshotService. Harness + 2 specs reescritos. 82 tests verdes |
+| 5 | En curso: ✅ 5.8 (math SSOT `game/math/`), ✅ 5.6 (`PlayerProgressionSystem`), ✅ 5.4-parcial (`SunProximitySystem`). Pendientes 5.1-5.3,5.5,5.7 (ver nota de riesgo abajo) |
+| 6 | Parcial: ✅ eliminada la copia muerta `SolarSystemService.apply()/snapshot()` (~190 líneas, instanciación paralela de planetas/portales). Pendiente: targeting v1/v2, session-cookie x3, Earth/Saturn data-driven |
+| 7 | Pendiente |
+
+### Fase 4 — plan de ejecución (para la próxima sesión, idealmente con `npm start` para verificar)
+Sin retrocompatibilidad (decisión del usuario), el colapso de los dos pipelines es:
+1. `SaveGamePayload.universe`: `SerializedUniversePayload` → `SolarSystemSnapshot`. `SCHEMA_VERSION = 2`,
+   `MIN_SUPPORTED = 2` (la migración rechaza saves v1 en vez de convertirlos).
+2. SAVE: capturar el sistema activo como `SolarSystemSnapshot` (vía `runtimeSerializer.captureCurrentSnapshot`)
+   en lugar de construir el payload por-objeto. El `RuntimeSolarSystemState` sigue siendo el portador del
+   `GameStartContext`, pero su `payload` pasa a ser el snapshot.
+3. LOAD: un único camino = guardar el snapshot embebido en `PortalPersistence` (con pin) y aplicarlo por
+   `ensureSystemState` + `restartWithContext`. **Igual que cruzar un portal o respawnear.**
+4. Borrar de `UniverseStateSnapshotService`: `captureLivePayload`, `captureGameObjects`,
+   `serializeGameObject`, `buildCustomMetadata`, `buildPlanetMetadata`, `buildSnapshotFromPayload`,
+   `extractSunSnapshot/extractPlanetSnapshots/extractClusterSnapshots/extractPortalSnapshots/extractLesserBeings`,
+   `replaceRuntimeWithPayload`, `buildRuntimeStateFromPayload` (~250 líneas: la SEGUNDA representación).
+5. Reescribir `savegame-harness.ts` (los stubs reflejan el contrato viejo: `replaceRuntimeWithPayload`,
+   `restoreFromPayload`, `RuntimeSolarSystemState.payload` por-objeto) y los 2 specs
+   (`game-persistence.service.spec.ts`, `universe-state-snapshot.service.spec.ts`).
+6. Verificar en navegador: guardar → recargar pestaña → cargar; morir → respawn; portal → autoguardado.
+
+**Por qué no se hizo ya:** es la única fase que puede romper la persistencia de forma silenciosa y solo
+se valida de verdad arrancando el juego. Hacerla a ciegas con stubs contradice el objetivo ("que no se
+desmonte todo"). Se recomienda como primer trabajo de la próxima sesión, con el juego corriendo.
+
+### Decisión clave (2026-06-13): identidad de sistema unificada
+`resolveSystemKey` pone `snapshot.id` **antes** que `snapshotLabel`/`fallbackLabel`: la etiqueta es por
+slot de almacenamiento (un sistema puede guardarse bajo varias), así que usarla como clave rompería el
+dedup y la memoria de lesser beings. Esa divergencia (PortalPersistence usaba id-first, el engine
+label-first) era un bug latente; ahora hay una sola precedencia.
 
 ### Bugs reales corregidos de paso (2026-06-12, todos consecuencia directa de F2/F3)
 1. **Suelo ≠ colisión** (clamps distintos + Nyquist + sin semilla) → colisión ahora muestrea los

@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { EyeState, PlanetSnapshot, SolarSystemSnapshot } from '../../types/solar-system.types';
+import { PlanetSnapshot, PortalSnapshot, SolarSystemSnapshot } from '../../types/solar-system.types';
 import { GameInitializer } from '../../../services/game/game-initializer.service';
 import { PortalPersistenceService } from './portal-persistence.service';
 import { GameStateStore } from '../../../services/game/game-state.store';
@@ -7,8 +7,8 @@ import { LoggingService, LogCategory, LogLevel } from '../../../services/logging
 import { GameEngine } from '../../GameEngine';
 import { SolarSystemSerializer } from './solar-system-serializer';
 import { capturePlanetSnapshot, isSunInstance } from './planet-state.codec';
-import { GameObjectAnimosity } from '../../types/animosity.types';
-import { LesserBeingInstanceSnapshot } from '../../types/cosmic-life.types';
+import { capturePortalSnapshot } from './portal-state.codec';
+import { resolveSystemKey } from './system-identity';
 
 interface RuntimeSunState {
   id: string;
@@ -27,18 +27,6 @@ interface RuntimeClusterState {
   includeSuper?: boolean;
   radius?: number;
   centerSpeedFactor?: number;
-}
-
-interface RuntimePortalState {
-  id: string;
-  position: { x: number; y: number; z: number };
-  radius: number;
-  linkedPortalId?: string;
-  eyeState?: EyeState;
-  animosity?: GameObjectAnimosity;
-  concordSealActive?: boolean;
-  concordSealActivatedAt?: number;
-  preventsLesserIncursions?: boolean;
 }
 
 interface RuntimeDebrisState {
@@ -74,10 +62,11 @@ export class SolarSystemRuntimeSerializerService {
       const snapshot = SolarSystemSerializer.fromState({
         sun: this.captureSun(),
         planets: [],
-        // Capturados por el códec (fuente única de campos persistentes de planeta).
+        // Capturados por los códecs (fuente única de campos persistentes).
         planetSnapshots: this.capturePlanets(),
         clusters: this.captureClusters(resolvedEngine),
-        portals: this.capturePortals(),
+        portals: [],
+        portalSnapshots: this.capturePortals(),
         planetDebris: this.capturePlanetDebris(resolvedEngine)
       });
       const meta = this.buildMeta(resolvedEngine, snapshot);
@@ -162,18 +151,9 @@ export class SolarSystemRuntimeSerializerService {
     }));
   }
 
-  private capturePortals(): RuntimePortalState[] {
-    return this.gameState.portals.map((portal: any) => ({
-      id: portal.id,
-      position: this.cloneVec(portal.position) ?? { x: 0, y: 0, z: 0 },
-      radius: typeof portal.radius === 'number' ? portal.radius : 100,
-      linkedPortalId: portal.linkedPortalId,
-      eyeState: this.cloneEyeState(portal.eyeState),
-      animosity: portal.animosity,
-      concordSealActive: portal.concordSealActive,
-      concordSealActivatedAt: portal.concordSealActivatedAt,
-      preventsLesserIncursions: portal.preventsLesserIncursions
-    }));
+  private capturePortals(): PortalSnapshot[] {
+    // Fuente única: portal-state.codec.
+    return this.gameState.portals.map(portal => capturePortalSnapshot(portal));
   }
 
   private capturePlanetDebris(engine: GameEngine): RuntimeDebrisState[] {
@@ -207,14 +187,11 @@ export class SolarSystemRuntimeSerializerService {
     const currentSnapshot = engineAny?.currentSnapshot ?? null;
     const meta: Record<string, any> = currentSnapshot?.meta ? { ...currentSnapshot.meta } : {};
     const sourceId = currentSnapshot?.id ?? snapshot.id ?? null;
+    // Identidad canónica: el engine añade su currentSnapshotLabel como fallback; si no está
+    // disponible, system-identity.ts resuelve la misma clave (única fuente de precedencia).
     const persistentKey = typeof engineAny?.getPersistentSystemKey === 'function'
       ? engineAny.getPersistentSystemKey(currentSnapshot)
-      : currentSnapshot?.meta?.proceduralSystemId
-        ?? currentSnapshot?.meta?.sourceSystemId
-        ?? currentSnapshot?.meta?.snapshotLabel
-        ?? currentSnapshot?.id
-        ?? snapshot.id
-        ?? null;
+      : resolveSystemKey(currentSnapshot);
 
     if (typeof currentSnapshot?.meta?.handcrafted === 'boolean') {
       meta['handcrafted'] = currentSnapshot.meta.handcrafted;
@@ -252,19 +229,5 @@ export class SolarSystemRuntimeSerializerService {
       return undefined;
     }
     return { x: Number(vec.x) || 0, y: Number(vec.y) || 0, z: Number(vec.z) || 0 };
-  }
-
-  private cloneEyeState(eyeState: any): RuntimePortalState['eyeState'] {
-    if (!eyeState) {
-      return undefined;
-    }
-    const gazeTarget = typeof eyeState.gazeTarget === 'string'
-      ? eyeState.gazeTarget
-      : this.cloneVec(eyeState.gazeTarget) ?? undefined;
-    return {
-      gazeTarget,
-      eyelidOpen: eyeState.eyelidOpen,
-      intensity: eyeState.intensity
-    };
   }
 }

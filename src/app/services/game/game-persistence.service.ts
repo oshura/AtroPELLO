@@ -10,12 +10,14 @@ import {
 } from '../../game/types/save-game.types';
 import { GameInitializer } from './game-initializer.service';
 import { GameStateStore } from './game-state.store';
-import { UniverseStateSnapshotService, EnsureSystemStateOptions } from '../../game/services/state/universe-state-snapshot.service';
+import { UniverseStateSnapshotService } from '../../game/services/state/universe-state-snapshot.service';
 import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 import { PlayerStateSerializer } from './persistence/player-state.serializer';
 import { GameStateSnapshotAdapter } from './persistence/game-state.snapshot-adapter';
 import { UniverseStateSnapshotAdapter } from './persistence/universe-state.snapshot-adapter';
-import { RuntimeSolarSystemState, SerializedUniversePayload, GameStartContext } from '../../game/types/universe-state.types';
+import { GameStartContext } from '../../game/types/universe-state.types';
+import { SolarSystemSnapshot } from '../../game/types/solar-system.types';
+import { resolveSnapshotId, resolveSystemId } from '../../game/services/game/system-identity';
 import { RespawnAnchorMetadata } from '../../game/types/respawn.types';
 import { CloudSavesSessionBridgeService } from '../../libs/cloud-saves/cloud-saves-session-bridge.service';
 import {
@@ -102,7 +104,7 @@ export class GamePersistenceService {
       const payload = await this.withLoopPaused(resolved.reason, resolved.skipPause, async () => {
         const playerSection = this.playerStateSerializer.capture();
         const gameStateSection = this.gameStateSnapshotAdapter.capture();
-        const runtimeState = this.universeStateSnapshotAdapter.capture();
+        const universeSnapshot = this.universeStateSnapshotAdapter.captureSnapshot();
         this.logger.log(LogLevel.DEBUG, LogCategory.SAVE_SYSTEM, 'Player state serialized', {
           hasShip: Boolean(this.gameState.spaceship),
           cargoEntries: playerSection.inventory.cargoManifest.length,
@@ -114,14 +116,14 @@ export class GamePersistenceService {
           planetIntel: gameStateSection.planetIntel.length,
           lesserBeingSystems: Object.keys(gameStateSection.lesserBeingMemory).length
         });
-        this.logger.log(LogLevel.DEBUG, LogCategory.SAVE_SYSTEM, 'Universe runtime snapshot captured', {
-          systemId: runtimeState.systemId,
-          payloadObjects: runtimeState.payload?.objects.length ?? 0,
-          portals: runtimeState.payload?.portals?.length ?? 0,
-          source: runtimeState.source
+        this.logger.log(LogLevel.DEBUG, LogCategory.SAVE_SYSTEM, 'Universe snapshot captured', {
+          systemId: resolveSystemId(universeSnapshot),
+          planets: universeSnapshot.planets.length,
+          portals: universeSnapshot.portals?.length ?? 0,
+          clusters: universeSnapshot.clusters?.length ?? 0
         });
         const metadata = await this.buildMetadata({
-          runtimeState,
+          universeSnapshot,
           respawn: playerSection.respawn,
           captureLabel: resolved.label
         });
@@ -130,7 +132,7 @@ export class GamePersistenceService {
           schemaVersion: SAVEGAME_SCHEMA_VERSION,
           metadata,
           player: playerSection,
-          universe: runtimeState.payload ?? this.buildEmptyUniversePayload(),
+          universe: universeSnapshot,
           gameState: gameStateSection,
           ui: resolved.includeUiState ? this.captureUiStateSnapshot() : null,
           audio: resolved.includeAudioState ? this.captureAudioStateSnapshot() : null
@@ -166,10 +168,6 @@ export class GamePersistenceService {
     }
   }
 
-  private buildEmptyUniversePayload(): SerializedUniversePayload {
-    return { objects: [] };
-  }
-
   private async applyLoadedPayload(payload: SaveGamePayload, reason: string): Promise<void> {
     if (!payload.player) {
       throw new SaveGamePayloadInvalidError('SaveGame payload is missing the player section.');
@@ -177,61 +175,29 @@ export class GamePersistenceService {
     if (!payload.gameState) {
       throw new SaveGamePayloadInvalidError('SaveGame payload is missing the gameState section.');
     }
+    if (!payload.universe || !Array.isArray(payload.universe.planets)) {
+      throw new SaveGamePayloadInvalidError('SaveGame payload is missing the universe snapshot.');
+    }
 
     this.gameState.reset();
     this.gameStateSnapshotAdapter.restore(payload.gameState);
     const playerResetState = this.playerStateSerializer.apply(payload.player);
     const anchor = this.cloneRespawnAnchor(this.resolvePrimaryAnchor(payload.player.respawn));
     const targetSystemId = this.resolveTargetSystemId(payload, anchor);
-    const snapshotOptions = this.buildSnapshotOptions({ payload, anchor });
+    const snapshotLabel = this.resolveLoadSnapshotLabel(payload, anchor);
     this.bindSnapshotLabelToSlot(
-      snapshotOptions?.snapshotLabel ?? payload.metadata.snapshotLabel ?? null,
+      snapshotLabel,
       payload.metadata.activeSlotIndex ?? this.gameState.getActiveCloudSaveSlotIndex()
     );
 
-    if (!snapshotOptions) {
-      if (payload.universe) {
-        try {
-          this.universeStateSnapshotAdapter.restoreFromPayload({
-            systemId: targetSystemId,
-            payload: payload.universe,
-            snapshotId: payload.metadata.respawnAnchorId ?? null,
-            reason
-          });
-        } catch (restoreError) {
-          this.logger.log(LogLevel.WARN, LogCategory.SAVE_SYSTEM, 'Failed to inspect embedded universe payload during load fallback', {
-            error: restoreError
-          });
-        }
-      }
-      throw new SaveGamePayloadInvalidError('SaveGame payload is missing snapshot metadata required to restore the universe state.');
-    }
+    // Camino único de restauración: adoptar el snapshot embebido (igual que cruzar un portal).
+    const runtimeState = this.universeStateSnapshotAdapter.adoptSnapshot({
+      snapshot: payload.universe,
+      systemId: targetSystemId,
+      snapshotLabel,
+      reason
+    });
 
-    let runtimeState = this.universeState.ensureSystemState(targetSystemId, snapshotOptions);
-    const activeSystemAfterEnsure = this.universeState.getActiveSystemId();
-    const snapshotMissing = !activeSystemAfterEnsure || activeSystemAfterEnsure !== targetSystemId;
-    if (snapshotMissing && payload.universe) {
-      this.logger.log(LogLevel.WARN, LogCategory.SAVE_SYSTEM, 'Snapshot metadata failed, using embedded runtime payload', {
-        targetSystemId,
-        snapshotId: snapshotOptions?.snapshotId ?? null,
-        anchorId: payload.metadata.respawnAnchorId ?? null,
-        reason
-      });
-      runtimeState = this.universeState.replaceRuntimeWithPayload({
-        systemId: targetSystemId,
-        payload: payload.universe,
-        snapshotId: snapshotOptions?.snapshotId ?? payload.metadata.snapshotId ?? payload.metadata.respawnAnchorId ?? null,
-        snapshotLabel:
-          snapshotOptions?.snapshotLabel ??
-          payload.metadata.snapshotLabel ??
-          payload.metadata.systemName ??
-          payload.metadata.systemId ??
-          null,
-        reason: `${reason}:snapshot-fallback`
-      });
-    } else if (snapshotMissing) {
-      throw new SaveGamePayloadInvalidError('Unable to restore runtime state because both snapshots and serialized payload are missing.');
-    }
     const context: GameStartContext = {
       targetSystemId,
       runtimeState,
@@ -297,20 +263,21 @@ export class GamePersistenceService {
   }
 
   private async buildMetadata(params: {
-    runtimeState: RuntimeSolarSystemState;
+    universeSnapshot: SolarSystemSnapshot;
     respawn: SaveGameRespawnState;
     captureLabel: string | null;
   }): Promise<SaveGameMetadata> {
     const anchor = this.resolvePrimaryAnchor(params.respawn);
-    const systemId = params.runtimeState.systemId ?? anchor?.systemId ?? 'unknown-system';
-    const snapshotId = params.runtimeState.snapshotId ?? this.universeState.getActiveSnapshotId() ?? null;
+    // Identidad derivada del snapshot (fuente única, system-identity.ts).
+    const systemId = resolveSystemId(params.universeSnapshot) ?? anchor?.systemId ?? 'unknown-system';
+    const snapshotId = resolveSnapshotId(params.universeSnapshot) ?? this.universeState.getActiveSnapshotId() ?? null;
     const snapshotLabel = this.normalizeLabel(this.gameInitializer.getGameEngine()?.getCurrentSnapshotLabel?.());
     return {
       savedAt: Date.now(),
       elapsedPlayTimeMs: this.estimateElapsedPlayTimeMs(),
       buildLabel: this.buildLabel,
       systemId,
-      systemName: this.resolveSystemName(params.runtimeState, anchor, params.captureLabel),
+      systemName: this.resolveSystemName(systemId, snapshotId, anchor, params.captureLabel),
       snapshotLabel,
       snapshotId,
       anchorLabel: this.resolveAnchorLabel(anchor, params.captureLabel),
@@ -334,18 +301,19 @@ export class GamePersistenceService {
   }
 
   private resolveSystemName(
-    runtimeState: RuntimeSolarSystemState,
+    systemId: string | null,
+    snapshotId: string | null,
     anchor: RespawnAnchorMetadata | null,
     captureLabel: string | null
   ): string | null {
     const engine = this.gameInitializer.getGameEngine();
     const candidates: Array<string | null | undefined> = [
       engine?.getCurrentSnapshotLabel?.(),
-      runtimeState.snapshotId,
+      snapshotId,
       captureLabel,
       anchor?.snapshotLabel,
       anchor?.label,
-      runtimeState.systemId,
+      systemId,
       anchor?.systemId,
       anchor?.planetName
     ];
@@ -374,35 +342,29 @@ export class GamePersistenceService {
     return metadataSystemId || anchorSystemId || activeSystemId || 'human-system';
   }
 
-  private buildSnapshotOptions(params: { payload: SaveGamePayload; anchor: RespawnAnchorMetadata | null }): EnsureSystemStateOptions | undefined {
-    const activeRespawn = params.payload.player?.respawn;
-    const metadata = params.payload.metadata;
-    const labelCandidates: Array<string | null | undefined> = [
+  /**
+   * Etiqueta bajo la que se persiste el snapshot embebido al cargar (para que respawns y
+   * portales posteriores lo resuelvan). Prefiere los metadatos capturados al guardar.
+   */
+  private resolveLoadSnapshotLabel(payload: SaveGamePayload, anchor: RespawnAnchorMetadata | null): string | null {
+    const activeRespawn = payload.player?.respawn;
+    const metadata = payload.metadata;
+    const candidates: Array<string | null | undefined> = [
       metadata.snapshotLabel,
       metadata.systemName,
       metadata.systemId,
-      params.anchor?.snapshotLabel,
-      params.anchor?.label,
+      anchor?.snapshotLabel,
+      anchor?.label,
       activeRespawn?.defaultAnchor?.snapshotLabel,
-      params.payload.metadata.anchorLabel,
+      metadata.anchorLabel,
       activeRespawn?.lastAnchorLabel
     ];
-    const snapshotLabel = labelCandidates.find(candidate => typeof candidate === 'string' && candidate.trim().length > 0)?.trim() ?? null;
-    const snapshotId = params.anchor?.snapshotId
-      ?? metadata.snapshotId
-      ?? activeRespawn?.defaultAnchor?.snapshotId
-      ?? metadata.respawnAnchorId
-      ?? metadata.systemId
-      ?? null;
-    if (!snapshotLabel && !snapshotId) {
-      return undefined;
+    for (const candidate of candidates) {
+      if (typeof candidate === 'string' && candidate.trim().length > 0) {
+        return candidate.trim();
+      }
     }
-    return {
-      // Prefer metadata captured at save-time to keep portal transitions consistent
-      snapshotLabel,
-      snapshotId,
-      reason: 'load-game'
-    };
+    return null;
   }
 
   private cloneRespawnAnchor(anchor: RespawnAnchorMetadata | null): RespawnAnchorMetadata | null {

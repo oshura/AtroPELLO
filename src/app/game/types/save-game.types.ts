@@ -1,6 +1,6 @@
 import { Vector3 } from '../../types/game.types';
 import { OrientationSnapshot, RespawnAnchorMetadata } from './respawn.types';
-import { SerializedUniversePayload, HealthSnapshot } from './universe-state.types';
+import { HealthSnapshot } from './universe-state.types';
 import {
   CharacterProfile,
   CargoManifestEntry,
@@ -14,17 +14,26 @@ import { PlanetIntelSnapshot, PlanetMissionState } from './planet-intel.types';
 import { LesserBeingInstanceSnapshot } from './cosmic-life.types';
 import { SolarSystemSnapshot } from './solar-system.types';
 
-/** Versión actual del esquema de partidas guardadas. */
-export const SAVEGAME_SCHEMA_VERSION = 1;
-/** Versión mínima soportada por el cargador. */
-export const MIN_SUPPORTED_SAVEGAME_SCHEMA = 1;
+/**
+ * Versión actual del esquema de partidas guardadas.
+ * v2 (Fase 4): `universe` transporta un SolarSystemSnapshot completo en lugar del payload
+ * por-objeto. Sin migración desde v1 (decisión: no hay retrocompatibilidad de saves).
+ */
+export const SAVEGAME_SCHEMA_VERSION = 2;
+/** Versión mínima soportada por el cargador. Saves v1 se rechazan. */
+export const MIN_SUPPORTED_SAVEGAME_SCHEMA = 2;
 
 /** Payload principal enviado/recibido por Cloud Saves. */
 export interface SaveGamePayload {
   schemaVersion: number;
   metadata: SaveGameMetadata;
   player: SaveGamePlayerSection;
-  universe: SerializedUniversePayload;
+  /**
+   * Sistema solar activo como snapshot autocontenido (sol, planetas, clusters, portales,
+   * debris, meta con lesserBeingMemory/elderGod). Al cargar se aplica por el MISMO camino
+   * que cruzar un portal. Es la ÚNICA representación del mundo (ver docs/ARQUITECTURA.md §4.3).
+   */
+  universe: SolarSystemSnapshot;
   gameState: SaveGameGameStateSection;
   ui?: SaveGameUiState | null;
   audio?: SaveGameAudioState | null;

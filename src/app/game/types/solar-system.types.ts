@@ -68,6 +68,43 @@ export interface ClusterSnapshot {
   centerSpeedFactor?: number; // 0..1 how strongly center drives members
 }
 
+/**
+ * Metadatos tipados de un snapshot de sistema (ver docs/ARQUITECTURA.md §4.3, Fase 3).
+ * Las claves conocidas están declaradas; el index signature mantiene compatibilidad con
+ * accesos sueltos y campos futuros. La IDENTIDAD de un sistema se resuelve ÚNICAMENTE con
+ * `system-identity.ts` — no reimplementar precedencias de `proceduralSystemId`/etc. a mano.
+ */
+export interface SolarSystemMeta {
+  /** Clave persistente del sistema (dedup/evicción/memoria de lesser beings). */
+  persistentSystemId?: string;
+  /** Id procedural derivado de la semilla (estable entre visitas). */
+  proceduralSystemId?: string;
+  /** Id lógico alternativo. */
+  systemId?: string;
+  /** Id del snapshot del que derivó esta captura. */
+  sourceSystemId?: string;
+  /** Etiqueta humana bajo la que PortalPersistence guarda el snapshot. */
+  snapshotLabel?: string;
+  /** true si es un sistema artesanal (p.ej. el humano), no procedural. */
+  handcrafted?: boolean;
+  /** Deidad asignada al sistema. */
+  elderGod?: string;
+  /** Radio del límite del sistema (unidades de mundo). */
+  systemRadius?: number;
+  /** Memoria de lesser beings errantes embebida en el snapshot. */
+  lesserBeingMemory?: unknown[];
+  /** Estado de entorno/FX embebido. */
+  environment?: Record<string, unknown> | null;
+  /** Timestamp de la última captura runtime. */
+  lastRuntimeCaptureAt?: number;
+  /** true si el snapshot se reconstruyó desde un payload por-objeto. */
+  reconstructedFromPayload?: boolean;
+  /** Timestamp de archivado en el archivo procedural. */
+  archivedAt?: number;
+  // Index signature: accesos sueltos y campos futuros siguen compilando.
+  [key: string]: any;
+}
+
 export interface SolarSystemSnapshot {
   id?: string;
   seed?: RNGSeed;
@@ -77,7 +114,7 @@ export interface SolarSystemSnapshot {
   clusters?: ClusterSnapshot[];
   portals?: PortalSnapshot[];
   planetDebris?: PlanetDebrisSnapshot[]; // optional serialized debris linked to planets
-  meta?: Record<string, any>;
+  meta?: SolarSystemMeta;
   // Parámetros de asteroides efímeros (debris independientes)
   ephemeralDebris?: {
     checkIntervalMs: number;  // Cada cuánto se evalúa probabilidad (default: 10000ms)
@@ -105,6 +142,8 @@ export interface PortalSnapshot {
   concordSealActive?: boolean;
   concordSealActivatedAt?: number;
   preventsLesserIncursions?: boolean;
+  /** Color base del planeta de origen capturado durante el Gate Rite (tinte del portal). */
+  planetColorRef?: { r: number; g: number; b: number; a?: number };
 }
 
 // Serialized debris item (e.g., Earth/Saturn belts mega-asteroids)

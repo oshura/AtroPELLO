@@ -4,6 +4,7 @@ import { GameEngine } from '../../GameEngine';
 import { CameraMode } from '../../Camera';
 import { SystemGeneratorService } from '../game/system-generator.service';
 import { SolarSystemService } from '../game/solar-system.service';
+import { resolveSystemId } from '../game/system-identity';
 import { Portal } from '../../game-objects/Portal';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
 import { GameLogger } from '../../utils/GameLogger';
@@ -795,7 +796,7 @@ export class GateRiteAnimation implements GameAnimation {
               GameLogger.info(LogCategory.SOLAR_SYSTEM_GENERATION, 'GateRite reused archived system', {
                 archiveRoll,
                 archivedCount,
-                systemId: snapshot.meta?.proceduralSystemId || snapshot.id
+                systemId: resolveSystemId(snapshot)
               });
             } catch {}
           } else {
@@ -811,7 +812,7 @@ export class GateRiteAnimation implements GameAnimation {
           // Registrar portales en el PortalRegistryService
           const registry = engine.portalRegistry;
           const originSystemId = this.originalSnapshot?.id || 'unknown-origin';
-          const destSystemId = snapshot.meta?.proceduralSystemId || snapshot.id || 'unknown-dest';
+          const destSystemId = resolveSystemId(snapshot) || 'unknown-dest';
           
           // Vincular portal de origen con destino
           let dest: any = null;

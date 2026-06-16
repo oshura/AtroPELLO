@@ -1,5 +1,6 @@
 import { Injectable } from '@angular/core';
 import { SolarSystemSnapshot, PortalSnapshot } from '../../types/solar-system.types';
+import { resolveSystemKey } from './system-identity';
 import { GameEngine } from '../../GameEngine';
 import { GameLogger } from '../../utils/GameLogger';
 import { LogCategory } from '../../../services/logging.service';
@@ -177,16 +178,7 @@ export class PortalPersistenceService {
   }
 
   private resolveSystemKey(snapshot?: SolarSystemSnapshot | null): string | null {
-    if (!snapshot) {
-      return null;
-    }
-    const meta = snapshot.meta || {};
-    const key = meta['persistentSystemId']
-      ?? meta['proceduralSystemId']
-      ?? meta['systemId']
-      ?? snapshot.id
-      ?? null;
-    return key ? String(key) : null;
+    return resolveSystemKey(snapshot);
   }
 
   private evictSystemSnapshots(systemKey: string, exceptLabel?: string): void {
