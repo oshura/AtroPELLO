@@ -127,6 +127,7 @@ import {
 } from './math/matrix-math';
 import { PlayerProgressionSystem } from './services/state/player-progression-system';
 import { SunProximitySystem } from './services/state/sun-proximity-system';
+import { getPlanetTypeLabel, humanizeEnumValue, rgbToHex } from './utils/label-utils';
 import {
   AgeProgressionOutcome,
   AgeProgressionSource,
@@ -3026,30 +3027,9 @@ export class GameEngine {
     };
   }
 
+  // Helpers de formato: delegan en game/utils/label-utils (fuente única, Fase 5).
   private getPlanetTypeLabel(type?: PlanetType): string | undefined {
-    if (typeof type === 'undefined') {
-      return undefined;
-    }
-    switch (type) {
-      case PlanetType.Gaseous:
-        return 'Gigante gaseoso';
-      case PlanetType.Giant:
-        return 'Planeta gigante';
-      case PlanetType.Ringed:
-        return 'Planeta anillado';
-      case PlanetType.Dwarf:
-        return 'Planeta enano';
-      case PlanetType.Protoplanet:
-        return 'Protoplaneta';
-      case PlanetType.Tierra:
-        return 'Planeta terrestre';
-      case PlanetType.Planetoid:
-        return 'Planetoide';
-      case PlanetType.Sun:
-        return 'Estrella';
-      default:
-        return String(type);
-    }
+    return getPlanetTypeLabel(type);
   }
 
   private getAtmosphereWeatherDisplayLabel(eventType: string): string {
@@ -6950,10 +6930,7 @@ export class GameEngine {
   }
 
   private humanizeEnumValue(value: string): string {
-    return value
-      .split('_')
-      .map(chunk => chunk.charAt(0).toUpperCase() + chunk.slice(1).toLowerCase())
-      .join(' ');
+    return humanizeEnumValue(value);
   }
 
   // Ensure display-friendly properties exist synchronously to avoid one-frame stale labels
@@ -10168,9 +10145,7 @@ export class GameEngine {
 
   /** Convert float RGB [0..1] to hex string */
   private rgbToHex(r: number, g: number, b: number): string {
-    const toByte = (x: number) => Math.max(0, Math.min(255, Math.round(x * 255)));
-    const h = (n: number) => n.toString(16).padStart(2, '0');
-    return `#${h(toByte(r))}${h(toByte(g))}${h(toByte(b))}`;
+    return rgbToHex(r, g, b);
   }
 
   /** Renderiza los mega-asteroides de debris vinculados a planetas con un LOD simple */

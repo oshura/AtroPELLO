@@ -324,6 +324,8 @@ update/render, wiring).
   `collectActiveSuns`/`isLandingDamageSuppressed` públicos + wrappers `emitHazardMarquee`/
   `addImpactVignette`). **Con tests nuevos**. El resto de 5.4 (applyShipDamage, destrucción de
   objetos, recompensas) sigue en el engine — es un `CombatDamageSystem` futuro.
+- **Helpers de etiquetado** (`game/utils/label-utils.ts`): `getPlanetTypeLabel`, `humanizeEnumValue`,
+  `rgbToHex` (funciones puras; engine delega; specs propios). Cero riesgo.
 
 **Patrón seguro validado (úsalo para las extracciones restantes):**
 1. **Clase plana** (NO `@Injectable`) que el engine instancia con **lazy-init** (`ensureX()`),
@@ -346,12 +348,37 @@ daño por proximidad solar, conversión de cargo) antes que la física atmosfér
 ### Fase 6 — Limpieza de duplicados restantes (≈ 2 semanas)
 | # | Tarea | Quién |
 |---|---|---|
-| 6.1 | Decidir targeting: v2 (`AdaptiveTargetingSystem`) como único; migrar lo que falte de v1 y borrar `targeting/core` muerto | [S] |
-| 6.2 | Unificar outline/retícula en un solo `SelectionRenderer` | [J] |
+| 6.1 | Targeting: ver **hallazgo abajo**. NO es un borrado simple — v1 sigue siendo load-bearing | [S] |
+| 6.2 | Unificar outline/retícula en un solo `SelectionRenderer` (depende de 6.1; render path → smoke) | [J] |
 | 6.3 | Fusionar los 3 session-cookie services; deduplicar `libs/cloud-saves/from-landing/*` | [J] |
-| 6.4 | Earth/Saturn data-driven: `PlanetSnapshot.debrisBelt?` y `axialTiltRad` ya persistido; borrar los `if (p.id === 'planet-earth')` | [J] |
+| 6.4 | Earth/Saturn data-driven: ver **hallazgo abajo** (el literal `planet-saturn` está en 6+ sitios) | [J] |
 | 6.5 | Unificar `GameEngine.createPlanets()` (sistema humano legacy) para que genere un `SolarSystemSnapshot` y lo aplique por el camino normal (probable absorción por `HumanSolarSystemService`) | [S] |
 | 6.6 | Carpeta única de servicios: `game/` para dominio+engine, `app/` solo UI/plataforma; mover con `git mv` por lotes pequeños | [J] |
+
+#### Hallazgo 6.1 — targeting v1 vs v2 (investigado 2026-06-16)
+**No son modos alternativos: corren los DOS cada frame, en tándem** (`GameEngine.update`, ~línea 6465):
+- **v2 `AdaptiveTargetingIntegrator`** (envuelve `AdaptiveTargetingSystem`, autocontenido, NO importa
+  nada de `core/`) = el **cerebro**: detección de hover, selección, ciclado (Tab), clic, info de display.
+- **v1 `ReticleManager`** quedó reducido a **soporte**: (a) su `InputHandler` provee la **posición del
+  ratón** que se inyecta a v2 cada frame; (b) **renderiza la retícula** (`render`) y los **contornos**
+  (`renderOutlines` → `OutlineRenderer`); (c) es **fallback** de `getCurrentTarget()`. Sus teclas de
+  ciclo/Escape están **desactivadas** (ReticleManager.ts:153) para no chocar con v2.
+- Lo **realmente muerto** es el cerebro de detección de v1: `TargetDetector` (su resultado casi no se
+  usa, solo el fallback) y la lógica de selección de `ReticleManager`. Pero `InputHandler`,
+  `ReticleRenderer` y `OutlineRenderer` siguen siendo **load-bearing**.
+- **Plan correcto 6.1**: separar quirúrgicamente — mover input de ratón + render de retícula/contornos
+  a un módulo neutro que v2 consuma, retirar `TargetDetector` y la selección de v1. Toca el render path
+  → **requiere smoke de gameplay**. NO borrar `targeting/core` en bloque.
+
+#### Hallazgo 6.4 — Earth/Saturn hardcode disperso (investigado 2026-06-16)
+El literal `planet-saturn`/`planet-earth` aparece en **6+ sitios** de GameEngine (debris belt
+~5151, spin ~5131, tilt ~5141 — estos dos ya cubiertos por `kind==='ringed'` + `axialTiltRad`
+persistido; gating de lesser beings ~6415; `createPlanets` legacy ~9593; rotación de debris
+~10184/10202). Hacerlo data-driven de verdad exige tocarlos todos a la vez (un cambio parcial deja el
+hardcode en el resto). Earth además usa la **clase** `EarthSplitPlanet.createWithDebris` (no solo
+datos). Propuesta: `PlanetSnapshot.debrisBelt?: { count; spreadScale?; yScale? }` + que el snapshot
+humano lo rellene para Saturno, y `kind: 'earth_split'` ya dirige la clase de Earth. Toca world-build
+→ smoke de gameplay (Saturno con su anillo de debris, Tierra partida).
 
 ### Fase 7 — Habilitadores del rediseño del espacio (lo que quieres construir después)
 Con las fases 1-6, "rediseñar elementos del espacio" = editar **datos**, no código:
