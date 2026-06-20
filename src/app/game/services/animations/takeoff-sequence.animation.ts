@@ -154,7 +154,7 @@ export class TakeoffSequenceAnimation extends BaseAnimation {
     if (this.overlaySuppressed || this.overlayAlpha <= 0) {
       return;
     }
-    const overlay = engine.overlayRenderer as any;
+    const overlay = engine.overlayRenderer;
     if (overlay?.drawSolid) {
       try { overlay.drawSolid([0, 0, 0], this.overlayAlpha); } catch {}
     }

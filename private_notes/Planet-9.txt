@@ -76,6 +76,8 @@ scripts/publish-legal-html.ps1
 Email: `usertesto@steron.es`
 Contraseña: `jfe!sASR22r!`
 
+oshura@gmail/Tr@mp0sete
+
 npm run test -- --watch=false --include src/app/services/game/game-persistence.service.spec.ts
 npm run test -- --watch=false --browsers=ChromeHeadless --code-coverage=false
 npm run build --production

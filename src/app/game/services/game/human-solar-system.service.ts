@@ -121,7 +121,7 @@ export class HumanSolarSystemService {
       let baseColorName: string | undefined;
       if (i === mercuryIdx) { kind = 'Dwarf'; radius = 200; name = 'Mercurio'; baseColorName = 'rojo_carmesi'; }
       else if (i === venusIdx) { kind = 'Rocky'; radius = 360; name = 'Venus'; baseColorName = 'marron'; }
-      else if (i === earthIdx) { kind = 'Terrestrial'; radius = 400; name = 'Earth'; baseColorName = 'azul_marino'; }
+      else if (i === earthIdx) { kind = 'earth_split'; radius = 400; name = 'Earth'; baseColorName = 'azul_marino'; }
       else if (i === marsIdx) { kind = 'Rocky'; radius = 300; name = 'Marte'; baseColorName = 'marron'; }
       else if (i === jupiterIdx) { kind = 'Giant'; radius = 1600; name = 'Júpiter'; baseColorName = 'marron'; }
       else if (i === saturnIdx) { kind = 'Ringed'; radius = 1800; name = 'Saturn'; baseColorName = 'gris'; }
@@ -160,7 +160,9 @@ export class HumanSolarSystemService {
         civilizationIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
         lesserBeingIntelStatus: PLANET_INTEL_STATUS.UNKNOWN,
         resourceStock: stock,
-        orbit: { center: { ...center }, semiMajor: a, semiMinor: b, orientation: orient, angle: angle0, angularSpeed: 0.00003 * Math.pow(50000 / a, 1.5), normal: { ...n }, u: { ...u0 } }
+        orbit: { center: { ...center }, semiMajor: a, semiMinor: b, orientation: orient, angle: angle0, angularSpeed: 0.00003 * Math.pow(50000 / a, 1.5), normal: { ...n }, u: { ...u0 } },
+        // Saturno declara su cinturón de debris como DATO (antes hardcodeado por id en GameEngine).
+        debrisBelt: i === saturnIdx ? { count: 280, spreadScale: 0.45, yScale: 0.7 } : undefined,
       });
     }
 

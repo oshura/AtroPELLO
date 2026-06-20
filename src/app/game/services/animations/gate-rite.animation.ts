@@ -423,9 +423,9 @@ export class GateRiteAnimation extends BaseAnimation {
         const idx = planets.findIndex(pl => pl.id === p.id);
         if (idx >= 0) planets.splice(idx, 1);
         // Remove from target catalog (re-register PLANET bucket)
-        const tc = engine['targetCatalog'];
+        const tc = engine.targetCatalog;
         if (tc) {
-          tc.register(TargetType.PLANET, planets as any);
+          tc.register(TargetType.PLANET, planets as unknown as ITargetable[]);
         }
       } catch {}
       this.enterPortalManifest(engine);

@@ -99,12 +99,24 @@ describe('planet-state.codec', () => {
       { id: 'p-legacy', position: { x: 0, y: 0, z: 0 }, radius: 250 },
       { planetType: 'Tierra', baseColorName: 'azul_marino', visited: true }
     );
-    expect(snap.kind).toBe('terrestrial');
+    // 'Tierra' (planetType de EarthSplitPlanet) ⇒ kind 'earth_split' data-driven (Fase 6.4): los saves
+    // schema 1 que conservaron el planetType sin normalizar reconstruyen la Tierra partida por el kind.
+    expect(snap.kind).toBe('earth_split');
     expect(snap.visited).toBeTrue();
   });
 
+  it('migra la Tierra canónica histórica (id) a kind earth_split aunque venga como terrestrial', () => {
+    const snap = planetSnapshotFromCustomMeta(
+      { id: 'planet-earth', position: { x: 0, y: 0, z: 0 }, radius: 400 },
+      { kind: 'terrestrial', planetType: 'terrestrial', baseColorName: 'azul_marino' }
+    );
+    expect(snap.kind).toBe('earth_split');
+  });
+
   it('normaliza todas las variantes históricas de kind', () => {
-    expect(normalizePlanetKind('Tierra')).toBe('terrestrial');
+    // 'Tierra' es el planetType de EarthSplitPlanet ⇒ kind data-driven 'earth_split' (Fase 6.4).
+    expect(normalizePlanetKind('Tierra')).toBe('earth_split');
+    expect(normalizePlanetKind('earth_split')).toBe('earth_split');
     expect(normalizePlanetKind('Planetoid')).toBe('rocky');
     expect(normalizePlanetKind('Ringed')).toBe('ringed');
     expect(normalizePlanetKind('SUN')).toBe('sun');

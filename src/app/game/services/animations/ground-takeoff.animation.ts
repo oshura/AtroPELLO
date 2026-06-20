@@ -162,7 +162,7 @@ export class GroundTakeoffAnimation extends BaseAnimation {
     if (this.overlayAlpha <= 0) {
       return;
     }
-    const overlay = engine.overlayRenderer as any;
+    const overlay = engine.overlayRenderer;
     if (overlay?.drawSolid) {
       try { overlay.drawSolid([0, 0, 0], this.overlayAlpha); } catch {}
     }
@@ -383,9 +383,6 @@ export class GroundTakeoffAnimation extends BaseAnimation {
     }
     this.landingCameraHoldReleased = true;
     this.manualCameraFollow = null;
-    const releaseFn = (engine as any)?.releaseLandingCameraHold ?? (engine as any)?.releaseLandingCinematicCameraHold;
-    if (typeof releaseFn === 'function') {
-      try { releaseFn.call(engine, reason, { restoreCamera }); } catch {}
-    }
+    try { engine.releaseLandingCameraHold(reason, { restoreCamera }); } catch {}
   }
 }

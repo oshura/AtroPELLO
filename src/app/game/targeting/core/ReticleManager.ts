@@ -26,9 +26,7 @@ import { Camera } from '../../Camera';
 import { ShaderManager } from '../../ShaderManager';
 import { WebGLService } from '../../../services/webgl.service';
 import { mat4 } from 'gl-matrix';
-import { SpaceshipDebugCollector } from '../../../services/debug/spaceship-debug-collector.service';
 import { RelationService } from '../../../services/relation.service';
-import { TargetingWorkerService, WorkerResult } from '../worker/TargetingWorker.service';
 
 @Injectable({
   providedIn: 'root'
@@ -57,25 +55,9 @@ export class ReticleManager {
   private reticleOpenness: number = 0.5; // 0=cerrado, 1=abierto
   private velocitySmoothing: number = 0.9; // Suavizado de velocidad
   
-  // Estabilización de targeting para FPS altos
-  private lastStableTarget: ITargetable | null = null;
-  private targetStabilityFrames: number = 0;
-  private readonly TARGET_STABILITY_THRESHOLD = 3; // Frames para confirmar cambio de target
-
   // Debug snapshot storage
   private lastHit: RaycastHit | null = null;
   private lastDetectionRadiusPx: number = 0;
-  // Worker integration
-  private workerService: TargetingWorkerService;
-  private lastViewProjection: Float32Array | null = null;
-  private lastViewport: { width: number; height: number } | null = null;
-  private lastTargetsCompact: { positions: Float32Array; ids: string[] } | null = null;
-  // Worker gating
-  private snapshotVersion: number = 0; // increments when compact targets change
-  private lastSentRequestTime: number = 0;
-  private lastAccepted: { time: number; version: number } = { time: 0, version: -1 };
-  private lastTargetsSignature: string = '';
-  private lastViewportSize: { width: number; height: number } | null = null;
 
   constructor(
     targetDetector: TargetDetector,
@@ -84,8 +66,6 @@ export class ReticleManager {
     targetHighlighter: TargetHighlighter,
     outlineRenderer: OutlineRenderer,
     private webglService: WebGLService,
-    private debugCollector: SpaceshipDebugCollector,
-    workerService: TargetingWorkerService,
     private relationService: RelationService,
     private logger: LoggingService
   ) {
@@ -95,8 +75,7 @@ export class ReticleManager {
     this.targetHighlighter = targetHighlighter;
     this.outlineRenderer = outlineRenderer;
     this.config = { ...DEFAULT_TARGETING_CONFIG };
-  this.workerService = workerService;
-    
+
     // Deshabilitar animación de pulso (solo velocidad del mouse)
     this.config.reticle.animated = false;
     this.config.reticle.animationSpeed = 0;
@@ -174,8 +153,6 @@ export class ReticleManager {
         }
 
     this.isInitialized = true;
-    // Initialize worker
-    this.workerService.init();
         this.lastUpdateTime = performance.now();
 
         this.logger.info(LogCategory.TARGETING, 'ReticleManager inicializado', { state: this.state });
@@ -421,8 +398,7 @@ export class ReticleManager {
         FPS: currentFPS,
         throttleMs: throttle,
         mouseVelocity: Math.round(this.mouseVelocity),
-        reticleOpennessPct: Math.round(this.reticleOpenness * 100),
-        stabilityFrames: this.targetStabilityFrames
+        reticleOpennessPct: Math.round(this.reticleOpenness * 100)
       });
     }
   }

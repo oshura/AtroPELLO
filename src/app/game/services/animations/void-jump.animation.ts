@@ -5,6 +5,7 @@ import { SpellType } from '../../types/spell.types';
 import { clamp01, lerp } from './animation-math';
 import { InputLockGuard, CameraTakeover, ShipDynamicsScope } from './animation-tools';
 import { BaseAnimation } from './base-animation';
+import { OverlayImage } from './animation-overlay';
 
 export class VoidJumpAnimation extends BaseAnimation {
   public readonly name = 'void-jump';
@@ -33,7 +34,7 @@ export class VoidJumpAnimation extends BaseAnimation {
   private overlayAlpha = 0;
   private overlayColor: [number, number, number] = [1, 1, 1];
   private flashImageUrls: string[] = [];
-  private flashTextures: WebGLTexture[] = [];
+  private readonly overlayImage = new OverlayImage();
   // Particle streaks during jump (static seeds in camera-local space)
   private streakSeeds: Array<{x:number;y:number;z:number}> = [];
   private streakNearZ = 2;
@@ -76,35 +77,19 @@ export class VoidJumpAnimation extends BaseAnimation {
     this.lastUpdateTime = 0;
     this.cockpitLatched = false;
 
-    // Prepare optional flash images (if configured)
-    this.flashTextures = [];
+    // Imagen de flash opcional (si está configurada). Carga vía OverlayImage (URLs candidatas resilientes).
     if (this.flashImageUrls.length && engine.textureManager) {
       this.overlayColor = [0, 0, 0]; // better contrast for images
-      const tm = engine.textureManager as any;
-      this.flashImageUrls.forEach((url, i) => {
-        const key = `void-flash-${i}`;
-        // Try multiple locations to be resilient with asset placement
-        const basename = url.split('/').pop() || url;
-        const candidates = [
-          url, // as provided
-          `/assets/${basename}`,
-          `/app/assets/${basename}`,
-          `/src/app/assets/${basename}`
-        ];
-        (async () => {
-          for (const cand of candidates) {
-            try {
-              const res = await tm.loadTextureFromUrl(key, cand);
-              const tex = tm.getTexture(key);
-              if (tex) { this.flashTextures[i] = tex as WebGLTexture; break; }
-            } catch {
-              // On failure, TextureManager still registers placeholder; attach it so something can draw
-              const tex = tm.getTexture(key);
-              if (tex) { this.flashTextures[i] = tex as WebGLTexture; break; }
-            }
-          }
-        })();
-      });
+      const url = this.flashImageUrls[0];
+      const basename = url.split('/').pop() || url;
+      // Clave ÚNICA por imagen: cada Dios Primigenio usa su propia textura (antes 'void-flash-0' fija
+      // reutilizaba la textura cacheada del salto anterior y no cargaba la nueva).
+      this.overlayImage.load(engine, `void-flash-${basename}`, [
+        url, // as provided
+        `/assets/${basename}`,
+        `/app/assets/${basename}`,
+        `/src/app/assets/${basename}`,
+      ]);
     } else {
       this.overlayColor = [1, 1, 1];
     }
@@ -239,7 +224,7 @@ export class VoidJumpAnimation extends BaseAnimation {
       if (ship) {
         ship.currentSpeed = 0;
       }
-      try { (engine as any).handleVoidJumpCompleted?.(); } catch {}
+      try { engine.handleVoidJumpCompleted(); } catch {}
     } else {
       // Cleanup de emergencia (muerte): reactivar colisiones.
       engine.collisionsDisabled = false;
@@ -251,7 +236,7 @@ export class VoidJumpAnimation extends BaseAnimation {
     const shaderManager = engine.shaderManager as any;
     const cam = engine.camera;
     if (!gl || !shaderManager || !cam) return;
-    const overlay = engine.overlayRenderer as any;
+    const overlay = engine.overlayRenderer;
 
   // First: draw speed streaks (lines) only after the look-at phase has completed
     // Streak length grows with current visual speed factor (0..1)
@@ -313,44 +298,31 @@ export class VoidJumpAnimation extends BaseAnimation {
       try { overlay.drawSolid(this.overlayColor, this.overlayAlpha); } catch {}
     }
 
-    // Image window rendering with cover scaling and zoom
-    if (overlay) {
-      const texIndex = 0; // single configured image per jump
-      const tex = this.flashTextures[texIndex] as WebGLTexture | undefined;
-      if (tex) {
-        const imageStart = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime;
-        const imageEnd = imageStart + this.imageDisplayTime;
-        if (this.t >= imageStart && this.t <= imageEnd) {
-          // Linear zoom from 1.0 -> 1.3 across 3s
-          const k = clamp01((this.t - imageStart) / Math.max(0.0001, this.imageDisplayTime));
-          const zoom = 1.0 + 0.3 * k;
-          // Query texture size (for proper cover)
-          const tm = engine.textureManager as any;
-          const key = `void-flash-0`;
-          const size = tm?.getTextureSize?.(key) || null;
-          if (size && overlay.drawTextureCover) {
-            try { overlay.drawTextureCover(tex, size.width, size.height, zoom, 1.0); } catch {}
-          } else if (overlay.drawTexture) {
-            // Fallback: stretch
-            try { overlay.drawTexture(tex, [1,1,1], 1.0); } catch {}
-          }
-        }
+    // Image window rendering with cover scaling and zoom (vía OverlayImage)
+    if (this.overlayImage.ready) {
+      const imageStart = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime;
+      const imageEnd = imageStart + this.imageDisplayTime;
+      if (this.t >= imageStart && this.t <= imageEnd) {
+        // Linear zoom from 1.0 -> 1.3 across 3s
+        const k = clamp01((this.t - imageStart) / Math.max(0.0001, this.imageDisplayTime));
+        const zoom = 1.0 + 0.3 * k;
+        this.overlayImage.drawCover(engine, zoom, 1.0);
       }
     }
   }
 
   // Helpers
   private getTargetCenter(engine: GameEngine, t: ITargetable): { x: number; y: number; z: number } {
-    const anyT: any = t as any;
-    if (anyT.boundingSphere && anyT.boundingSphere.center) return { ...anyT.boundingSphere.center };
-    if (anyT.position) return { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z };
+    const at = t as { boundingSphere?: { center?: { x: number; y: number; z: number } }; position?: { x: number; y: number; z: number } };
+    if (at.boundingSphere?.center) return { ...at.boundingSphere.center };
+    if (at.position) return { x: at.position.x, y: at.position.y, z: at.position.z };
     return { x: 0, y: 0, z: 0 };
   }
   private getTargetRadius(t: ITargetable): number {
-    const anyT: any = t as any;
-    if (anyT.boundingSphere && typeof anyT.boundingSphere.radius === 'number') return Number(anyT.boundingSphere.radius) || 0;
-    if (anyT.scale && typeof anyT.scale.x === 'number') return Number(anyT.scale.x) || 0;
-    if (typeof anyT.radius === 'number') return Number(anyT.radius) || 0;
+    const at = t as { boundingSphere?: { radius?: number }; scale?: { x?: number }; radius?: number };
+    if (typeof at.boundingSphere?.radius === 'number') return Number(at.boundingSphere.radius) || 0;
+    if (typeof at.scale?.x === 'number') return Number(at.scale.x) || 0;
+    if (typeof at.radius === 'number') return Number(at.radius) || 0;
     return 0;
   }
   private normalize(v: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
@@ -378,14 +350,10 @@ export class VoidJumpAnimation extends BaseAnimation {
     // Orient to look at center
     ship.lookAt(c);
   }
-}
 
-// Public helper to configure flash images from outside
-export interface VoidJumpFlashConfig { images: string[] }
-export interface VoidJumpAnimation {
-  setFlashConfig?: (cfg: VoidJumpFlashConfig) => void;
+  /** Configura la imagen de flash (la usa el manager vía applyFlashConfig). */
+  setFlashConfig(cfg: { images: string[] }): void {
+    if (!cfg || !Array.isArray(cfg.images)) return;
+    this.flashImageUrls = cfg.images.slice(0, 4);
+  }
 }
-VoidJumpAnimation.prototype.setFlashConfig = function(cfg: VoidJumpFlashConfig) {
-  if (!cfg || !Array.isArray(cfg.images)) return;
-  (this as any).flashImageUrls = cfg.images.slice(0, 4);
-};

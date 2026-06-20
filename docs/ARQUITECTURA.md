@@ -396,6 +396,128 @@ update/render, wiring).
   "LISTO PARA ATERRIZAR" debe aparecer tras ~3s estable cerca de un planeta, y la alerta de amenaza con enemigos a <500u.
   PENDIENTE 5.2: la orquestación grande (touchdown/paneles/colapso/attachment/cinemáticas) sigue en el motor — muy
   intrincada con animationManager/cámara/timers; rebanadas futuras con gameplay.
+- **5.2-parcial `ShipLandingPositioner`** (2026-06-20, `services/state/ship-landing-positioner.ts`, 200 líneas): SEGUNDA rebanada de 5.2.
+  Posicionamiento de la nave en aterrizaje: `placeShipAtPosition` (teletransporte limpio), `captureKinetics`/`restoreKinetics`
+  (cinética velocidad/empuje al entrar en atmósfera, mueve también `ShipKineticsSnapshot` aquí), y el anclado de la nave aterrizada
+  a su planeta (`bindToPlanet`/`maintainAttachment`/`clearAttachment`, dueño del estado `attachment` antes en el engine). Lógica
+  byte-idéntica (`clamp`/`vec3Normalize` de `math/vector-math`). Host de 5 métodos; el motor delega en 1 línea (incl. el `=null`
+  directo del reset → `clearAttachment()`). **Spec real de 5 tests** (place/capture/restore/follow-planet/guard). GameEngine 12.714 →
+  12.605 (−109). Build prod + 183/183 verdes. Gameplay-gated: aterrizar y ver que la nave queda pegada al planeta mientras éste
+  orbita/rota; y que al entrar en atmósfera conserva el avance (no se para en seco). PENDIENTE 5.2: touchdown/paneles/colapso/cinemáticas.
+- **5.2-parcial `landing-geometry`** (2026-06-20, `services/state/landing-geometry.ts`): TERCERA rebanada. Funciones PURAS
+  `getSolarSystemPlanetCenter(planets, id)` + `resolvePlanetCenterFromContext(planets, ctx)` (resolución del centro del planeta:
+  planetCenter del contexto → centro por id → surfacePoint−normal·radio). Sin estado ni host; el motor pasa `gameState.planets`.
+  `resolvePlanetCenterFromContext` tiene 9 llamadores → delegador fino; el `getSolarSystemPlanetCenter` del engine queda absorbido
+  por la función pura. Spec real de 6 tests. De paso: inline de `repositionShipAfterCollapse` (alias trivial de placeShipAtPosition).
+  **HALLAZGO + RESOLUCIÓN**: `parkShipAtPlanetCore` NO tenía llamadores y era el ÚNICO que cableaba `bindShipToPlanet` → el anclado de la
+  nave aterrizada a su planeta. Investigado en git: el commit **"Planetoide"** sustituyó `parkShipAtPlanetCore(ctx)` por
+  `enterAtmosphereScene(ctx)` en `handleLandingTouchdown` → era el **modelo de aterrizaje ANTIGUO** (nave aparcada en superficie + pegada al
+  planeta mientras el menú de aterrizaje estaba abierto), **superado por la escena atmosférica actual**. NO tiene relación con ningún modo
+  First-Person/explorar-a-pie (no existe tal modo: no hay CameraMode FP, ni controles a pie, ni disembark — el "Explorar" del menú es narrativo).
+  Decisión del usuario ("si no tiene que ver, elimínalo; no quiero código muerto") → **ELIMINADO** todo el subsistema de anclado:
+  parkShipAtPlanetCore, bindShipToPlanet, maintainLandedShipAttachment (+ su llamada por-frame), clearLandedShipAttachment (+ 5 call sites),
+  y del positioner el estado `attachment`+bind/maintain/clear y los métodos de host findPlanetById/hasLandingTouchdownContext/isLandingOrTakeoffActive.
+  GameEngine 12.605 → 12.546 (−59 en el turno). Build prod + 187/187 verdes. PENDIENTE 5.2: touchdown/paneles/colapso/cinemáticas.
+- **5.2-parcial `landing-geometry` (completado)** (2026-06-20): CUARTA rebanada. Añadidas a `landing-geometry.ts` las otras dos resolutoras
+  PURAS de geometría de contexto: `deriveLandingNormalFromContext(planets, ctx)` (normal del contexto o derivada de surfacePoint−centro) y
+  `resolveLandingContactPoint(planets, ctx)` (surfacePoint o centro+normal·radio). Ahora las 3 resolutoras context→geometría viven juntas;
+  el motor queda con delegadores finos (deriveNormal tiene 7 llamadores, contactPoint 2; ambas ya expuestas por LandingEvaluatorHost). +5 tests.
+  GameEngine 12.546 → 12.521. Build prod + 192/192 verdes. NOTA: el **flujo del panel de aterrizaje** (tryOpenLandingPanel/openWithDelay/
+  clearPendingTimer/notifyClosed/closeUI/applyAudioFocus) se DESCARTÓ como rebanada: está muy acoplado (subsistema de audio this.audio/this.music/
+  handles + stopAtmosphereAudio, GameComponentInstance global, releaseLandingCinematicCameraHold, y el flag load-bearing landingPanelAwaitingUser
+  leído por atmósfera/cinematics) → sería un host pass-through ancho con riesgo gameplay (audio/UI), no una rebanada limpia. enrichLandingContext/
+  sampleLandingContextSurface también acoplados (intel/cache/atmosphereSceneState). PENDIENTE 5.2: esos clusters de orquestación, con gameplay.
+
+#### Análisis pre-implementación 5.2 — LandingSystem (orquestación restante) [2026-06-20]
+> Metodología (regla del usuario): análisis profundo ESCRITO antes de implementar; patrón por caso; FPS-aware
+> (juego en navegador). Esto se relee en la "segunda ojeada" al re-entrar a implementar. NO implementado aún.
+
+**A. Inventario** (~25 campos + ~25 métodos; ~1.000-1.300 líneas), agrupado por sub-área cohesiva:
+- **Fase/contexto** (estado núcleo): `landingStatus`, `landingThreat`, `landingSequenceActive`, `landingSequenceContext`,
+  `landingTouchdownContext`, `takeoffSequenceActive`, `atmosphereLandingCinematicActive/Context`.
+- **Panel UI** (cold/eventos): `pendingLandingPanelTimer`, `landingPanelAwaitingUser`, `landingPanelAudioFocusArmed/Active`,
+  `landingPanelAirHandle`; métodos `tryOpenLandingPanel`/`openLandingPanelWithDelay`/`clearPendingLandingPanelTimer`/
+  `notifyLandingPanelClosed`/`closeLandingPanelUI`/`applyLandingPanelAudioFocus`/`stopLandingPanelAudioFocus`.
+- **Cámara de auto-aterrizaje** (update = HOT): `atmosphereAutoLandingCamera*` (6 campos) + `start/stop/updateAtmosphereAutoLandingCamera`.
+- **Holds de cámara cinemática** (cold): `landingCinematicCameraHold`, `landingCameraHoldDeferredForTakeoff` + `hold/releaseLandingCinematicCameraHold`, `releaseLandingCameraHold`.
+- **Auto-takeoff / lock / salida** (check = HOT): `atmosphereAutoTakeoffArmed`, `atmosphereAutoLandingLock*` + `enable/clearAtmosphereAutoLandingLock`,
+  `maybeTriggerAtmosphereAutoTakeoff`, `startAtmosphereExitSequence`, `applyAtmosphereLandingImpulse`, `forceExitLandingAfterCollapse`.
+- **Helpers de contexto** (mix): `enrichLandingContext` (intel/cache), `sampleLandingContextSurface` (¡toca terrain-sampler!),
+  `refreshAtmosphereSceneContextSurfaceSample` (HOT, re-muestrea cada frame), `registerPlanetLandingVisit`.
+- **Entrada de flujo + puentes de animación** (cold): `tryStartLandingSequence`, `handleLandingTouchdown`, y los `notify*`
+  (LandingSequenceStarted/Finished, AtmosphereLandingCinematicStarted/Finished, TakeoffSequenceStarted/Finished, `startTakeoffSequence`).
+
+**B. El flujo = máquina de estados implícita** (hoy son ~10 booleanos sueltos):
+`ESPACIO → tryStartLandingSequence → CINEMÁTICA_DESCENSO (anim) → notifyLandingSequenceFinished('landed') → handleLandingTouchdown →
+ATMÓSFERA (enterAtmosphereScene; auto-land cinematic o vuelo manual) → PANEL (rest/explore) → startAtmosphere​ExitSequence/startTakeoffSequence →
+CINEMÁTICA_DESPEGUE → SALIDA → ESPACIO`. Interrupciones: colapso de planeta (`forceExitLandingAfterCollapse`), auto-takeoff por altitud (`maybeTriggerAtmosphereAutoTakeoff`).
+
+**C. Acoplamiento**: cámara (modo/hold), audio (air-rush/panel/cues), `animationManager` (lanzar cinemáticas), `gameState`
+(planeta activo/status), HUD + `GameComponentInstance` GLOBAL (panel Angular), `atmosphereSceneState`, partículas (polvo/impulso),
+`spaceship`, timers (`setTimeout`), terrain-sampler (muestreo de superficie). → host ANCHO (~15-20 métodos) si se hace de golpe.
+
+**D. Hot path vs frío** (clave para FPS, juego en navegador):
+- **HOT (cada frame, en el loop)**: `maybeTriggerAtmosphereAutoTakeoff`, `updateAtmosphereAutoLandingCamera`,
+  `refreshAtmosphereSceneContextSurfaceSample`. En la mayoría de frames la nave NO está aterrizando → **early-return barato primero**.
+- **FRÍO (transiciones/eventos)**: el resto (touchdown, panel, despegue, notify*, colapso). Sin presión de FPS.
+
+**E. Patrón propuesto** (NO un solo patrón — por sub-área):
+- **Sub-rebanada 1 · `LandingPanelController`** (state machine pequeña de UI): el flujo del panel (timer+audio-focus+open/close +
+  flags awaiting/armed). Cohesivo y **frío**. Host: acceso a `GameComponentInstance`, audio (play/stop air + stopAtmosphereAudio),
+  `releaseLandingCinematicCameraHold`, `landingCameraHoldDeferredForTakeoff`, logger. ⚠ `landingPanelAwaitingUser` lo LEEN atmósfera/cinematics
+  → exponerlo con getter. ~150 líneas. **Primera por ser la más acotada.**
+- **Sub-rebanada 2 · `AtmosphereAutoLandingCamera`** (system + host cacheado): 6 campos + start/stop/update. `update` es **HOT** →
+  host cacheado, CERO `new`/closures por frame, early-return si inactiva. ~150 líneas.
+- **Sub-rebanada 3 · `LandingCameraHold`**: holds cinemáticos (2 campos + hold/release). Pequeño, cohesivo, frío. ~80 líneas.
+- **Sub-rebanada 4 · context helpers**: `enrichLandingContext` (mover lo de intel a un builder), `sampleLandingContextSurface`
+  (OJO terrain SSOT — debe seguir usando terrain-sampler, no duplicar fórmula). Algunas casi puras → testables.
+- **Sub-rebanada 5 (la gorda, al final) · `LandingFlowController`** = la espina de la máquina de estados: convertir los ~10 booleanos
+  en un `enum LandingPhase` + transiciones (`tryStartLandingSequence`/`handleLandingTouchdown`/notify*/auto-takeoff/exit). Patrón **State
+  Machine** explícita (fases + guardas), que de paso elimina estados imposibles (p.ej. el bug latente de auto-takeoff durante el cinematic).
+- **Por qué State Machine**: hoy el "modo aterrizaje" se codifica en booleanos correlacionados (fuente de bugs como el de salida instantánea).
+  Un `phase` único + sub-flags hace los estados explícitos y testeables, y centraliza las guardas (auto-takeoff solo en fase válida).
+
+**F. Notas de rendimiento (FPS)**: (1) host adapter **cacheado** (1 objeto, no por frame); (2) en métodos HOT, nada de `new`/spread/closures
+en el cuerpo caliente — early-return primero; (3) evitar `as any` en hot path (rompe el JIT) → host tipado; (4) `refreshAtmosphereSceneContextSurfaceSample`
+re-muestrea terreno cada frame: confirmar que no asigna de más (reusar buffers/objetos). (5) Las transiciones (frío) pueden permitirse claridad sobre micro-opt.
+
+**G. Riesgos gameplay**: TODO gameplay-gated. Cada sub-rebanada → smoke: aterrizar desde espacio, panel (rest/explore), despegar,
+colapso de planeta a mitad, auto-takeoff por altitud, holds de cámara durante cinemáticas, audio del panel. Build +1 en cada checkpoint.
+
+**Orden de ataque**: 1 (panel) → 2 (auto-landing cam) → 3 (camera hold) → 4 (context) → 5 (flow controller). Cada una con su propia
+"segunda ojeada" antes de implementar.
+
+**✅ Sub-rebanada 1 IMPLEMENTADA** (2026-06-20, `services/state/landing-panel-controller.ts`): `LandingPanelController` posee el estado del
+panel (timer + `awaiting` + `audioFocusArmed/Active` + `airHandle`) y su lógica (tryOpen/openWithDelay/clearPendingTimer/notifyClosed/closeUI/
+applyAudioFocus/stopAudioFocus/cancelAudioFocus). El motor delega y satisface `LandingPanelHost` (6 métodos: openPanelUI/forceClosePanelUI/
+playLandingPanelAir/releaseLandingCinematicCameraHold/isLandingCameraHoldDeferredForTakeoff/logWarn) con adaptador cacheado. `awaitingUser` se
+expone por getter (lo leen atmósfera/cinematics); takeoff/exit usan `cancelAudioFocus()`. Spec real de 6 tests. GameEngine 12.302 → 12.251 (−51).
+219/219 + build prod verdes. Gameplay-gated: aterrizar → panel aparece (con su loop de aire), cerrar/quedarse, despegar, colapso de planeta (panel
+se cierra), y que el "hold" de cámara se libere bien. SIGUIENTE: sub-rebanada 2 (`AtmosphereAutoLandingCamera`, su `update` es HOT).
+
+#### Fase 5.3 — SpellSystem (en progreso)
+- **5.3-parcial `AnchoringPulseBeam`** (2026-06-20, `services/spells/anchoring-pulse-beam.ts`): PRIMERA rebanada de 5.3. El haz que ancla
+  un asteroide y lo arrastra hacia la nave hasta capturarlo (→ carga). La clase POSEE el estado del haz + su lógica (`start`/`update`/`finish`);
+  el motor conserva el **render GL** (gl/shaderManager/camera) leyendo `renderState` (+ `isActive` para el loop). Host de 6 métodos
+  (getSpaceship/getTargetPosition/makeAsteroidIndependent/isAsteroidTarget/convertAsteroidToCargo/logInfo). `finishAnchoringPulseBeam` se
+  absorbió (solo lo llamaba el update). Lógica byte-idéntica. **Spec real de 4 tests** (start/arrastre/captura→convierte/cancela). GameEngine
+  12.521 → 12.454 (−67). Build prod + 196/196 verdes. Gameplay-gated: lanzar Anchoring Pulse sobre un asteroide cercano (<50u) → el haz lo
+  arrastra y al acercarse lo convierte en carga (o avisa de bodega llena). NOTA: el cast spine (initiate/resolve/performSpellEffect, dispatcher
+  a ~15 hechizos) es orquestación; los otros 2 beams (disruption/void-kinesis) son rebanadas futuras con el mismo patrón.
+- **5.3-parcial `DisruptionBeam`** (2026-06-20, `services/spells/disruption-beam.ts`): SEGUNDA rebanada. El haz del Rito de Disrupción Material
+  (línea nave→objetivo 1,5s; al expirar destruye el asteroide con daño letal). Mismo patrón: estado+lógica (`start`/`update`) en la clase, render
+  GL en el motor leyendo `renderState` (startPos/endPos/startTime/duration)+`isActive`. Host de 4 (getSpaceship/isAsteroidTarget/applyDamageToObject/
+  logInfo). El `target: any` del campo pasó a `ITargetable` tipado. Spec real de 4 tests (con `spyOn(performance,'now')`). GameEngine 12.454 → 12.409
+  (−45). Build prod + 200/200 verdes. Gameplay-gated: Disrupción sobre asteroide → línea morada 1,5s y estalla. PENDIENTE 5.3: void-kinesis (el grande).
+- **5.3-parcial `VoidKinesisBeam`** (2026-06-20, `services/spells/void-kinesis-beam.ts`): TERCERA rebanada — **los 3 beams ya extraídos**. El haz
+  encoge el asteroide hasta "hacerse pixel" (o expira a los 6s) y entonces lo convierte en energía del vacío. La clase posee estado+lógica (start/
+  update: el encogido scale/size/boundingSphere); la **conversión** (energía del vacío/HUD/placeholder) la conserva el motor en
+  `resolveVoidKinesisConversion`, que el sistema invoca vía `host.resolveConversion` (se le quitaron los `=null` del beam: ahora el sistema posee el
+  ciclo de vida). Render GL en el motor leyendo `renderState`. Host de 4 (getSpaceship/isAsteroidTarget/resolveConversion/logInfo). Spec real de 4
+  tests. GameEngine 12.409 → 12.343 (−66). Build prod + 204/204 verdes. Gameplay-gated: Void Kinesis sobre asteroide con masa del vacío → se encoge y
+  al desaparecer suma energía del vacío (o avisa de reserva llena). **CIERRE 5.3 beams**: los 3 siguen el mismo patrón (estado+lógica fuera testable,
+  render GL en el motor). Lo que queda de 5.3 es el **cast spine** (initiate/resolve/performSpellEffect dispatcher a ~15 hechizos + applySpellSanityCost)
+  = orquestación acoplada (cámara/audio/animationManager) → se deja en el motor.
 - **Rayo atmosférico ELIMINADO** (2026-06-20, a petición del usuario: "no era prioritario, se rehará distinto otro día").
   En vez de extraer la geometría acoplada, se borró la feature entera: en GameEngine `updateLightningVisuals`/
   `spawnAtmosphereLightningBolt` + estado (flash/shock/cooldowns/pendingAudio) + flash en render + término de shock en
@@ -567,12 +689,147 @@ hardcode en el resto). Earth además usa la **clase** `EarthSplitPlanet.createWi
 datos). Propuesta: `PlanetSnapshot.debrisBelt?: { count; spreadScale?; yScale? }` + que el snapshot
 humano lo rellene para Saturno, y `kind: 'earth_split'` ya dirige la clase de Earth. Toca world-build
 → smoke de gameplay (Saturno con su anillo de debris, Tierra partida).
+- **6.4-paso 1 ✅ `planet-classification.ts`** (2026-06-20, `game-objects/planet-classification.ts`): PRIMER paso (fundación). Fuente única de
+  verdad para los ids/predicados especiales: constantes `EARTH_PLANET_ID`/`RINGED_PLANET_ID` + `isEarthPlanet(id, planetType)` /
+  `isRingedPlanet(id, kind)`. Sustituidos en GameEngine los ~12 literales `'planet-earth'`/`'planet-saturn'` dispersos (creación/render/gating/
+  findPlanetById) por las constantes, y los **2 predicados duplicados** (`id===earth || planetType==='Tierra'` ×2; `id===saturn || kind==='ringed'`
+  ×2) por las funciones. **Behavior-preserving** (booleans byte-idénticos). **0 literales mágicos** ya en GameEngine. Spec real de 5 tests. 209/209 +
+  build prod verdes. (No reduce líneas — mata DUPLICACIÓN.) PENDIENTE 6.4 (el grande, gameplay-gated): el modelo data-driven de verdad
+  (PlanetSnapshot.debrisBelt + kind 'earth_split' dirigiendo la clase), que toca world-build.
+- **6.4-paso 2 ✅ Saturno debris data-driven** (2026-06-20): `PlanetSnapshot.debrisBelt?: { count; spreadScale?; yScale? }` (+ tipo
+  `PlanetDebrisBeltConfig`) en `solar-system.types.ts`. **PISTA DE GENERACIÓN, no estado persistente** (los objetos de debris ya se serializan
+  aparte en `snapshot.planetDebris`, así que NO pasa por el códec). El generador humano (`human-solar-system.service`) declara el cinturón de
+  Saturno como DATO (`i===saturnIdx ? {count:280, spreadScale:0.45, yScale:0.7}`). En GameEngine la creación lee `p.debrisBelt` con **fallback al
+  id canónico de Saturno** (mismos params) para saves antiguos sin el campo. **Behavior-preserving** (Saturno con su cinturón idéntico; otros
+  planetas sin cambio). 209/209 + build prod verdes. Gameplay-gated: Saturno debe seguir con su cinturón de debris orbitando. PENDIENTE 6.4: Earth
+  via `kind 'earth_split'` (más enredado: clase EarthSplitPlanet + color/tilt/spin + predicados de render + compat). El id queda de fallback hasta
+  que una migración de saves mapee id→dato/kind (paso futuro).
+- **6.4-paso 3 ✅ Tierra data-driven por `kind 'earth_split'` SIN fallback por id** (2026-06-20, a petición del usuario "los fallbacks ensucian"):
+  La Tierra partida ya NO se construye por `id==='planet-earth'` sino por **kind**. Cambios: (a) `CanonicalPlanetKind` +`'earth_split'`; (b)
+  `normalizePlanetKind('Tierra')→'earth_split'` (el planetType de EarthSplitPlanet ⇒ las CAPTURAS runtime/portal y los saves schema-1 que conservan
+  'Tierra' ya dan el kind correcto, sin id); (c) `defaultColorForKind('earth_split')='azul_marino'`; (d) el generador humano pone `kind:'earth_split'`
+  a la Tierra; (e) la creación en GameEngine pasa el bloque Earth al `switch(kind)` como `case 'earth_split'` (usa `p.id`, no la constante);
+  (f) el render del point-light usa el predicado `isEarthPlanet` (planetType) en vez del id literal. **El id sobrevive en UN solo sitio**: una
+  **migración de datos** en el códec (`planetSnapshotFromCustomMeta`: `id==='planet-earth' ⇒ kind 'earth_split'`) para saves intermedios que se
+  guardaron normalizados como 'terrestrial' — no es un fallback en los sitios de uso. +2 tests de migración. GameEngine 12.344→12.350. 210/210 + build
+  prod verdes. Gameplay-gated: la Tierra debe verse partida con su cinturón de debris, tilt 23,5° y giro; y un save antiguo debe recuperarla partida.
+- **6.1 limpieza DI ReticleManager + worker muerto ✅** (2026-06-20): tras vaciar el cerebro de detección (sesiones previas), ReticleManager
+  inyectaba servicios y campos ya muertos. Eliminados: inyecciones `debugCollector` (SpaceshipDebugCollector, nunca referenciada — el snapshot de
+  debug se construye y se devuelve, no se le pasa) y `workerService` (TargetingWorkerService, solo `.init()`, resultados nunca consumidos); los
+  campos de worker-gating (lastViewProjection/lastViewport/lastTargetsCompact/snapshotVersion/lastSentRequestTime/lastAccepted/lastTargetsSignature/
+  lastViewportSize) y de estabilización muerta (lastStableTarget/targetStabilityFrames/TARGET_STABILITY_THRESHOLD). **Borrado el subsistema worker
+  huérfano entero**: `targeting/worker/TargetingWorker.service.ts` + `targeting.worker.ts` (ReticleManager era su único consumidor; game-ui solo usa
+  SpaceshipDebugCollector). targetDetector/outlineRenderer/relationService/inputHandler/reticleRenderer/targetHighlighter/webglService SIGUEN vivos
+  (detección al ratón + outlines de selección + FPS throttle). 210/210 + build prod verdes. Gameplay-gated: la retícula y el contorno de selección
+  deben seguir igual (hover/clic en targets, contorno glow/pulse según relación).
 
-### Fase 7 — Habilitadores del rediseño del espacio (lo que quieres construir después)
-Con las fases 1-6, "rediseñar elementos del espacio" = editar **datos**, no código:
-- `GenerationOptions` ya existe → exponer un editor/console de sistemas (genera snapshot, lo aplica en caliente).
-- `PlanetSurfaceDefinition` (semilla + amplitud + paleta) editable por planeta y persistida.
-- Nuevos tipos de entidad = nuevo códec + nueva factory registrada (registry de constructores por `kind`), sin tocar el motor.
+### Fase 7 — Guía de arquitectura y crecimiento del ESPACIO (data-driven)
+
+> **Propósito.** El usuario NO quiere un editor de UI: quiere que el agente edite el espacio "según sus
+> designios". Esta sección es la guía para hacer crecer el subsistema **desde el código actual**, sin
+> romper persistencia ni el motor. Todo "rediseño del espacio" = editar **datos** + (a veces) registrar
+> una pieza nueva por `kind`. Si una receta te pide tocar el motor más allá de un `case`/registro, párate:
+> probablemente estás saltándote el modelo.
+
+#### 7.1 El modelo de datos (capas)
+Un sistema es un **`SolarSystemSnapshot`** (`game/types/solar-system.types.ts`):
+```
+SolarSystemSnapshot
+ ├─ sun: SunSnapshot                {id, name?, position, radius}
+ ├─ planets: PlanetSnapshot[]       ← el grueso del diseño (ver abajo)
+ ├─ clusters?: ClusterSnapshot[]    nubes/estelas de asteroides (center, direction, speed, count, …)
+ ├─ portals?: PortalSnapshot[]      puertas (pairing bidireccional, ojo, sello de concordia)
+ ├─ planetDebris?: PlanetDebrisSnapshot[]  debris ya serializado (cinturones Tierra/Saturno) ligado por planetId
+ ├─ meta?: SolarSystemMeta          identidad/etiqueta/elderGod/systemRadius/memoria de lesser beings
+ └─ ephemeralDebris?                 spawns efímeros (intervalo/probabilidad/min/max)
+```
+**`PlanetSnapshot`** = la "ficha" de un planeta. Campos clave para el diseño:
+- **Construcción**: `id`, `kind` (dirige la subclase), `position`, `radius`, `initialRadius` (radio original;
+  `radius` es el VISIBLE, encogido por void mass), `baseColorName`, `orbit` (a/b/orientación/normal/ángulo/velocidad),
+  `axialTiltRad`, `debrisBelt?` (pista de generación de cinturón: `{count, spreadScale?, yScale?}`).
+- **Estado/gameplay** (persistente vía códec): `probabilityOfLifePct`, `inhabitants`, `lesserBeing`, `visited`,
+  `lifeScanned`/`creatureScanned`, `hasArtifact`, `hasVoidMass`/`voidMassCapacity`/`voidMassRemaining`, los `*IntelStatus`,
+  `pendingMission`, `resourceStock`, `animosity`.
+
+#### 7.2 Ciclo de vida (de dónde sale un planeta y a dónde va)
+```
+GENERACIÓN                         CONSTRUCCIÓN                 PERSISTENCIA (round-trip)
+human-solar-system.service  ─┐                                  ┌─ capturePlanetSnapshot (vivo→snapshot)
+  (sistema canónico humano)  ├─► SolarSystemSnapshot ─► GameEngine.applySolarSystemSnapshot ─► Planet vivo ─┤
+system-generator.service   ─┘     (datos)                switch(kind){…} + applyPlanetSnapshotFields        └─ planetCustom*  (savegame ↔ snapshot)
+  (procedural, semilla RNG)                              + debrisBelt                                         (planet-state.codec.ts = SSOT)
+```
+- **Generadores** producen datos. El humano es artesanal (índices fijos por planeta); el procedural usa
+  semilla + `GenerationOptions`.
+- **`GameEngine.applySolarSystemSnapshot`** es la ÚNICA factory: `switch(kind)` construye la subclase y
+  `applyPlanetSnapshotFields` aplica el estado. Casos especiales por DATO (`kind 'earth_split'`, `debrisBelt`), NO por id.
+- **`planet-state.codec.ts`** es la **fuente única de campos persistentes** (4 funciones: capture / apply /
+  customMetaFrom / snapshotFromCustom) + `normalizePlanetKind` + `defaultColorForKind` + `CanonicalPlanetKind`.
+
+#### 7.3 Reglas de oro (las que mantienen esto sano)
+1. **Campos persistentes SOLO por el códec.** Añadir uno = tipo en `PlanetSnapshot` + las 4 funciones del códec.
+   Nunca copiar campos a mano en otro serializador (eso es regresión — "prueba del campo nuevo", receta R5).
+2. **Comportamiento especial por DATO, no por id.** Nada de `if (p.id === 'planet-x')` en creación/render.
+   Se dirige por `kind` (subclase) o por un campo de datos (p. ej. `debrisBelt`). El id solo puede sobrevivir
+   como **migración puntual** en el códec (compat de saves), nunca como fallback en los sitios de uso.
+3. **Terreno: una sola fuente** (`atmosphere/terrain-sampler.ts`, ruido con semilla). Prohibido escribir
+   fórmulas de altura en otro sitio. La superficie de un planeta se define por su semilla (derivada del id).
+4. **El motor solo crece por `case`/registro.** Funcionalidad nueva → servicio/clase externa; en el motor, a lo
+   sumo un `case` en el `switch(kind)` o una línea de delegación.
+
+#### 7.4 RECETAS para crecer (paso a paso)
+
+**R1 · Editar/añadir un planeta al sistema humano** — `services/game/human-solar-system.service.ts`.
+Editar el bloque `if (i === Idx) {kind, radius, name, baseColorName}` y el objeto `planets.push({...})`
+(orbit, stock, prob. de vida, voidMass, `debrisBelt`, etc.). Para uno nuevo: añadir su índice + su rama.
+
+**R2 · Crear un sistema artesanal nuevo** — duplicar el patrón de `human-solar-system.service`: construir un
+`SolarSystemSnapshot` (sun + planets[] + meta `{handcrafted:true, elderGod, systemRadius}`) y registrarlo donde
+se elige el sistema inicial/destino. Es 100% datos; no toca el motor.
+
+**R3 · Añadir un KIND de planeta nuevo** (p. ej. `'crystalline'`):
+ 1) Clase `game-objects/CrystallinePlanet.ts extends Planet`, que en su ctor haga `this.planetType = …` y su render.
+ 2) `planet-state.codec.ts`: añadir `'crystalline'` a `CanonicalPlanetKind`, al passthrough de `normalizePlanetKind`,
+    y un color por defecto en `defaultColorForKind`.
+ 3) `GameEngine.applySolarSystemSnapshot`: un `case 'crystalline': planetObj = new CrystallinePlanet(p.id, color, snapshotRadius, pos); break;`
+ 4) El generador (humano/procedural) pone `kind:'crystalline'` a quien toque. (Si `planetType` es un valor único como
+    'Tierra', mapéalo en `normalizePlanetKind` para que las capturas runtime lo reconozcan sin id — ver `earth_split`.)
+
+**R4 · Hacer data-driven un comportamiento especial** (patrón `debrisBelt`, el molde a copiar):
+ - ¿Es una PISTA DE GENERACIÓN (se reconstruye al crear, no es estado que muta)? → campo en `PlanetSnapshot`
+   (como `debrisBelt`), el generador lo declara, la creación lo lee. **No toca el códec** si lo generado ya se
+   serializa aparte (p. ej. los objetos de debris van en `planetDebris`).
+ - ¿Es ESTADO que muta y debe sobrevivir save/load? → es un campo persistente → receta R5.
+
+**R5 · Añadir un campo PERSISTENTE de planeta** (la "prueba del campo nuevo"):
+ 1) Tipo en `PlanetSnapshot`. 2) `capturePlanetSnapshot` (vivo→snapshot). 3) `applyPlanetSnapshotFields`
+ (snapshot→vivo). 4) `planetCustomMetaFromSnapshot` (snapshot→meta savegame). 5) `planetSnapshotFromCustomMeta`
+ (meta→snapshot). + spec de round-trip. Si te ves copiándolo en un sexto sitio, la arquitectura ha regresado.
+
+**R6 · Tunear la generación procedural** — `GenerationOptions` (en `solar-system.types.ts`) + `system-generator.service.ts`.
+Opciones ya existentes: nº de soles, rango de planetas, vida%, espaciado de órbitas, nubes/estelas, paleta de
+colores, cap de radio de gigantes, nombres canónicos sí/no. Crecer = nueva opción + su uso en el generador.
+
+**R7 · Cambiar la superficie/terreno de un planeta** — la superficie deriva de la **semilla** (id del planeta) vía
+`terrain-sampler.ts`. Para variar montañas/valles/paleta de forma persistente, el camino es una
+`PlanetSurfaceDefinition` (semilla + amplitud + paleta) como campo persistente (R5) que el sampler consuma — NO
+fórmulas sueltas (regla 3).
+
+#### 7.5 Antipatrones (NO hacer)
+- `if (p.id === 'planet-foo')` en creación o render → usar `kind`/dato (regla 2).
+- Serializar un campo nuevo fuera del códec → usar las 4 funciones (regla 1).
+- Fórmulas de altura de terreno fuera de `terrain-sampler` (regla 3).
+- Hacer crecer `GameEngine.ts` con lógica nueva → clase/servicio externo + `case`/delegación (regla 4).
+
+#### 7.6 Mapa de ficheros del subsistema
+- Tipos/datos: `game/types/solar-system.types.ts` (snapshots + `GenerationOptions`).
+- Generadores: `services/game/human-solar-system.service.ts` (artesanal), `services/game/system-generator.service.ts` (procedural).
+- SSOT persistencia: `services/game/planet-state.codec.ts` (+ `game-objects/planet-classification.ts` para predicados/ids canónicos).
+- Construcción: `GameEngine.applySolarSystemSnapshot` (switch por `kind`).
+- Clases de planeta: `game-objects/{Planet,RingedPlanet,GaseousPlanet,GiantPlanet,DwarfPlanet,Protoplanet,EarthSplitPlanet}.ts`.
+- Terreno: `game/atmosphere/terrain-sampler.ts`. Identidad de sistema: `services/game/system-identity.ts`.
+- Captura/aplicación de snapshots de sistema: `services/game/solar-system-runtime-serializer.service.ts`,
+  `solar-system-serializer.ts`, almacén por label en `services/game/portal-persistence.service.ts`.
 
 ---
 

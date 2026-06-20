@@ -55,6 +55,19 @@ export interface PlanetSnapshot {
    * provocaba doble encogimiento acumulativo en cada save/load o salto de portal.
    */
   initialRadius?: number;
+  /**
+   * Cinturón de debris a generar en la construcción inicial (p. ej. Saturno). Es una PISTA DE
+   * GENERACIÓN, no estado persistente: los objetos de debris se serializan aparte
+   * (snapshot.planetDebris), por eso no pasa por el códec de planeta. docs/ARQUITECTURA.md Fase 6.4.
+   */
+  debrisBelt?: PlanetDebrisBeltConfig;
+}
+
+/** Configuración data-driven de un cinturón de debris alrededor de un planeta. */
+export interface PlanetDebrisBeltConfig {
+  count: number;
+  spreadScale?: number;
+  yScale?: number;
 }
 
 export interface ClusterSnapshot {

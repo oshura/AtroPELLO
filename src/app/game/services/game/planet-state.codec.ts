@@ -1,5 +1,6 @@
 import { Planet, PlanetColorName } from '../../game-objects/Planet';
 import { Sun } from '../../game-objects/Sun';
+import { EARTH_PLANET_ID } from '../../game-objects/planet-classification';
 import { PlanetSnapshot, OrbitParams } from '../../types/solar-system.types';
 import { PlanetInhabitants, LesserBeing } from '../../types/cosmic-life.types';
 import { PlanetIntelStatus } from '../../types/planet-intel.types';
@@ -29,7 +30,8 @@ export type CanonicalPlanetKind =
   | 'gaseous'
   | 'giant'
   | 'dwarf'
-  | 'protoplanet';
+  | 'protoplanet'
+  | 'earth_split';
 
 /**
  * Normaliza cualquier variante histórica de tipo de planeta (`PlanetType` enum,
@@ -45,7 +47,7 @@ export function normalizePlanetKind(
     return baseColorName === 'azul_marino' ? 'terrestrial' : undefined;
   }
   switch (x) {
-    case 'tierra': return 'terrestrial';
+    case 'tierra': return 'earth_split'; // EarthSplitPlanet.planetType ⇒ kind data-driven (Fase 6.4)
     case 'planetoid': return 'rocky';
     case 'sun':
     case 'terrestrial':
@@ -55,6 +57,7 @@ export function normalizePlanetKind(
     case 'giant':
     case 'dwarf':
     case 'protoplanet':
+    case 'earth_split':
       return x;
     default:
       if (baseColorName === 'azul_marino') {
@@ -72,6 +75,7 @@ export function defaultColorForKind(kind: string | null | undefined): PlanetColo
     case 'giant': return 'marron';
     case 'dwarf': return 'gris';
     case 'protoplanet': return 'gris';
+    case 'earth_split':
     case 'terrestrial':
     case 'rocky':
       return 'azul_marino';
@@ -326,6 +330,12 @@ export function planetSnapshotFromCustomMeta(
     position: cloneVec(base.position) ?? { x: 0, y: 0, z: 0 },
     radius: base.radius,
   };
+  // Migración compat: la Tierra partida histórica se guardaba como 'terrestrial' (su planetType 'Tierra'
+  // se normalizaba así antes de Fase 6.4). Se promueve a 'earth_split' por su id canónico. ÚNICO punto
+  // donde el id sobrevive: una migración de datos puntual, no un fallback en los sitios de uso.
+  if (snapshot.kind !== 'earth_split' && base.id === EARTH_PLANET_ID) {
+    snapshot.kind = 'earth_split';
+  }
   if (typeof meta['baseColorName'] === 'string') snapshot.baseColorName = meta['baseColorName'];
   const probLife = finiteOrUndefined(meta['probabilityOfLifePct']);
   if (probLife !== undefined) snapshot.probabilityOfLifePct = probLife;
