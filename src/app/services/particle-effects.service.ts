@@ -73,21 +73,6 @@ interface WeatherVariantTuning {
   lengthIntensity: number;
 }
 
-interface LightningStrike {
-  path: Vector3[];
-  thickness: number;
-  color: { r: number; g: number; b: number };
-  duration: number;
-  remaining: number;
-}
-
-interface LightningStrikeOptions {
-  thickness?: number;
-  color?: { r: number; g: number; b: number };
-  duration?: number;
-  jitterSegments?: number;
-}
-
 interface LandingDustSheet {
   position: Vector3;
   normal: Vector3;
@@ -234,8 +219,6 @@ export class ParticleEffectsService {
       lengthIntensity: 5,
     },
   };
-  private lightningStrikes: LightningStrike[] = [];
-  private readonly maxLightningStrikes = 6;
   private landingDustSheets: LandingDustSheet[] = [];
   private readonly maxLandingDustSheets = 18;
 
@@ -518,40 +501,6 @@ export class ParticleEffectsService {
   public clearWeatherEffects(): void {
     this.weatherParticles = [];
     this.activeWeatherType = 'none';
-    this.lightningStrikes = [];
-  }
-
-  public spawnLightningStrike(
-    start: Vector3,
-    end: Vector3,
-    options?: LightningStrikeOptions,
-  ): void {
-    const duration = Math.max(0.1, options?.duration ?? 0.35);
-    const thickness = Math.max(0.1, options?.thickness ?? 0.7);
-    const segments = Math.max(2, Math.min(12, Math.floor(options?.jitterSegments ?? 6)));
-    const path = this.buildLightningPath(start, end, segments);
-    const color = options?.color ?? { r: 0.85, g: 0.93, b: 1 }; // celeste frío
-    const strike: LightningStrike = {
-      path,
-      thickness,
-      color,
-      duration,
-      remaining: duration,
-    };
-    if (this.lightningStrikes.length >= this.maxLightningStrikes) {
-      this.lightningStrikes.shift();
-    }
-    this.lightningStrikes.push(strike);
-  }
-
-  public updateLightningStrikes(deltaTime: number): void {
-    if (!deltaTime) {
-      return;
-    }
-    this.lightningStrikes = this.lightningStrikes.filter(strike => {
-      strike.remaining -= deltaTime;
-      return strike.remaining > 0;
-    });
   }
 
   public spawnLandingDustBillboards(origin: Vector3, normal: Vector3, layers: number = 3): void {
@@ -1005,12 +954,6 @@ export class ParticleEffectsService {
       }
     }
 
-    if (this.lightningStrikes.length) {
-      for (const strike of this.lightningStrikes) {
-        this.renderLightningStrike(strike, camera);
-      }
-    }
-
     // Renderizar partículas del thruster
     if (this.thrusterParticles.length) {
       this.thrusterParticles.forEach(particle => {
@@ -1386,144 +1329,6 @@ export class ParticleEffectsService {
     };
   }
 
-  private renderLightningStrike(strike: LightningStrike, camera: Camera): void {
-    if (!this.gl || !this.shaderManager || !this.particleVertexBuffer) {
-      return;
-    }
-    const fade = Math.max(0, strike.remaining / strike.duration);
-    const glowScale = 0.85 + fade * 1.1;
-
-    for (let i = 0; i < strike.path.length - 1; i++) {
-      const start = strike.path[i];
-      const end = strike.path[i + 1];
-      const dirVec = {
-        x: end.x - start.x,
-        y: end.y - start.y,
-        z: end.z - start.z,
-      };
-      const length = this.vectorLength(dirVec);
-      if (length < 1e-3) {
-        continue;
-      }
-      const dir = this.normalize(dirVec);
-      let widthAxis = this.cross(dir, camera.up);
-      if (this.vectorLength(widthAxis) < 1e-3) {
-        widthAxis = this.cross(dir, { x: 0, y: 1, z: 0 });
-      }
-      if (this.vectorLength(widthAxis) < 1e-3) {
-        widthAxis = this.randomPerpendicularVector(dir);
-      }
-      widthAxis = this.normalize(widthAxis);
-      const normal = this.normalize(this.cross(widthAxis, dir));
-
-      const midpoint = {
-        x: (start.x + end.x) * 0.5,
-        y: (start.y + end.y) * 0.5,
-        z: (start.z + end.z) * 0.5,
-      };
-
-      const baseWidth = Math.max(0.3, strike.thickness * glowScale);
-      const lengthScale = length;
-      const headIntensity = Math.min(2.3, 1 + fade * 1.5);
-      const edgeIntensity = headIntensity * 0.45;
-      const auraHead = headIntensity * 0.55;
-      const auraEdge = auraHead * 0.4;
-
-      this.drawLightningSegment(
-        midpoint,
-        widthAxis,
-        normal,
-        dir,
-        baseWidth * 1.85,
-        lengthScale,
-        strike.color,
-        auraHead,
-        auraEdge,
-        camera,
-      );
-      this.drawLightningSegment(
-        midpoint,
-        widthAxis,
-        normal,
-        dir,
-        baseWidth,
-        lengthScale,
-        strike.color,
-        headIntensity,
-        edgeIntensity,
-        camera,
-      );
-    }
-  }
-
-  private drawLightningSegment(
-    midpoint: Vector3,
-    widthAxis: Vector3,
-    normal: Vector3,
-    dir: Vector3,
-    widthScale: number,
-    lengthScale: number,
-    color: { r: number; g: number; b: number },
-    headIntensity: number,
-    edgeIntensity: number,
-    camera: Camera,
-  ): void {
-    if (!this.gl || !this.shaderManager || !this.particleVertexBuffer) {
-      return;
-    }
-    const gl = this.gl;
-    if (!this.particleColorBuffer) {
-      this.particleColorBuffer = gl.createBuffer();
-    }
-    const colors = this.buildLightningColorBuffer(color, headIntensity, edgeIntensity);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer!);
-    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
-
-    const positionLocation = this.shaderManager.basicAttributes['position'];
-    const colorLocation = this.shaderManager.basicAttributes['color'];
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleVertexBuffer);
-    gl.enableVertexAttribArray(positionLocation);
-    gl.vertexAttribPointer(positionLocation, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, this.particleColorBuffer);
-    gl.enableVertexAttribArray(colorLocation);
-    gl.vertexAttribPointer(colorLocation, 3, gl.FLOAT, false, 0, 0);
-
-    const modelMatrix = new Float32Array(16);
-    this.createIdentityMatrix(modelMatrix);
-    modelMatrix[0] = widthAxis.x * widthScale;
-    modelMatrix[1] = widthAxis.y * widthScale;
-    modelMatrix[2] = widthAxis.z * widthScale;
-    modelMatrix[4] = dir.x * lengthScale;
-    modelMatrix[5] = dir.y * lengthScale;
-    modelMatrix[6] = dir.z * lengthScale;
-    modelMatrix[8] = normal.x * widthScale;
-    modelMatrix[9] = normal.y * widthScale;
-    modelMatrix[10] = normal.z * widthScale;
-    modelMatrix[12] = midpoint.x;
-    modelMatrix[13] = midpoint.y;
-    modelMatrix[14] = midpoint.z;
-
-    this.shaderManager.setBasicMatrices(modelMatrix, camera.viewMatrix, camera.projectionMatrix);
-    gl.drawArrays(gl.TRIANGLES, 0, 6);
-    gl.disableVertexAttribArray(positionLocation);
-    gl.disableVertexAttribArray(colorLocation);
-  }
-
-  private buildLightningColorBuffer(
-    color: { r: number; g: number; b: number },
-    headIntensity: number,
-    edgeIntensity: number,
-  ): Float32Array {
-    return new Float32Array([
-      color.r * edgeIntensity, color.g * edgeIntensity, color.b * edgeIntensity,
-      color.r * edgeIntensity, color.g * edgeIntensity, color.b * edgeIntensity,
-      color.r * headIntensity, color.g * headIntensity, color.b * headIntensity,
-      color.r * edgeIntensity, color.g * edgeIntensity, color.b * edgeIntensity,
-      color.r * headIntensity, color.g * headIntensity, color.b * headIntensity,
-      color.r * headIntensity, color.g * headIntensity, color.b * headIntensity,
-    ]);
-  }
-
   private respawnAmbientParticleAhead(d: { position: {x:number;y:number;z:number}; size:number; brightness:number }, spaceship: Spaceship): void {
     const forward = this.normalize({
       x: spaceship.forwardDirection.x,
@@ -1573,59 +1378,6 @@ export class ParticleEffectsService {
     d.position.z = pos.z + forward.z * dist + shipRight.z * sideX + shipUp.z * sideY;
     d.size = 0.28 + Math.random() * 0.22;
     d.brightness = 0.12 + Math.random() * 0.18;
-  }
-
-  private buildLightningPath(start: Vector3, end: Vector3, segments: number): Vector3[] {
-    const path: Vector3[] = [];
-    const diff = { x: end.x - start.x, y: end.y - start.y, z: end.z - start.z };
-    const direction = this.normalize(diff);
-    const length = Math.max(1e-3, this.vectorLength(diff));
-    const baseJitter = Math.min(18, length * 0.18);
-
-    for (let i = 0; i <= segments; i++) {
-      const t = i / segments;
-      const point: Vector3 = {
-        x: start.x + diff.x * t,
-        y: start.y + diff.y * t,
-        z: start.z + diff.z * t,
-      };
-      if (i > 0 && i < segments) {
-        const wobbleDir = this.randomPerpendicularVector(direction);
-        const wobbleAmount = baseJitter * (0.2 + Math.sin(Math.PI * t)) * (0.4 + Math.random() * 0.8);
-        point.x += wobbleDir.x * wobbleAmount;
-        point.y += wobbleDir.y * wobbleAmount;
-        point.z += wobbleDir.z * wobbleAmount;
-
-        if (Math.random() > 0.5) {
-          const tangent = this.randomPerpendicularVector(wobbleDir);
-          const tangentJitter = baseJitter * 0.2 * (Math.random() - 0.5);
-          point.x += tangent.x * tangentJitter;
-          point.y += tangent.y * tangentJitter;
-          point.z += tangent.z * tangentJitter;
-        }
-      }
-      path.push(point);
-    }
-
-    return path;
-  }
-
-  private randomPerpendicularVector(normal: Vector3): Vector3 {
-    const safeNormal = this.normalize(normal);
-    let arbitrary: Vector3 = Math.abs(safeNormal.x) < 0.5 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
-    let perpendicular = this.cross(safeNormal, arbitrary);
-    if (this.vectorLength(perpendicular) < 1e-3) {
-      arbitrary = { x: 0, y: 0, z: 1 };
-      perpendicular = this.cross(safeNormal, arbitrary);
-    }
-    perpendicular = this.normalize(perpendicular);
-    const tangent = this.normalize(this.cross(safeNormal, perpendicular));
-    const angle = Math.random() * Math.PI * 2;
-    return this.normalize({
-      x: perpendicular.x * Math.cos(angle) + tangent.x * Math.sin(angle),
-      y: perpendicular.y * Math.cos(angle) + tangent.y * Math.sin(angle),
-      z: perpendicular.z * Math.cos(angle) + tangent.z * Math.sin(angle),
-    });
   }
 
   private clamp01(value: number): number {
@@ -1769,7 +1521,6 @@ export class ParticleEffectsService {
     this.destructionDebris = [];
     this.ambientDust = [];
     this.weatherParticles = [];
-    this.lightningStrikes = [];
     this.gl = null;
     this.shaderManager = null;
     

@@ -276,56 +276,9 @@ export class ReticleManager {
     // this.targetHighlighter.render();
   }
 
-  /**
-   * Renderiza outlines de targets (debe llamarse desde el GameEngine)
-   * [DISABLED] - No renderiza outlines durante refactoring
-   */
-  public renderOutlines(viewMatrix: mat4, projectionMatrix: mat4, targets: ITargetable[]): void {
-    if (!this.isInitialized) return;
-    
-    // Sistema deshabilitado - no renderizar outlines
-    // this.outlineRenderer.renderOutlines(viewMatrix, projectionMatrix, targets);
-
-    // Cache combined viewProjection and viewport for worker snapshot
-    try {
-      const vp = new Float32Array(16);
-      // vp = projection * view (column-major) using minimal multiply to avoid extra dependency
-      // mat4.multiply(out, a, b)
-      const a = projectionMatrix as unknown as Float32Array;
-      const b = viewMatrix as unknown as Float32Array;
-      // Compute out = a*b
-      for (let i = 0; i < 4; i++) {
-        const ai0 = a[i];      const ai1 = a[i + 4];  const ai2 = a[i + 8];  const ai3 = a[i + 12];
-        vp[i]      = ai0 * b[0]  + ai1 * b[1]  + ai2 * b[2]  + ai3 * b[3];
-        vp[i + 4]  = ai0 * b[4]  + ai1 * b[5]  + ai2 * b[6]  + ai3 * b[7];
-        vp[i + 8]  = ai0 * b[8]  + ai1 * b[9]  + ai2 * b[10] + ai3 * b[11];
-        vp[i + 12] = ai0 * b[12] + ai1 * b[13] + ai2 * b[14] + ai3 * b[15];
-      }
-  this.lastViewProjection = vp;
-  const canvas = this.webglService.getCanvas();
-  if (canvas) this.lastViewport = { width: canvas.width, height: canvas.height };
-      // Prepare compact targets buffer
-      const active = targets.filter(t => t.isActive());
-      const positions = new Float32Array(active.length * 3);
-      const ids: string[] = new Array(active.length);
-      for (let i = 0; i < active.length; i++) {
-        const p = active[i].position; ids[i] = active[i].id;
-        positions[i*3] = p.x; positions[i*3+1] = p.y; positions[i*3+2] = p.z;
-      }
-      // Compute a stable signature based on IDs only (order-sensitive)
-      const signature = ids.join('|');
-      const viewportChanged = !this.lastViewportSize ||
-        this.lastViewportSize.width !== this.lastViewport!.width ||
-        this.lastViewportSize.height !== this.lastViewport!.height;
-
-      this.lastTargetsCompact = { positions, ids };
-      if (signature !== this.lastTargetsSignature || viewportChanged) {
-        this.snapshotVersion++;
-        this.lastTargetsSignature = signature;
-        this.lastViewportSize = { ...this.lastViewport! };
-      }
-    } catch {}
-  }
+  // renderOutlines() eliminado (Fase 6.1): el render 3D estaba comentado y el bookkeeping solo
+  // alimentaba la detección de v1, que es código muerto (updateTargetDetection nunca se llama).
+  // El outline visible lo dibuja AdaptiveTargeting (overlay 2D del engine).
 
   /**
    * Actualiza la posición de la retícula
@@ -336,116 +289,10 @@ export class ReticleManager {
     this.state.reticlePosition = { ...this.state.mousePosition };
   }
 
-  /**
-   * Detecta targets bajo la posición actual
-   */
-  private updateTargetDetection(): void {
-    const now = performance.now();
-    // Throttle adaptativo: ajustar según FPS actual para mantener responsividad
-    const adaptiveThrottle = this.calculateAdaptiveThrottle();
-    if (now - this.lastDetectTime < adaptiveThrottle) {
-      return;
-    }
-    this.lastDetectTime = now;
-  // Throttled detection; debug logging via LoggingService if needed
-    // Radio de detección inversamente proporcional al tamaño de la retícula
-    // Objetivo UX: cuando la retícula es pequeña (mouse quieto), el radio de acierto es grande.
-    // Cuando la retícula es grande (mouse rápido), el radio se reduce.
-    // Además, aplicar un boost extra cuando la velocidad del mouse es baja para facilitar el apuntado fino.
-    const reticleSize = this.state.config.size; // px (ver updateMouseVelocity: 25..70 aprox)
+  // updateTargetDetection() eliminado (Fase 6.1): cerebro de detección de v1, código muerto
+  // (nunca se llamaba; update() borra los targets cada frame y v2 AdaptiveTargeting es el sistema activo).
 
-    // Rango esperado de tamaño dinámico de la retícula (ver updateMouseVelocity)
-    const MIN_SIZE = 25;
-    const MAX_SIZE = 70;
-    const sizeT = Math.max(0, Math.min(1, (reticleSize - MIN_SIZE) / (MAX_SIZE - MIN_SIZE))); // 0..1
-
-    // Rango del radio base (en píxeles): grande cuando sizeT=0, pequeño cuando sizeT=1
-    const MIN_R = 35;  // radio mínimo cuando la retícula está grande (aumentado significativamente de 25)
-    const MAX_R = 220; // radio máximo cuando la retícula está pequeña / quieta (aumentado de 180)
-    const baseRadius = MAX_R - (MAX_R - MIN_R) * sizeT; // inverse lerp
-
-    // Factor por velocidad del mouse: más boost cuanto más quieto
-    const vNorm = Math.min(1, this.mouseVelocity / 600); // 0..1 (ver normalización en updateMouseVelocity)
-    const velFactor = 1.6 - 0.3 * vNorm; // 1.6 en reposo → 1.3 a velocidad alta (MUY tolerante)
-
-  // Escala aumentada significativamente para objetos lejanos
-  const SCALE = 1.0; // Aumentado de 0.85 a 1.0 para máxima tolerancia
-  const detectionRadius = Math.max(30, Math.min(220, baseRadius * velFactor * SCALE));
-    this.lastDetectionRadiusPx = detectionRadius;
-  // Try worker-assisted shortlist first
-  const hit = this.detectWithWorkerFallback(detectionRadius);
-  this.lastHit = hit || null;
-  // Quiet frequent hit logs
-
-    // If worker is in use and we haven't accepted a fresh result recently, clear hover to avoid sticky outlines
-    const workerActive = this.workerService.ready();
-    const staleMs = performance.now() - this.lastAccepted.time;
-    if (workerActive && staleMs > Math.max(250, this.detectIntervalMs * 3)) {
-      if (this.state.hoveredTarget) {
-        this.events.onTargetHovered(null);
-      }
-    }
-
-    // Exportar snapshot para overlay de debug (si está activo)
-    try {
-      this.debugCollector.setTargetingSnapshot(this.getDebugSnapshot());
-    } catch {}
-    
-    const newHoveredTarget = hit?.target || null;
-    
-    // Sistema de estabilización para evitar flickering a FPS altos
-    const stabilizedTarget = this.stabilizeTargetSelection(newHoveredTarget);
-    
-    // Debug FORZADO para verificar detección
-    // Reduced debug noise
-    
-    // Verificar cambio en hover usando target estabilizado
-    if (stabilizedTarget !== this.state.hoveredTarget) {
-      // Importante: NO mutar state.hoveredTarget aquí. Dejamos que el handler lo actualice,
-      // así puede comparar correctamente contra el valor previo y disparar efectos (outline/highlight).
-      // Quiet hover change spam
-      this.events.onTargetHovered(stabilizedTarget);
-    }
-  }
-
-  // Sends a snapshot to the worker and uses the latest result to choose hovered target; falls back if needed
-  private detectWithWorkerFallback(detectionRadius: number): RaycastHit | null {
-    try {
-      if (this.workerService.ready() && this.lastViewProjection && this.lastViewport && this.lastTargetsCompact) {
-        // Request fresh computation
-        const reqTime = performance.now();
-        this.lastSentRequestTime = reqTime;
-        this.workerService.requestHover({
-          vp: Array.from(this.lastViewProjection),
-          viewport: this.lastViewport,
-          mouse: { x: this.state.mousePosition.x, y: this.state.mousePosition.y },
-          positions: this.lastTargetsCompact.positions,
-          time: reqTime,
-          targetsVersion: this.snapshotVersion,
-          topK: 8
-        });
-        const res: WorkerResult | null = this.workerService.getLastResult(200);
-        // Accept only if result is for the latest snapshot version and not older than the last accepted
-        if (res && res.indices.length && res.targetsVersion === this.snapshotVersion && res.time >= this.lastAccepted.time) {
-          this.lastAccepted = { time: res.time, version: res.targetsVersion };
-          // Build a tiny shortlist and re-check precisely in main thread
-          const shortlistIds: string[] = res.indices.map(i => this.lastTargetsCompact!.ids[i]);
-          const all = this.targetDetector.getVisibleTargets();
-          const candidates = all.filter(t => shortlistIds.includes(String(t.id)));
-          const precise = this.targetDetector.detectAmong(this.state.mousePosition, detectionRadius, candidates);
-          return precise;
-        }
-      }
-    } catch (e) {
-      this.logger.warn(LogCategory.TARGETING, 'Worker detect failed; ignoring cycle', e);
-    }
-    // If worker is ready but we didn't accept a result this cycle, avoid conflicting fallback to reduce jitter
-    if (this.workerService.ready()) {
-      return null;
-    }
-    // Fallback only when worker is not available
-    return this.targetDetector.detectTargetAt(this.state.mousePosition, detectionRadius);
-  }
+  // detectWithWorkerFallback() eliminado (Fase 6.1): solo lo llamaba updateTargetDetection (muerto).
 
   /**
    * Devuelve un snapshot de debug con info de targeting y mouse
@@ -525,37 +372,7 @@ export class ReticleManager {
     }
   }
 
-  /**
-   * Estabiliza la selección de targets para evitar flickering a FPS altos
-   */
-  private stabilizeTargetSelection(candidateTarget: ITargetable | null): ITargetable | null {
-    // Si no hay candidato, resetear estabilidad
-    if (!candidateTarget) {
-      this.lastStableTarget = null;
-      this.targetStabilityFrames = 0;
-      return null;
-    }
-    
-    // Si es el mismo target que antes, mantenerlo
-    if (candidateTarget === this.lastStableTarget) {
-      this.targetStabilityFrames = Math.min(this.targetStabilityFrames + 1, this.TARGET_STABILITY_THRESHOLD + 5);
-      return candidateTarget;
-    }
-    
-    // Si es un target diferente, verificar estabilidad
-    if (candidateTarget !== this.lastStableTarget) {
-      this.targetStabilityFrames = 0;
-      this.lastStableTarget = candidateTarget;
-    }
-    
-    // Solo cambiar después de algunos frames consecutivos
-    if (this.targetStabilityFrames >= this.TARGET_STABILITY_THRESHOLD) {
-      return candidateTarget;
-    }
-    
-    // Mantener el target anterior hasta que se estabilice
-    return this.state.hoveredTarget;
-  }
+  // stabilizeTargetSelection() eliminado (Fase 6.1): solo lo llamaba updateTargetDetection (muerto).
 
   /**
    * Calcula la velocidad del mouse para retícula dinámica

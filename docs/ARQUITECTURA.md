@@ -326,6 +326,86 @@ update/render, wiring).
   objetos, recompensas) sigue en el engine — es un `CombatDamageSystem` futuro.
 - **Helpers de etiquetado** (`game/utils/label-utils.ts`): `getPlanetTypeLabel`, `humanizeEnumValue`,
   `rgbToHex` (funciones puras; engine delega; specs propios). Cero riesgo.
+- **5.1-parcial física atmosférica PURA** (`game/atmosphere/atmosphere-physics.ts`): escala de gravedad
+  por tipo de planeta, atenuación por velocidad, factor de auto-vector y factor por altitud + sus
+  constantes exclusivas (`ATMOSPHERE_AUTO_VECTOR_*`, `ATMOSPHERE_GRAVITY_DEFAULT_SCALE`). Funciones
+  puras; engine delega; specs propios. La orquestación stateful (aplicar fuerzas, leer
+  `atmosphereSceneState`) sigue en el engine — el movimiento stateful grande necesita smoke de gameplay.
+- **Dedup weather-lighting** (2026-06-20): `weatherLightingBase` en atmosphere-physics. Antes el cálculo
+  de iluminación por clima estaba DUPLICADO y **divergente** entre `GameEngine.computeWeatherLightingTarget`
+  (clamp sup. 1.10) y `AtmosphereSceneManager.computeLightingFactor` (clamp sup. 1.05) — misma base, distinto
+  tope. Ahora la base es única y cada consumidor mantiene su clamp final ⇒ behavior-preserving. Con specs.
+  (Pendiente menor: `AtmosphereSceneManager` aún tiene `clamp01`/`lerp`/`smoothstep` locales con firmas
+  distintas a `game/math`; unificarlos requiere reconciliar firmas — follow-up.)
+- **5.1-parcial `AtmosphereWeatherEffectsSystem`** (2026-06-20, `game/atmosphere/atmosphere-weather-effects-system.ts`,
+  180 líneas): PRIMERA rebanada stateful de la atmósfera. Clase plana que POSEE el estado suavizado de
+  efectos de clima (`AtmosphereWeatherEffectsState`: visibilidad/iluminación/turbulencia/deriva/impacto)
+  + la capa de tinte (overlay alpha/color) + el flag de absorción de impactos. Se llevó verbatim
+  `updateWeatherEffectsState`, `updateWeatherOverlayState`, `computeWeatherLightingTarget`,
+  `updateAtmosphereImpactAbsorptionHud`, `createDefault…State` y la mitad-overlay de `resetWeatherVisualLayers`.
+  **Host mínimo** `AtmosphereWeatherEffectsHost` (2 métodos: `isAtmosphereSceneActive()` +
+  `emitImpactAbsorptionWarning()`), pasado vía adaptador cacheado (no `this`, así `emit…` sigue privado).
+  El engine: lee `weatherEffectsSystem.effects` en la física (drag/drift/jitter/hud) y `.overlayAlpha/.overlayColor`
+  en el render; delega `getWeatherImpactVolumeScale`. `WEATHER_DRIFT_OFFSET_MAX` (750) subió a
+  `atmosphere-physics` (compartido con el HUD de telemetría). **Con specs nuevos (6).** GameEngine 13.845 → 13.716.
+  Las capas de RELÁMPAGO (flash/shock/pendingAudio) siguen en el engine (entrelazadas con visuales/cámara/audio)
+  → rebanada futura. **Behavior-preserving, pero toca render/frame-loop ⇒ requiere smoke de gameplay:** entrar en
+  atmósfera con clima (tormenta de polvo/niebla densa/lluvia) y verificar tinte de pantalla, oscurecimiento por
+  clima, deriva del viento y el aviso "Absorción atmosférica…". **VALIDADO en juego por el usuario (2026-06-20).**
+- **5.1-parcial telemetría HUD** (2026-06-20, `game/atmosphere/atmosphere-telemetry.ts`, 171 líneas): constructores
+  PUROS de la telemetría atmosférica — `classifyAtmosphereTurbulence`, `getAtmosphereWeatherDisplayLabel`,
+  `buildAtmosphereTelemetryPayload` (visibilidad/turbulencia/estabilidad/deriva/lift), `buildAtmosphereTelemetryPanelState`
+  (panel completo del HUD: planeta, avisos, clima). El motor solo reúne entradas (estado de clima, altitud, deriva)
+  y asigna; el logging se queda en el motor. SIN host (funciones puras con argumentos explícitos). **Con specs
+  nuevos (11).** GameEngine 13.716 → 13.604. Riesgo bajo (lógica pura testeada; el wiring del motor es fino), pero
+  alimenta el HUD ⇒ verificar el panel de telemetría en atmósfera (estabilidad, avisos, etiqueta de clima, deriva).
+  NB: descarté la rebanada de RELÁMPAGO como "siguiente" — `spawnAtmosphereLightningBolt` es casi toda geometría
+  acoplada al motor (cámara/nave/radios de escena/partículas/4 helpers math); sólo sus últimas 5 líneas tocan estado.
+- **5.1 NÚCLEO DE FUERZAS extraído** (2026-06-20): `AtmosphereFlightSystem` (`atmosphere-flight-system.ts`, 299 líneas)
+  + `AtmosphereShakeSystem` (`atmosphere-shake-system.ts`, 279 líneas), separados para respetar el ≤400. Movidos
+  VERBATIM del motor: auto-vector (sustentación asistida), fuerzas de clima (deriva+turbulencia), drag/aceleración,
+  deriva progresiva (flight) y jitter/shake de cámara y nave (shake). Cada sistema posee su estado transitorio
+  (autoVectorCurrent/driftForceApplied/telemetría/fases/bias) y sus constantes; el motor implementa un host único
+  `AtmosphereFlightHost` (adaptador cacheado, ~13 métodos: nave/cámara/clima/altitud/estabilidad/up-vector/etc.) y deja
+  delegadores de 1 línea, así el frame-loop (`update()`) no cambia. Cross-reads re-apuntados (HUD lee
+  `atmosphereFlight.driftForceApplied/autoVectorCurrent/autoVectorTelemetry`; la supresión por contacto la extiende el
+  motor vía `atmosphereFlight.autoVectorSuppressedUntilMs` público). Constantes compartidas (BAND_MIN,
+  TURBULENCE_SHAKE_THRESHOLD) subidas a atmosphere-physics. **Tests nuevos: 20** (flight 10 + shake 10) con host/nave/
+  cámara stub. GameEngine 13.482 → 13.010 (−472; −835 acumulado de sesión). Build prod + 144/144 verdes. **GAMEPLAY-GATED**
+  (frame-loop/física, invisibles a los tests): probar vuelo atmosférico — sustentación cerca del suelo, frenado por drag,
+  empuje del viento/turbulencia, sacudidas de cámara y nave.
+- **5.1 COMPLETA** (2026-06-20): `applyAtmosphereGravity` (+ su `AtmosphereGravitySample`/telemetría) movido a
+  `AtmosphereFlightSystem.applyGravity`. El motor expone la geometría del domo (`getAtmosphereGravityContext` → center/
+  groundRadius/skyRadius/planetType, null si no hay escena/contexto) y `isAtmosphereGravityLandingHold` por el host; el resto
+  es verbatim (curva de caída 10→30 u/s, supresión fuera del domo, dirección hacia el centro). Borrados del motor los
+  helpers muertos `getAtmosphereGravityScaleForPlanet`/`computeAtmosphereGravitySpeedFactor` y sus imports. **+4 tests**
+  (148 total). GameEngine 13.010 → 12.920 (−90; **−925 acumulado de sesión**, 13.845→12.920). flight-system 399 líneas (≤400).
+  **YA NO QUEDA FÍSICA ATMOSFÉRICA EN EL MOTOR**: el AtmosphereFlightSystem (fuerzas+gravedad) + AtmosphereShakeSystem (FX)
+  cubren todo lo de `update()`. Gameplay-gated: probar la caída/gravedad al entrar en atmósfera y cerca del suelo.
+
+#### Fase 5.2 — LandingSystem (en progreso)
+- **5.2-parcial `LandingEvaluator`** (2026-06-20, `services/state/landing-evaluator.ts`, 263 líneas): PRIMERA rebanada de 5.2.
+  Mueve la EVALUACIÓN de aterrizaje (computeLandingStatus + computeAtmosphereLandingStatus + computeLandingThreat +
+  resolveThreatLabel, ~235 líneas) a una clase plana que POSEE el estado de candidato (candidateStartMs/candidatePlanetId) y
+  los umbrales (distancia/velocidad/alineación/hold 3s/radio de amenaza). El motor conserva `landingStatus`/`landingThreat`
+  (estado load-bearing leído por todo el engine) y los helpers de contexto (derive/resolve, usados en 12+ sitios) que se
+  exponen por `LandingEvaluatorHost` (10 métodos). `updateLandingTelemetry` (orquestación: gameState/HUD/supresión) se queda
+  y delega; los 2 reset de candidato → `landingEvaluator.resetCandidate()`. Los `(target as any)` se tiparon con
+  `ThreatTargetLike` (sin any nuevo). **Tests nuevos: 6** (umbral + hold de 3s con `performance.now` espiado + amenaza).
+  GameEngine 12.920 → 12.714 (−206; **−1.131 acumulado de sesión**). Build prod + 154/154 verdes. Gameplay-gated: el HUD
+  "LISTO PARA ATERRIZAR" debe aparecer tras ~3s estable cerca de un planeta, y la alerta de amenaza con enemigos a <500u.
+  PENDIENTE 5.2: la orquestación grande (touchdown/paneles/colapso/attachment/cinemáticas) sigue en el motor — muy
+  intrincada con animationManager/cámara/timers; rebanadas futuras con gameplay.
+- **Rayo atmosférico ELIMINADO** (2026-06-20, a petición del usuario: "no era prioritario, se rehará distinto otro día").
+  En vez de extraer la geometría acoplada, se borró la feature entera: en GameEngine `updateLightningVisuals`/
+  `spawnAtmosphereLightningBolt` + estado (flash/shock/cooldowns/pendingAudio) + flash en render + término de shock en
+  camera-jitter + truenos en `updateWeatherAudioLoop` (−122). En ParticleEffects las primitivas muertas: interfaces
+  `LightningStrike(Options)`, `spawnLightningStrike`/`updateLightningStrikes`/`renderLightningStrike`/`drawLightningSegment`/
+  `buildLightningColorBuffer`/`buildLightningPath`/`randomPerpendicularVector` + estado/reset (~250 líneas, 1772→1389).
+  SE CONSERVA: `lightningChance` como dato de pronóstico del clima (AtmosphereWeatherService), la ambiencia de tormenta
+  (`audioCue: sfx_weather_thunder` en bucle) y el readout "Rayos"/"Descargas frecuentes" del HUD (intel meteorológica, no
+  el rayo). El core-lightning de EarthSplitPlanet es otra cosa (flag propio, ya desactivado). VALIDADO en juego.
+  Follow-up opcional menor: si se quiere borrar también el readout "Rayos" del HUD (telemetría) cuando no hay rayo.
 
 **Patrón seguro validado (úsalo para las extracciones restantes):**
 1. **Clase plana** (NO `@Injectable`) que el engine instancia con **lazy-init** (`ensureX()`),
@@ -352,7 +432,7 @@ daño por proximidad solar, conversión de cargo) antes que la física atmosfér
 | 6.2 | Unificar outline/retícula en un solo `SelectionRenderer` (depende de 6.1; render path → smoke) | [J] |
 | 6.3 | Fusionar los 3 session-cookie services; deduplicar `libs/cloud-saves/from-landing/*` | [J] |
 | 6.4 | Earth/Saturn data-driven: ver **hallazgo abajo** (el literal `planet-saturn` está en 6+ sitios) | [J] |
-| 6.5 | Unificar `GameEngine.createPlanets()` (sistema humano legacy) para que genere un `SolarSystemSnapshot` y lo aplique por el camino normal (probable absorción por `HumanSolarSystemService`) | [S] |
+| 6.5 | ✅ HECHO: `createPlanets()` (~247 líneas, sistema humano hardcodeado no determinista paralelo a `HumanSolarSystemService.createSnapshot()`) eliminado; init usa solo el camino de snapshot. Eran una 2ª implementación divergente (otra fuente del "comportamiento distinto en sitios distintos"). | [S] |
 | 6.6 | Carpeta única de servicios: `game/` para dominio+engine, `app/` solo UI/plataforma; mover con `git mv` por lotes pequeños | [J] |
 
 #### Hallazgo 6.1 — targeting v1 vs v2 (investigado 2026-06-16)
@@ -369,6 +449,20 @@ daño por proximidad solar, conversión de cargo) antes que la física atmosfér
 - **Plan correcto 6.1**: separar quirúrgicamente — mover input de ratón + render de retícula/contornos
   a un módulo neutro que v2 consuma, retirar `TargetDetector` y la selección de v1. Toca el render path
   → **requiere smoke de gameplay**. NO borrar `targeting/core` en bloque.
+
+**Actualización 2026-06-19 (investigación profunda):** `ReticleManager.update()` **YA tiene la detección
+desactivada** (líneas ~226-252): cada frame BORRA `currentTarget`/`hoveredTarget` y NO llama a
+`updateTargetDetection()`. Verificado que `updateTargetDetection`, `detectWithWorkerFallback`,
+`stabilizeTargetSelection` y `renderOutlines` (cuyo render 3D ya estaba comentado) son **código muerto
+no llamado**. La retícula (`render()`) usa SOLO `mousePosition` + `config` (velocidad del ratón), NO la
+detección. Conclusión: **v2 ya es el ÚNICO sistema activo**; v1 = ratón (InputHandler) + retícula.
+- ✅ HECHO: eliminado del engine `renderOutlineSystem()` (trabajo por-frame muerto que solo alimentaba
+  esa detección muerta; el outline visible es el overlay 2D de v2, intacto).
+- ✅ HECHO (2026-06-20): vaciado el cluster de detección muerto de `ReticleManager`
+  (`updateTargetDetection`/`detectWithWorkerFallback`/`stabilizeTargetSelection`/`renderOutlines`, ~200
+  líneas). Behavior-preserving (no se ejecutaba). PENDIENTE menor: los campos/inyecciones ahora sin uso
+  (`workerService`/`TargetingWorkerService` que aún levanta un Web Worker ocioso, `outlineRenderer`,
+  `targetHighlighter`) — limpiar su DI en un PR aparte (toca el constructor de ReticleManager).
 
 #### Hallazgo 6.4 — Earth/Saturn hardcode disperso (investigado 2026-06-16)
 El literal `planet-saturn`/`planet-earth` aparece en **6+ sitios** de GameEngine (debris belt
@@ -454,8 +548,8 @@ Si hay que tocar algo más, la arquitectura ha regresado: abrir issue de deuda i
 | 2 | ✅ Completa: planet/portal/lesser-being codecs en TODAS las rutas + specs round-trip. Sin retrocompatibilidad de saves (decisión del usuario 2026-06-13) |
 | 3 | ✅ Completa: `system-identity.ts` (resolveSystemId/resolveSnapshotId/resolveSystemKey) + `SolarSystemMeta` tipado; las 4 precedencias divergentes (engine, PortalPersistence, UniverseStateSnapshot, RuntimeSerializer) ahora delegan en una sola. Spec dedicado. 75 tests verdes |
 | 4 | ✅ Completa: `SaveGamePayload.universe` es ahora un `SolarSystemSnapshot` (schema v2, sin migración v1). Save = `captureCurrentSnapshot`; load = `adoptSnapshot` (mismo camino que portal/respawn). Borradas ~330 líneas de la SEGUNDA representación (payload por-objeto) en UniverseStateSnapshotService. Harness + 2 specs reescritos. 82 tests verdes |
-| 5 | En curso: ✅ 5.8 (math SSOT `game/math/`), ✅ 5.6 (`PlayerProgressionSystem`), ✅ 5.4-parcial (`SunProximitySystem`). Pendientes 5.1-5.3,5.5,5.7 (ver nota de riesgo abajo) |
-| 6 | Parcial: ✅ eliminada la copia muerta `SolarSystemService.apply()/snapshot()` (~190 líneas, instanciación paralela de planetas/portales). Pendiente: targeting v1/v2, session-cookie x3, Earth/Saturn data-driven |
+| 5 | En curso: ✅ 5.8 (math SSOT), ✅ 5.6 (`PlayerProgressionSystem`), ✅ 5.4-parcial (`SunProximitySystem`), ✅ 5.1-parcial (atmosphere-physics PURO), ✅ label-utils. Pendientes: movimientos stateful (atmósfera/landing/spell/hud) — smoke de gameplay |
+| 6 | Parcial: ✅ `SolarSystemService.apply()/snapshot()` muertos (~190 líneas); ✅ 6.1 investigado (hallazgo abajo); ✅ 6.5-parcial `createPlanets()` legacy eliminado (~247 líneas, sistema humano hardcodeado paralelo); ✅ código muerto: `oldRespawnGame`/`resetAfterCrash`/`randomizeStartNearSun` (~140 líneas). Pendiente: separación targeting, session-cookie x3, Earth/Saturn |
 | 7 | Pendiente |
 
 ### Fase 4 — plan de ejecución (para la próxima sesión, idealmente con `npm start` para verificar)

@@ -16,6 +16,8 @@ import {
   getTerrainField,
   sampleTerrainVertex,
 } from './terrain-sampler';
+import { weatherLightingBase } from './atmosphere-physics';
+import { clamp as clampNumber } from '../math/vector-math';
 
 interface SphereMesh {
   vbo: WebGLBuffer;
@@ -806,9 +808,7 @@ export class AtmosphereSceneManager {
   }
 
   private clamp01(value: number): number {
-    if (value < 0) return 0;
-    if (value > 1) return 1;
-    return value;
+    return clampNumber(value, 0, 1); // delega en game/math (fuente única)
   }
 
   private zoneWeight(value: number, min: number, max: number): number {
@@ -885,32 +885,8 @@ export class AtmosphereSceneManager {
   }
 
   private computeLightingFactor(weather: AtmosphereWeatherSnapshot | null): number {
-    if (!weather) {
-      return 1;
-    }
-    const visibility = this.clamp01(weather.visibilityMultiplier ?? 1);
-    const intensity = this.clamp01(weather.intensity ?? 0);
-    let factor = this.lerp(this.WEATHER_LIGHT_MAX, this.WEATHER_LIGHT_MIN, 1 - visibility);
-    switch (weather.eventType) {
-      case 'dust_storm':
-        factor -= 0.18 * intensity;
-        break;
-      case 'thunderstorm':
-        factor -= 0.22 * intensity;
-        break;
-      case 'dense_fog':
-      case 'rain':
-      case 'light_fog':
-        factor -= 0.14 * intensity;
-        break;
-      case 'meteor_shower':
-        factor += 0.06 * intensity;
-        break;
-      default:
-        factor -= 0.08 * intensity;
-        break;
-    }
-    return Math.max(this.WEATHER_LIGHT_MIN, Math.min(this.WEATHER_LIGHT_MAX, factor));
+    // Base común en atmosphere-physics (fuente única); este consumidor mantiene su clamp a 1.05.
+    return Math.max(this.WEATHER_LIGHT_MIN, Math.min(this.WEATHER_LIGHT_MAX, weatherLightingBase(weather)));
   }
 
   private computeSkyTint(baseColor: Float32Array, altitude: number, lightingFactor: number = 1): Float32Array {
