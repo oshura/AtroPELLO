@@ -1,27 +1,16 @@
-import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
 import { LandingApproachContext } from '../../types/landing.types';
 import { CameraMode } from '../../Camera';
 import { ThrusterState } from '../../game-objects/Spaceship';
 import { Vector3 } from '../../../types/game.types';
+import { clamp01, lerp, smoothstep } from './animation-math';
+import { InputLockGuard, ShipDynamicsScope } from './animation-tools';
+import { BaseAnimation } from './base-animation';
 
-function clamp01(x: number): number {
-  return Math.max(0, Math.min(1, x));
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-function smoothstep(t: number): number {
-  const c = clamp01(t);
-  return c * c * (3 - 2 * c);
-}
-
-export class GroundTakeoffAnimation implements GameAnimation {
+export class GroundTakeoffAnimation extends BaseAnimation {
   public readonly name = 'ground-takeoff';
   private context!: LandingApproachContext;
-  private blocking = true;
+  private started = false;
   private elapsed = 0;
   private readonly spoolDuration = 1.2;
   private readonly ascentDuration = 4.0;
@@ -32,7 +21,7 @@ export class GroundTakeoffAnimation implements GameAnimation {
   private prevCameraMode: CameraMode | null = null;
   private cameraSwitchApplied = false;
   private landingCameraHoldReleased = false;
-  private inputBlockers: Array<() => void> = [];
+  private readonly inputLock = new InputLockGuard();
   private overlayAlpha = 1;
   private wingProgressStart = 0;
   private wingProgressEnd = 0;
@@ -40,7 +29,7 @@ export class GroundTakeoffAnimation implements GameAnimation {
   private noseAnchorStart = 0;
   private noseAnchorEnd = 0;
 
-  private savedDynamics: { acceleration: number; deceleration: number; maxSpeed: number } | null = null;
+  private readonly shipDynamics = new ShipDynamicsScope();
   private startPoint!: Vector3;
   private endPoint!: Vector3;
   private upDir!: Vector3;
@@ -55,7 +44,7 @@ export class GroundTakeoffAnimation implements GameAnimation {
     this.context = context;
   }
 
-  public start(engine: GameEngine): void {
+  protected override onStart(engine: GameEngine): void {
     const ship = engine.spaceship;
     if (!ship || !this.context) {
       this.blocking = false;
@@ -81,11 +70,7 @@ export class GroundTakeoffAnimation implements GameAnimation {
     this.noseAnchorEnd = 0;
     this.applyNoseAnchor(engine, 0);
 
-    this.savedDynamics = {
-      acceleration: ship.acceleration,
-      deceleration: ship.deceleration,
-      maxSpeed: ship.maxSpeed,
-    };
+    this.shipDynamics.capture(ship, false);
 
     ship.targetSpeed = 0;
     ship.currentSpeed = 0;
@@ -127,11 +112,12 @@ export class GroundTakeoffAnimation implements GameAnimation {
     this.endPoint = targetPoint;
     this.tangentDir = this.computeTangentDirection(ship.forwardDirection, normal);
 
-    this.installKeyBlockers();
+    this.inputLock.lock();
     engine.notifyTakeoffSequenceStarted(this.context, 'ground');
+    this.started = true;
   }
 
-  public update(engine: GameEngine, dt: number): boolean {
+  protected override onUpdate(engine: GameEngine, dt: number): boolean {
     const ship = engine.spaceship;
     if (!ship) {
       return true;
@@ -167,13 +153,12 @@ export class GroundTakeoffAnimation implements GameAnimation {
     this.overlayAlpha = lerp(0.6, 0, eased);
 
     if (localT >= 1) {
-      this.finish(engine, false);
       return true;
     }
     return false;
   }
 
-  public render(engine: GameEngine): void {
+  public override render(engine: GameEngine): void {
     if (this.overlayAlpha <= 0) {
       return;
     }
@@ -183,23 +168,13 @@ export class GroundTakeoffAnimation implements GameAnimation {
     }
   }
 
-  public isBlockingInputs(): boolean {
-    return this.blocking;
-  }
-
-  public cleanup(engine: GameEngine): void {
-    this.finish(engine, true);
-  }
-
-  private finish(engine: GameEngine, aborted: boolean): void {
-    if (!this.blocking) {
+  protected override onFinish(engine: GameEngine, aborted: boolean): void {
+    if (!this.started) {
       return;
     }
     const ship = engine.spaceship;
-    if (ship && this.savedDynamics) {
-      ship.acceleration = this.savedDynamics.acceleration;
-      ship.deceleration = this.savedDynamics.deceleration;
-      ship.maxSpeed = this.savedDynamics.maxSpeed;
+    if (ship && this.shipDynamics.hasSnapshot) {
+      this.shipDynamics.restore(ship); // accel/decel/maxSpeed + reanudar energía del vacío
       if (aborted) {
         ship.targetSpeed = 0;
         ship.currentSpeed = 0;
@@ -209,12 +184,9 @@ export class GroundTakeoffAnimation implements GameAnimation {
         ship.currentSpeed = this.targetSpeed;
         ship.thrusterState = ThrusterState.CRUISING;
       }
-      ship.voidEnergyPaused = false;
     }
-    this.savedDynamics = null;
 
-    try { this.inputBlockers.forEach(fn => fn()); } catch {}
-    this.inputBlockers = [];
+    this.inputLock.release();
 
     engine.collisionsDisabled = false;
     if (!this.landingCameraHoldReleased) {
@@ -235,7 +207,6 @@ export class GroundTakeoffAnimation implements GameAnimation {
     }
     this.prevCameraMode = null;
     this.overlayAlpha = 0;
-    this.blocking = false;
     if (aborted) {
       try { engine.setWingDeploymentProgress(this.wingProgressStart); } catch {}
       this.applyNoseAnchor(engine, 0);
@@ -245,18 +216,6 @@ export class GroundTakeoffAnimation implements GameAnimation {
     }
     const outcome = aborted ? 'aborted' : 'stage-one';
     engine.notifyTakeoffSequenceFinished(outcome as 'aborted' | 'stage-one', this.context, 'ground');
-  }
-
-  private installKeyBlockers(): void {
-    const handler = (event: Event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    };
-    ['keydown', 'keyup', 'keypress'].forEach(evt => {
-      document.addEventListener(evt, handler, { capture: true });
-      this.inputBlockers.push(() => document.removeEventListener(evt, handler, { capture: true }));
-    });
   }
 
   private applyWingDeployment(engine: GameEngine, journeyT: number): void {

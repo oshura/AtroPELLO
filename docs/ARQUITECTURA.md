@@ -425,6 +425,100 @@ de verdad jugando. Se harán siguiendo el patrón de arriba (clase plana + host 
 por PR, con smoke de gameplay. Empezar por las más acotadas y con lógica "calcular + callback" (p.ej.
 daño por proximidad solar, conversión de cargo) antes que la física atmosférica (2.500 líneas).
 
+### Fase 8 — Subsistema de animaciones (convergencia hacia un patrón)
+**Motivación (usuario, 2026-06-20):** las animaciones han divergido. Conceptos que cada una resuelve a su
+manera: cambio de cámara o no al inicio; bloqueo o no del teclado de navegación; pausas de X tiempo; escenas
+con una imagen en zoom progresivo; traslados de posición (void-jump, portal/gate) que generan snapshots de
+respawn y de sistemas nuevos/antiguos. Objetivo: una animación = **objeto orquestador** con un **core común**
+y **herramientas** reutilizables; varias subclases extensibles, no un único patrón rígido.
+
+**Estado actual (analizado).** Ya hay `game/services/animations/` con `animation-manager.service.ts` + 13
+ficheros `*.animation.ts` (37 a 1084 líneas; gate-rite=1084, atmosphere-landing=463, ground-takeoff=394,
+void-jump=393, takeoff-sequence=339, landing-sequence=335). El contrato `GameAnimation` es mínimo
+(name/start/update→done/render/isBlockingInputs/cleanup?). **Divergencias reales encontradas:**
+- **Manager**: ~480 líneas de copia-pega (12× `startX`+`preloadX`+`cachedXCtor` casi idénticos) + configuración
+  ad-hoc vía `(anim as any).configure?.()` / `setFlashConfig?.()` (sin tipar).
+- **Math duplicada**: `clamp01`/`lerp`/`smoothstep`/`normalize` reimplementadas en CADA animación.
+- **Bloqueo de teclado**: `installKeyBlockers()` (listeners globales `keydown/keyup/keypress` en captura)
+  **byte-idéntico** entre void-jump y landing-sequence (y otras).
+- **Cámara**: cada una guarda `prevCameraMode`, fija un modo y restaura, con banderas divergentes
+  (`restoreCameraMode`/`cockpitModeLatched`). Acceso por `engine['camera']` (mismo olor que `(x as any)`).
+- **Dinámica de nave**: save/restore de accel/decel/maxSpeed/voidEnergy copiado a mano.
+- **Teardown divergente**: landing-sequence YA tiene el patrón bueno (`cleanup()` → `finish(aborted)` único);
+  void-jump DUPLICA el restore en `cleanup()` y en la rama de fin de `update()` (riesgo de divergencia — es
+  exactamente el bug que describe el usuario). Hay `console.error` en void-jump (viola regla 5).
+- **Acoplamiento al engine**: las animaciones reciben el `GameEngine` entero y lo hurgan con `engine['x']`/
+  `(engine as any).y`. Sin contrato tipado.
+
+**Arquitectura objetivo:**
+1. **`animation-math.ts`** — vocabulario (clamp01/lerp/smoothstep/clamp/vec3Normalize) sobre la fuente única
+   `game/math`. ✅ HECHO (con spec; comportamiento idéntico).
+2. **Herramientas reutilizables `animation-tools.ts`** (clases pequeñas, liberadas SIEMPRE por el mismo camino):
+   `InputLockGuard` (bloqueo de teclado idempotente) ✅; `CameraTakeover` (toma/relatcheo/restauración de modo,
+   con modo final opcional) ✅; `ShipDynamicsScope` (save/restore de la dinámica + energía del vacío) ✅. Con specs.
+   Siguientes: `OverlayScene` (fade + imagen con zoom — void-jump/gate-rite), `PhaseTimeline` (fases declarativas
+   `[{name,duration,onUpdate(k)}]` con hooks tipo "teleport en el momento X", sustituye la aritmética manual de
+   `fadeStart = orientTime + speedRampTime + …`).
+3. **`BaseAnimation` (core abstracto)**: implementa `GameAnimation`; posee `elapsed`, el flag de bloqueo, un
+   registro de cleanups (`onTeardown(fn)`) y un **único** `finish(aborted)` que corre los cleanups una sola vez
+   (cleanup() ⇒ finish(true)). Las subclases declaran sus fases y usan las herramientas. Config tipada por
+   `ConfigurableAnimation<TConfig>` (fin de `(anim as any).configure`).
+4. **`AnimationHost` tipado**: interfaz mínima que el engine implementa para lo que las animaciones tocan
+   (cámara, nave, flags como `voidJumpActive`/`collisionsDisabled`, notificaciones de aterrizaje/teleport,
+   textureManager/overlayRenderer). Sustituye `engine['x']`/`(engine as any)`. Las animaciones reciben el host,
+   no el `GameEngine`.
+5. **Registro data-driven en el manager**: `Map<name, { load: () => Promise<Ctor>, interruptible: boolean }>` +
+   un `start(name, configure?)` genérico. Colapsa las ~480 líneas de boilerplate y unifica preload/caché/stub.
+   Casos especiales (void-jump `setFlashConfig`, takeoff `phase`, atmosphere-landing `forceReplace`) pasan por
+   `configure` tipado.
+
+**Orden de convergencia (junior-proof, build verde en cada paso):**
+- **8.1 ✅** `animation-math.ts` + `animation-tools.ts` (InputLockGuard/CameraTakeover/ShipDynamicsScope) con specs.
+  Adoptado el math + InputLockGuard en void-jump y landing-sequence (dedup byte-idéntico). +12 tests. 166/166 verdes.
+- **8.2 ✅ (parcial)** `BaseAnimation` (`base-animation.ts`, 76 líneas): core con `onStart`/`onUpdate`/`onFinish`, registro
+  `onTeardown(fn)` y **un único `finish(aborted)`** (cleanup() ⇒ finish(true)) que corre los teardowns UNA vez → mata la
+  divergencia cleanup-vs-fin. Con spec (el invariante "teardown una sola vez"). Migradas **landing-sequence** (335→297) y
+  **void-jump** (393→356) a `BaseAnimation` + `CameraTakeover` + `ShipDynamicsScope`: cierre unificado, sin `engine['x']`
+  (ahora `engine.camera/.spaceship`). En void-jump el `render()` (las *speed streaks* tipo velocidad-luz + overlay + imagen
+  con zoom) queda **byte-idéntico**; solo cambió el ciclo de vida. ⚠️ OJO: `noImplicitOverride` ON → todo override (incl. en
+  specs con subclases de BaseAnimation) necesita `override`. +3 tests (169 total). **Gameplay-gated**: probar salto void (`Y`)
+  — orientación/aceleración/estrellas/imagen/teleport y restauración de cámara/controles — y la cinemática de aterrizaje.
+  Migradas además (2026-06-20) **7 animaciones simples** a `BaseAnimation`: eternal-rite, speed-rite, respawn-sigillum,
+  disruption-rite, anchoring-pulse, void-kinesis y quimio-sigillum (esta con `CameraTakeover` + teardown unificado para
+  el restore de cámara). De paso, tipados los `(target as any)`/`engine['camera']` → casts estructurales/`engine.camera`.
+  Migrados además los **despegues**: `ground-takeoff` (394→359) y `takeoff-sequence` (339→302) a `BaseAnimation` +
+  `InputLockGuard` + `ShipDynamicsScope` (+ `CameraTakeover` en takeoff-sequence, cuya cámara es save-COCKPIT/restore-prev);
+  cada `finish(aborted)` → `onFinish(aborted)` con guarda `started`. La cámara bespoke de ground-takeoff (manual-follow +
+  releaseLandingCameraHold) se mantuvo verbatim. **8.2 COMPLETA**: migradas también `atmosphere-landing` (como las otras
+  cinemáticas; conserva su camera-hold bespoke `holdLandingCinematicCamera`) y `gate-rite` (1084) de forma CONSERVADORA
+  (extends BaseAnimation; su flag propio `finished`→`complete` porque la base usa su propio `finished`; `override` en
+  onStart/onUpdate/render/isBlockingInputs(`!complete`)/cleanup; toda la lógica de fases/snapshot/portal/streaks queda
+  VERBATIM — su `update` es un dispatcher + handlers void). De paso `console.error`→GameLogger y `engine['spaceship']`→
+  `engine.spaceship`. **LAS 13 ANIMACIONES YA EXTIENDEN BaseAnimation.** 174/174 + build prod verde.
+  Gameplay-gated: probar el rito del portal entero (colapso/manifestación/tránsito con streaks/cambio de sistema/llegada) y
+  abortarlo (morir a mitad).
+- **8.x ✅ `OverlayImage`** (`animation-overlay.ts`): pieza reutilizable de "imagen a pantalla completa con zoom" — unifica la
+  carga con URLs candidatas (resiliente) + el dibujo en modo cover. **Tipada estructuralmente** (`TextureManagerLike`/
+  `OverlayRendererLike`) → sin `any`. Adoptada en **quimio-sigillum** (fuera su `ensureTexture` bespoke). Con spec (4 tests). 178/178.
+  Pendiente (opcional): adoptarla en void-jump/gate-rite (cuidado: el render de void-jump tiene un fallback `drawTexture` y las
+  *speed streaks* — no tocar a la ligera).
+- **PENDIENTE Fase 8 (refinamiento, esfuerzo mayor):** `PhaseTimeline` (aritmética de fases de las cinemáticas); **8.4
+  `AnimationHost` tipado** = el grueso de los `as any` restantes son subsistemas sueltos del engine (textureManager/shaderManager/
+  overlayRenderer) y los internos de planeta/portal en gate-rite → requiere tipar esos subsistemas en GameEngine/game-objects (grande);
+  **8.5** unificar snapshots de traslado (void-jump usa `handleVoidJumpCompleted`; gate-rite captura inline).
+- **8.3 ✅** Registro en el manager: `loaders: Record<name, () => Promise<Ctor>>` + caché `Map` + `launch()` genérico
+  (busy-check + lazy import + stub unificados) + envoltorios públicos finos que definen su `prepare` (configure/flash + start).
+  Manager 622 → 260 líneas (−362). `(anim as any).configure?` → helpers tipados `applyConfigure`/`applyFlashConfig` (cast
+  estructural, sin `any`). Preservados: void-jump setFlashConfig, takeoff `phase` (ground/atmo → clase distinta),
+  atmosphere-landing `forceReplace`/preempt, `nonInterruptibleAnimationNames`, blocking-delay, preload. Los `import().then(m=>m.X)`
+  ahora están TIPADOS (TS verifica que cada clase satisface `{new():GameAnimation}`). +5 tests. 174/174. Play-test: que TODAS las
+  animaciones sigan disparándose (saltos, ritos, aterrizaje/despegue).
+- **8.4** `AnimationHost` tipado: cortar `engine['x']`/`(engine as any)` de las animaciones.
+- **8.5** Snapshots de traslado (void-jump/gate): documentar y unificar el punto donde se generan los snapshots de
+  respawn/sistema (hoy en `engine.handleVoidJumpCompleted`), para que cada animación de traslado los dispare igual.
+**Regla:** migrar el CUERPO de una animación es gameplay-gated (muy visual, los tests stubean el engine) → una por
+una con smoke. Las herramientas y el registro SÍ son testeables/build-verificables.
+
 ### Fase 6 — Limpieza de duplicados restantes (≈ 2 semanas)
 | # | Tarea | Quién |
 |---|---|---|

@@ -1,29 +1,18 @@
-import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
 import { LandingApproachContext } from '../../types/landing.types';
 import { CameraMode } from '../../Camera';
 import { ThrusterState } from '../../game-objects/Spaceship';
 import { Vector3 } from '../../../types/game.types';
-
-function clamp01(x: number): number {
-  return Math.max(0, Math.min(1, x));
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-function smoothstep(t: number): number {
-  const c = clamp01(t);
-  return c * c * (3 - 2 * c);
-}
+import { clamp01, lerp, smoothstep } from './animation-math';
+import { InputLockGuard, ShipDynamicsScope, CameraTakeover } from './animation-tools';
+import { BaseAnimation } from './base-animation';
 
 type TakeoffPhase = 'ground' | 'atmo-exit';
 
-export class TakeoffSequenceAnimation implements GameAnimation {
+export class TakeoffSequenceAnimation extends BaseAnimation {
   public readonly name = 'takeoff-sequence';
   private context!: LandingApproachContext;
-  private blocking = true;
+  private started = false;
   private elapsed = 0;
   private readonly prepDuration = 1.0;
   private readonly ascentDuration = 4.0;
@@ -37,12 +26,13 @@ export class TakeoffSequenceAnimation implements GameAnimation {
   private coreStart!: Vector3;
   private phase: TakeoffPhase = 'ground';
 
-  private prevCameraMode: CameraMode | null = null;
-  private inputBlockers: Array<() => void> = [];
+  private readonly cameraTakeover = new CameraTakeover();
+  private readonly inputLock = new InputLockGuard();
   private overlayAlpha = 1;
   private overlaySuppressed = false;
 
-  private savedShipDynamics: { acceleration: number; deceleration: number; maxSpeed: number } | null = null;
+  private readonly shipDynamics = new ShipDynamicsScope();
+  private originalMaxSpeed: number | null = null;
 
   public configure(
     context: LandingApproachContext,
@@ -53,18 +43,15 @@ export class TakeoffSequenceAnimation implements GameAnimation {
     this.overlaySuppressed = !!options?.suppressOverlay;
   }
 
-  public start(engine: GameEngine): void {
+  protected override onStart(engine: GameEngine): void {
     const ship = engine.spaceship;
     if (!ship || !this.context) {
       this.blocking = false;
       return;
     }
 
-    this.savedShipDynamics = {
-      acceleration: ship.acceleration,
-      deceleration: ship.deceleration,
-      maxSpeed: ship.maxSpeed
-    };
+    this.shipDynamics.capture(ship, false);
+    this.originalMaxSpeed = ship.maxSpeed; // antes de subir el maxSpeed para el ascenso
 
     ship.acceleration = Math.max(6, ship.acceleration);
     ship.deceleration = Math.max(6, ship.deceleration);
@@ -87,8 +74,7 @@ export class TakeoffSequenceAnimation implements GameAnimation {
 
     engine.collisionsDisabled = true;
 
-    this.prevCameraMode = engine.camera?.getCurrentMode?.() ?? null;
-    engine.camera?.setCameraMode?.(CameraMode.COCKPIT);
+    this.cameraTakeover.take(engine.camera, CameraMode.COCKPIT);
 
     const normal = this.normalize(this.context.surfaceNormal);
     const center = this.getPlanetCenter();
@@ -120,11 +106,12 @@ export class TakeoffSequenceAnimation implements GameAnimation {
       this.configureForAtmosphereExit(surfacePoint, normal, clearance, center);
     }
 
-    this.installKeyBlockers();
+    this.inputLock.lock();
     engine.notifyTakeoffSequenceStarted(this.context, this.phase);
+    this.started = true;
   }
 
-  public update(engine: GameEngine, dt: number): boolean {
+  protected override onUpdate(engine: GameEngine, dt: number): boolean {
     const ship = engine.spaceship;
     if (!ship || !this.context) {
       return true;
@@ -153,18 +140,17 @@ export class TakeoffSequenceAnimation implements GameAnimation {
       const pos = this.lerpVec(this.ascentTarget, this.exitTarget, smoothstep(localT));
       this.applyShipPose(ship, pos, normal, this.tangentDir, 2);
       ship.thrusterState = ThrusterState.CRUISING;
-      ship.targetSpeed = lerp(18, this.savedShipDynamics?.maxSpeed ?? 24, clamp01(localT));
+      ship.targetSpeed = lerp(18, this.originalMaxSpeed ?? 24, clamp01(localT));
       ship.currentSpeed = ship.targetSpeed;
       this.overlayAlpha = lerp(0.2, 0, clamp01(localT));
     } else {
-      this.finish(engine, false);
       return true;
     }
 
     return false;
   }
 
-  public render(engine: GameEngine): void {
+  public override render(engine: GameEngine): void {
     if (this.overlaySuppressed || this.overlayAlpha <= 0) {
       return;
     }
@@ -174,56 +160,27 @@ export class TakeoffSequenceAnimation implements GameAnimation {
     }
   }
 
-  public isBlockingInputs(): boolean {
-    return this.blocking;
-  }
-
-  public cleanup(engine: GameEngine): void {
-    this.finish(engine, true);
-  }
-
-  private finish(engine: GameEngine, aborted: boolean): void {
-    if (!this.blocking) {
+  protected override onFinish(engine: GameEngine, aborted: boolean): void {
+    if (!this.started) {
       return;
     }
     const ship = engine.spaceship;
-    if (ship && this.savedShipDynamics) {
-      ship.acceleration = this.savedShipDynamics.acceleration;
-      ship.deceleration = this.savedShipDynamics.deceleration;
-      ship.maxSpeed = this.savedShipDynamics.maxSpeed;
+    if (ship && this.shipDynamics.hasSnapshot) {
+      this.shipDynamics.restore(ship); // accel/decel/maxSpeed + reanudar energía del vacío
       ship.targetSpeed = ship.maxSpeed * 0.3;
       ship.currentSpeed = ship.targetSpeed;
-      ship.voidEnergyPaused = false;
       ship.thrusterState = ThrusterState.CRUISING;
       this.ensureShipClearOfPlanet(ship);
     }
-    this.savedShipDynamics = null;
 
-    try { this.inputBlockers.forEach(fn => fn()); } catch {}
-    this.inputBlockers = [];
+    this.inputLock.release();
 
     engine.collisionsDisabled = false;
-    if (engine.camera && this.prevCameraMode !== null) {
-      try { engine.camera.setCameraMode(this.prevCameraMode); } catch {}
-    }
-    this.prevCameraMode = null;
+    this.cameraTakeover.restore(engine.camera);
 
     this.overlayAlpha = 0;
-    this.blocking = false;
     const outcome = aborted ? 'aborted' : 'completed';
     try { engine.notifyTakeoffSequenceFinished(outcome as 'completed' | 'aborted', this.context, this.phase); } catch {}
-  }
-
-  private installKeyBlockers(): void {
-    const handler = (event: Event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    };
-    ['keydown', 'keyup', 'keypress'].forEach(evt => {
-      document.addEventListener(evt, handler, { capture: true });
-      this.inputBlockers.push(() => document.removeEventListener(evt, handler, { capture: true }));
-    });
   }
 
   private lerpVec(a: Vector3, b: Vector3, t: number): Vector3 {

@@ -1,9 +1,9 @@
-import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
 import { ITargetable } from '../../types/targeting.types';
 import { SpellType } from '../../types/spell.types';
+import { BaseAnimation } from './base-animation';
 
-export class DisruptionRiteAnimation implements GameAnimation {
+export class DisruptionRiteAnimation extends BaseAnimation {
   public readonly name = 'disruption-rite';
   public readonly spellType = SpellType.DISRUPT;
   // No keepOutlinersVisible property - defaults to false (outliners hidden)
@@ -11,27 +11,28 @@ export class DisruptionRiteAnimation implements GameAnimation {
   private t = 0; // seconds elapsed
   private textDuration = 2.0; // 2000ms for text display
   private totalDuration = 3.5; // 2s text + 1.5s beam
-  private blocking = true;
   private beamStarted = false;
   private target: ITargetable | null = null;
   private targetPos: { x: number; y: number; z: number } | null = null;
 
-  public start(engine: GameEngine, target?: ITargetable): void {
+  protected override onStart(_engine: GameEngine, target?: ITargetable): void {
     this.t = 0;
-    this.blocking = true;
     this.beamStarted = false;
     this.target = target || null;
 
     // Calculate target position
     if (this.target) {
-      const anyT: any = this.target;
-      this.targetPos = anyT.boundingSphere?.center 
-        ? { ...anyT.boundingSphere.center }
-        : (anyT.position ? { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z } : null);
+      const t = this.target as {
+        boundingSphere?: { center?: { x: number; y: number; z: number } };
+        position?: { x: number; y: number; z: number };
+      };
+      this.targetPos = t.boundingSphere?.center
+        ? { ...t.boundingSphere.center }
+        : (t.position ? { x: t.position.x, y: t.position.y, z: t.position.z } : null);
     }
   }
 
-  public update(engine: GameEngine, dt: number): boolean {
+  protected override onUpdate(engine: GameEngine, dt: number): boolean {
     this.t += dt;
 
     // Start beam after text display completes
@@ -40,14 +41,10 @@ export class DisruptionRiteAnimation implements GameAnimation {
       engine.startDisruptionBeam?.(this.targetPos, this.target);
     }
 
-    if (this.t >= this.totalDuration) {
-      this.blocking = false;
-      return true; // Animation complete
-    }
-    return false;
+    return this.t >= this.totalDuration; // true ⇒ terminada (el haz sigue su propio ciclo)
   }
 
-  public render(engine: GameEngine): void {
+  public override render(engine: GameEngine): void {
     // Only show text overlay during first part of animation
     if (this.t >= this.textDuration) return;
 
@@ -73,14 +70,5 @@ export class DisruptionRiteAnimation implements GameAnimation {
     ctx.textBaseline = 'middle';
     ctx.fillText('MATERIAL DISRUPTION RITE', canvas.width / 2, canvas.height / 2);
     ctx.restore();
-  }
-
-  public isBlockingInputs(): boolean {
-    return this.blocking;
-  }
-
-  public cleanup?(engine: GameEngine): void {
-    this.blocking = false;
-    // Beam continues its own lifecycle independently
   }
 }

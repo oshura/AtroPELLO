@@ -1,15 +1,15 @@
-import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
 import { CameraMode } from '../../Camera';
 import { SpellType } from '../../types/spell.types';
+import { clamp01 } from './animation-math';
+import { BaseAnimation } from './base-animation';
+import { CameraTakeover } from './animation-tools';
+import { OverlayImage } from './animation-overlay';
 
-const clamp01 = (v: number) => Math.max(0, Math.min(1, v));
-
-export class QuimioSigillumAnimation implements GameAnimation {
+export class QuimioSigillumAnimation extends BaseAnimation {
   public readonly name = 'quimio-sigillum';
   public readonly spellType = SpellType.QUIMIO_SIGILLUM;
 
-  private blocking = true;
   private elapsed = 0;
   private overlayAlpha = 0;
 
@@ -26,18 +26,17 @@ export class QuimioSigillumAnimation implements GameAnimation {
     '/src/app/assets/Nodens.webp'
   ];
 
-  private prevCameraMode: CameraMode = CameraMode.INMOVILE_EXTERNAL;
+  private readonly cameraTakeover = new CameraTakeover();
+  private readonly overlayImage = new OverlayImage();
   private totalTime = this.fadeInTime + this.imageTime + this.fadeOutTime;
-  private texture: WebGLTexture | null = null;
-  private textureSize = { width: 1024, height: 1024 };
 
-  start(engine: GameEngine): void {
-    this.prevCameraMode = engine['camera']?.getCurrentMode?.() ?? CameraMode.INMOVILE_EXTERNAL;
-    engine['camera']?.setCameraMode?.(CameraMode.INMOVILE_EXTERNAL);
-    this.ensureTexture(engine);
+  protected override onStart(engine: GameEngine): void {
+    this.cameraTakeover.take(engine.camera, CameraMode.INMOVILE_EXTERNAL);
+    this.overlayImage.load(engine, this.textureKey, this.textureUrls);
+    this.onTeardown((eng) => this.cameraTakeover.restore(eng.camera));
   }
 
-  update(engine: GameEngine, dt: number): boolean {
+  protected override onUpdate(_engine: GameEngine, dt: number): boolean {
     this.elapsed += dt;
     if (this.elapsed < this.fadeInTime) {
       this.overlayAlpha = clamp01(this.elapsed / this.fadeInTime);
@@ -48,14 +47,10 @@ export class QuimioSigillumAnimation implements GameAnimation {
       this.overlayAlpha = clamp01(1 - t);
     }
 
-    if (this.elapsed >= this.totalTime) {
-      this.finish(engine);
-      return true;
-    }
-    return false;
+    return this.elapsed >= this.totalTime;
   }
 
-  render(engine: GameEngine): void {
+  public override render(engine: GameEngine): void {
     const overlay = engine.overlayRenderer;
     if (!overlay) return;
 
@@ -63,7 +58,7 @@ export class QuimioSigillumAnimation implements GameAnimation {
       try { overlay.drawSolid(this.overlayColor, this.overlayAlpha); } catch {}
     }
 
-    if (!this.texture) return;
+    if (!this.overlayImage.ready) return;
     const imageStart = this.fadeInTime;
     const imageEnd = this.fadeInTime + this.imageTime;
     if (this.elapsed < imageStart || this.elapsed > imageEnd) return;
@@ -77,58 +72,6 @@ export class QuimioSigillumAnimation implements GameAnimation {
     const imageAlpha = clamp01(Math.min(fadeInK, fadeOutK));
     if (imageAlpha <= 0) return;
 
-    try {
-      overlay.drawTextureCover(this.texture, this.textureSize.width, this.textureSize.height, zoom, imageAlpha);
-    } catch {}
-  }
-
-  cleanup(engine: GameEngine): void {
-    this.finish(engine);
-  }
-
-  isBlockingInputs(): boolean {
-    return this.blocking;
-  }
-
-  private finish(engine: GameEngine): void {
-    engine['camera']?.setCameraMode?.(this.prevCameraMode);
-    this.blocking = false;
-  }
-
-  private ensureTexture(engine: GameEngine): void {
-    const tm = engine.textureManager as any;
-    if (!tm) return;
-    const attach = (tex: WebGLTexture) => {
-      this.texture = tex;
-      const size = tm.getTextureSize?.(this.textureKey);
-      if (size && size.width && size.height) {
-        this.textureSize = { width: size.width, height: size.height };
-      }
-    };
-
-    const existing = tm.getTexture?.(this.textureKey) as WebGLTexture | null;
-    if (existing) {
-      attach(existing);
-      return;
-    }
-
-    (async () => {
-      for (const url of this.textureUrls) {
-        try {
-          await tm.loadTextureFromUrl?.(this.textureKey, url);
-          const tex = tm.getTexture?.(this.textureKey) as WebGLTexture | null;
-          if (tex) {
-            attach(tex);
-            return;
-          }
-        } catch {
-          const tex = tm.getTexture?.(this.textureKey) as WebGLTexture | null;
-          if (tex) {
-            attach(tex);
-            return;
-          }
-        }
-      }
-    })();
+    this.overlayImage.drawCover(engine, zoom, imageAlpha);
   }
 }

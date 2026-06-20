@@ -1,32 +1,17 @@
-import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
 import { LandingApproachContext } from '../../types/landing.types';
 import { CameraMode } from '../../Camera';
 import { ThrusterState } from '../../game-objects/Spaceship';
 import { Vector3 } from '../../../types/game.types';
+import { clamp01, lerp, smoothstep, clamp } from './animation-math';
+import { InputLockGuard, ShipDynamicsScope } from './animation-tools';
+import { BaseAnimation } from './base-animation';
 
-function clamp01(x: number): number {
-  return Math.max(0, Math.min(1, x));
-}
-
-function lerp(a: number, b: number, t: number): number {
-  return a + (b - a) * t;
-}
-
-function smoothstep(t: number): number {
-  const c = clamp01(t);
-  return c * c * (3 - 2 * c);
-}
-
-function clamp(x: number, min: number, max: number): number {
-  return Math.max(min, Math.min(max, x));
-}
-
-export class LandingSequenceAnimation implements GameAnimation {
+export class LandingSequenceAnimation extends BaseAnimation {
   public readonly name = 'landing-sequence';
 
   private context!: LandingApproachContext;
-  private blocking = true;
+  private started = false;
   private elapsed = 0;
   private readonly cinematicDuration = 5.0;
   private readonly cameraHeight = 2.3;
@@ -46,26 +31,21 @@ export class LandingSequenceAnimation implements GameAnimation {
   private touchdownTriggered = false;
 
   private prevCameraMode: CameraMode | null = null;
-  private inputBlockers: Array<() => void> = [];
-
-  private savedShipDynamics: { acceleration: number; deceleration: number; maxSpeed: number } | null = null;
+  private readonly inputLock = new InputLockGuard();
+  private readonly shipDynamics = new ShipDynamicsScope();
 
   public configure(context: LandingApproachContext): void {
     this.context = context;
   }
 
-  public start(engine: GameEngine): void {
+  protected override onStart(engine: GameEngine): void {
     const ship = engine.spaceship;
     if (!ship || !this.context) {
       this.blocking = false;
       return;
     }
 
-    this.savedShipDynamics = {
-      acceleration: ship.acceleration,
-      deceleration: ship.deceleration,
-      maxSpeed: ship.maxSpeed
-    };
+    this.shipDynamics.capture(ship, false);
     ship.acceleration = 5;
     ship.deceleration = 7;
     ship.targetSpeed = 0;
@@ -115,7 +95,7 @@ export class LandingSequenceAnimation implements GameAnimation {
 
     this.prevCameraMode = engine.camera?.getCurrentMode?.() ?? null;
     this.configureCamera(engine, this.shipStart);
-    this.installKeyBlockers();
+    this.inputLock.lock();
     this.applyShipPose(ship, this.shipStart, normal, this.approachDir, 0);
     ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
     ship.thrusterState = ThrusterState.BRAKING;
@@ -123,9 +103,12 @@ export class LandingSequenceAnimation implements GameAnimation {
     ship.targetSpeed = this.startSpeed;
 
     engine.notifyLandingSequenceStarted?.(this.context);
+
+    this.started = true;
+    this.onTeardown((eng) => this.teardownShipAndCamera(eng));
   }
 
-  public update(engine: GameEngine, dt: number): boolean {
+  protected override onUpdate(engine: GameEngine, dt: number): boolean {
     const ship = engine.spaceship;
     if (!ship || !this.context) {
       return true;
@@ -146,70 +129,40 @@ export class LandingSequenceAnimation implements GameAnimation {
     }
 
     if (progress >= 1) {
-      this.finish(engine, false);
       return true;
     }
     return false;
   }
 
-  public render(engine: GameEngine): void {
-    // Cinematic uses cámara física; no overlay necesario.
+  public override render(_engine: GameEngine): void {
+    // Cinemática con cámara física; no necesita overlay.
   }
 
-  public isBlockingInputs(): boolean {
-    return this.blocking;
-  }
-
-  public cleanup(engine: GameEngine): void {
-    this.finish(engine, true);
-  }
-
-  private finish(engine: GameEngine, aborted: boolean): void {
-    if (!this.blocking) {
+  protected override onFinish(engine: GameEngine, aborted: boolean): void {
+    if (!this.started) {
       return;
     }
+    // Mantener colisiones desactivadas en estado aterrizado; reactivar solo si la secuencia aborta.
+    engine.collisionsDisabled = !aborted;
+    const outcome = aborted ? 'aborted' : 'landed';
+    try { engine.notifyLandingSequenceFinished?.(outcome, aborted ? null : this.context); } catch {}
+  }
+
+  private teardownShipAndCamera(engine: GameEngine): void {
     const ship = engine.spaceship;
-    if (ship && this.savedShipDynamics) {
-      ship.acceleration = this.savedShipDynamics.acceleration;
-      ship.deceleration = this.savedShipDynamics.deceleration;
-      ship.maxSpeed = this.savedShipDynamics.maxSpeed;
+    if (ship) {
+      this.shipDynamics.restore(ship);
       ship.targetSpeed = 0;
       ship.currentSpeed = 0;
       ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
       ship.voidEnergyPaused = false;
       ship.thrusterState = ThrusterState.IDLE;
     }
-    this.savedShipDynamics = null;
-
-    try { this.inputBlockers.forEach(fn => fn()); } catch {}
-    this.inputBlockers = [];
-
-    // Keep collisions disabled through landed state; only re-enable if sequence aborts
-    if (aborted) {
-      engine.collisionsDisabled = false;
-    } else {
-      engine.collisionsDisabled = true;
-    }
+    this.inputLock.release();
     if (engine.camera && this.prevCameraMode !== null) {
       try { engine.camera.setCameraMode(this.prevCameraMode); } catch {}
     }
     this.prevCameraMode = null;
-
-    const outcome = aborted ? 'aborted' : 'landed';
-    try { engine.notifyLandingSequenceFinished?.(outcome, aborted ? null : this.context); } catch {}
-    this.blocking = false;
-  }
-
-  private installKeyBlockers(): void {
-    const handler = (event: Event) => {
-      event.preventDefault();
-      event.stopPropagation();
-      event.stopImmediatePropagation();
-    };
-    ['keydown', 'keyup', 'keypress'].forEach(evt => {
-      document.addEventListener(evt, handler, { capture: true });
-      this.inputBlockers.push(() => document.removeEventListener(evt, handler, { capture: true }));
-    });
   }
 
   private computeBlendedShipPosition(progress: number): Vector3 {

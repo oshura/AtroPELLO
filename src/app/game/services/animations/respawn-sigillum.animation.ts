@@ -1,10 +1,9 @@
-import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
 import { SpellType } from '../../types/spell.types';
+import { clamp01 } from './animation-math';
+import { BaseAnimation } from './base-animation';
 
-const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
-
-export class RespawnSigillumAnimation implements GameAnimation {
+export class RespawnSigillumAnimation extends BaseAnimation {
   public readonly name = 'respawn-sigil';
   public readonly spellType = SpellType.RESPAWN_SIGILLUM;
   public readonly keepOutlinersVisible = false;
@@ -12,16 +11,17 @@ export class RespawnSigillumAnimation implements GameAnimation {
   private elapsed = 0;
   private readonly duration = 1.35; // seconds
 
-  start(_engine: GameEngine): void {
+  protected override onStart(): void {
     this.elapsed = 0;
+    this.blocking = false; // este sigilo no bloquea la entrada
   }
 
-  update(_engine: GameEngine, dt: number): boolean {
+  protected override onUpdate(_engine: GameEngine, dt: number): boolean {
     this.elapsed += dt;
     return this.elapsed >= this.duration;
   }
 
-  render(engine: GameEngine): void {
+  public override render(engine: GameEngine): void {
     const overlay = engine.overlayRenderer;
     if (!overlay) {
       return;
@@ -37,9 +37,5 @@ export class RespawnSigillumAnimation implements GameAnimation {
       const flashAlpha = Math.min(0.85, flashT * flashT);
       overlay.drawSolid([1, 1, 1], flashAlpha);
     }
-  }
-
-  isBlockingInputs(): boolean {
-    return false;
   }
 }

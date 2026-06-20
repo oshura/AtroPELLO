@@ -1,10 +1,10 @@
-import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
 import { ITargetable } from '../../types/targeting.types';
 import { SpellType } from '../../types/spell.types';
 import { Asteroid } from '../../game-objects';
+import { BaseAnimation } from './base-animation';
 
-export class VoidKinesisAnimation implements GameAnimation {
+export class VoidKinesisAnimation extends BaseAnimation {
   public readonly name = 'void-kinesis';
   public readonly spellType = SpellType.VOID_KINESIS;
 
@@ -12,21 +12,22 @@ export class VoidKinesisAnimation implements GameAnimation {
   private readonly textDuration = 1.5;
   private readonly totalDuration = 3.0;
   private beamStarted = false;
-  private blocking = true;
   private target: ITargetable | null = null;
   private targetPos: { x: number; y: number; z: number } | null = null;
 
-  public start(_engine: GameEngine, target?: ITargetable): void {
+  protected override onStart(_engine: GameEngine, target?: ITargetable): void {
     this.t = 0;
     this.beamStarted = false;
-    this.blocking = true;
     this.target = target ?? null;
     if (this.target) {
-      const anyT: any = this.target;
-      if (anyT.boundingSphere?.center) {
-        this.targetPos = { ...anyT.boundingSphere.center };
-      } else if (anyT.position) {
-        this.targetPos = { x: anyT.position.x, y: anyT.position.y, z: anyT.position.z };
+      const t = this.target as {
+        boundingSphere?: { center?: { x: number; y: number; z: number } };
+        position?: { x: number; y: number; z: number };
+      };
+      if (t.boundingSphere?.center) {
+        this.targetPos = { ...t.boundingSphere.center };
+      } else if (t.position) {
+        this.targetPos = { x: t.position.x, y: t.position.y, z: t.position.z };
       } else {
         this.targetPos = null;
       }
@@ -35,20 +36,16 @@ export class VoidKinesisAnimation implements GameAnimation {
     }
   }
 
-  public update(engine: GameEngine, dt: number): boolean {
+  protected override onUpdate(engine: GameEngine, dt: number): boolean {
     this.t += dt;
     if (!this.beamStarted && this.t >= this.textDuration && this.target && this.targetPos) {
       this.beamStarted = true;
       engine.startVoidKinesisBeam(this.targetPos, this.target as unknown as Asteroid);
     }
-    if (this.t >= this.totalDuration) {
-      this.blocking = false;
-      return true;
-    }
-    return false;
+    return this.t >= this.totalDuration;
   }
 
-  public render(engine: GameEngine): void {
+  public override render(engine: GameEngine): void {
     if (this.t >= this.textDuration) {
       return;
     }
@@ -75,13 +72,5 @@ export class VoidKinesisAnimation implements GameAnimation {
       return Math.max(0, (this.textDuration - this.t) / 0.35);
     }
     return 1.0;
-  }
-
-  public isBlockingInputs(): boolean {
-    return this.blocking;
-  }
-
-  public cleanup(): void {
-    this.blocking = false;
   }
 }

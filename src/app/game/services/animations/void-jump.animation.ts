@@ -1,18 +1,16 @@
-import { GameAnimation } from './types';
 import { ITargetable, TargetType } from '../../types/targeting.types';
 import { GameEngine } from '../../GameEngine';
 import { CameraMode } from '../../Camera';
 import { SpellType } from '../../types/spell.types';
+import { clamp01, lerp } from './animation-math';
+import { InputLockGuard, CameraTakeover, ShipDynamicsScope } from './animation-tools';
+import { BaseAnimation } from './base-animation';
 
-function clamp01(x: number) { return Math.max(0, Math.min(1, x)); }
-function lerp(a: number, b: number, t: number) { return a + (b - a) * t; }
-
-export class VoidJumpAnimation implements GameAnimation {
+export class VoidJumpAnimation extends BaseAnimation {
   public readonly name = 'void-jump';
   public readonly spellType = SpellType.LONGJUMP;
 
   private t = 0; // seconds elapsed
-  private blocking = true;
 
   // Phase timings (seconds) - tuned for slower lookAt, longer accel to 200, and short hold at top speed
   private orientTime = 6.0; // much slower reorientation for dramatic buildup
@@ -27,11 +25,10 @@ export class VoidJumpAnimation implements GameAnimation {
   private teleportMoment = 0; // time at which teleport happens
 
   private target!: ITargetable;
-  private prevCameraMode!: CameraMode;
-  private originalMaxSpeed = 0;
-  private originalAcceleration = 0;
-  private originalDeceleration = 0;
-  private inputBlockers: Array<() => void> = [];
+  private readonly cameraTakeover = new CameraTakeover();
+  private readonly shipDynamics = new ShipDynamicsScope();
+  private readonly inputLock = new InputLockGuard();
+  private cockpitLatched = false;
 
   private overlayAlpha = 0;
   private overlayColor: [number, number, number] = [1, 1, 1];
@@ -44,35 +41,23 @@ export class VoidJumpAnimation implements GameAnimation {
   private streakBaseSpeed = 20; // units per second along -Z (camera forward)
   private streakMaxBoost = 220; // additional speed when at max visual speed
   private lastUpdateTime = 0;
-  private savedVoidEnergy = 0;
-  private cockpitModeLatched = false;
-  private restoreCameraMode = true;
 
-  start(engine: GameEngine, target: ITargetable): void {
-    this.target = target;
-    // Camera: store mode and switch to mode 0 during animation
-    this.prevCameraMode = engine['camera']?.getCurrentMode?.() ?? CameraMode.INMOVILE_EXTERNAL;
-    engine['camera']?.setCameraMode?.(CameraMode.INMOVILE_EXTERNAL);
+  protected override onStart(engine: GameEngine, target?: ITargetable): void {
+    this.target = target as ITargetable;
+    // Cámara: guardar el modo y tomar INMOVILE_EXTERNAL durante la animación.
+    this.cameraTakeover.take(engine.camera, CameraMode.INMOVILE_EXTERNAL);
 
-    // Ship: store dynamics (but DO NOT raise maxSpeed) — we only boost acceleration/deceleration.
-    this.originalMaxSpeed = engine['spaceship']?.maxSpeed ?? 5;
-    this.originalAcceleration = engine['spaceship']?.acceleration ?? 2;
-    this.originalDeceleration = engine['spaceship']?.deceleration ?? 2.5;
-    if (engine['spaceship']) {
-      engine['spaceship'].acceleration = 150; // fast ramp to >max speed
-      engine['spaceship'].deceleration = 200; // quick stop post-teleport
-      engine['spaceship'].voidEnergyPaused = true;
-      this.savedVoidEnergy = engine['spaceship'].voidEnergyCurrent ?? 0;
+    // Nave: guardar dinámica (NO se sube maxSpeed) — solo se potencian accel/decel; pausa energía del vacío.
+    const ship = engine.spaceship;
+    if (ship) {
+      this.shipDynamics.capture(ship, true);
+      ship.acceleration = 150; // ramp rápido por encima de maxSpeed
+      ship.deceleration = 200; // frenada rápida tras el teleport
     }
     // Mark engine void-jump active for HUD/audio clamping
     engine.voidJumpActive = true;
     // Global key blockers: prevent ALL gameplay keys (panels, speed, camera, etc.)
-  const blockKey: EventListener = (e: Event) => { e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation(); };
-    const keyEvents: Array<keyof DocumentEventMap> = ['keydown','keyup','keypress'];
-    keyEvents.forEach((evt) => {
-      document.addEventListener(evt, blockKey, { capture: true });
-      this.inputBlockers.push(() => document.removeEventListener(evt, blockKey, { capture: true }));
-    });
+    this.inputLock.lock();
 
     // Build streak seeds (camera-local positions ahead of camera)
     this.streakSeeds = [];
@@ -89,8 +74,7 @@ export class VoidJumpAnimation implements GameAnimation {
   this.teleportMoment = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime * 0.9; // near end of fade-to-black
   this.totalTime = this.orientTime + this.speedRampTime + this.speedHoldTime + this.fadeInTime + this.imageDisplayTime + this.fadeOutTime;
     this.lastUpdateTime = 0;
-    this.cockpitModeLatched = false;
-    this.restoreCameraMode = true;
+    this.cockpitLatched = false;
 
     // Prepare optional flash images (if configured)
     this.flashTextures = [];
@@ -124,9 +108,11 @@ export class VoidJumpAnimation implements GameAnimation {
     } else {
       this.overlayColor = [1, 1, 1];
     }
+
+    this.onTeardown((eng) => this.teardownVoidJump(eng));
   }
 
-  update(engine: GameEngine, dt: number): boolean {
+  protected override onUpdate(engine: GameEngine, dt: number): boolean {
     this.t += dt;
 
     const ship = engine.spaceship as any;
@@ -219,69 +205,48 @@ export class VoidJumpAnimation implements GameAnimation {
     // Phase 5: fade-in scene (remove overlay)
     const fadeOutStart = holdEnd;
     if (this.t > fadeOutStart) {
-      if (!this.cockpitModeLatched) {
-        engine['camera']?.setCameraMode?.(CameraMode.COCKPIT);
-        this.cockpitModeLatched = true;
-        this.restoreCameraMode = false;
+      if (!this.cockpitLatched) {
+        this.cameraTakeover.setMode(engine.camera, CameraMode.COCKPIT, true);
+        this.cockpitLatched = true;
       }
       const k = clamp01((this.t - fadeOutStart) / this.fadeOutTime);
       this.overlayAlpha = lerp(1.0, 0.0, k);
     }
 
-    // Finish
+    // Fin: el cierre (restaurar nave/cámara/input) lo unifica BaseAnimation vía teardown + onFinish.
     if (this.t >= this.totalTime) {
-      // Reset ship speed limits and camera; restore void energy and resume drain
-      if (engine['spaceship']) {
-        engine['spaceship'].acceleration = this.originalAcceleration;
-        engine['spaceship'].deceleration = this.originalDeceleration;
-        engine['spaceship'].targetSpeed = 0;
-        engine['spaceship'].currentSpeed = 0;
-        engine['spaceship'].voidEnergyCurrent = this.savedVoidEnergy;
-        engine['spaceship'].voidEnergyPaused = false;
-      }
-      // Remove key blockers & flag
-      try { this.inputBlockers.forEach(fn => fn()); this.inputBlockers = []; } catch {}
-      engine.voidJumpActive = false;
-      try { (engine as any).handleVoidJumpCompleted?.(); } catch {}
-      if (this.restoreCameraMode) {
-        engine['camera']?.setCameraMode?.(this.prevCameraMode);
-      } else if (this.cockpitModeLatched) {
-        engine['camera']?.setCameraMode?.(CameraMode.COCKPIT);
-      }
-      this.blocking = false;
       return true;
     }
     return false;
   }
 
-  cleanup(engine: GameEngine): void {
-    // Emergency cleanup - restore all modified game state
-    try {
-      // Restore ship dynamics
-      if (engine['spaceship']) {
-        engine['spaceship'].acceleration = this.originalAcceleration;
-        engine['spaceship'].deceleration = this.originalDeceleration;
-        engine['spaceship'].targetSpeed = 0;
-        engine['spaceship'].voidEnergyCurrent = this.savedVoidEnergy;
-        engine['spaceship'].voidEnergyPaused = false;
+  /** Teardown común (fin natural o cleanup de emergencia): restaura nave/cámara e input UNA vez. */
+  private teardownVoidJump(engine: GameEngine): void {
+    const ship = engine.spaceship;
+    if (ship) {
+      this.shipDynamics.restore(ship); // accel/decel/maxSpeed + energía del vacío + reanudar drenaje
+      ship.targetSpeed = 0;
+    }
+    this.inputLock.release();
+    engine.voidJumpActive = false;
+    this.cameraTakeover.restore(engine.camera);
+  }
+
+  protected override onFinish(engine: GameEngine, aborted: boolean): void {
+    if (!aborted) {
+      // Fin natural: detener la nave del todo y notificar el salto completado.
+      const ship = engine.spaceship;
+      if (ship) {
+        ship.currentSpeed = 0;
       }
-      // Remove all key blockers
-      this.inputBlockers.forEach(fn => fn());
-      this.inputBlockers = [];
-      // Reset flags
-      engine.voidJumpActive = false;
+      try { (engine as any).handleVoidJumpCompleted?.(); } catch {}
+    } else {
+      // Cleanup de emergencia (muerte): reactivar colisiones.
       engine.collisionsDisabled = false;
-      if (this.restoreCameraMode) {
-        engine['camera']?.setCameraMode?.(this.prevCameraMode);
-      } else if (this.cockpitModeLatched) {
-        engine['camera']?.setCameraMode?.(CameraMode.COCKPIT);
-      }
-    } catch (err) {
-      console.error('[VoidJumpAnimation] cleanup() error:', err);
     }
   }
 
-  render(engine: GameEngine): void {
+  override render(engine: GameEngine): void {
     const gl = engine.gl as WebGL2RenderingContext;
     const shaderManager = engine.shaderManager as any;
     const cam = engine.camera;
@@ -373,8 +338,6 @@ export class VoidJumpAnimation implements GameAnimation {
       }
     }
   }
-
-  isBlockingInputs(): boolean { return this.blocking; }
 
   // Helpers
   private getTargetCenter(engine: GameEngine, t: ITargetable): { x: number; y: number; z: number } {

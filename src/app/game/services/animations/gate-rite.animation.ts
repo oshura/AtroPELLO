@@ -1,4 +1,3 @@
-import { GameAnimation } from './types';
 import { ITargetable, TargetType } from '../../types/targeting.types';
 import { GameEngine } from '../../GameEngine';
 import { CameraMode } from '../../Camera';
@@ -10,6 +9,7 @@ import { LoggingService, LogCategory, LogLevel } from '../../../services/logging
 import { GameLogger } from '../../utils/GameLogger';
 import { SpellType } from '../../types/spell.types';
 import { ThrusterState } from '../../game-objects/Spaceship';
+import { BaseAnimation } from './base-animation';
 
 enum GateRitePhase {
   PreFocus = 0,
@@ -24,13 +24,14 @@ enum GateRitePhase {
   Completed = 9,
 }
 
-export class GateRiteAnimation implements GameAnimation {
+export class GateRiteAnimation extends BaseAnimation {
   public readonly name = 'gate-rite';
   public readonly spellType = SpellType.GATE_RITE;
   private phase: GateRitePhase = GateRitePhase.PreFocus;
   private t = 0; // seconds within current phase
   private targetPlanet: ITargetable | null = null;
-  private finished = false;
+  // 'complete' es el flag de estado propio del rito (la base usa su propio 'finished').
+  private complete = false;
   private prevCameraMode: CameraMode | null = null;
   private originalSnapshot: any | null = null; // SolarSystemSnapshot
   private collapseElapsed = 0;
@@ -77,13 +78,13 @@ export class GateRiteAnimation implements GameAnimation {
   private reframeTarget: { x:number;y:number;z:number } | null = null;
   // (removed) shipStartPos no longer required
 
-  start(engine: GameEngine, target: ITargetable): void {
-    if (target.getTargetType() !== TargetType.PLANET) { this.finished = true; return; }
+  protected override onStart(engine: GameEngine, target?: ITargetable): void {
+    if (!target || target.getTargetType() !== TargetType.PLANET) { this.complete = true; return; }
     this.targetPlanet = target;
     this.gateFocusPosition = (target as any)?.position ? { ...(target as any).position } : null;
     this.phase = GateRitePhase.PreFocus;
     this.t = 0;
-    this.finished = false;
+    this.complete = false;
     this.preTransitBrakingActive = true;
     try { engine.showPlaceholderText?.('GATE RITE: INIT', 900); } catch {}
     // Pausar consumo de energía del vacío durante toda la animación
@@ -220,8 +221,8 @@ export class GateRiteAnimation implements GameAnimation {
     try { ship.thrusterState = ThrusterState.BRAKING; } catch {}
   }
 
-  update(engine: GameEngine, dt: number): boolean {
-    if (this.finished) return true;
+  protected override onUpdate(engine: GameEngine, dt: number): boolean {
+    if (this.complete) return true;
     switch (this.phase) {
       case GateRitePhase.CameraZoomOut:
         this.updateCameraZoomOut(engine, dt);
@@ -250,7 +251,7 @@ export class GateRiteAnimation implements GameAnimation {
       default:
         break; // future phases
     }
-    return this.finished;
+    return this.complete;
   }
 
   private updateCameraZoomOut(engine: GameEngine, dt: number) {
@@ -1008,7 +1009,7 @@ export class GateRiteAnimation implements GameAnimation {
           // If targetSpeed was anchored low (e.g., 1), sync to currentSpeed to prevent immediate forced decel
           try { if (ship.targetSpeed < ship.currentSpeed) ship.targetSpeed = ship.currentSpeed; } catch {}
           this.phase = GateRitePhase.Completed;
-          this.finished = true;
+          this.complete = true;
           return;
         }
       }
@@ -1018,7 +1019,7 @@ export class GateRiteAnimation implements GameAnimation {
   private finishEarly(engine: GameEngine, reason: string) {
     try { engine.showPlaceholderText?.('GATE RITE ABORT: ' + reason, 1800); } catch {}
     this.phase = GateRitePhase.Completed;
-    this.finished = true;
+    this.complete = true;
     // Restore camera if we changed it
     try {
       const cam = engine.camera;
@@ -1028,15 +1029,16 @@ export class GateRiteAnimation implements GameAnimation {
     } catch {}
   }
 
-  cleanup(engine: GameEngine): void {
+  override cleanup(engine: GameEngine): void {
     // Emergency cleanup - restore all modified game state
     try {
       // Reset flags
       engine.voidJumpActive = false;
       engine.collisionsDisabled = false;
       // Restore void energy
-      if (engine['spaceship']) {
-        engine['spaceship'].voidEnergyPaused = false;
+      const ship = engine.spaceship;
+      if (ship) {
+        ship.voidEnergyPaused = false;
       }
       // Restore camera
       const cam = engine.camera;
@@ -1046,11 +1048,11 @@ export class GateRiteAnimation implements GameAnimation {
       // Clear streaks
       this.streakSeeds = [];
     } catch (err) {
-      console.error('[GateRiteAnimation] cleanup() error:', err);
+      try { GameLogger.error(LogCategory.ANIMATION, 'GateRiteAnimation cleanup() error', err); } catch {}
     }
   }
 
-  render(engine: GameEngine): void {
+  override render(engine: GameEngine): void {
     // Render speed streaks only once acceleration is active (after travelling completes)
     if (this.phase === GateRitePhase.Transit && this.streakSeeds.length && this.accelActive) {
       try {
@@ -1114,5 +1116,5 @@ export class GateRiteAnimation implements GameAnimation {
     }
   }
 
-  isBlockingInputs(): boolean { return !this.finished; }
+  override isBlockingInputs(): boolean { return !this.complete; }
 }

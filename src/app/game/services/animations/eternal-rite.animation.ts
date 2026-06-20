@@ -1,26 +1,24 @@
-import { GameAnimation } from './types';
 import { GameEngine } from '../../GameEngine';
 import { SpellType } from '../../types/spell.types';
+import { BaseAnimation } from './base-animation';
 
-export class EternalRiteAnimation implements GameAnimation {
+export class EternalRiteAnimation extends BaseAnimation {
   public readonly name = 'eternal-rite';
   public readonly spellType = SpellType.ETERNAL_RITE;
   // No keepOutlinersVisible property - defaults to false (outliners hidden)
 
   private t = 0; // seconds elapsed
   private duration = 2.0; // 2000ms
-  private blocking = true;
   private healthReduced = false;
 
-  public start(_engine: GameEngine): void {
+  protected override onStart(): void {
     this.t = 0;
-    this.blocking = true;
     this.healthReduced = false;
   }
 
-  public update(engine: GameEngine, dt: number): boolean {
+  protected override onUpdate(engine: GameEngine, dt: number): boolean {
     this.t += dt;
-    
+
     // Reduce health to 0 after animation completes
     if (this.t >= this.duration && !this.healthReduced) {
       this.healthReduced = true;
@@ -30,14 +28,10 @@ export class EternalRiteAnimation implements GameAnimation {
       }
     }
 
-    if (this.t >= this.duration + 0.2) {
-      this.blocking = false;
-      return true; // Animation complete
-    }
-    return false;
+    return this.t >= this.duration + 0.2;
   }
 
-  public render(engine: GameEngine): void {
+  public override render(engine: GameEngine): void {
     // Show placeholder text overlay during animation
     const gl = engine.gl;
     if (!gl) return;
@@ -61,14 +55,5 @@ export class EternalRiteAnimation implements GameAnimation {
     ctx.textBaseline = 'middle';
     ctx.fillText('ETERNAL RITE - EMBRACING THE VOID', canvas.width / 2, canvas.height / 2);
     ctx.restore();
-  }
-
-  public isBlockingInputs(): boolean {
-    return this.blocking;
-  }
-
-  public cleanup?(engine: GameEngine): void {
-    this.blocking = false;
-    // No special cleanup needed - death dialog handles the rest
   }
 }

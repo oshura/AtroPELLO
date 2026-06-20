@@ -8,21 +8,52 @@ import { SpellType } from '../../types/spell.types';
 import { LandingApproachContext } from '../../types/landing.types';
 import { ElderGod } from '../../types/cosmic-life.types';
 
+type AnimationCtor = { new (): GameAnimation };
+type PrepareFn = (anim: GameAnimation) => void;
+
+/** Aplica `configure(...)` si la animación lo soporta (sustituye al `(anim as any).configure?`). */
+export function applyConfigure(anim: GameAnimation, ...args: unknown[]): void {
+  const fn = (anim as { configure?: (...a: unknown[]) => void }).configure;
+  if (typeof fn === 'function') {
+    try { fn.apply(anim, args); } catch { /* best-effort */ }
+  }
+}
+
+/** Aplica `setFlashConfig({images})` si la animación lo soporta (void-jump). */
+export function applyFlashConfig(anim: GameAnimation, images: string[]): void {
+  const fn = (anim as { setFlashConfig?: (cfg: { images: string[] }) => void }).setFlashConfig;
+  if (typeof fn === 'function') {
+    try { fn({ images }); } catch { /* best-effort */ }
+  }
+}
+
+/**
+ * Orquesta una única animación a la vez. La carga (lazy import + caché + stub) está unificada en un
+ * registro de loaders + `launch()`; antes había ~480 líneas de `startX`/`preloadX`/`cachedXCtor` casi
+ * idénticas. Cada API pública es un envoltorio fino que define su `prepare` (configure/flash + start).
+ * docs/ARQUITECTURA.md Fase 8.3.
+ */
 @Injectable({ providedIn: 'root' })
 export class AnimationManagerService {
   private current: GameAnimation | null = null;
-  private cachedVoidJumpCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedGateRiteCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedEternalRiteCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedDisruptionRiteCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedAnchoringPulseCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedVoidKinesisCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedLandingSequenceCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedTakeoffSequenceCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedGroundTakeoffCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedAtmosphereLandingCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedQuimioSigillumCtor: ({ new(): GameAnimation }) | null = null;
-  private cachedRespawnSigillumCtor: ({ new(): GameAnimation }) | null = null;
+  private readonly ctorCache = new Map<string, AnimationCtor>();
+
+  /** Registro data-driven: nombre → cargador lazy del módulo de la animación. */
+  private readonly loaders: Record<string, () => Promise<AnimationCtor>> = {
+    'void-jump': () => import('./void-jump.animation').then(m => m.VoidJumpAnimation),
+    'gate-rite': () => import('./gate-rite.animation').then(m => m.GateRiteAnimation),
+    'eternal-rite': () => import('./eternal-rite.animation').then(m => m.EternalRiteAnimation),
+    'disruption-rite': () => import('./disruption-rite.animation').then(m => m.DisruptionRiteAnimation),
+    'anchoring-pulse': () => import('./anchoring-pulse.animation').then(m => m.AnchoringPulseAnimation),
+    'void-kinesis': () => import('./void-kinesis.animation').then(m => m.VoidKinesisAnimation),
+    'quimio-sigillum': () => import('./quimio-sigillum.animation').then(m => m.QuimioSigillumAnimation),
+    'respawn-sigillum': () => import('./respawn-sigillum.animation').then(m => m.RespawnSigillumAnimation),
+    'landing-sequence': () => import('./landing-sequence.animation').then(m => m.LandingSequenceAnimation),
+    'atmosphere-landing': () => import('./atmosphere-landing.animation').then(m => m.AtmosphereLandingAnimation),
+    'ground-takeoff': () => import('./ground-takeoff.animation').then(m => m.GroundTakeoffAnimation),
+    'takeoff-sequence': () => import('./takeoff-sequence.animation').then(m => m.TakeoffSequenceAnimation),
+  };
+
   private elderGodFlashImages: Record<ElderGod, string> = {
     [ElderGod.CTHULHU]: '/assets/GreatCthulhu.webp',
     [ElderGod.AZATHOTH]: '/assets/Azathoth.webp',
@@ -34,54 +65,121 @@ export class AnimationManagerService {
   private readonly nonInterruptibleAnimationNames = new Set<string>(['landing-sequence', 'takeoff-sequence', 'ground-takeoff']);
 
   constructor() {
-    // Preload the void-jump module to avoid first-use delay on 'y'
-    this.preloadVoidJump();
-    // Preload GateRite best-effort
-    this.preloadGateRite();
-    // Preload other rites best-effort
-    this.preloadEternalRite();
-    this.preloadDisruptionRite();
-    this.preloadAnchoringPulse();
-    this.preloadVoidKinesis();
-    this.preloadLandingSequence();
-    this.preloadTakeoffSequence();
-    this.preloadGroundTakeoff();
-    this.preloadAtmosphereLanding();
-    this.preloadQuimioSigillum();
-    this.preloadRespawnSigillum();
+    // Best-effort: precargar todos los módulos para evitar el retardo del primer uso.
+    for (const name of Object.keys(this.loaders)) {
+      this.loaders[name]().then(ctor => this.ctorCache.set(name, ctor)).catch(() => { /* ignore */ });
+    }
   }
 
+  // ---- API pública: envoltorios finos (cada uno define su prepare) ----
+
   public startVoidJump(engine: GameEngine, target: ITargetable): boolean {
-    // Allow replacing blocking-delay to avoid 1-frame flash
-    if (this.current && this.current.name !== 'blocking-delay') return false; // busy
-    // If cached ctor available, start immediately; else lazy-load with stub
-    if (this.cachedVoidJumpCtor) {
-      const anim = new this.cachedVoidJumpCtor();
-      // Configure one image per jump (cycle)
-      const pick = this.pickVoidJumpImage(engine);
-      try { (anim as any).setFlashConfig?.({ images: [pick] }); } catch {}
+    return this.launch(engine, 'void-jump', (anim) => {
+      applyFlashConfig(anim, [this.pickVoidJumpImage(engine)]);
       anim.start(engine, target);
-      this.current = anim;
+    });
+  }
+
+  public startGateRite(engine: GameEngine, target: ITargetable): boolean {
+    return this.launch(engine, 'gate-rite', (anim) => anim.start(engine, target));
+  }
+
+  public startEternalRite(engine: GameEngine): boolean {
+    return this.launch(engine, 'eternal-rite', (anim) => anim.start(engine));
+  }
+
+  public startDisruptionRite(engine: GameEngine, target?: ITargetable): boolean {
+    return this.launch(engine, 'disruption-rite', (anim) => anim.start(engine, target || undefined));
+  }
+
+  public startAnchoringPulse(engine: GameEngine, target?: ITargetable): boolean {
+    return this.launch(engine, 'anchoring-pulse', (anim) => anim.start(engine, target || undefined));
+  }
+
+  public startVoidKinesis(engine: GameEngine, target?: ITargetable): boolean {
+    return this.launch(engine, 'void-kinesis', (anim) => anim.start(engine, target || undefined));
+  }
+
+  public startQuimioSigillum(engine: GameEngine): boolean {
+    return this.launch(engine, 'quimio-sigillum', (anim) => anim.start(engine));
+  }
+
+  public startRespawnSigillum(engine: GameEngine): boolean {
+    return this.launch(engine, 'respawn-sigillum', (anim) => anim.start(engine));
+  }
+
+  public startLandingSequence(engine: GameEngine, context: LandingApproachContext): boolean {
+    return this.launch(engine, 'landing-sequence', (anim) => {
+      applyConfigure(anim, context);
+      anim.start(engine);
+    });
+  }
+
+  public startAtmosphereLandingCinematic(
+    engine: GameEngine,
+    context: LandingApproachContext,
+    options?: { forceReplace?: boolean }
+  ): boolean {
+    return this.launch(engine, 'atmosphere-landing', (anim) => {
+      applyConfigure(anim, context);
+      anim.start(engine);
+    }, { forceReplace: options?.forceReplace });
+  }
+
+  public startTakeoffSequence(
+    engine: GameEngine,
+    context: LandingApproachContext,
+    options?: { phase?: 'ground' | 'atmo-exit'; suppressOverlay?: boolean }
+  ): boolean {
+    const phase = options?.phase ?? 'ground';
+    const name = phase === 'ground' ? 'ground-takeoff' : 'takeoff-sequence';
+    return this.launch(engine, name, (anim) => {
+      applyConfigure(anim, context, { phase, suppressOverlay: options?.suppressOverlay ?? false });
+      anim.start(engine);
+    });
+  }
+
+  // ---- Núcleo de carga/arranque (unifica busy-check + caché + lazy import + stub) ----
+
+  private launch(engine: GameEngine, name: string, prepare: PrepareFn, options?: { forceReplace?: boolean }): boolean {
+    // Permitir reemplazar el 'blocking-delay' para evitar un flash de 1 frame.
+    if (this.current && this.current.name !== 'blocking-delay') {
+      if (!(options?.forceReplace && this.tryForceReplaceCurrentAnimation(engine, name))) {
+        if (options?.forceReplace) {
+          try {
+            const active = this.current?.name ?? 'unknown';
+            GameLogger.warn(LogCategory.ANIMATION, `Animation ${name} blocked by active animation: ${active}`);
+          } catch {}
+        }
+        return false;
+      }
+    }
+    const cached = this.ctorCache.get(name);
+    if (cached) {
+      this.spawn(cached, prepare);
       return true;
     }
     this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod2 = await import('./void-jump.animation');
-        const AnimClass = (mod2 as any).VoidJumpAnimation as { new(): GameAnimation };
-        this.cachedVoidJumpCtor = AnimClass;
-        const anim = new AnimClass();
-        const pick = this.pickVoidJumpImage(engine);
-        try { (anim as any).setFlashConfig?.({ images: [pick] }); } catch {}
-        anim.start(engine, target);
-        this.current = anim;
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load VoidJumpAnimation', e); } catch {}
+    const loader = this.loaders[name];
+    loader()
+      .then(ctor => {
+        this.ctorCache.set(name, ctor);
+        this.spawn(ctor, prepare);
+      })
+      .catch(e => {
+        try { GameLogger.error(LogCategory.ANIMATION, `Failed to load animation ${name}`, e); } catch {}
         this.current = null;
-      }
-    })();
+      });
     return true;
   }
+
+  private spawn(Ctor: AnimationCtor, prepare: PrepareFn): void {
+    const anim = new Ctor();
+    prepare(anim);
+    this.current = anim;
+  }
+
+  // ---- Coordinación por frame y utilidades (sin cambios) ----
 
   public update(engine: GameEngine, dt: number): void {
     if (!this.current) return;
@@ -172,347 +270,6 @@ export class AnimationManagerService {
     return pick;
   }
 
-  private preloadVoidJump(): void {
-    (async () => {
-      try {
-        const mod2 = await import('./void-jump.animation');
-        const AnimClass = (mod2 as any).VoidJumpAnimation as { new(): GameAnimation };
-        this.cachedVoidJumpCtor = AnimClass;
-      } catch {
-        // Best-effort; ignore
-      }
-    })();
-  }
-
-  public startGateRite(engine: GameEngine, target: ITargetable): boolean {
-    // Allow replacing blocking-delay to avoid 1-frame flash
-    if (this.current && this.current.name !== 'blocking-delay') return false;
-    if (this.cachedGateRiteCtor) {
-      const anim = new this.cachedGateRiteCtor();
-      anim.start(engine, target);
-      this.current = anim; return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod = await import('./gate-rite.animation');
-        const Anim = (mod as any).GateRiteAnimation as { new(): GameAnimation };
-        this.cachedGateRiteCtor = Anim;
-        const anim = new Anim();
-        anim.start(engine, target);
-        this.current = anim;
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load GateRiteAnimation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
-  private preloadGateRite(): void {
-    (async () => {
-      try {
-        const mod = await import('./gate-rite.animation');
-        const Anim = (mod as any).GateRiteAnimation as { new(): GameAnimation };
-        this.cachedGateRiteCtor = Anim;
-      } catch { /* ignore */ }
-    })();
-  }
-
-  public startEternalRite(engine: GameEngine): boolean {
-    // Allow replacing blocking-delay to avoid 1-frame flash
-    if (this.current && this.current.name !== 'blocking-delay') return false;
-    if (this.cachedEternalRiteCtor) {
-      const anim = new this.cachedEternalRiteCtor();
-      anim.start(engine);
-      this.current = anim; 
-      return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod = await import('./eternal-rite.animation');
-        const Anim = (mod as any).EternalRiteAnimation as { new(): GameAnimation };
-        this.cachedEternalRiteCtor = Anim;
-        const anim = new Anim();
-        anim.start(engine);
-        this.current = anim;
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load EternalRiteAnimation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
-  private preloadEternalRite(): void {
-    (async () => {
-      try {
-        const mod = await import('./eternal-rite.animation');
-        const Anim = (mod as any).EternalRiteAnimation as { new(): GameAnimation };
-        this.cachedEternalRiteCtor = Anim;
-      } catch { /* ignore */ }
-    })();
-  }
-
-  public startDisruptionRite(engine: GameEngine, target?: ITargetable): boolean {
-    // Allow replacing blocking-delay to avoid 1-frame flash
-    if (this.current && this.current.name !== 'blocking-delay') return false;
-    if (this.cachedDisruptionRiteCtor) {
-      const anim = new this.cachedDisruptionRiteCtor();
-      anim.start(engine, target || undefined);
-      this.current = anim; 
-      return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod = await import('./disruption-rite.animation');
-        const Anim = (mod as any).DisruptionRiteAnimation as { new(): GameAnimation };
-        this.cachedDisruptionRiteCtor = Anim;
-        const anim = new Anim();
-        anim.start(engine, target || undefined);
-        this.current = anim;
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load DisruptionRiteAnimation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
-  private preloadDisruptionRite(): void {
-    (async () => {
-      try {
-        const mod = await import('./disruption-rite.animation');
-        const Anim = (mod as any).DisruptionRiteAnimation as { new(): GameAnimation };
-        this.cachedDisruptionRiteCtor = Anim;
-      } catch { /* ignore */ }
-    })();
-  }
-
-  public startAnchoringPulse(engine: GameEngine, target?: ITargetable): boolean {
-    if (this.current && this.current.name !== 'blocking-delay') return false;
-    if (this.cachedAnchoringPulseCtor) {
-      const anim = new this.cachedAnchoringPulseCtor();
-      anim.start(engine, target || undefined);
-      this.current = anim;
-      return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod = await import('./anchoring-pulse.animation');
-        const Anim = (mod as any).AnchoringPulseAnimation as { new(): GameAnimation };
-        this.cachedAnchoringPulseCtor = Anim;
-        const anim = new Anim();
-        anim.start(engine, target || undefined);
-        this.current = anim;
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load AnchoringPulseAnimation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
-  private preloadAnchoringPulse(): void {
-    (async () => {
-      try {
-        const mod = await import('./anchoring-pulse.animation');
-        const Anim = (mod as any).AnchoringPulseAnimation as { new(): GameAnimation };
-        this.cachedAnchoringPulseCtor = Anim;
-      } catch { /* ignore */ }
-    })();
-  }
-
-  public startVoidKinesis(engine: GameEngine, target?: ITargetable): boolean {
-    if (this.current && this.current.name !== 'blocking-delay') return false;
-    if (this.cachedVoidKinesisCtor) {
-      const anim = new this.cachedVoidKinesisCtor();
-      anim.start(engine, target || undefined);
-      this.current = anim;
-      return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod = await import('./void-kinesis.animation');
-        const Anim = (mod as any).VoidKinesisAnimation as { new(): GameAnimation };
-        this.cachedVoidKinesisCtor = Anim;
-        const anim = new Anim();
-        anim.start(engine, target || undefined);
-        this.current = anim;
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load VoidKinesisAnimation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
-  private preloadVoidKinesis(): void {
-    (async () => {
-      try {
-        const mod = await import('./void-kinesis.animation');
-        const Anim = (mod as any).VoidKinesisAnimation as { new(): GameAnimation };
-        this.cachedVoidKinesisCtor = Anim;
-      } catch { /* ignore */ }
-    })();
-  }
-
-  public startQuimioSigillum(engine: GameEngine): boolean {
-    if (this.current && this.current.name !== 'blocking-delay') {
-      return false;
-    }
-    const launch = (Ctor: { new(): GameAnimation }) => {
-      const anim = new Ctor();
-      anim.start(engine);
-      this.current = anim;
-    };
-    if (this.cachedQuimioSigillumCtor) {
-      launch(this.cachedQuimioSigillumCtor);
-      return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod = await import('./quimio-sigillum.animation');
-        const Anim = (mod as any).QuimioSigillumAnimation as { new(): GameAnimation };
-        this.cachedQuimioSigillumCtor = Anim;
-        launch(Anim);
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load QuimioSigillumAnimation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
-  private preloadQuimioSigillum(): void {
-    (async () => {
-      try {
-        const mod = await import('./quimio-sigillum.animation');
-        const Anim = (mod as any).QuimioSigillumAnimation as { new(): GameAnimation };
-        this.cachedQuimioSigillumCtor = Anim;
-      } catch { /* ignore */ }
-    })();
-  }
-
-  public startRespawnSigillum(engine: GameEngine): boolean {
-    if (this.current && this.current.name !== 'blocking-delay') {
-      return false;
-    }
-    const launch = (Ctor: { new(): GameAnimation }) => {
-      const anim = new Ctor();
-      anim.start(engine);
-      this.current = anim;
-    };
-    if (this.cachedRespawnSigillumCtor) {
-      launch(this.cachedRespawnSigillumCtor);
-      return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod = await import('./respawn-sigillum.animation');
-        const Anim = (mod as any).RespawnSigillumAnimation as { new(): GameAnimation };
-        this.cachedRespawnSigillumCtor = Anim;
-        launch(Anim);
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load RespawnSigillumAnimation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
-  private preloadRespawnSigillum(): void {
-    (async () => {
-      try {
-        const mod = await import('./respawn-sigillum.animation');
-        const Anim = (mod as any).RespawnSigillumAnimation as { new(): GameAnimation };
-        this.cachedRespawnSigillumCtor = Anim;
-      } catch {
-        // best-effort
-      }
-    })();
-  }
-
-  public startLandingSequence(engine: GameEngine, context: LandingApproachContext): boolean {
-    if (this.current && this.current.name !== 'blocking-delay') {
-      return false;
-    }
-    const launch = (Ctor: { new(): GameAnimation }) => {
-      const anim = new Ctor();
-      try { (anim as any).configure?.(context); } catch {}
-      anim.start(engine);
-      this.current = anim;
-    };
-    if (this.cachedLandingSequenceCtor) {
-      launch(this.cachedLandingSequenceCtor);
-      return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod = await import('./landing-sequence.animation');
-        const Anim = (mod as any).LandingSequenceAnimation as { new(): GameAnimation };
-        this.cachedLandingSequenceCtor = Anim;
-        launch(Anim);
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load LandingSequenceAnimation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
-  public startAtmosphereLandingCinematic(
-    engine: GameEngine,
-    context: LandingApproachContext,
-    options?: { forceReplace?: boolean }
-  ): boolean {
-    if (this.current && this.current.name !== 'blocking-delay') {
-      const canPreempt = options?.forceReplace && this.tryForceReplaceCurrentAnimation(engine, 'atmosphere-landing');
-      if (!canPreempt) {
-        if (options?.forceReplace) {
-          try {
-            const active = this.current?.name ?? 'unknown';
-            GameLogger.warn(
-              LogCategory.ANIMATION,
-              `Atmosphere landing cinematic blocked by active animation: ${active}`
-            );
-          } catch {}
-        }
-        return false;
-      }
-    }
-    const launch = (Ctor: { new(): GameAnimation }) => {
-      const anim = new Ctor();
-      try { (anim as any).configure?.(context); } catch {}
-      anim.start(engine);
-      this.current = anim;
-    };
-    if (this.cachedAtmosphereLandingCtor) {
-      launch(this.cachedAtmosphereLandingCtor);
-      return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        const mod = await import('./atmosphere-landing.animation');
-        const Anim = (mod as any).AtmosphereLandingAnimation as { new(): GameAnimation };
-        this.cachedAtmosphereLandingCtor = Anim;
-        launch(Anim);
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load AtmosphereLandingAnimation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
   private tryForceReplaceCurrentAnimation(engine: GameEngine, nextName: string): boolean {
     if (!this.current) {
       return true;
@@ -531,92 +288,5 @@ export class AnimationManagerService {
       GameLogger.warn(LogCategory.ANIMATION, `Preempted animation ${activeName} → ${nextName}`);
     } catch {}
     return true;
-  }
-
-  private preloadLandingSequence(): void {
-    (async () => {
-      try {
-        const mod = await import('./landing-sequence.animation');
-        const Anim = (mod as any).LandingSequenceAnimation as { new(): GameAnimation };
-        this.cachedLandingSequenceCtor = Anim;
-      } catch { /* ignore */ }
-    })();
-  }
-
-  private preloadAtmosphereLanding(): void {
-    (async () => {
-      try {
-        const mod = await import('./atmosphere-landing.animation');
-        const Anim = (mod as any).AtmosphereLandingAnimation as { new(): GameAnimation };
-        this.cachedAtmosphereLandingCtor = Anim;
-      } catch { /* ignore */ }
-    })();
-  }
-
-  public startTakeoffSequence(
-    engine: GameEngine,
-    context: LandingApproachContext,
-    options?: { phase?: 'ground' | 'atmo-exit'; suppressOverlay?: boolean }
-  ): boolean {
-    if (this.current && this.current.name !== 'blocking-delay') {
-      return false;
-    }
-    const phase = options?.phase ?? 'ground';
-    const configureOptions = {
-      phase,
-      suppressOverlay: options?.suppressOverlay ?? false,
-    };
-    const launch = (Ctor: { new(): GameAnimation }) => {
-      const anim = new Ctor();
-      try { (anim as any).configure?.(context, configureOptions); } catch {}
-      anim.start(engine);
-      this.current = anim;
-    };
-    const useGroundPhase = phase === 'ground';
-    const cachedCtor = useGroundPhase ? this.cachedGroundTakeoffCtor : this.cachedTakeoffSequenceCtor;
-    if (cachedCtor) {
-      launch(cachedCtor);
-      return true;
-    }
-    this.current = this.createLoadingStub();
-    (async () => {
-      try {
-        if (useGroundPhase) {
-          const mod = await import('./ground-takeoff.animation');
-          const Anim = (mod as any).GroundTakeoffAnimation as { new(): GameAnimation };
-          this.cachedGroundTakeoffCtor = Anim;
-          launch(Anim);
-        } else {
-          const mod = await import('./takeoff-sequence.animation');
-          const Anim = (mod as any).TakeoffSequenceAnimation as { new(): GameAnimation };
-          this.cachedTakeoffSequenceCtor = Anim;
-          launch(Anim);
-        }
-      } catch (e) {
-        try { GameLogger.error(LogCategory.ANIMATION, 'Failed to load Takeoff animation', e); } catch {}
-        this.current = null;
-      }
-    })();
-    return true;
-  }
-
-  private preloadTakeoffSequence(): void {
-    (async () => {
-      try {
-        const mod = await import('./takeoff-sequence.animation');
-        const Anim = (mod as any).TakeoffSequenceAnimation as { new(): GameAnimation };
-        this.cachedTakeoffSequenceCtor = Anim;
-      } catch { /* ignore */ }
-    })();
-  }
-
-  private preloadGroundTakeoff(): void {
-    (async () => {
-      try {
-        const mod = await import('./ground-takeoff.animation');
-        const Anim = (mod as any).GroundTakeoffAnimation as { new(): GameAnimation };
-        this.cachedGroundTakeoffCtor = Anim;
-      } catch { /* ignore */ }
-    })();
   }
 }
