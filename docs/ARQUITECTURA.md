@@ -623,6 +623,19 @@ y, si la nave se acerca a <50u, **huye con un destello**; si logras destruirla/l
   farol "lucen encendidos"; el techo (azul oscuro, lum 0.40) queda SOMBREADO normal (corrige feedback: antes en el modo plano el techo salía iluminado). En
   `renderPlanetDebris` la TARDIS usa el litProgram con `setLitVertexColorMode(true)`+`setLitEmissive(1)` y RESETEA a 0 tras dibujarla. Setters nuevos en ShaderManager.
 
+#### Fase 6.4 — Feature: Tortuga estelar (criatura neutral errante) (2026-06-21)
+Segunda criatura procedural (tras el TARDIS): la arquitectura escala a entidades ANIMADAS con trayectoria propia.
+- `game-objects/space-turtle.ts`: SpaceTurtleObject extends GameObject. Geometria por PARTES (14 cajas: caparazon/plastron, cabeza+pico+2 ojos glow,
+  4 aletas, cola) construida UNA vez a nivel de modulo (TURTLE_GEO). Nado lento via applyPose(phase): cada grupo (aletas/cabeza/cola) rota despacio sobre un
+  pivote; recalcula vertices+normales y el motor re-sube buffers (uploadDynamicGeometry). Ojos = emissive (reusa el shader gateado). OJO PATRON: los campos de
+  animacion se asignan en el CUERPO del constructor (tras super()), porque useDefineForClassFields redefine los campos de la subclase a undefined justo tras el
+  super, pisando lo asignado en initGeometry (que el super invoca). Spec 3 tests.
+- services/state/space-turtle-system.ts: NEUTRAL (no colisiona). Maquina de estados: entra por un borde (linde = planeta mas lejano x1.25), viaja LENTO al sol,
+  lo ATRAVIESA sin mas, y sale a MUCHA mas velocidad hasta desaparecer en la linde. Suelta polvo estelar. Host de 7. Primer avistamiento ~18s, luego cada 80-170s,
+  una a la vez. Spec 5 tests.
+- Motor: spaceTurtleSystem + host; update por frame; renderSpaceTurtle (litProgram + vertexColor + emissive, re-sube geometria animada, libera buffers al
+  cambiar/desaparecer); computeSystemRadius; clear al cambiar de sistema. 290/290 + build prod. Build 0.0.23.
+
 #### Fase 5.3 — SpellSystem (en progreso)
 - **5.3-parcial `AnchoringPulseBeam`** (2026-06-20, `services/spells/anchoring-pulse-beam.ts`): PRIMERA rebanada de 5.3. El haz que ancla
   un asteroide y lo arrastra hacia la nave hasta capturarlo (→ carga). La clase POSEE el estado del haz + su lógica (`start`/`update`/`finish`);

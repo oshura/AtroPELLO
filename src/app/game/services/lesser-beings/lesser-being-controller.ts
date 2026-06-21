@@ -14,16 +14,20 @@ enum LesserBeingState {
   SEEKING_PLANET = 'SEEKING_PLANET',
   ORBITING_PLANET = 'ORBITING_PLANET',
   ENGAGING_SHIP = 'ENGAGING_SHIP',
+  ENGAGING_TURTLE = 'ENGAGING_TURTLE',
   LANDING = 'LANDING',
   DESPAWNING = 'DESPAWNING'
 }
 
 const SHIP_OVER_PLANET_MARGIN = 0;
 const PLANET_REDIRECT_MARGIN = 40;
+const REEVAL_INTERVAL_MS = 30000;   // los seres reevalúan su objetivo cada 30 s (y al aparecer/irse la tortuga)
+const TURTLE_ATTACK_DAMAGE = 120;   // daño directo por golpe de un ser menor a la tortuga (tanque de 12000 HP)
 
 type TargetDescriptor =
   | { kind: 'planet'; planetId: string; position: Vector3; radius: number }
   | { kind: 'ship'; position: Vector3 }
+  | { kind: 'turtle'; position: Vector3 }
   | { kind: 'orbit'; position: Vector3; radius: number };
 
 interface BeingContext {
@@ -31,6 +35,7 @@ interface BeingContext {
   state: LesserBeingState;
   target: TargetDescriptor | null;
   timeSinceLastAttack: number;
+  reevalTimer: number; // ms hasta la próxima reevaluación de objetivo
 }
 
 interface PlanetDistanceInfo {
@@ -43,6 +48,7 @@ interface PlanetDistanceInfo {
 export class LesserBeingController {
   private contexts: Map<string, BeingContext> = new Map();
   private planetReservations: Map<string, string> = new Map();
+  private lastTurtlePresent = false; // para forzar reevaluación al aparecer/irse la tortuga
 
   constructor(private readonly engine: GameEngine) {}
 
@@ -54,7 +60,8 @@ export class LesserBeingController {
       being,
       state: LesserBeingState.IDLE,
       target: null,
-      timeSinceLastAttack: 0
+      timeSinceLastAttack: 0,
+      reevalTimer: Math.random() * REEVAL_INTERVAL_MS // jitter inicial: no reevaluar todos a la vez
     });
   }
 
@@ -80,6 +87,14 @@ export class LesserBeingController {
   }
 
   public update(deltaTime: number): void {
+    // Aparición/desaparición de la tortuga → forzar reevaluación inmediata de TODOS los seres.
+    const turtlePresent = !!this.engine.getSpaceTurtle?.()?.isActive?.();
+    if (turtlePresent !== this.lastTurtlePresent) {
+      this.lastTurtlePresent = turtlePresent;
+      for (const context of this.contexts.values()) {
+        context.reevalTimer = 0;
+      }
+    }
     for (const context of this.contexts.values()) {
       this.advanceContext(context, deltaTime);
     }
@@ -94,6 +109,15 @@ export class LesserBeingController {
 
     context.timeSinceLastAttack += deltaTime * 1000;
 
+    // Reevaluación periódica del objetivo (cada 30 s), salvo si está aterrizando/despawneando.
+    context.reevalTimer -= deltaTime * 1000;
+    if (context.reevalTimer <= 0 &&
+        context.state !== LesserBeingState.LANDING &&
+        context.state !== LesserBeingState.DESPAWNING) {
+      context.reevalTimer = REEVAL_INTERVAL_MS;
+      this.reevaluateTarget(context);
+    }
+
     switch (context.state) {
       case LesserBeingState.IDLE:
         this.acquireInitialState(context);
@@ -106,6 +130,9 @@ export class LesserBeingController {
         break;
       case LesserBeingState.ENGAGING_SHIP:
         this.updateEngaging(context, deltaTime);
+        break;
+      case LesserBeingState.ENGAGING_TURTLE:
+        this.updateEngagingTurtle(context, deltaTime);
         break;
       case LesserBeingState.LANDING:
         this.updateLanding(context, deltaTime);
@@ -136,6 +163,52 @@ export class LesserBeingController {
     } else {
       context.state = LesserBeingState.ORBITING_PLANET;
       context.target = this.makeOrbitTarget(context);
+    }
+  }
+
+  /** Reevaluación de objetivo (cada 30 s o al aparecer/irse la tortuga): la tortuga manda; si no, lógica de entrada. */
+  private reevaluateTarget(context: BeingContext): void {
+    const turtle = this.engine.getSpaceTurtle?.();
+    if (turtle && turtle.isActive()) {
+      if (context.state !== LesserBeingState.ENGAGING_TURTLE) {
+        this.lockOnTurtle(context);
+      }
+    } else {
+      this.acquireInitialState(context);
+    }
+  }
+
+  private lockOnTurtle(context: BeingContext): void {
+    this.releasePlanetReservation(context);
+    const turtle = this.engine.getSpaceTurtle?.();
+    const position: Vector3 = turtle ? { ...turtle.position } : { x: 0, y: 0, z: 0 };
+    context.target = { kind: 'turtle', position };
+    context.state = LesserBeingState.ENGAGING_TURTLE;
+  }
+
+  private updateEngagingTurtle(context: BeingContext, deltaTime: number): void {
+    const { being } = context;
+    const turtle = this.engine.getSpaceTurtle?.();
+    if (!turtle || !turtle.isActive()) {
+      // La tortuga huyó o la mataron: reevaluar como si acabara de entrar.
+      this.acquireInitialState(context);
+      return;
+    }
+    const turtlePos = turtle.position;
+    context.target = { kind: 'turtle', position: { ...turtlePos } };
+
+    const direction = this.directionTo(being, turtlePos);
+    const distance = this.distanceTo(being, turtlePos);
+    const maxRange = this.computeDesiredRange(context)[1] ?? 200;
+    being.steerTowards(direction, deltaTime);
+    being.adjustSpeed(distance > maxRange ? being.stats.maxSpeed : being.stats.maxSpeed * 0.5, deltaTime);
+
+    // Ataque: daño DIRECTO a la tortuga (los ataques normales del ser irían a la nave, no a un objeto).
+    const attack = being.attackProfile;
+    const inRange = !attack.maxRange || distance <= attack.maxRange;
+    if (inRange && context.timeSinceLastAttack >= attack.cooldownMs) {
+      this.engine.damageSpaceTurtle?.(TURTLE_ATTACK_DAMAGE);
+      context.timeSinceLastAttack = 0;
     }
   }
 

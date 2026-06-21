@@ -10,6 +10,7 @@ import {
   Spaceship, ThrusterState,
   Asteroid, SuperAsteroid, MegaAsteroid,
   createTardisCompanion,
+  SpaceTurtleObject,
   Planet, PlanetColorName, PlanetType, DwarfPlanet, Protoplanet,
   GaseousPlanet, GiantPlanet, RingedPlanet, EarthSplitPlanet,
   Sun, Portal,
@@ -32,6 +33,7 @@ import { AtmosphereAutoLandingLock, AtmosphereAutoLandingLockHost } from './serv
 import { AtmosphereAutoTakeoff, AtmosphereAutoTakeoffHost } from './services/state/atmosphere-auto-takeoff';
 import { SuppressionWindow } from './services/state/suppression-window';
 import { TardisCompanionSystem, TardisCompanionHost } from './services/state/tardis-companion-system';
+import { SpaceTurtleSystem, SpaceTurtleHost } from './services/state/space-turtle-system';
 import { createPortalFromSnapshot } from './services/game/portal-state.codec';
 import { captureLesserBeingSnapshot, cloneLesserBeingSnapshot } from './services/game/lesser-being-state.codec';
 import { resolveSnapshotId, resolveSystemId, resolveSystemKey } from './services/game/system-identity';
@@ -624,6 +626,61 @@ export class GameEngine {
     emitMarquee: (text) => { try { this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.VOID_RITUAL, text); } catch {} },
     log: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
   };
+  // Tortuga estelar neutral que cruza el sistema (entra → atraviesa el sol → sale → desaparece). Lógica FUERA del engine.
+  private readonly spaceTurtleSystem = new SpaceTurtleSystem();
+  private renderedTurtle: SpaceTurtleObject | null = null;
+  private readonly spaceTurtleHost: SpaceTurtleHost = {
+    getSunPosition: () => this.gameState.sun ? { ...this.gameState.sun.position } : null,
+    getSystemRadius: () => {
+      const sun = this.gameState.sun?.position;
+      if (!sun) return 24000;
+      // Linde = órbita del planeta más lejano (Plutón en la Tierra): la tortuga NO aparece más lejos que eso.
+      let farthest = 6000;
+      for (const p of this.gameState.planets) {
+        if ((p as unknown) === this.gameState.sun) continue;
+        const d = Math.hypot(p.position.x - sun.x, p.position.y - sun.y, p.position.z - sun.z);
+        if (d > farthest) farthest = d;
+      }
+      const ship = this.spaceship?.position;
+      const playerDist = ship ? Math.hypot(ship.x - sun.x, ship.y - sun.y, ship.z - sun.z) : 0;
+      // Por delante del jugador (flyby) pero sin pasarse de la linde.
+      return Math.min(farthest, Math.max(playerDist + 8000, 12000));
+    },
+    isReadyForSpawn: () => !!this.spaceship && !this.voidJumpActive &&
+      this.resolveSystemId() !== 'human-system' && // nunca en el sistema solar de la Tierra, solo en otros
+      (typeof this.animationManager?.getCurrentAnimation !== 'function' || this.animationManager.getCurrentAnimation() === null),
+    randomUnitDirection: () => {
+      // Sesgar la entrada hacia la dirección del jugador desde el sol → flyby garantizado de camino al sol.
+      const sun = this.gameState.sun?.position;
+      const ship = this.spaceship?.position;
+      if (sun && ship) {
+        const dx = ship.x - sun.x, dy = ship.y - sun.y, dz = ship.z - sun.z;
+        const len = Math.hypot(dx, dy, dz);
+        if (len > 1) {
+          const j = 0.06; // jitter pequeño → pasa cerca del jugador
+          return {
+            x: dx / len + (Math.random() * 2 - 1) * j,
+            y: dy / len + (Math.random() * 2 - 1) * j * 0.6,
+            z: dz / len + (Math.random() * 2 - 1) * j,
+          };
+        }
+      }
+      const phi = Math.random() * Math.PI * 2;
+      const y = (Math.random() * 2 - 1) * 0.22;
+      const r = Math.sqrt(Math.max(1e-4, 1 - y * y));
+      return { x: r * Math.cos(phi), y, z: r * Math.sin(phi) };
+    },
+    rollD100: () => 1 + Math.floor(Math.random() * 100),
+    spawnDust: (pos) => { try { this.particleEffects?.createDestructionDebris(pos, 0.7, { r: 0.75, g: 0.88, b: 1.0 }); } catch {} },
+    announce: (text) => {
+      try { this.showPlaceholderText(text, 3500); } catch {}
+      try { this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.VOID_RITUAL, text); } catch {}
+    },
+    addCargoEntry: (entry) => { try { this.gameState.upsertCargoEntry(entry); } catch {} },
+    logInfo: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
+  };
+  private registeredTurtleId: string | null = null;
+  private turtleKilledByBeing = false; // true si la tortuga muere por un ser menor (sin botín para el jugador)
   // Track last applied snapshot id (debug)
   private lastAppliedSnapshotId: string | null = null;
   // Current active solar system snapshot (para acceder a configuración de debris efímero)
@@ -3491,6 +3548,7 @@ export class GameEngine {
     this.gameState.sun = null;
     this.planetDebris.clear();
     this.tardisCompanionSystem.clear();
+    this.spaceTurtleSystem.clear();
     const persistedDebrisPlanets = new Set<string>();
     if (Array.isArray(snapshot.planetDebris)) {
       for (const entry of snapshot.planetDebris) {
@@ -4334,6 +4392,7 @@ export class GameEngine {
     this.lesserBeingController?.update(deltaTime);
     this.updateLesserBeings(deltaTime);
     this.lesserBeingCombat?.update(deltaTime);
+    this.spaceTurtleSystem.update(this.spaceTurtleHost, deltaTime);
 
     // Apply ongoing collision slide (lateral reposition over ~1s)
     if (this.collisionSlide) {
@@ -4756,6 +4815,17 @@ export class GameEngine {
 
     // Actualizar sistema de targeting con objetos disponibles (catálogo genérico)
   let availableTargets = this.targetCatalog.getAllTargets();
+  // Tortuga estelar: target seleccionable (y destruible). Registra su callback de destrucción una vez.
+  try {
+    const turtle = this.spaceTurtleSystem.getRenderable();
+    if (turtle && turtle.isActive()) {
+      if (this.registeredTurtleId !== turtle.id) {
+        this.registeredTurtleId = turtle.id;
+        this.registerDestructionCallback(turtle);
+      }
+      if (!availableTargets.some(t => t.id === turtle.id)) availableTargets.push(turtle as unknown as ITargetable);
+    }
+  } catch {}
   // Incluir asteroides efímeros como targets adicionales (tipo ASTEROID)
   try {
     if (this.ephemeralAsteroids.length) {
@@ -5888,6 +5958,15 @@ export class GameEngine {
 
     // Premio si es la TARDIS y se destruyó/loteó (el sistema decide; nada si solo huyó por proximidad).
     this.tardisCompanionSystem.onObjectDestroyed(obj, this.tardisCompanionHost);
+    // Tortuga estelar destruida: si la mató el jugador → botín; si la mató un ser menor → solo desaparece.
+    if ((obj as { isSpaceTurtle?: boolean }).isSpaceTurtle) {
+      if (this.turtleKilledByBeing) {
+        this.turtleKilledByBeing = false;
+        this.spaceTurtleSystem.clear();
+      } else {
+        this.spaceTurtleSystem.notifyDestroyed(this.spaceTurtleHost);
+      }
+    }
 
     // Create destruction debris particles at object's position
     if (this.particleEffects && obj.position) {
@@ -6603,6 +6682,7 @@ export class GameEngine {
       this.gameState.sun = null;
       this.planetDebris.clear();
     this.tardisCompanionSystem.clear();
+    this.spaceTurtleSystem.clear();
       
       // Clear cluster service (will be repopulated by createGameObjects)
       // Note: AsteroidClusterService doesn't have clear() method, objects will be replaced
@@ -7101,6 +7181,11 @@ export class GameEngine {
 
   // Only show center label when the star has an explicit customName; do not fallback to id
   const centerLabel = this.gameState.sun ? ((this.gameState.sun as any).customName || undefined) : undefined;
+  // Tortuga estelar: marcador neutral (verde) en el mapa para que se la pueda localizar mientras cruza.
+  const turtle = this.spaceTurtleSystem.getRenderable();
+  if (turtle) {
+    enemies.push({ id: turtle.id, pos: { x: turtle.position.x, y: turtle.position.y, z: turtle.position.z }, label: '🐢 Tortuga estelar', color: '#3ad07a', radiusPx: 6 });
+  }
   this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, enemies, ship, portals, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
       this.flightVectorOverlay?.setState(null);
@@ -8053,6 +8138,7 @@ export class GameEngine {
     
     // Renderizar debris asociados a planetas con LOD sencillo
     this.renderPlanetDebris();
+    this.renderSpaceTurtle();
     // Desbindeo explícito de texturas usadas por el pase texturizado de planetas
     this.gl.activeTexture(this.gl.TEXTURE0);
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
@@ -8067,6 +8153,36 @@ export class GameEngine {
   /** Convert float RGB [0..1] to hex string */
   private rgbToHex(r: number, g: number, b: number): string {
     return rgbToHex(r, g, b);
+  }
+
+  /** Renderiza la tortuga estelar (si la hay) con el shader iluminado + color por vértice + emissive (ojos). */
+  private renderSpaceTurtle(): void {
+    const turtle = this.spaceTurtleSystem.getRenderable();
+    // Liberar los buffers de la tortuga anterior cuando cambia o desaparece (evita leaks por avistamiento).
+    if (turtle !== this.renderedTurtle) {
+      if (this.renderedTurtle && this.gl) { try { this.renderedTurtle.destroy(this.gl); } catch {} }
+      this.renderedTurtle = turtle;
+    }
+    if (!turtle || !this.gl || !this.shaderManager || !this.camera) {
+      return;
+    }
+    const gl = this.gl;
+    if (!turtle.vertexBuffer) turtle.initBuffers(gl);
+    turtle.uploadDynamicGeometry(gl); // la pose de nado cambia cada frame
+    const cam = this.camera;
+    const camPosArr = new Float32Array([cam.position.x, cam.position.y, cam.position.z]);
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    this.shaderManager.useLitProgram();
+    this.calculateNormalMatrix(turtle.modelMatrix);
+    this.shaderManager.setLitMatrices(turtle.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+    this.shaderManager.setLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength);
+    this.shaderManager.setSpecular(camPosArr, 0.2, 14.0);
+    this.shaderManager.setLitVertexColorMode(true);
+    this.shaderManager.setLitEmissive(1.0);
+    turtle.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+    this.shaderManager.setLitVertexColorMode(false);
+    this.shaderManager.setLitEmissive(0.0);
   }
 
   /** Renderiza los mega-asteroides de debris vinculados a planetas con un LOD simple */
@@ -12556,6 +12672,24 @@ export class GameEngine {
 
   public getLesserBeingCombat(): LesserBeingCombatService | null {
     return this.lesserBeingCombat;
+  }
+
+  /** La tortuga estelar activa (o null). La usan los seres menores para reevaluar objetivo y atacarla. */
+  public getSpaceTurtle(): SpaceTurtleObject | null {
+    return this.spaceTurtleSystem.getRenderable();
+  }
+
+  /** Daño directo a la tortuga (lo aplican los seres menores; sus ataques normales van a la nave). Si la
+   * mata un ser menor NO hay botín para el jugador (solo desaparece). */
+  public damageSpaceTurtle(amount: number): void {
+    const turtle = this.spaceTurtleSystem.getRenderable();
+    if (!turtle || !turtle.isActive() || amount <= 0) {
+      return;
+    }
+    if (turtle.healthCurrent - amount <= 0) {
+      this.turtleKilledByBeing = true; // la destrucción la disparará el setter de healthCurrent
+    }
+    this.applyDamageToObject(turtle, amount);
   }
 
   public findNearestFreePlanet(position: Vector3): Planet | null {

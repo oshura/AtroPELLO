@@ -11,6 +11,7 @@ export * from './Asteroid';
 export * from './SuperAsteroid';
 export * from './MegaAsteroid';
 export * from './TardisObject';
+export * from './space-turtle';
 
 // Planetas
 export * from './Planet';
