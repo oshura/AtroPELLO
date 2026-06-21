@@ -2,13 +2,14 @@ import { OverlayImage } from './animation-overlay';
 import { GameEngine } from '../../GameEngine';
 
 const fakeTex = {} as WebGLTexture;
+const tick = () => new Promise(resolve => setTimeout(resolve, 0));
 
 function engineWith(textureManager: unknown, overlayRenderer: unknown): GameEngine {
   return { textureManager, overlayRenderer } as unknown as GameEngine;
 }
 
 describe('OverlayImage', () => {
-  it('load adjunta una textura ya existente y su tamaño', () => {
+  it('load reusa una textura real ya cargada (con tamaño)', () => {
     const tm = {
       getTexture: () => fakeTex,
       getTextureSize: () => ({ width: 800, height: 600 }),
@@ -16,6 +17,45 @@ describe('OverlayImage', () => {
     const img = new OverlayImage();
     img.load(engineWith(tm, null), 'k', ['/assets/x.webp']);
     expect(img.ready).toBe(true);
+  });
+
+  it('NO reusa un placeholder de un fallo anterior (textura sin tamaño)', async () => {
+    // getTexture devuelve el placeholder blanco, pero sin tamaño ⇒ no debe darse por cargada al instante.
+    const tm = {
+      getTexture: () => fakeTex,
+      getTextureSize: () => null,
+      loadTextureFromUrl: () => Promise.resolve(null), // y todas las URLs fallan
+    };
+    const img = new OverlayImage();
+    img.load(engineWith(tm, null), 'k', ['/assets/x.webp', '/app/assets/x.webp']);
+    await tick();
+    expect(img.ready).toBe(false);
+  });
+
+  it('queda lista usando el VALOR DE RETORNO de loadTextureFromUrl (no getTexture)', async () => {
+    const tm = {
+      getTexture: () => null, // getTexture devolvería el placeholder/null...
+      getTextureSize: () => null,
+      loadTextureFromUrl: () => Promise.resolve(fakeTex), // ...pero el retorno indica éxito
+    };
+    const img = new OverlayImage();
+    img.load(engineWith(tm, null), 'k', ['/assets/x.webp']);
+    await tick();
+    expect(img.ready).toBe(true);
+  });
+
+  it('prueba todas las URLs candidatas hasta que una resuelve', async () => {
+    let calls = 0;
+    const tm = {
+      getTexture: () => null,
+      getTextureSize: () => null,
+      loadTextureFromUrl: () => { calls++; return Promise.resolve(calls >= 2 ? fakeTex : null); },
+    };
+    const img = new OverlayImage();
+    img.load(engineWith(tm, null), 'k', ['/assets/x.webp', '/app/assets/x.webp', '/src/app/assets/x.webp']);
+    await tick();
+    expect(img.ready).toBe(true);
+    expect(calls).toBe(2); // paró en la 2ª (la que resolvió)
   });
 
   it('sin textureManager no carga', () => {
@@ -37,20 +77,29 @@ describe('OverlayImage', () => {
     expect(drawTextureCover).toHaveBeenCalledWith(fakeTex, 800, 600, 1.2, 0.8);
   });
 
-  it('drawCover no hace nada si no está lista o alpha<=0', () => {
+  it('drawCover NO dibuja un placeholder sin tamaño (evita el flash blanco)', async () => {
+    const tm = {
+      getTexture: () => fakeTex,
+      getTextureSize: () => null, // sin tamaño = placeholder
+      loadTextureFromUrl: () => Promise.resolve(fakeTex),
+    };
     const drawTextureCover = jasmine.createSpy('drawTextureCover');
-    const engine = engineWith({ getTexture: () => null }, { drawTextureCover });
+    const engine = engineWith(tm, { drawTextureCover });
     const img = new OverlayImage();
-    img.load(engine, 'k', ['/assets/x.webp']); // no existe ⇒ async, sigue no-ready
-    img.drawCover(engine, 1.2, 0.8);
+    img.load(engine, 'k', ['/x']);
+    await tick();
+    expect(img.ready).toBe(true);
+    img.drawCover(engine, 1.0, 1.0);
     expect(drawTextureCover).not.toHaveBeenCalled();
+  });
 
-    // lista pero alpha 0
-    const tm2 = { getTexture: () => fakeTex, getTextureSize: () => ({ width: 10, height: 10 }) };
-    const engine2 = engineWith(tm2, { drawTextureCover });
-    const img2 = new OverlayImage();
-    img2.load(engine2, 'k', ['/x']);
-    img2.drawCover(engine2, 1.0, 0);
+  it('drawCover no hace nada con alpha<=0', () => {
+    const tm = { getTexture: () => fakeTex, getTextureSize: () => ({ width: 10, height: 10 }) };
+    const drawTextureCover = jasmine.createSpy('drawTextureCover');
+    const engine = engineWith(tm, { drawTextureCover });
+    const img = new OverlayImage();
+    img.load(engine, 'k', ['/x']);
+    img.drawCover(engine, 1.0, 0);
     expect(drawTextureCover).not.toHaveBeenCalled();
   });
 });

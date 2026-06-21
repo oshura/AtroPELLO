@@ -3,6 +3,7 @@ import {
   resolvePlanetCenterFromContext,
   deriveLandingNormalFromContext,
   resolveLandingContactPoint,
+  sampleLandingSurfaceContext,
 } from './landing-geometry';
 import { Planet } from '../../game-objects/Planet';
 import { LandingApproachContext } from '../../types/landing.types';
@@ -86,6 +87,40 @@ describe('landing-geometry', () => {
       const planets = planetsWith({ id: 'p1', position: { x: 0, y: 0, z: 0 } });
       const ctx = { planetId: 'p1', surfaceNormal: { x: 0, y: 1, z: 0 }, radius: 6 } as unknown as LandingApproachContext;
       expect(resolveLandingContactPoint(planets, ctx)).toEqual({ x: 0, y: 6, z: 0 });
+    });
+  });
+
+  describe('sampleLandingSurfaceContext', () => {
+    it('surfacePoint = centro + normal·radio (radio ≥ baseSurfaceRadius)', () => {
+      const ctx = { radius: 100 } as unknown as LandingApproachContext;
+      const out = sampleLandingSurfaceContext(ctx, {
+        normal: { x: 0, y: 1, z: 0 },
+        planetCenter: { x: 0, y: 0, z: 0 },
+        stateGroundRadius: 600,
+        stateCollisionRadius: 0,
+        terrainSeed: 1234,
+        detailFactor: 1,
+      });
+      const radius = out.radius as number;
+      expect(radius).toBeGreaterThanOrEqual(600); // base = max(1,600,0,100)
+      expect(out.surfaceNormal).toEqual({ x: 0, y: 1, z: 0 });
+      expect((out.surfacePoint as { y: number }).y).toBeCloseTo(radius, 5); // centro.y(0) + normal.y(1)·radio
+      expect((out.surfacePoint as { x: number }).x).toBeCloseTo(0, 5);
+      expect(out.planetCenter).toEqual({ x: 0, y: 0, z: 0 });
+    });
+
+    it('sin centro lo deriva desde surfacePoint y mantiene la normal', () => {
+      const ctx = { radius: 50, surfacePoint: { x: 0, y: 100, z: 0 } } as unknown as LandingApproachContext;
+      const out = sampleLandingSurfaceContext(ctx, {
+        normal: { x: 0, y: 1, z: 0 },
+        planetCenter: null,
+        stateGroundRadius: 0,
+        stateCollisionRadius: 0,
+        terrainSeed: 0,
+        detailFactor: 1,
+      });
+      expect(out.planetCenter).toBeTruthy();
+      expect(out.surfaceNormal).toEqual({ x: 0, y: 1, z: 0 });
     });
   });
 });

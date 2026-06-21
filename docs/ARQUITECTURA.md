@@ -493,7 +493,135 @@ applyAudioFocus/stopAudioFocus/cancelAudioFocus). El motor delega y satisface `L
 playLandingPanelAir/releaseLandingCinematicCameraHold/isLandingCameraHoldDeferredForTakeoff/logWarn) con adaptador cacheado. `awaitingUser` se
 expone por getter (lo leen atmósfera/cinematics); takeoff/exit usan `cancelAudioFocus()`. Spec real de 6 tests. GameEngine 12.302 → 12.251 (−51).
 219/219 + build prod verdes. Gameplay-gated: aterrizar → panel aparece (con su loop de aire), cerrar/quedarse, despegar, colapso de planeta (panel
-se cierra), y que el "hold" de cámara se libere bien. SIGUIENTE: sub-rebanada 2 (`AtmosphereAutoLandingCamera`, su `update` es HOT).
+se cierra), y que el "hold" de cámara se libere bien.
+
+**✅ Sub-rebanada 2 IMPLEMENTADA** (2026-06-20, `services/state/atmosphere-auto-landing-camera.ts`): `AtmosphereAutoLandingCamera` posee el estado
+(active/prevMode/normal/contactPoint/startedAt/dustTriggered/pendingContext) + las 5 constantes + la lógica (start/stop/update + applyPose/shouldRelease/
+computeLateralSpeed/projectOntoPlane/triggerDust). **Math directa de `vector-math`** (vec3Normalize/Dot/Length) → SIN indirección de host en el hot path.
+`update` es HOT pero con early-return barato (`!active`). Host de 10 (getCamera/getSpaceship/getLandingContext/hasCinematicCameraHold/deriveLandingNormal/
+resolveContactPoint/buildPerpendicularGroundDirection[compartido, se queda en el motor]/spawnAutoLandingDust/startAutoLandingCue/stopAutoLandingCue),
+cacheado. El `pendingContext` (bridge con el hold cinemático) se gestiona con `takePending()`/`clearPending()` desde releaseLandingCinematicCameraHold/
+notifyTakeoffSequenceStarted. Spec real de 5 tests (start/defer/early-return/release-tras-min-hold/no-release-antes). GameEngine 12.251 → 12.135 (−116).
+224/224 + build prod verdes. Gameplay-gated: auto-aterrizaje en atmósfera → la cámara encuadra la nave desde atrás/arriba, polvo al tocar, y se
+libera al frenar (restaurando el modo de cámara previo).
+
+**✅ Sub-rebanada 3 IMPLEMENTADA** (2026-06-20, `services/state/landing-camera-hold.ts`): `LandingCameraHold` posee `hold`({prevMode}) +
+`deferredForTakeoff` y la lógica `acquire`/`release` (congela el modo de cámara mientras el panel espera; al liberar restaura el modo previo y
+re-dispara la cámara de auto-aterrizaje diferida). Host de 5 (getCamera/isPanelAwaitingUser/clearAutoLandingPending/takeAutoLandingPending/
+startAutoLandingCamera). Getters `isActive`/`isDeferredForTakeoff` + `setDeferredForTakeoff` para los lectores externos (atmosphereFlightHost,
+landingPanelHost, atmosphereAutoLandingCameraHost, notifyTakeoffSequenceStarted). Delegadores hold/release. Spec real de 5 tests. GameEngine 12.135 →
+12.115 (−20). 229/229 + build prod verdes. Gameplay-gated: durante una cinemática de aterrizaje la cámara se mantiene y al terminar vuelve al modo
+previo; el auto-aterrizaje diferido arranca tras el hold.
+
+**✅ Sub-rebanada 4 (parcial) IMPLEMENTADA** (2026-06-20): en la segunda ojeada las "context helpers" resultaron HETEROGÉNEAS (no un grupo
+cohesivo): `registerPlanetLandingVisit` (side-effects gameState/profile) y `enrichLandingContext` (intel/cache) son ORQUESTACIÓN → se quedan en el
+motor. La parte limpia, `sampleLandingContextSurface` (geometría de muestreo de superficie, la HOT que llama `refresh…` cada frame), se extrajo como
+**función PURA** `sampleLandingSurfaceContext(context, params)` en `landing-geometry.ts` — usa el terrain-sampler (SSOT, NO duplica fórmula). FPS:
+llamada directa, sin host. El motor resuelve `normal`/`planetCenter`/`detailFactor` y los pasa; lógica byte-idéntica. +2 tests. GameEngine 12.115 →
+12.085 (−30). 231/231 + build prod verdes.
+- **BUGFIX imágenes Primigenios** (2026-06-20): `OverlayImage` (void-jump/quimio) cacheaba la textura Y su tamaño en la CARGA (cuando aún es un
+  placeholder blanco) → se veía blanco con tamaño equivocado. Arreglado: resuelve textura+tamaño en **tiempo de dibujo** (re-consulta cada frame, como
+  el void-jump original) + fallback `drawTexture`.
+
+**Sub-rebanada 5 — DECISIÓN (2026-06-20)**: la 2ª ojeada reveló que la espina del flujo es cualitativamente más arriesgada que 1-4: **76 accesos**
+a flags (landingSequenceActive/takeoffSequenceActive/landingTouchdownContext/atmosphereLandingCinematicActive/atmosphereAutoTakeoffArmed/…) repartidos
+por código gameplay-crítico, y los flags NO son ortogonales-limpios (un `enum` único arriesga cambios de comportamiento). El usuario eligió **enfoque
+INCREMENTAL por piezas seguras** (no un LandingFlowController de golpe): lock → auto-takeoff/exit → notify bridges → touchdown, cada una con prueba de juego.
+- **✅ 5-pieza 1 IMPLEMENTADA**: `services/state/atmosphere-auto-landing-lock.ts`. `AtmosphereAutoLandingLock` posee `active`/`reason` + la constante de
+  altitud (120) + `enable`/`clear`/`isLocked` (que auto-libera si escena inactiva / despegue / altitud≥umbral). Host de 5 (isAtmosphereSceneActive/
+  hasSpaceship/isTakeoffSequenceActive/computeAltitudeAboveGround/logDebug). Autocontenido: los call sites externos llaman a los 3 métodos del engine
+  (que ahora delegan) → CERO re-points externos. Spec real de 6 tests. GameEngine 12.085 → 12.064. 237/237 + build prod verdes. Gameplay-gated: el
+  auto-aterrizaje en atmósfera se mantiene "enganchado" hasta soltar (despegar / subir altitud).
+- **✅ 5-pieza 2 IMPLEMENTADA**: `services/state/atmosphere-auto-takeoff.ts`. `AtmosphereAutoTakeoff` posee `armed` + la constante de altitud (1000) +
+  `arm`/`disarm`/`maybeTrigger` (HOT, en el loop, early-return barato si no armado: si supera el umbral en escena atmosférica dispara la salida).
+  Host de 9 (isAtmosphereSceneActive/isAtmosphereExitTransitionActive/isLandingSequenceActive/isTakeoffSequenceActive/hasLandingTouchdownContext/
+  computeAltitudeAboveGround/startAtmosphereExitSequence/logInfo/logWarn). Los 4 sets externos del flag → `arm()`/`disarm()` (replace_all). El método
+  `startAtmosphereExitSequence` (orquestación ancha) SE QUEDA en el motor, lo llama el host. Spec real de 5 tests. GameEngine 12.064 → 12.044. 242/242 +
+  build prod verdes. Gameplay-gated: en atmósfera, subir por encima del umbral debe disparar el despegue automático.
+- **✅ 5-pieza 3 IMPLEMENTADA (DESVÍO justificado)**: en la 2ª ojeada los **notify bridges** (notify*Started/Finished ×6) resultaron ORQUESTACIÓN
+  ANCHA (setean los flags del flujo + llaman ~20 métodos del motor: setLandingDamageSuppressed/handleLandingTouchdown/extend*Suppression/start-stop
+  AutoLandingCamera/releaseCinematicCameraHold/hud/gameState…) → extraerlos sería un host pass-through enorme de valor dudoso → SE DEJAN en el motor.
+  En su lugar extraje una pieza MÁS LIMPIA y autocontenida: `services/state/suppression-window.ts`. `SuppressionWindow` = value-object PURO (recibe
+  `nowMs`, sin host) para ventanas de supresión por timestamp (extend hasta now+window quedándose con el máx; isActive = now<until; reset). Dedup del
+  patrón que estaba DUPLICADO en GameEngine: la supresión de amenaza de aterrizaje y la gracia de colisión atmosférica → 2 instancias. El motor conserva
+  delegadores (con el override de "escudo cinemático" + getNowMs). Spec real de 5 tests. GameEngine 12.044 → 12.031. 247/247 + build prod verdes.
+  HALLAZGO: del flujo de aterrizaje, las piezas LIMPIAS y seguras están agotadas (lock/auto-takeoff/suppression-window hechas); lo que QUEDA (notify
+  bridges, handleLandingTouchdown, startAtmosphereExitSequence) es orquestación ancha gameplay-crítica → o se deja, o se extrae con host pass-through
+  ancho (bajo valor/alto riesgo). El <3000 vía extracciones limpias del LANDING está esencialmente agotado; para seguir bajando conviene PIVOTAR a otra
+  zona (5.5 WorldLifecycle / 5.7 HUD) con piezas limpias frescas.
+
+#### Fase 5.5 — Análisis pre-implementación: WorldLifecycle / RespawnAnchor (2026-06-21)
+Investigación a fondo de WorldLifecycle: **casi no hay "helpers limpios" pequeños**. `cloneSolarSystemSnapshot` es trivial (1 línea JSON);
+el tracking de snapshot/label está acoplado a `runtimeSerializer` + `currentSnapshot` (**23 accesos** → mucho churn). El cluster cohesivo disponible
+es el de **anclas de respawn**, pero la 2ª ojeada lo revela como **pass-through ANCHO** (no el "host moderado" estimado):
+- **Métodos (6, dispersos 10346–12530)**: `buildRespawnAnchorMetadata`, `resolveSnapshotMetaFromLabel`, `persistRespawnSnapshot`,
+  `bootstrapDefaultRespawnAnchor`, `refreshRespawnAnchorSnapshot`, `shouldMirrorRespawnAnchor` (+ `cloneSolarSystemSnapshot`).
+- **Sin estado propio**: las anclas viven en `gameState` (getDefault/getRespawn/setDefault/setRespawn/syncAnchorSnapshotMeta) → el controller sería
+  STATELESS (pura reubicación de comportamiento).
+- **Host ~18 métodos**: gameState (5), `portalPersistenceService` (get/save), `runtimeSerializer` (saveWithLabel/captureCurrentSnapshot — **ambos pasan
+  `this`**, el host los envuelve), `currentSnapshot`, ensure/setCurrentSnapshotLabel, resolveSystemId/resolvePersistentSystemKey (system-identity, importables),
+  spaceship, findPlanet, estimatePlanetRadius, normalize, getShipForwardVector, persistActiveSystemSnapshot, resolveSnapshotId (importable), PORTAL_SNAPSHOT_LABELS (importable), logger.
+- **Veredicto**: extracción de **menor cohesión real** (relocaliza glue de persistencia) y **gameplay-crítica (respawn)**. Reduce ~200 líneas hacia <3000
+  pero NO mejora el diseño (pass-through). DECISIÓN: implementar EN FRÍO y con cuidado (turno enfocado), con prueba de juego de respawn (morir → reaparecer
+  en el ancla correcta; ancla por defecto humana; espejado de snapshot del ancla). Patrón: `RespawnAnchorService` (clase plana, host cacheado de arrow fns,
+  6 delegadores en el motor). Los helpers importables (resolveSnapshotId, PORTAL_SNAPSHOT_LABELS, system-identity) van DIRECTOS, no por host.
+
+#### Fase 5.7 — HudOrchestrator (en progreso, piezas limpias)
+- **✅ 5.7-pieza 1 `FlightVectorReticleBuilder`** (2026-06-21, `hud/elements/flight-vector-reticle-builder.ts`): el HUD SÍ tiene piezas limpias (mejor
+  valor/riesgo que el respawn pass-through de 5.5). Extraído el cálculo de la retícula de "vector de vuelo" (punto de fuga de la nave proyectado al HUD):
+  `build`/`projectionDistance`/`project` + los DOS scratch buffers (mat4+vec4) que ahora POSEE la clase → proyecta sin allocar por frame (HOT, una vez/frame).
+  Host de 9 (isReady/getShipPosition/Forward/Speed/WeaponsCount/getCameraView+ProjectionMatrix/isCinematicAnimationRunning/isPrecisionRotationActive). El
+  DIBUJO sigue en `FlightVectorReticle` (canvas). `vec4` ya no se importa en el motor. Spec real de 6 tests (projectionDistance/project/build). GameEngine
+  12.031 → 11.962 (¡<12k!). 253/253 + build prod verdes. Gameplay-gated: la retícula de vector de vuelo (pentágono cian/rojo en el HUD) debe aparecer en el
+  punto de fuga, modo combate con armas, y desaparecer en cinemáticas.
+- **✅ 5.7-pieza 2 `buildInventorySnapshot`** (2026-06-21, `hud/elements/inventory-snapshot-builder.ts`): función PURA que ensambla el DTO del panel de
+  inventario (character/equipment/personalGear/cargo/cargoCapacity/shipStats/sanityLimits), clonando para no compartir referencias. Slices estructurales
+  `InventorySnapshotSource` (estado) + `InventorySnapshotShip` (nave) → NO acopla a GameStateStore/Spaceship. El motor importa la función (alias
+  `composeInventorySnapshot`) y `refreshInventoryPanelSnapshot` la llama directo; el método del motor se BORRÓ (1 solo caller). `EquipmentSlot`+`InventorySnapshot`
+  fuera del import del motor. Spec real de 6 tests (null/clonado/slots/capacidad+stats/sin-nave/cordura). GameEngine 11.962 → 11.919. 259/259 + build prod verdes.
+  Gameplay-gated: abrir el panel de Inventario (datos de personaje/equipo/carga/stats nave/cordura correctos).
+- **✅ 5.7-pieza 3 `buildCompassCountdownPayload`** (2026-06-21, `hud/elements/compass-countdown-builder.ts`): función PURA que elige el countdown de
+  mayor prioridad para la brújula del HUD (Void Cocoon prio 1 > Speed Rite prio 3) entre los efectos temporales activos. Recibe `now` + los timestamps +
+  speedRiteActive; el motor conserva un delegador de 1 línea. Spec real de 6 tests. GameEngine 11.919 → 11.899. 265/265 + build prod verdes. Gameplay-gated:
+  el contador de la brújula durante Void Cocoon / Speed Rite. NOTA: el `gameData` principal del HUD (payload de hudManager.update) está ligado al render
+  (untyped, ~20 entradas computadas in situ) → NO es pieza limpia, se queda. SIGUIENTE 5.7: evaluar si quedan builders limpios o pivotar.
+
+#### Fase 6.4 — Feature de prueba: TARDIS companion (2026-06-21)
+Prueba de extensibilidad de la arquitectura data-driven. La cabina de policía del Doctor orbita la Tierra **como un megaasteroide más**
+y, si la nave se acerca a <50u, **huye con un destello**; si logras destruirla/lotearla antes, premio único **"Materia oscura de Gallifrey"**.
+- **`game-objects/TardisObject.ts`**: `extends MegaAsteroid` → HEREDA toda la mecánica (tipo MEGA_ASTEROID, salud, colisión, targeting, órbita en
+  `planetDebris`). Override `initGeometry()` → caja vertical (24 vértices) y `generateVertexColors()` → azul. `isTardis` + `isWithinVanishRange` (puro,
+  dist²) + `createTardisCompanion(planet)` (factory). Spec 7 tests.
+- **`services/state/tardis-companion-system.ts`**: la LÓGICA fuera del engine (regla #1). Posee la referencia + el flag de huida; `update(host)` (proximidad
+  → huida sin premio), `onObjectDestroyed(obj, host)` (premio si NO huía). Host de 7. Spec 6 tests (incl. gateo del premio en la huida).
+- **Creación data-driven**: el motor spawnea la TARDIS cuando crea el planeta con `kind === 'earth_split'` (sin id mágico). TRANSITORIA: excluida de
+  `capturePlanetDebris` → reaparece cada sesión, sin tocar códecs. **Premio** = `CargoManifestEntry` ARTIFACT/UNIQUE vía `gameState.upsertCargoEntry`.
+- **Veredicto arquitectura**: extendió MUY limpio — reusar `MegaAsteroid` + `planetDebris` + `kind` dio la órbita/render/colisión GRATIS. El motor solo
+  ganó ~31 líneas de wiring (host + spawn de world-gen + 3 hooks de 1 línea); la órbita, el render y la mecánica no costaron NADA. 278/278 + build prod. Build 0.0.18.
+- **BUGFIX TARDIS no aparecía** (2026-06-21): el spawn comprobaba `p.kind === 'earth_split'` (kind CRUDO del snapshot), pero el factory crea la Tierra con
+  `switch(kind)` donde `kind = normalizePlanetKind(p.kind)` NORMALIZADO. En saves, `p.kind` puede ser 'tierra'/vacío → normaliza a 'earth_split' (planeta partido
+  sí) pero el check crudo fallaba → sin TARDIS. Fix: usar el `kind` normalizado, igual que el factory. Build 0.0.19.
+- **BUGFIX void-jump en blanco (raíz real)** (2026-06-21): `TextureManager.loadTextureFromUrl` deja un placeholder BLANCO 1x1 y, en 404, lo cachea bajo la
+  clave devolviendo `null` SIN tamaño. `OverlayImage` miraba `getTexture()` (→ placeholder blanco) en vez del VALOR DE RETORNO, y PARABA en la 1ª URL fallida
+  sin probar `/app/assets/…`. Fix en `animation-overlay.ts`: la carga usa el retorno (textura real vs null) y prueba TODAS las candidatas; el dibujo exige
+  tamaño real (sin tamaño = placeholder → no dibuja, evita el flash blanco). Specs nuevos del camino de fallo. (El fix anterior de "tiempo de dibujo" no atacaba la raíz.)
+- **BUGFIX void-jump CAUSA PRIMARIA** (2026-06-21, build 0.0.20): `applyFlashConfig` (animation-manager.service) llamaba `fn({images})` con la función
+  `setFlashConfig` DESACOPLADA → `this` undefined (módulo ES, strict) → `setFlashConfig` lanzaba, el `catch` lo tragaba, y `flashImageUrls` quedaba VACÍO →
+  `onStart` iba al `else` (overlay BLANCO, sin cargar la imagen). Regresión de la refactor 8.3 (`applyConfigure` SÍ usaba `.apply(anim)`; `applyFlashConfig`
+  olvidó enlazar). Fix: `fn.call(anim, { images })`. Verificado en el server: los assets de Primigenios responden HTTP 200 en /assets/ y angular.json mapea
+  src/app/assets→/assets. Los fixes previos de OverlayImage eran reales pero SECUNDARIOS.
+- **TARDIS modelo + ventanas** (2026-06-21, build 0.0.20): de cubo a CABINA DE POLICÍA procedural (`TardisObject.initGeometry`): 9 cajas apiladas (cuerpo +
+  4 ventanas que sobresalen + alero + 2 gradas de tejado + farol). `generateVertexColors` por posición: cuerpo azul, tejado azul oscuro, farol encendido y
+  VENTANAS de vidrio cálido (ámbar brillante = "luz desde dentro"; emissive real puro requeriría un término en el shader iluminado). El motor usa geometría
+  procedural, no cargador de modelos (un .glb descargado exigiría un loader glTF/OBJ aparte + licencia).
+- **TARDIS ventanas encendidas** (2026-06-21, build 0.0.21): las ventanas no se veían porque el shader ILUMINADO (litProgram) usa un único `u_baseColor` por
+  objeto e IGNORA los colores de vértice (`v_color` ni se usa). Fix: en `renderPlanetDebris`, la TARDIS (isTardis) se dibuja con el programa BÁSICO (colores de
+  vértice planos, sin luz) → ventanas cálidas/farol/tejado se ven, y al no oscurecerse en sombra lucen "encendidas". El resto de debris sigue iluminado.
+- **TARDIS cuerpo sombreado + ventanas EMISSIVE de verdad** (2026-06-21, build 0.0.22): el usuario pidió cuerpo con sombreado Y ventanas emissive (no plano).
+  Se añadió al litProgram (ShaderManager) DOS uniforms GATEADOS (`u_useVertexColor`, `u_emissiveStrength`; default 0 = comportamiento clásico idéntico para
+  todos los demás objetos): el fragment usa `v_color` si `u_useVertexColor>0.5`, y suma emissive a los vértices con `lum>0.82` (smoothstep) → SÓLO ventanas y
+  farol "lucen encendidos"; el techo (azul oscuro, lum 0.40) queda SOMBREADO normal (corrige feedback: antes en el modo plano el techo salía iluminado). En
+  `renderPlanetDebris` la TARDIS usa el litProgram con `setLitVertexColorMode(true)`+`setLitEmissive(1)` y RESETEA a 0 tras dibujarla. Setters nuevos en ShaderManager.
 
 #### Fase 5.3 — SpellSystem (en progreso)
 - **5.3-parcial `AnchoringPulseBeam`** (2026-06-20, `services/spells/anchoring-pulse-beam.ts`): PRIMERA rebanada de 5.3. El haz que ancla

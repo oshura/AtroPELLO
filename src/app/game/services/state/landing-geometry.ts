@@ -2,6 +2,7 @@ import { Vector3 } from '../../../types/game.types';
 import { Planet } from '../../game-objects/Planet';
 import { LandingApproachContext } from '../../types/landing.types';
 import { vec3Normalize } from '../../math/vector-math';
+import { sampleAtmosphereSurfaceRadiusAlongNormal } from '../../atmosphere/terrain-sampler';
 
 /**
  * Resolución del centro de un planeta para el aterrizaje. Funciones PURAS (sin estado ni host): el motor
@@ -66,6 +67,61 @@ export function deriveLandingNormalFromContext(planets: Planet[], context: Landi
     });
   }
   return { x: 0, y: 1, z: 0 };
+}
+
+/** Entradas resueltas por el motor (estado de atmósfera + altitud) para muestrear la superficie. */
+export interface LandingSurfaceSampleParams {
+  normal: Vector3;
+  planetCenter: Vector3 | null;
+  stateGroundRadius: number;
+  stateCollisionRadius: number;
+  terrainSeed: number;
+  detailFactor: number;
+}
+
+/**
+ * Muestrea la superficie del planeta a lo largo de la normal (vía terrain-sampler, SSOT) y devuelve el
+ * contexto con `radius`/`surfacePoint`/`surfaceNormal`/`planetCenter`/`lastUpdatedMs` actualizados. PURA:
+ * el motor resuelve `normal`/`planetCenter`/`detailFactor` y los pasa. La llama `refresh…` cada frame (HOT,
+ * pero sólo en escena atmosférica). docs/ARQUITECTURA.md Fase 5.2 (sub-rebanada 4).
+ */
+export function sampleLandingSurfaceContext(
+  context: LandingApproachContext,
+  params: LandingSurfaceSampleParams,
+): LandingApproachContext {
+  const { normal, stateGroundRadius, stateCollisionRadius, terrainSeed, detailFactor } = params;
+  let planetCenter = params.planetCenter;
+  const contextRadius = Number.isFinite(context.radius) ? context.radius : 0;
+  const baseSurfaceRadius = Math.max(1, stateGroundRadius, stateCollisionRadius, contextRadius);
+  const sampledSurface = sampleAtmosphereSurfaceRadiusAlongNormal(normal, baseSurfaceRadius, detailFactor, terrainSeed);
+  const surfaceRadius = Number.isFinite(sampledSurface)
+    ? Math.max(sampledSurface, baseSurfaceRadius)
+    : baseSurfaceRadius;
+  if (!planetCenter && context.surfacePoint) {
+    const fallbackRadius = Math.max(1, Number.isFinite(context.radius) ? context.radius : surfaceRadius);
+    planetCenter = {
+      x: context.surfacePoint.x - normal.x * fallbackRadius,
+      y: context.surfacePoint.y - normal.y * fallbackRadius,
+      z: context.surfacePoint.z - normal.z * fallbackRadius,
+    };
+  }
+  if (!planetCenter) {
+    planetCenter = { x: 0, y: 0, z: 0 };
+  }
+  const surfacePoint = {
+    x: planetCenter.x + normal.x * surfaceRadius,
+    y: planetCenter.y + normal.y * surfaceRadius,
+    z: planetCenter.z + normal.z * surfaceRadius,
+  };
+  const now = performance?.now?.() ?? Date.now();
+  return {
+    ...context,
+    radius: surfaceRadius,
+    surfacePoint,
+    surfaceNormal: normal,
+    planetCenter,
+    lastUpdatedMs: now,
+  };
 }
 
 /** Punto de contacto del aterrizaje: el surfacePoint del contexto, o centro + normal·radio. */

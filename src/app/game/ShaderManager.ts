@@ -944,6 +944,8 @@ export class ShaderManager {
     uniform vec3 u_baseColor;
     uniform float u_opacity;
     uniform vec3 u_cameraPos;
+    uniform float u_useVertexColor;   // 0 = u_baseColor (clásico), 1 = usar v_color por vértice
+    uniform float u_emissiveStrength; // 0 = sin emissive; >0 hace "lucir" los vértices muy brillantes
     uniform float u_specularStrength;
     uniform float u_shininess;
     // Emissive point light (optional)
@@ -963,8 +965,8 @@ export class ShaderManager {
   // Componente difusa
   vec3 diffuse = v_lightIntensity * u_lightColor;
 
-      // Usar u_baseColor como color base
-      vec3 baseColor = u_baseColor;
+      // Color base: u_baseColor (clásico) o el color de vértice si está activado el modo multicolor.
+      vec3 baseColor = (u_useVertexColor > 0.5) ? v_color : u_baseColor;
 
   // Especular (Blinn-Phong): N.H con H = normalize(L + V)
   vec3 N = normalize(v_normal);
@@ -990,6 +992,14 @@ export class ShaderManager {
 
       // Asegurar que el color no sea demasiado oscuro
       finalColor = max(finalColor, baseColor * 0.2);
+
+      // Emissive: los vértices muy brillantes (p.ej. ventanas/farol de la TARDIS) lucen "encendidos"
+      // pese a la iluminación. Sólo activo cuando u_emissiveStrength>0 (no afecta a otros objetos).
+      if (u_emissiveStrength > 0.0001) {
+        float lum = max(baseColor.r, max(baseColor.g, baseColor.b));
+        float emis = smoothstep(0.82, 1.0, lum) * u_emissiveStrength;
+        finalColor = mix(finalColor, baseColor * 1.25, emis);
+      }
 
   // Dark-to-normal during fade: when opacity < 1, reduce brightness strongly to avoid washing background
   float opacity = clamp(u_opacity, 0.0, 1.0);
@@ -1216,6 +1226,8 @@ export class ShaderManager {
     this.litUniforms['ambientColor'] = this.gl.getUniformLocation(this.litProgram, 'u_ambientColor');
     this.litUniforms['ambientStrength'] = this.gl.getUniformLocation(this.litProgram, 'u_ambientStrength');
     this.litUniforms['baseColor'] = this.gl.getUniformLocation(this.litProgram, 'u_baseColor');
+    this.litUniforms['useVertexColor'] = this.gl.getUniformLocation(this.litProgram, 'u_useVertexColor');
+    this.litUniforms['emissiveStrength'] = this.gl.getUniformLocation(this.litProgram, 'u_emissiveStrength');
     this.litUniforms['opacity'] = this.gl.getUniformLocation(this.litProgram, 'u_opacity');
     this.litUniforms['cameraPos'] = this.gl.getUniformLocation(this.litProgram, 'u_cameraPos');
     this.litUniforms['specularStrength'] = this.gl.getUniformLocation(this.litProgram, 'u_specularStrength');
@@ -1370,6 +1382,22 @@ export class ShaderManager {
     if (!this.gl || !this.litProgram) return;
     this.ensureProgramActive(this.litProgram, 'setLitColor');
     this.gl.uniform3fv(this.litUniforms['baseColor'], color);
+  }
+
+  /** Activa el color por vértice (v_color) en lugar de u_baseColor. Default desactivado (clásico). */
+  public setLitVertexColorMode(enabled: boolean): void {
+    if (!this.gl || !this.litProgram) return;
+    this.ensureProgramActive(this.litProgram, 'setLitVertexColorMode');
+    const loc = this.litUniforms['useVertexColor'];
+    if (loc) this.gl.uniform1f(loc, enabled ? 1.0 : 0.0);
+  }
+
+  /** Fuerza de emissive (vértices muy brillantes lucen encendidos). 0 = sin emissive (default). */
+  public setLitEmissive(strength: number): void {
+    if (!this.gl || !this.litProgram) return;
+    this.ensureProgramActive(this.litProgram, 'setLitEmissive');
+    const loc = this.litUniforms['emissiveStrength'];
+    if (loc) this.gl.uniform1f(loc, Math.max(0, strength));
   }
 
   /**

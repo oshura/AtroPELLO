@@ -10,6 +10,7 @@ export * from '../types/game-object.types';
 export * from './Asteroid';
 export * from './SuperAsteroid';
 export * from './MegaAsteroid';
+export * from './TardisObject';
 
 // Planetas
 export * from './Planet';

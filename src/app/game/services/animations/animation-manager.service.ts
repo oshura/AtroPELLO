@@ -23,7 +23,9 @@ export function applyConfigure(anim: GameAnimation, ...args: unknown[]): void {
 export function applyFlashConfig(anim: GameAnimation, images: string[]): void {
   const fn = (anim as { setFlashConfig?: (cfg: { images: string[] }) => void }).setFlashConfig;
   if (typeof fn === 'function') {
-    try { fn({ images }); } catch { /* best-effort */ }
+    // OJO: enlazar `this` al objeto. Llamar `fn({images})` desacoplado dejaba `this` undefined (módulo ES,
+    // strict) → setFlashConfig lanzaba y el catch lo tragaba → flashImageUrls vacío → void-jump en BLANCO.
+    try { fn.call(anim, { images }); } catch { /* best-effort */ }
   }
 }
 

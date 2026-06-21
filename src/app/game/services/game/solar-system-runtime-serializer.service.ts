@@ -170,6 +170,10 @@ export class SolarSystemRuntimeSerializerService {
         if (!item?.obj) {
           continue;
         }
+        // La TARDIS es una compañera TRANSITORIA: no se serializa (reaparece cada sesión).
+        if ((item.obj as { isTardis?: boolean }).isTardis) {
+          continue;
+        }
         debris.push({
           id: item.obj.id,
           planetId,
