@@ -34,9 +34,14 @@ export enum GameObjectType {
   
   // Estrellas
   SUN = 'SUN',
-  
+
   // Portales
-  PORTAL = 'PORTAL'
+  PORTAL = 'PORTAL',
+
+  // Estaciones espaciales (modelo master heredable; el diseño lo da la subclase por raza)
+  SPACE_STATION = 'SPACE_STATION',
+  // Puerto de atraque (la "tile" de acople; reutilizable en cualquier objeto del espacio)
+  DOCK_PORT = 'DOCK_PORT'
 }
 
 /**
@@ -51,6 +56,7 @@ export enum GameObjectCategory {
   PORTAL = 'PORTAL',
   CLUSTER = 'CLUSTER',
   ENEMY = 'ENEMY',
+  STATION = 'STATION',
   UNKNOWN = 'UNKNOWN'
 }
 
@@ -85,7 +91,9 @@ export const TYPE_TO_CATEGORY: Record<GameObjectType, GameObjectCategory> = {
   [GameObjectType.RINGED_PLANET]: GameObjectCategory.PLANET,
   [GameObjectType.EARTH_SPLIT_PLANET]: GameObjectCategory.PLANET,
   [GameObjectType.SUN]: GameObjectCategory.STAR,
-  [GameObjectType.PORTAL]: GameObjectCategory.PORTAL
+  [GameObjectType.PORTAL]: GameObjectCategory.PORTAL,
+  [GameObjectType.SPACE_STATION]: GameObjectCategory.STATION,
+  [GameObjectType.DOCK_PORT]: GameObjectCategory.STATION
 };
 
 /**
@@ -107,7 +115,9 @@ export const TYPE_TO_SIZE: Record<GameObjectType, GameObjectSize> = {
   [GameObjectType.RINGED_PLANET]: GameObjectSize.MASSIVE,
   [GameObjectType.EARTH_SPLIT_PLANET]: GameObjectSize.MASSIVE,
   [GameObjectType.SUN]: GameObjectSize.MASSIVE,
-  [GameObjectType.PORTAL]: GameObjectSize.ETHEREAL
+  [GameObjectType.PORTAL]: GameObjectSize.ETHEREAL,
+  [GameObjectType.SPACE_STATION]: GameObjectSize.MASSIVE,
+  [GameObjectType.DOCK_PORT]: GameObjectSize.ETHEREAL
 };
 
 /**
@@ -152,6 +162,8 @@ export function getDisplayLabel(type: GameObjectType): string {
     case GameObjectType.EARTH_SPLIT_PLANET: return 'Earth';
     case GameObjectType.SUN: return 'Sun';
     case GameObjectType.PORTAL: return 'Portal';
+    case GameObjectType.SPACE_STATION: return 'Space Station';
+    case GameObjectType.DOCK_PORT: return 'Puerto espacial';
     case GameObjectType.UNKNOWN: return 'Unknown';
     default: return 'Unknown';
   }
@@ -170,6 +182,7 @@ export function getDisplayIcon(type: GameObjectType): string {
     case GameObjectCategory.SHIP: return '▲';
     case GameObjectCategory.ENEMY: return '✖';
     case GameObjectCategory.PORTAL: return '◉';
+    case GameObjectCategory.STATION: return '⬡';
     default: return '?';
   }
 }
@@ -186,6 +199,7 @@ export function getCategoryIcon(category: GameObjectCategory): string {
     case GameObjectCategory.SHIP: return 'S';
     case GameObjectCategory.PORTAL: return 'Po';
     case GameObjectCategory.ENEMY: return 'E';
+    case GameObjectCategory.STATION: return 'Es';
     default: return '?';
   }
 }
@@ -204,6 +218,8 @@ export function targetTypeToGameObjectType(targetType: TargetType): GameObjectTy
     case TargetType.PLANET: return GameObjectType.PLANET;
     case TargetType.SUN: return GameObjectType.SUN;
     case TargetType.PORTAL: return GameObjectType.PORTAL;
+    case TargetType.SPACE_STATION: return GameObjectType.SPACE_STATION;
+    case TargetType.DOCK_PORT: return GameObjectType.DOCK_PORT;
     case TargetType.WAYPOINT:
     case TargetType.UNKNOWN:
     default: return GameObjectType.UNKNOWN;

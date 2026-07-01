@@ -60,3 +60,11 @@
   (takeoff)="onLandingTakeoff()"
   (stay)="onLandingStay()">
 </app-landing-panel>
+
+<!-- Station landing panel shown after docking to a space station port -->
+<app-station-landing-panel
+  [visible]="showStationPanel"
+  [stationName]="stationName"
+  [portName]="stationPortName"
+  (takeoff)="onStationTakeoff()">
+</app-station-landing-panel>

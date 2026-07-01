@@ -876,6 +876,7 @@ export class ShaderManager {
     in vec3 a_position;
     in vec3 a_normal;
     in vec3 a_color;
+    in vec2 a_uv;
 
     // Uniformes de transformación
     uniform mat4 u_modelMatrix;
@@ -894,6 +895,7 @@ export class ShaderManager {
     out vec3 v_lightDirection;
     out float v_lightIntensity;
   out vec3 v_worldPos;
+  out vec2 v_uv;
 
     void main() {
   // Transformar posición
@@ -918,6 +920,7 @@ export class ShaderManager {
       v_normal = worldNormal;
       v_lightDirection = u_lightDirection;
       v_worldPos = worldPosition.xyz;
+      v_uv = a_uv;
     }`;
   }
 
@@ -936,6 +939,7 @@ export class ShaderManager {
     in vec3 v_lightDirection;
     in float v_lightIntensity;
     in vec3 v_worldPos;
+    in vec2 v_uv;
 
     // Uniformes
     uniform vec3 u_lightColor;
@@ -946,6 +950,8 @@ export class ShaderManager {
     uniform vec3 u_cameraPos;
     uniform float u_useVertexColor;   // 0 = u_baseColor (clásico), 1 = usar v_color por vértice
     uniform float u_emissiveStrength; // 0 = sin emissive; >0 hace "lucir" los vértices muy brillantes
+    uniform float u_useTexture;       // 0 = sin textura (clásico); 1 = modular baseColor con u_diffuseTex
+    uniform sampler2D u_diffuseTex;   // textura difusa (p. ej. casco de estación) — solo si u_useTexture>0.5
     uniform float u_specularStrength;
     uniform float u_shininess;
     // Emissive point light (optional)
@@ -967,6 +973,14 @@ export class ShaderManager {
 
       // Color base: u_baseColor (clásico) o el color de vértice si está activado el modo multicolor.
       vec3 baseColor = (u_useVertexColor > 0.5) ? v_color : u_baseColor;
+      // Textura difusa opcional (gateada): se usa como mapa de DETALLE por LUMINANCIA (no su color), para
+      // que el TONO lo dé el color por vértice (metálico) y un difuso cálido NO tiña de marrón. Solo afecta
+      // a objetos que activan u_useTexture (la estación). docs/ESTACIONES.md §5.3.
+      if (u_useTexture > 0.5) {
+        vec3 texRgb = texture(u_diffuseTex, v_uv).rgb;
+        float texLum = dot(texRgb, vec3(0.299, 0.587, 0.114));
+        baseColor *= (0.6 + texLum * 1.4);
+      }
 
   // Especular (Blinn-Phong): N.H con H = normalize(L + V)
   vec3 N = normalize(v_normal);
@@ -1228,6 +1242,8 @@ export class ShaderManager {
     this.litUniforms['baseColor'] = this.gl.getUniformLocation(this.litProgram, 'u_baseColor');
     this.litUniforms['useVertexColor'] = this.gl.getUniformLocation(this.litProgram, 'u_useVertexColor');
     this.litUniforms['emissiveStrength'] = this.gl.getUniformLocation(this.litProgram, 'u_emissiveStrength');
+    this.litUniforms['useTexture'] = this.gl.getUniformLocation(this.litProgram, 'u_useTexture');
+    this.litUniforms['diffuseTex'] = this.gl.getUniformLocation(this.litProgram, 'u_diffuseTex');
     this.litUniforms['opacity'] = this.gl.getUniformLocation(this.litProgram, 'u_opacity');
     this.litUniforms['cameraPos'] = this.gl.getUniformLocation(this.litProgram, 'u_cameraPos');
     this.litUniforms['specularStrength'] = this.gl.getUniformLocation(this.litProgram, 'u_specularStrength');
@@ -1398,6 +1414,25 @@ export class ShaderManager {
     this.ensureProgramActive(this.litProgram, 'setLitEmissive');
     const loc = this.litUniforms['emissiveStrength'];
     if (loc) this.gl.uniform1f(loc, Math.max(0, strength));
+  }
+
+  /**
+   * Activa el modelado de textura difusa en el shader lit (gateado). Cuando `enabled`, enlaza `tex` a la
+   * unidad 0 y modula baseColor con ella. Default desactivado → cero impacto en el resto de objetos lit.
+   */
+  public setLitTexture(enabled: boolean, tex?: WebGLTexture | null): void {
+    if (!this.gl || !this.litProgram) return;
+    this.ensureProgramActive(this.litProgram, 'setLitTexture');
+    const useLoc = this.litUniforms['useTexture'];
+    if (enabled && tex) {
+      this.gl.activeTexture(this.gl.TEXTURE0);
+      this.gl.bindTexture(this.gl.TEXTURE_2D, tex);
+      const sampLoc = this.litUniforms['diffuseTex'];
+      if (sampLoc) this.gl.uniform1i(sampLoc, 0);
+      if (useLoc) this.gl.uniform1f(useLoc, 1.0);
+    } else if (useLoc) {
+      this.gl.uniform1f(useLoc, 0.0);
+    }
   }
 
   /**

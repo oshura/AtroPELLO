@@ -27,6 +27,8 @@ export enum TargetType {
   PLANET = 'planet',
   SUN = 'sun',
   PORTAL = 'portal',
+  SPACE_STATION = 'space_station',
+  DOCK_PORT = 'dock_port',
   WAYPOINT = 'waypoint',
   UNKNOWN = 'unknown'
 }

@@ -7,6 +7,7 @@ import { DeathDialogComponent, DeathDialogAction } from '../dialogs/death-dialog
 import { WelcomeDialogComponent } from '../dialogs/welcome-dialog/welcome-dialog';
 import { ControlsDialogComponent } from '../dialogs/controls-dialog/controls-dialog';
 import { LandingPanelComponent } from '../landing-panel/landing-panel';
+import { StationLandingPanelComponent } from '../station-landing-panel/station-landing-panel';
 import { GameStateManager, GameState } from '../../services/game/game-state.service';
 import { GameInputHandler } from '../../services/game/game-input.service';
 import { GameInitializer } from '../../services/game/game-initializer.service';
@@ -17,7 +18,7 @@ import { RespawnService } from '../../game/services/state/respawn.service';
 
 @Component({
   selector: 'app-game',
-  imports: [CommonModule, Modal, DeathDialogComponent, WelcomeDialogComponent, ControlsDialogComponent, LandingPanelComponent],
+  imports: [CommonModule, Modal, DeathDialogComponent, WelcomeDialogComponent, ControlsDialogComponent, LandingPanelComponent, StationLandingPanelComponent],
   templateUrl: './game.html',
   styleUrl: './game.scss'
 })
@@ -34,6 +35,10 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
   public showControlsDialog = false;
   public showLandingPanel = false;
   public landingPanelContext: LandingApproachContext | null = null;
+  // Estación espacial: panel de aterrizaje propio (independiente del de planetas).
+  public showStationPanel = false;
+  public stationName = 'Estación';
+  public stationPortName = 'Puerto espacial';
   private pausedByWiki = false;
   private wikiActive = false;
 
@@ -87,6 +92,26 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
     } else {
       this.logger.warn(LogCategory.GAME_LOOP, 'Takeoff sequence not wired yet');
     }
+  }
+
+  /** Llamado desde GameEngine al acoplar la nave a un puerto de estación. */
+  public openStationPanel(data: { stationName: string; portName: string }): void {
+    this.stationName = data.stationName;
+    this.stationPortName = data.portName;
+    this.showStationPanel = true;
+    this.inputHandler.setInputEnabled(false);
+    this.cdr.detectChanges();
+  }
+
+  /** Despegar de la estación: cierra el panel y avisa al motor para liberar el puerto. */
+  public onStationTakeoff(): void {
+    this.showStationPanel = false;
+    this.updateInputEnabled();
+    const engine = this.gameInitializer.getGameEngine();
+    if (engine && typeof (engine as any).notifyStationPanelClosed === 'function') {
+      try { (engine as any).notifyStationPanelClosed(); } catch {}
+    }
+    this.cdr.detectChanges();
   }
 
   /** Permite que GameEngine cierre el panel de aterrizaje ante eventos forzados (p. ej. colapso). */
@@ -309,6 +334,18 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
         this.togglePause();
         event.preventDefault();
         return;
+      }
+      // En juego: ENTER acopla a un puerto de estación si el piloto está activo (puerto a tiro).
+      if (this.isGameRunning && !this.showStationPanel && !this.showLandingPanel) {
+        const engine = this.gameInitializer.getGameEngine();
+        if (engine && typeof (engine as any).requestStationDock === 'function') {
+          try {
+            if ((engine as any).requestStationDock()) {
+              event.preventDefault();
+              return;
+            }
+          } catch {}
+        }
       }
     }
 

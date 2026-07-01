@@ -34,6 +34,9 @@ import { AtmosphereAutoTakeoff, AtmosphereAutoTakeoffHost } from './services/sta
 import { SuppressionWindow } from './services/state/suppression-window';
 import { TardisCompanionSystem, TardisCompanionHost } from './services/state/tardis-companion-system';
 import { SpaceTurtleSystem, SpaceTurtleHost } from './services/state/space-turtle-system';
+import { SpaceStationSystem, SpaceStationHost } from './services/state/space-station-system';
+import { DockPort } from './game-objects/stations/dock-port';
+import { StationMotorGlow } from './game-objects/stations/station-motor';
 import { createPortalFromSnapshot } from './services/game/portal-state.codec';
 import { captureLesserBeingSnapshot, cloneLesserBeingSnapshot } from './services/game/lesser-being-state.codec';
 import { resolveSnapshotId, resolveSystemId, resolveSystemKey } from './services/game/system-identity';
@@ -681,6 +684,50 @@ export class GameEngine {
   };
   private registeredTurtleId: string | null = null;
   private turtleKilledByBeing = false; // true si la tortuga muere por un ser menor (sin botín para el jugador)
+
+  // Estación espacial humana: landmark fijo del sistema humano (toroide + puertos de acople). Lógica FUERA del engine.
+  private readonly spaceStationSystem = new SpaceStationSystem();
+  private renderedStation: import('./game-objects/stations/human-space-station').HumanSpaceStation | null = null;
+  private renderedPorts: DockPort[] = [];
+  private renderedMotors: StationMotorGlow[] = [];
+  private stationDockCandidate: DockPort | null = null;
+  private stationDiffuseTex: WebGLTexture | null = null;
+  private stationTexLoading = false;
+  private stationPanelOpen = false;
+  private stationDockedPort: DockPort | null = null;
+  private stationDockPromptTimer = 0;
+  // Modo de cámara previo al atraque (se restaura al despegar; se mantiene la cámara cinemática mientras está acoplada).
+  private stationDockPrevCamMode: CameraMode | null = null;
+  // Animación (dirigida por el motor) de atraque/separación a un puerto de estación. Reusa cámara MANUAL + ship fields.
+  private stationDockAnim: {
+    mode: 'docking' | 'undocking';
+    t: number; dur: number;
+    port: DockPort;
+    normal: { x: number; y: number; z: number };
+    shipStart: { x: number; y: number; z: number };
+    shipEnd: { x: number; y: number; z: number };
+  } | null = null;
+  private readonly spaceStationHost: SpaceStationHost = {
+    getShipPosition: () => this.spaceship ? { ...this.spaceship.position } : null,
+    getEarthPosition: () => {
+      const earth = this.gameState.findPlanetById(EARTH_PLANET_ID);
+      return earth ? { ...earth.position } : null;
+    },
+    isHumanSystem: () => this.resolveSystemId() === 'human-system',
+    isBusy: () => !this.spaceship || this.voidJumpActive ||
+      (typeof this.animationManager?.getCurrentAnimation === 'function' && this.animationManager.getCurrentAnimation() !== null),
+    onDockReady: (port) => {
+      this.stationDockCandidate = port;
+      if (port) {
+        try { this.showPlaceholderText('Puerto espacial a tiro — pulsa ENTER para acoplar', 2600); } catch {}
+      }
+    },
+    emitParticle: (pos, color, scale) => {
+      try { this.particleEffects?.createDestructionDebris(pos, scale, color); } catch {}
+    },
+    isDockingBusy: () => this.stationPanelOpen || this.stationDockAnim !== null,
+    log: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
+  };
   // Track last applied snapshot id (debug)
   private lastAppliedSnapshotId: string | null = null;
   // Current active solar system snapshot (para acceder a configuración de debris efímero)
@@ -1007,7 +1054,7 @@ export class GameEngine {
 
     try {
       this.hudManager?.setLandingIndicators({
-        landingReady: status.ready,
+        landingReady: status.ready || this.isStationDockReady(),
         threatActive: threat.active
       });
     } catch (e) {
@@ -3549,6 +3596,13 @@ export class GameEngine {
     this.planetDebris.clear();
     this.tardisCompanionSystem.clear();
     this.spaceTurtleSystem.clear();
+    this.clearRenderedStation();
+    this.spaceStationSystem.clear();
+    this.stationDockCandidate = null;
+    this.stationPanelOpen = false;
+    this.stationDockedPort = null;
+    this.stationDockAnim = null;
+    this.stationDockPromptTimer = 0;
     const persistedDebrisPlanets = new Set<string>();
     if (Array.isArray(snapshot.planetDebris)) {
       for (const entry of snapshot.planetDebris) {
@@ -4393,6 +4447,9 @@ export class GameEngine {
     this.updateLesserBeings(deltaTime);
     this.lesserBeingCombat?.update(deltaTime);
     this.spaceTurtleSystem.update(this.spaceTurtleHost, deltaTime);
+    this.spaceStationSystem.update(this.spaceStationHost, deltaTime);
+    this.updateStationDocking(deltaTime);
+    this.updateStationDockAnimation(deltaTime);
 
     // Apply ongoing collision slide (lateral reposition over ~1s)
     if (this.collisionSlide) {
@@ -4824,6 +4881,15 @@ export class GameEngine {
         this.registerDestructionCallback(turtle);
       }
       if (!availableTargets.some(t => t.id === turtle.id)) availableTargets.push(turtle as unknown as ITargetable);
+    }
+  } catch {}
+  // Puertos de la estación espacial: targets seleccionables ("Puerto espacial"). El cuerpo de la estación
+  // no se añade (sin bounding sphere, ver ESTACIONES §1.2.1); se interactúa por los puertos.
+  try {
+    for (const port of this.spaceStationSystem.getPorts()) {
+      if (port.isActive() && !availableTargets.some(t => t.id === port.id)) {
+        availableTargets.push(port as unknown as ITargetable);
+      }
     }
   } catch {}
   // Incluir asteroides efímeros como targets adicionales (tipo ASTEROID)
@@ -6683,7 +6749,14 @@ export class GameEngine {
       this.planetDebris.clear();
     this.tardisCompanionSystem.clear();
     this.spaceTurtleSystem.clear();
-      
+    this.clearRenderedStation();
+    this.spaceStationSystem.clear();
+    this.stationDockCandidate = null;
+    this.stationPanelOpen = false;
+    this.stationDockedPort = null;
+    this.stationDockAnim = null;
+    this.stationDockPromptTimer = 0;
+
       // Clear cluster service (will be repopulated by createGameObjects)
       // Note: AsteroidClusterService doesn't have clear() method, objects will be replaced
       
@@ -7186,7 +7259,13 @@ export class GameEngine {
   if (turtle) {
     enemies.push({ id: turtle.id, pos: { x: turtle.position.x, y: turtle.position.y, z: turtle.position.z }, label: '🐢 Tortuga estelar', color: '#3ad07a', radiusPx: 6 });
   }
-  this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, enemies, ship, portals, marginPx: 48, details });
+  // Estaciones espaciales: marcador propio (categoría STATION, filtrable). Punto en el centro de la estación.
+  const stations: Array<{ id: string; pos: { x: number; y: number; z: number }; label?: string; color?: string; radiusPx?: number }> = [];
+  const stationObj = this.spaceStationSystem.getRenderable();
+  if (stationObj) {
+    stations.push({ id: stationObj.id, pos: { x: stationObj.position.x, y: stationObj.position.y, z: stationObj.position.z }, label: '🛰️ ' + stationObj.getDisplayName(), color: '#6fe0ff', radiusPx: 6 });
+  }
+  this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, enemies, stations, ship, portals, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
       this.flightVectorOverlay?.setState(null);
     } catch (e) {
@@ -8139,6 +8218,7 @@ export class GameEngine {
     // Renderizar debris asociados a planetas con LOD sencillo
     this.renderPlanetDebris();
     this.renderSpaceTurtle();
+    this.renderSpaceStation();
     // Desbindeo explícito de texturas usadas por el pase texturizado de planetas
     this.gl.activeTexture(this.gl.TEXTURE0);
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
@@ -8183,6 +8263,264 @@ export class GameEngine {
     turtle.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
     this.shaderManager.setLitVertexColorMode(false);
     this.shaderManager.setLitEmissive(0.0);
+  }
+
+  /** ¿Se puede acoplar AHORA? Puerto acoplable a tiro Y nave a velocidad ≤ 5 u/s. */
+  private isStationDockReady(): boolean {
+    const cand = this.spaceStationSystem.getDockCandidate();
+    if (!cand || !cand.isDockable() || !this.spaceship) {
+      return false;
+    }
+    return Math.abs(this.spaceship.currentSpeed) <= 5; // u/s máx para permitir acople (piloto "Land")
+  }
+
+  /**
+   * Piloto de acople: si se puede acoplar (puerto a tiro + nave lenta), recuerda al jugador que pulse ENTER.
+   * El piloto "Land" del HUD también se enciende (ver updateLandingTelemetry). docs/ESTACIONES.md §3-4.
+   */
+  private updateStationDocking(dt: number): void {
+    if (this.stationPanelOpen || this.stationDockAnim) {
+      return;
+    }
+    if (!this.isStationDockReady()) {
+      this.stationDockPromptTimer = 0;
+      return;
+    }
+    this.stationDockPromptTimer -= dt;
+    if (this.stationDockPromptTimer <= 0) {
+      this.stationDockPromptTimer = 2.5;
+      try { this.showPlaceholderText('Puerto espacial a tiro — pulsa ENTER para acoplar', 2400); } catch {}
+    }
+  }
+
+  /** ENTER: inicia la animación de atraque si se puede acoplar (puerto a tiro + nave lenta). */
+  public requestStationDock(): boolean {
+    if (this.stationPanelOpen || this.stationDockAnim) {
+      return false;
+    }
+    if (!this.isStationDockReady()) {
+      return false;
+    }
+    this.beginStationDockAnim('docking', this.spaceStationSystem.getDockCandidate()!);
+    return true;
+  }
+
+  /** Configura la animación de atraque/separación (cámara MANUAL + congela la nave). */
+  private beginStationDockAnim(mode: 'docking' | 'undocking', port: DockPort): void {
+    const ship = this.spaceship;
+    if (!ship) {
+      return;
+    }
+    const n = port.approachNormal ?? { x: 0, y: 1, z: 0 };
+    const dist = mode === 'docking' ? 26 : 180; // atraque: pegado al puerto; separación: lejos
+    const end = { x: port.position.x + n.x * dist, y: port.position.y + n.y * dist, z: port.position.z + n.z * dist };
+    // Desactivar controles + gasto de void energy durante el atraque (petición del usuario).
+    ship.voidEnergyPaused = true;
+    ship.currentSpeed = 0; ship.targetSpeed = 0;
+    ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
+    // Solo capturamos el modo de cámara HUD al ATRACAR (al despegar la cámara actual ya es MANUAL del hold).
+    if (mode === 'docking') {
+      this.stationDockPrevCamMode = this.camera?.getCurrentMode?.() ?? null;
+    }
+    try { this.camera?.setCameraMode?.(CameraMode.MANUAL); } catch {}
+    this.stationDockAnim = {
+      mode, t: 0, dur: mode === 'docking' ? 6.0 : 5.0, port, normal: n, // lentas (se ve bien la nave)
+      shipStart: { ...ship.position }, shipEnd: end,
+    };
+  }
+
+  /** Avanza la animación de atraque/separación: mueve la nave y encuadra la cámara cinemática. */
+  private updateStationDockAnimation(dt: number): void {
+    const ship = this.spaceship;
+    if (!ship) {
+      return;
+    }
+    const a = this.stationDockAnim;
+    if (!a) {
+      // Acoplada con el menú abierto: mantener la cámara cinemática sobre el puerto y la nave.
+      if (this.stationPanelOpen && this.stationDockedPort) {
+        this.setStationDockCamera(ship.position, this.stationDockedPort.position);
+      }
+      return;
+    }
+    a.t += dt;
+    const p = Math.min(1, a.t / a.dur);
+    const e = p * p * (3 - 2 * p); // smoothstep (velocidad regular y lenta)
+    ship.position.x = a.shipStart.x + (a.shipEnd.x - a.shipStart.x) * e;
+    ship.position.y = a.shipStart.y + (a.shipEnd.y - a.shipStart.y) * e;
+    ship.position.z = a.shipStart.z + (a.shipEnd.z - a.shipStart.z) * e;
+    ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
+    ship.currentSpeed = 0; ship.targetSpeed = 0;
+    this.zeroShipControls(ship);
+    this.setStationDockCamera(ship.position, a.port.position);
+    if (p >= 1) {
+      this.finishStationDockAnim(a);
+    }
+  }
+
+  private zeroShipControls(ship: Spaceship): void {
+    const c = ship.controls;
+    c.forward = c.backward = c.left = c.right = c.up = c.down = false;
+    c.speedUp = c.speedDown = c.rollLeft = c.rollRight = false;
+  }
+
+  /** Cámara cinemática: a ~75u de la NAVE, en perpendicular, mirando a la nave con el puerto en cuadro. */
+  private setStationDockCamera(shipPos: { x: number; y: number; z: number }, portPos: { x: number; y: number; z: number }): void {
+    let tx = portPos.x - shipPos.x, ty = portPos.y - shipPos.y, tz = portPos.z - shipPos.z;
+    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
+    // side = (nave→puerto) x worldUp  →  (-tz, 0, tx)
+    let sx = -tz, sy = 0, sz = tx;
+    let sl = Math.hypot(sx, sy, sz);
+    if (sl < 1e-3) { sx = 1; sy = 0; sz = 0; sl = 1; }
+    sx /= sl; sz /= sl;
+    const camPos = { x: shipPos.x + sx * 70, y: shipPos.y + 28, z: shipPos.z + sz * 70 };
+    // Mira a un punto entre la nave y el puerto (sesgado a la nave) para que ambos queden en cuadro.
+    const target = {
+      x: shipPos.x * 0.65 + portPos.x * 0.35,
+      y: shipPos.y * 0.65 + portPos.y * 0.35,
+      z: shipPos.z * 0.65 + portPos.z * 0.35,
+    };
+    try {
+      this.camera?.setCameraMode?.(CameraMode.MANUAL);
+      this.camera?.seedManualTransform?.(camPos, target, { x: 0, y: 1, z: 0 });
+      this.camera?.markDirty?.();
+    } catch {}
+  }
+
+  private finishStationDockAnim(a: NonNullable<GameEngine['stationDockAnim']>): void {
+    const ship = this.spaceship;
+    this.stationDockAnim = null;
+    if (!ship) {
+      return;
+    }
+    ship.position = { ...a.shipEnd };
+    if (a.mode === 'docking') {
+      // Mira hacia el puerto (acoplada). Controles y void energy desactivados mientras esté atracada.
+      try { ship.applyOrientationSnapshot?.({ forward: { x: -a.normal.x, y: -a.normal.y, z: -a.normal.z }, up: { x: 0, y: 1, z: 0 } }); } catch {}
+      ship.voidEnergyPaused = true;
+      ship.currentSpeed = 0; ship.targetSpeed = 0;
+      this.zeroShipControls(ship);
+      // NO restauramos la cámara: se mantiene cinemática sobre el puerto mientras el menú está abierto.
+      this.openStationPanel(a.port);
+    } else {
+      // Separación: orienta por la normal, leve rotación, y acelera un 25% en esa dirección; devuelve control.
+      try { ship.applyOrientationSnapshot?.({ forward: { ...a.normal }, up: { x: 0, y: 1, z: 0 } }); } catch {}
+      const sp = (ship.maxSpeed || 10) * 0.25;
+      ship.currentSpeed = sp; ship.targetSpeed = sp;
+      ship.rotation.z += 0.25; // leve rotación sobre el eje de avance
+      ship.voidEnergyPaused = false;
+      try { if (this.stationDockPrevCamMode != null) this.camera?.setCameraMode?.(this.stationDockPrevCamMode); } catch {}
+      this.stationDockPrevCamMode = null;
+    }
+  }
+
+  private openStationPanel(port: DockPort): void {
+    this.stationPanelOpen = true;
+    this.stationDockedPort = port;
+    port.occupied = true;
+    const station = this.spaceStationSystem.getRenderable();
+    const stationName = station ? station.getDisplayName() : 'Estación';
+    const comp = (globalThis as { GameComponentInstance?: { openStationPanel?: (d: { stationName: string; portName: string }) => void } }).GameComponentInstance;
+    if (comp && typeof comp.openStationPanel === 'function') {
+      try { comp.openStationPanel({ stationName, portName: port.getDisplayName() }); } catch {}
+    }
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Station dock panel opened', { port: port.id });
+  }
+
+  /** Llamado desde el componente al despegar: libera el puerto y lanza la animación de separación. */
+  public notifyStationPanelClosed(): void {
+    this.stationPanelOpen = false;
+    const port = this.stationDockedPort;
+    this.stationDockedPort = null;
+    if (port) {
+      port.occupied = false;
+      this.beginStationDockAnim('undocking', port);
+    }
+  }
+
+  /** Libera los buffers de la estación y sus puertos (al cambiar de sistema o regenerar). */
+  private clearRenderedStation(): void {
+    if (this.gl) {
+      if (this.renderedStation) { try { this.renderedStation.destroy(this.gl); } catch {} }
+      for (const p of this.renderedPorts) { try { p.destroy(this.gl); } catch {} }
+      for (const m of this.renderedMotors) { try { m.destroy(this.gl); } catch {} }
+    }
+    this.renderedStation = null;
+    this.renderedPorts = [];
+    this.renderedMotors = [];
+  }
+
+  /**
+   * Renderiza la estación espacial humana (cuerpo texturizado + puertos azules emissive). Cuerpo con cull
+   * desactivado (toroide visible por ambas caras). La textura del casco se carga perezosamente; mientras,
+   * cae a color por vértice (gris). docs/ESTACIONES.md Fase 9.
+   */
+  private renderSpaceStation(): void {
+    const station = this.spaceStationSystem.getRenderable();
+    if (station !== this.renderedStation) {
+      this.clearRenderedStation();
+      this.renderedStation = station;
+    }
+    if (!station || !this.gl || !this.shaderManager || !this.camera) {
+      return;
+    }
+    const gl = this.gl;
+    const cam = this.camera;
+    const camPosArr = new Float32Array([cam.position.x, cam.position.y, cam.position.z]);
+
+    // Carga perezosa de la textura de casco (CC0). Hasta que llega, se usa el color por vértice (gris).
+    if (!this.stationDiffuseTex && !this.stationTexLoading && this.textureManager) {
+      this.stationTexLoading = true;
+      this.textureManager.loadTextureFromUrl('station-panel', '/assets/textures/station_panel.jpg')
+        .then(t => { this.stationDiffuseTex = t; })
+        .catch(() => {})
+        .finally(() => { this.stationTexLoading = false; });
+    }
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.depthMask(true);
+    const wasCull = gl.isEnabled(gl.CULL_FACE);
+    gl.disable(gl.CULL_FACE); // toroide + tiles visibles por ambas caras
+
+    // Cuerpo de la estación
+    if (!station.vertexBuffer) station.initBuffers(gl);
+    this.shaderManager.useLitProgram();
+    this.calculateNormalMatrix(station.modelMatrix);
+    this.shaderManager.setLitMatrices(station.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+    this.shaderManager.setLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength);
+    this.shaderManager.setSpecular(camPosArr, 0.35, 28.0);
+    // Color por vértice (tono metálico gris/azulado) modulado por la textura de casco metálica.
+    this.shaderManager.setLitVertexColorMode(true);
+    if (this.stationDiffuseTex) {
+      this.shaderManager.setLitTexture(true, this.stationDiffuseTex);
+    }
+    station.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+    this.shaderManager.setLitTexture(false);
+    this.shaderManager.setLitVertexColorMode(false);
+
+    // Puertos de acople: tiles azules emissive (luminosos).
+    this.shaderManager.setLitVertexColorMode(true);
+    this.shaderManager.setLitEmissive(1.0);
+    for (const p of this.spaceStationSystem.getPorts()) {
+      if (!p.isActive()) continue;
+      if (!p.vertexBuffer) { p.initBuffers(gl); this.renderedPorts.push(p); }
+      this.calculateNormalMatrix(p.modelMatrix);
+      this.shaderManager.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+      p.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+    }
+    // "Bolas" de motor (rojo/naranja, tobera del núcleo) — emissive más suave ("apagado").
+    this.shaderManager.setLitEmissive(0.75);
+    for (const m of this.spaceStationSystem.getMotors()) {
+      if (!m.isActive()) continue;
+      if (!m.vertexBuffer) { m.initBuffers(gl); this.renderedMotors.push(m); }
+      this.calculateNormalMatrix(m.modelMatrix);
+      this.shaderManager.setLitMatrices(m.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+      m.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+    }
+    this.shaderManager.setLitVertexColorMode(false);
+    this.shaderManager.setLitEmissive(0.0);
+
+    if (wasCull) gl.enable(gl.CULL_FACE);
   }
 
   /** Renderiza los mega-asteroides de debris vinculados a planetas con un LOD simple */

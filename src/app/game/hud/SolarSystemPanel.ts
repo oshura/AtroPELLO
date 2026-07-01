@@ -61,7 +61,8 @@ export class SolarSystemPanel {
     GameObjectCategory.ASTEROID,
     GameObjectCategory.PORTAL,
     GameObjectCategory.SHIP,
-    GameObjectCategory.ENEMY
+    GameObjectCategory.ENEMY,
+    GameObjectCategory.STATION
   ]);
   private showOrbits: boolean = true;
   private filterButtons: Array<{ cat: string; x: number; y: number; w: number; h: number; active: boolean; label: string }> = [];
@@ -323,6 +324,7 @@ export class SolarSystemPanel {
     clusters: Array<{ id: string; center: Vector3; label?: string }>; // always included regardless of gameplay culling
     debris: Array<{ id: string; pos: Vector3; label?: string; color?: string; radiusPx?: number }>; // e.g., Earth mega-asteroids
     enemies?: Array<{ id: string; pos: Vector3; label?: string; color?: string; radiusPx?: number }>;
+    stations?: Array<{ id: string; pos: Vector3; label?: string; color?: string; radiusPx?: number }>;
     ship?: { pos: Vector3; label?: string };
     portals?: Array<{ id: string; pos: Vector3; label?: string }>;
     marginPx?: number;
@@ -356,6 +358,7 @@ export class SolarSystemPanel {
     for (const p of data.planets) maxR = Math.max(maxR, radXZ(p.pos));
     for (const d of data.debris) maxR = Math.max(maxR, radXZ(d.pos));
     for (const e of data.enemies || []) maxR = Math.max(maxR, radXZ(e.pos));
+    for (const st of data.stations || []) maxR = Math.max(maxR, radXZ(st.pos));
     for (const cl of data.clusters) maxR = Math.max(maxR, radXZ(cl.center));
     if (data.ship) maxR = Math.max(maxR, radXZ(data.ship.pos));
 
@@ -379,6 +382,7 @@ export class SolarSystemPanel {
     if (data.clusters.length) present.push(GameObjectCategory.CLUSTER);
     if (data.debris.length) present.push(GameObjectCategory.ASTEROID); // debris = asteroids
     if ((data.enemies?.length ?? 0) > 0) present.push(GameObjectCategory.ENEMY);
+    if ((data.stations?.length ?? 0) > 0) present.push(GameObjectCategory.STATION);
     if ((data.portals||[]).length) present.push(GameObjectCategory.PORTAL);
     if (data.ship) present.push(GameObjectCategory.SHIP);
     if (data.centerLabel) present.unshift('center');
@@ -541,6 +545,14 @@ export class SolarSystemPanel {
         const color = enemy.color && enemy.color.trim().length ? enemy.color : enemyColor;
         const radius = typeof enemy.radiusPx === 'number' && isFinite(enemy.radiusPx) ? Math.max(0.8, enemy.radiusPx) : 3.2;
         pushItem(enemy.id, enemy.label ?? enemy.id, GameObjectCategory.ENEMY, enemy.pos, radius, color);
+      }
+    }
+    // Stations (estaciones espaciales — cian)
+    if (this.visibleCategories.has(GameObjectCategory.STATION)) {
+      for (const st of (data.stations || [])) {
+        const color = st.color && st.color.trim().length ? st.color : '#6fe0ff';
+        const radius = typeof st.radiusPx === 'number' && isFinite(st.radiusPx) ? Math.max(1, st.radiusPx) : 4;
+        pushItem(st.id, st.label ?? st.id, GameObjectCategory.STATION, st.pos, radius, color);
       }
     }
     // Clusters

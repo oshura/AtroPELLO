@@ -972,6 +972,20 @@ fórmulas sueltas (regla 3).
 - Captura/aplicación de snapshots de sistema: `services/game/solar-system-runtime-serializer.service.ts`,
   `solar-system-serializer.ts`, almacén por label en `services/game/portal-persistence.service.ts`.
 
+### Fase 9 — Estaciones espaciales (objetos acoplables, categoría nueva)
+**Motivación (usuario, 2026-06-29):** introducir estaciones espaciales grandotas, navegables, con
+**puertos de atraque** a los que la nave se **acopla** (no aterriza en planeta). Modelo **master
+heredable** (vendrán estaciones de otras razas: mismo contrato de puertos + menú, distinto diseño) y una
+**categoría nueva** de GameObject (`STATION`) filtrable en el mapa y seleccionable como cualquier otro.
+
+**Diseño + plan completos:** `docs/ESTACIONES.md`. Narrativa asociada: `docs/HISTORIA.md` §5.
+**Decisiones:** sistema runtime estilo TARDIS/Tortuga (`SpaceStationSystem`) sobre una base abstracta
+`SpaceStation`; tiles de acople `DockPort` reutilizables (nombre "Puerto espacial", detalle = objeto
+padre); **menú de aterrizaje propio** de estación reusando el shell de `LandingPanelController`.
+**Troceado:** Slice 1 = navegable + acople jugable; Slice 2 = narrativa (cinemática de recuerdos,
+sucesos grotescos/estructurales, descubrimiento de **Void Jump** = `SpellType.LONGJUMP`).
+Cumple regla #1 (motor solo delega/encoge): toda la lógica en clases/servicios externos.
+
 ---
 
 ## 6. Proceso de desarrollo y ciclo de vida del código
