@@ -117,6 +117,67 @@ export function pushSphere(
   }
 }
 
+/**
+ * Pinta "manchas" de daño sobre los colores por vértice de una malla ya construida: regiones corroídas
+ * (rusty naranja-marrón) con un punto central quemado (casi negro), como si algo hubiera explosionado y
+ * requemado los bordes. Determinista por `seed`. Los centros se muestrean entre los propios vértices (así
+ * caen SIEMPRE sobre la superficie: toroide, pasadizos, núcleo). docs/ESTACIONES.md Fase 9.
+ */
+export function applyDamageStains(
+  mesh: MeshData,
+  seed: string,
+  count: number,
+  outerRadius: number,
+  innerRadius: number,
+  rust: Vec3 = [0.40, 0.19, 0.10],
+  burnt: Vec3 = [0.05, 0.045, 0.05],
+): void {
+  const vcount = mesh.vertices.length / 3;
+  if (vcount === 0) {
+    return;
+  }
+  const rng = seededRng(seed);
+  const centers: Vec3[] = [];
+  for (let k = 0; k < count; k++) {
+    const vi = Math.floor(rng() * vcount);
+    centers.push([mesh.vertices[vi * 3], mesh.vertices[vi * 3 + 1], mesh.vertices[vi * 3 + 2]]);
+  }
+  const span = Math.max(1e-6, outerRadius - innerRadius);
+  for (let i = 0; i < vcount; i++) {
+    const vx = mesh.vertices[i * 3], vy = mesh.vertices[i * 3 + 1], vz = mesh.vertices[i * 3 + 2];
+    let best = Infinity;
+    for (const c of centers) {
+      const dx = vx - c[0], dy = vy - c[1], dz = vz - c[2];
+      const d = Math.sqrt(dx * dx + dy * dy + dz * dz);
+      if (d < best) {
+        best = d;
+      }
+    }
+    if (best >= outerRadius) {
+      continue; // fuera de toda mancha: color original intacto
+    }
+    const ci = i * 3;
+    const orig: Vec3 = [mesh.colors[ci], mesh.colors[ci + 1], mesh.colors[ci + 2]];
+    let col: Vec3;
+    if (best <= innerRadius) {
+      // Centro quemado → rusty (más negro cuanto más al centro).
+      const t = best / innerRadius; // 0 centro, 1 borde del núcleo
+      col = mix(burnt, rust, t);
+    } else {
+      // Anillo rusty → color original (se difumina hacia el borde exterior).
+      const t = (best - innerRadius) / span; // 0 rusty, 1 original
+      col = mix(rust, orig, t);
+    }
+    mesh.colors[ci] = col[0];
+    mesh.colors[ci + 1] = col[1];
+    mesh.colors[ci + 2] = col[2];
+  }
+}
+
+function mix(a: Vec3, b: Vec3, t: number): Vec3 {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
+}
+
 /** Convierte un MeshData a los typed arrays que consumen los buffers WebGL. */
 export function toTypedMesh(mesh: MeshData): {
   vertices: Float32Array;
@@ -132,6 +193,26 @@ export function toTypedMesh(mesh: MeshData): {
     colors: new Float32Array(mesh.colors),
     indices: new Uint16Array(mesh.indices),
   };
+}
+
+/**
+ * Escribe en `out` (col-major, WebGL) una matriz de modelo desde una base ortonormal en MUNDO (right/up/fwd)
+ * + posición + escala POR EJE. Orienta objetos rígidamente pegados a la estación (puertos, pecios, bola de
+ * motor) SIN pasar por ángulos de Euler, evitando el bamboleo/gimbal cuando la estación inclinada gira. `fwd`
+ * es el eje +Z local; `scale` puede ser no uniforme (p.ej. aplastar la bola del motor por su eje Y → M&M).
+ */
+export function composeBasisMatrix(
+  out: Float32Array,
+  pos: { x: number; y: number; z: number },
+  right: { x: number; y: number; z: number },
+  up: { x: number; y: number; z: number },
+  fwd: { x: number; y: number; z: number },
+  scale: { x: number; y: number; z: number },
+): void {
+  out[0] = right.x * scale.x; out[1] = right.y * scale.x; out[2] = right.z * scale.x; out[3] = 0;
+  out[4] = up.x * scale.y;    out[5] = up.y * scale.y;    out[6] = up.z * scale.y;    out[7] = 0;
+  out[8] = fwd.x * scale.z;   out[9] = fwd.y * scale.z;   out[10] = fwd.z * scale.z;  out[11] = 0;
+  out[12] = pos.x; out[13] = pos.y; out[14] = pos.z; out[15] = 1;
 }
 
 /** RNG determinista (mulberry32) sembrado por hash de string — para daño reproducible por id. */

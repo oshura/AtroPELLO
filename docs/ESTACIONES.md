@@ -247,6 +247,60 @@ Slice 2 enchufa cinemática + tablas de sucesos + descubrimiento real de hechizo
 - El giro se **congela** mientras está acoplada o en animación de atraque (`host.isDockingBusy()`), para que
   la nave acoplada no se "despegue" del puerto.
 
+## 5.6 Iteración por feedback (build 39, 2026-07-01)
+
+- **Giro como rueda (fix del bamboleo).** El spin era `rotation.y` (Euler X→Y→Z: T·Rx·Ry·Rz·S), así que el
+  eje de giro NO coincidía con el eje del toroide y "bamboleaba". Nuevo campo `SpaceStation.spin` + override de
+  `updateModelMatrix` que compone `T·Rx·Rz·Ry(spin)·S`: el spin es la rotación **más interna** (tras la
+  inclinación fija), por lo que el eje de giro en mundo = eje del toroide (Rx·Rz·Y). Gira como una rueda con el
+  núcleo de eje, mantenga la inclinación que mantenga.
+- **Fuego visible.** Las partículas (`createDestructionDebris`) son de 0.15–0.4 u **fijas** → sub-píxel a la
+  escala/distancia de la estación (640 u de radio, ~2500 u de distancia): invisibles. Sustituidas por
+  **esferas emissive** (naranja R=130 + núcleo amarillo R=72 como punta) en los 2 focos del toroide. Se emiten
+  fuera del tubo y se re-derivan cada frame con el giro. Eliminada toda la emisión de partículas de la estación.
+- **Manchas de daño rusty.** Nuevo `applyDamageStains` (station-geometry): ~18 regiones deterministas por semilla
+  con anillo rusty (óxido) y **punto central quemado** (casi negro), repartidas por toroide/pasadizos/núcleo
+  (centros muestreados entre los vértices → siempre sobre la superficie). El casco general sigue metálico.
+- **Motor** un 20% más pequeño (72→58) y **más hundido** en la boca de la tobera; **un solo motor** (se quitó la
+  tobera y la bola superiores).
+- **Réplicas atracadas (pecios).** Nuevo `ship-wreck-geometry` (fusiona los módulos reales de la nave → malla de
+  **alambre** centrada/normalizada, aristas únicas) + `DockedShipWreck` (color rusty→negro por vértice, dibujado
+  con el programa básico en `gl.LINES`). El sistema coloca un pecio en cada puerto **salvo 2 libres** (`FREE_PORTS`),
+  marcando los demás `occupied` (no acoplables). El engine expone `getShipWreckMesh()` (host) que delega en
+  `buildShipWreckMesh(this.spaceship)`.
+- **Generalización.** `StationMotorGlow` → `StationEmissiveBall` (color por instancia), reutilizada por motor y fuego.
+
+## 5.7 Iteración por feedback (build 40, 2026-07-02)
+
+- **Fuego eliminado.** No gustaba (de cerca se veía como un pegote naranja). Quitadas las esferas de fuego,
+  `getFires`, `fireLocals`, la emisión y el pase de render. `StationEmissiveBall` sigue para el motor.
+- **Pecios SÓLIDOS rusty.** El alambre no era lo pedido: ahora `buildShipWreckMesh` devuelve malla **sólida**
+  con normales suaves y `DockedShipWreck` se renderiza **iluminado** con color rusty/quemado por vértice (sin
+  textura, sin emissive). Los puertos con pecio siguen **no acoplables** (`occupied`).
+- **Puerto/pecio pegados a la estación al girar (fix del "desplazamiento").** La orientación por ángulos de
+  Euler (`faceNormal`) bamboleaba con la estación inclinada y girando, y tile/nave parecían despegarse. Nueva
+  `composeBasisMatrix` + `DockPort.setWorldBasis`/`DockedShipWreck.setWorldBasis`: el sistema extrae una **base
+  ortonormal exacta** del modelMatrix (normal + right/up en el plano de la cara, con el eje Y de la estación de
+  referencia) y compone la matriz de modelo directamente — sin gimbal. Tile perfectamente plano sobre el brazo
+  y pecio pegado, giren como giren.
+
+## 5.8 Iteración por feedback (build 41, 2026-07-02)
+
+- **Motor "M&M".** Bola de motor devuelta a la posición saliente de antes (`-(CORE_HALF+0.12)`), tamaño 58, y
+  **aplastada por el eje Y de la estación** (`flattenY=0.45`) → forma de M&M. `StationEmissiveBall` acepta
+  `flattenY` (escala Y no uniforme) y `setWorldBasis`; el system la orienta con la base de la estación (misma
+  `composeBasisMatrix`, ahora con escala por eje), así el aplastado sigue el eje del toroide aunque gire.
+
+## 5.9 Iteración por feedback (build 42, 2026-07-02)
+
+- **Puertos ocupados "apagados".** Los puertos con pecio (no acoplables) se renderizan **sin emissive**; solo
+  los 2 libres lucen azul. Emissive por puerto según `isDockable()`.
+- **Integridad de la estación al 16%.** `healthCurrent = 16% · healthMax` (dañada por el Incidente).
+- **Cuerpo de la estación seleccionable.** Nuevo `SpaceStation.radius` (radio de SELECCIÓN de targeting, lo lee
+  `TargetDetector`) — NO es colisión (la bounding sphere sigue null). El engine añade el cuerpo a los targets
+  junto a los puertos. Como la tolerancia del picker está capada en píxeles y es al centro (núcleo), los puertos
+  (en los brazos) siguen seleccionándose sin que el cuerpo se los "trague".
+
 ## 6. Resuelto / puntos cerrados
 
 - **Persistencia**: ❌ ninguna. Landmark fijo regenerado idéntico por semilla (§0.5). Sin códec.

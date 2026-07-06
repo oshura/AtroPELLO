@@ -13,7 +13,6 @@ function makeHost(opts: {
     human: opts.human ?? true,
     busy: opts.busy ?? false,
     dockEvents: [] as Array<DockPort | null>,
-    particles: 0,
     logs: [] as string[],
   };
   const host: SpaceStationHost = {
@@ -22,7 +21,7 @@ function makeHost(opts: {
     isHumanSystem: () => state.human,
     isBusy: () => state.busy,
     onDockReady: (p) => state.dockEvents.push(p),
-    emitParticle: () => { state.particles++; },
+    getShipWreckMesh: () => null, // sin réplicas en tests (el sistema lo omite)
     isDockingBusy: () => false,
     log: (m) => state.logs.push(m),
   };

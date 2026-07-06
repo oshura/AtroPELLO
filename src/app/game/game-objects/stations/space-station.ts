@@ -32,7 +32,18 @@ export interface StationEmissivePoints {
 export abstract class SpaceStation extends GameObject {
   public readonly isSpaceStation = true;
   public size!: number;        // radio exterior en unidades de mundo (feature común de targeting/detalles)
+  /**
+   * Radio de SELECCIÓN (targeting) en mundo. Lo lee el TargetDetector para poder seleccionar el cuerpo de la
+   * estación (aim al núcleo). NO es colisión: la bounding sphere sigue null (ver constructor). docs/ESTACIONES §1.2.1.
+   */
+  public radius!: number;
   protected stationName!: string;
+  /**
+   * Ángulo de giro sobre el PROPIO eje del toroide (rueda; el núcleo es el eje). La inclinación fija de la
+   * estación en el espacio va en `rotation.x`/`rotation.z`; el spin va aquí para que sea la rotación MÁS
+   * INTERNA y el eje de giro sea el del toroide, sin bamboleo. Ver {@link updateModelMatrix}.
+   */
+  public spin = 0;
 
   constructor(id: string, position: Vector3, outerRadius: number, name: string) {
     super(id, position, { x: 0, y: 0, z: 0 }, { x: outerRadius, y: outerRadius, z: outerRadius });
@@ -41,9 +52,10 @@ export abstract class SpaceStation extends GameObject {
     this.objectType = TargetType.SPACE_STATION;
     this.animosity = GameObjectAnimosity.NEUTRAL;
     this.size = outerRadius;
+    this.radius = outerRadius;     // radio de selección (targeting), NO de colisión
     this.stationName = name;
     this.healthMax = 100000;       // estructura colosal (no destruible por armas en este slice)
-    this.healthCurrent = this.healthMax;
+    this.healthCurrent = Math.round(this.healthMax * 0.16); // dañada por el Incidente: ~16% de integridad
     this.voidMassUnits = 0;
     // STATIONS sin bounding sphere: nada de esfera gigante que bloquee navegar entre radios/puertos.
     this.boundingSphere = null;
@@ -51,6 +63,21 @@ export abstract class SpaceStation extends GameObject {
 
   public getDisplayName(): string {
     return this.stationName;
+  }
+
+  /**
+   * La estación gira como una RUEDA sobre su propio eje (el toroide alrededor del núcleo). Para que el eje
+   * de giro sea el del toroide —y no bambolee alrededor del eje Y del mundo— el spin (Y local) debe ser la
+   * rotación MÁS INTERNA, aplicada DESPUÉS de la inclinación fija (rotation.x/z). Orden compuesto:
+   * `T · Rx · Rz · Ry(spin) · S`. Así el eje de giro en mundo coincide con el eje del toroide (Rx·Rz·Y).
+   */
+  public override updateModelMatrix(): void {
+    this.identityMatrix(this.modelMatrix);
+    this.translate(this.modelMatrix, this.position.x, this.position.y, this.position.z);
+    this.rotateX(this.modelMatrix, this.rotation.x); // inclinación fija
+    this.rotateZ(this.modelMatrix, this.rotation.z); // inclinación fija
+    this.rotateY(this.modelMatrix, this.spin);       // giro sobre el eje del toroide (rueda)
+    this.scaleMatrix(this.modelMatrix, this.scale.x, this.scale.y, this.scale.z);
   }
 
   /** ITargetable: las estaciones se integran en targeting como categoría STATION. */
@@ -68,9 +95,10 @@ export abstract class SpaceStation extends GameObject {
 
   /**
    * "Bolas" de motor (geometría emissive). `center` en espacio unidad (lo lleva a mundo el system);
-   * `radius` en unidades de MUNDO. Por defecto ninguna; las subclases lo aportan.
+   * `radius` en unidades de MUNDO; `flattenY` (<1) aplasta la bola por el eje Y de la estación (M&M). Por
+   * defecto ninguna; las subclases lo aportan.
    */
-  public getMotorGlowsLocal(): Array<{ center: [number, number, number]; radius: number }> {
+  public getMotorGlowsLocal(): Array<{ center: [number, number, number]; radius: number; flattenY?: number }> {
     return [];
   }
 }

@@ -3,6 +3,7 @@ import { GameObject } from '../../GameObject';
 import { TargetType } from '../../types/targeting.types';
 import { GameObjectType } from '../../types/game-object.types';
 import { GameObjectAnimosity } from '../../types/animosity.types';
+import { composeBasisMatrix } from './station-geometry';
 
 // Quad unidad en el plano XY mirando a +Z (se escala por el tamaño del puerto y se orienta al normal).
 const QUAD_V = [-1, -1, 0, 1, -1, 0, 1, 1, 0, -1, 1, 0];
@@ -60,13 +61,15 @@ export class DockPort extends GameObject {
     return this.objectType;
   }
 
-  /** Orienta el tile para que su cara (+Z local) mire en la dirección `dir` (normal de acople en mundo). */
-  public faceNormal(dir: Vector3): void {
-    const len = Math.hypot(dir.x, dir.y, dir.z) || 1;
-    const x = dir.x / len, y = dir.y / len, z = dir.z / len;
-    this.rotation.y = Math.atan2(x, z);
-    this.rotation.x = -Math.asin(Math.max(-1, Math.min(1, y)));
-    this.rotation.z = 0;
+  /**
+   * Fija posición + orientación EXACTAS del tile desde una base ortonormal en mundo (+Z local = `normal`),
+   * de modo que quede perfectamente PLANO sobre la cara del brazo de acople aunque la estación (inclinada)
+   * gire — sin el bamboleo de los ángulos de Euler. La calcula el SpaceStationSystem desde el modelMatrix.
+   */
+  public setWorldBasis(pos: Vector3, right: Vector3, up: Vector3, normal: Vector3): void {
+    this.position.x = pos.x; this.position.y = pos.y; this.position.z = pos.z;
+    this.approachNormal = { x: normal.x, y: normal.y, z: normal.z };
+    composeBasisMatrix(this.modelMatrix, pos, right, up, normal, this.scale);
   }
 
   /** ¿El puerto admite acople ahora mismo? (intacto y libre). */

@@ -20,6 +20,13 @@ describe('HumanSpaceStation', () => {
     expect(station.boundingSphere).toBeNull();
   });
 
+  it('nace dañada (~16% de integridad) y es seleccionable por radio (sin colisión)', () => {
+    const station = new HumanSpaceStation({ x: 0, y: 0, z: 0 });
+    expect(station.healthCurrent / station.healthMax).toBeCloseTo(0.16, 2);
+    expect(station.radius).toBe(800);          // radio de selección (targeting)
+    expect(station.boundingSphere).toBeNull(); // pero sin bounding de colisión
+  });
+
   it('expone puertos deterministas: 8 colocaciones, mezcla de intactos y destruidos', () => {
     const a = new HumanSpaceStation({ x: 0, y: 0, z: 0 });
     const b = new HumanSpaceStation({ x: 0, y: 0, z: 0 });

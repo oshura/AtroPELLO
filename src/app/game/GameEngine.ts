@@ -36,7 +36,9 @@ import { TardisCompanionSystem, TardisCompanionHost } from './services/state/tar
 import { SpaceTurtleSystem, SpaceTurtleHost } from './services/state/space-turtle-system';
 import { SpaceStationSystem, SpaceStationHost } from './services/state/space-station-system';
 import { DockPort } from './game-objects/stations/dock-port';
-import { StationMotorGlow } from './game-objects/stations/station-motor';
+import { StationEmissiveBall } from './game-objects/stations/station-emissive-ball';
+import { DockedShipWreck } from './game-objects/stations/docked-ship-wreck';
+import { buildShipWreckMesh } from './game-objects/stations/ship-wreck-geometry';
 import { createPortalFromSnapshot } from './services/game/portal-state.codec';
 import { captureLesserBeingSnapshot, cloneLesserBeingSnapshot } from './services/game/lesser-being-state.codec';
 import { resolveSnapshotId, resolveSystemId, resolveSystemKey } from './services/game/system-identity';
@@ -689,7 +691,8 @@ export class GameEngine {
   private readonly spaceStationSystem = new SpaceStationSystem();
   private renderedStation: import('./game-objects/stations/human-space-station').HumanSpaceStation | null = null;
   private renderedPorts: DockPort[] = [];
-  private renderedMotors: StationMotorGlow[] = [];
+  private renderedMotors: StationEmissiveBall[] = [];
+  private renderedWrecks: DockedShipWreck[] = [];
   private stationDockCandidate: DockPort | null = null;
   private stationDiffuseTex: WebGLTexture | null = null;
   private stationTexLoading = false;
@@ -722,9 +725,7 @@ export class GameEngine {
         try { this.showPlaceholderText('Puerto espacial a tiro — pulsa ENTER para acoplar', 2600); } catch {}
       }
     },
-    emitParticle: (pos, color, scale) => {
-      try { this.particleEffects?.createDestructionDebris(pos, scale, color); } catch {}
-    },
+    getShipWreckMesh: () => this.spaceship ? buildShipWreckMesh(this.spaceship) : null,
     isDockingBusy: () => this.stationPanelOpen || this.stationDockAnim !== null,
     log: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
   };
@@ -4883,9 +4884,13 @@ export class GameEngine {
       if (!availableTargets.some(t => t.id === turtle.id)) availableTargets.push(turtle as unknown as ITargetable);
     }
   } catch {}
-  // Puertos de la estación espacial: targets seleccionables ("Puerto espacial"). El cuerpo de la estación
-  // no se añade (sin bounding sphere, ver ESTACIONES §1.2.1); se interactúa por los puertos.
+  // Estación espacial: el CUERPO es seleccionable (radio de selección propio, sin colisión) y cada PUERTO
+  // ("Puerto espacial") también, acoplable o no. Ver ESTACIONES §1.2.1.
   try {
+    const stationBody = this.spaceStationSystem.getRenderable();
+    if (stationBody && stationBody.isActive() && !availableTargets.some(t => t.id === stationBody.id)) {
+      availableTargets.push(stationBody as unknown as ITargetable);
+    }
     for (const port of this.spaceStationSystem.getPorts()) {
       if (port.isActive() && !availableTargets.some(t => t.id === port.id)) {
         availableTargets.push(port as unknown as ITargetable);
@@ -8444,10 +8449,12 @@ export class GameEngine {
       if (this.renderedStation) { try { this.renderedStation.destroy(this.gl); } catch {} }
       for (const p of this.renderedPorts) { try { p.destroy(this.gl); } catch {} }
       for (const m of this.renderedMotors) { try { m.destroy(this.gl); } catch {} }
+      for (const w of this.renderedWrecks) { try { w.destroy(this.gl); } catch {} }
     }
     this.renderedStation = null;
     this.renderedPorts = [];
     this.renderedMotors = [];
+    this.renderedWrecks = [];
   }
 
   /**
@@ -8498,17 +8505,18 @@ export class GameEngine {
     this.shaderManager.setLitTexture(false);
     this.shaderManager.setLitVertexColorMode(false);
 
-    // Puertos de acople: tiles azules emissive (luminosos).
+    // Puertos de acople: los ACOPLABLES (libres) lucen azul emissive; los ocupados por un pecio quedan
+    // "apagados" (sin emissive), ya que no se puede aterrizar en ellos.
     this.shaderManager.setLitVertexColorMode(true);
-    this.shaderManager.setLitEmissive(1.0);
     for (const p of this.spaceStationSystem.getPorts()) {
       if (!p.isActive()) continue;
       if (!p.vertexBuffer) { p.initBuffers(gl); this.renderedPorts.push(p); }
+      this.shaderManager.setLitEmissive(p.isDockable() ? 1.0 : 0.0);
       this.calculateNormalMatrix(p.modelMatrix);
       this.shaderManager.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
       p.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
     }
-    // "Bolas" de motor (rojo/naranja, tobera del núcleo) — emissive más suave ("apagado").
+    // "Bola" de motor (rojo/naranja, tobera del núcleo) — emissive más suave ("apagado").
     this.shaderManager.setLitEmissive(0.75);
     for (const m of this.spaceStationSystem.getMotors()) {
       if (!m.isActive()) continue;
@@ -8519,6 +8527,18 @@ export class GameEngine {
     }
     this.shaderManager.setLitVertexColorMode(false);
     this.shaderManager.setLitEmissive(0.0);
+
+    // Réplicas atracadas (pecios): SÓLIDO rusty/quemado con iluminación (color por vértice, sin textura).
+    this.shaderManager.setLitVertexColorMode(true);
+    this.shaderManager.setSpecular(camPosArr, 0.08, 8.0);
+    for (const w of this.spaceStationSystem.getWrecks()) {
+      if (!w.isActive()) continue;
+      if (!w.vertexBuffer) { w.initBuffers(gl); this.renderedWrecks.push(w); }
+      this.calculateNormalMatrix(w.modelMatrix);
+      this.shaderManager.setLitMatrices(w.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+      w.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+    }
+    this.shaderManager.setLitVertexColorMode(false);
 
     if (wasCull) gl.enable(gl.CULL_FACE);
   }

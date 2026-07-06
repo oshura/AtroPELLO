@@ -1,6 +1,6 @@
 import { Vector3 } from '../../../types/game.types';
 import { SpaceStation, DockPortPlacement, StationEmissivePoints } from './space-station';
-import { MeshData, createMesh, pushBox, pushTorus, toTypedMesh } from './station-geometry';
+import { MeshData, createMesh, pushBox, pushTorus, toTypedMesh, applyDamageStains } from './station-geometry';
 
 /** Id canónico de la estación humana (landmark fijo; el daño/puertos se regeneran idénticos por semilla). */
 export const HUMAN_STATION_ID = 'human-station';
@@ -28,12 +28,6 @@ interface HumanStationBuild {
   emissive: StationEmissivePoints;
 }
 
-// Punto de fuego SOBRE la superficie del tubo (por encima, para que las partículas NO queden ocultas dentro).
-function firePoint(seg: number): [number, number, number] {
-  const u = (seg / RING_SEG) * Math.PI * 2;
-  return [Math.cos(u) * RING_RADIUS, TUBE_RADIUS * 1.5, Math.sin(u) * RING_RADIUS];
-}
-
 /** Construye la estación humana (toroide + 4 radios + núcleo + brazos de acople) y sus puertos. */
 function buildHumanStation(): HumanStationBuild {
   const mesh: MeshData = createMesh();
@@ -58,10 +52,10 @@ function buildHumanStation(): HumanStationBuild {
     pushBox(mesh, c, h, HULL, 2);
   }
 
-  // Núcleo central + toberas de motor (el resplandor rojo/naranja "apagado" lo aportan partículas).
+  // Núcleo central + UNA tobera de motor (el resplandor rojo/naranja "apagado" lo aporta una bola emissive
+  // hundida en la tobera, estilo Ulises 31). Solo un motor (feedback del usuario).
   pushBox(mesh, [0, 0, 0], [CORE_HALF, CORE_HALF, CORE_HALF], CORE_COL, 1);
-  pushBox(mesh, [0, CORE_HALF + 0.05, 0], [0.07, 0.05, 0.07], HULL_DARK, 1);
-  pushBox(mesh, [0, -CORE_HALF - 0.05, 0], [0.07, 0.05, 0.07], HULL_DARK, 1);
+  pushBox(mesh, [0, -CORE_HALF - 0.05, 0], [0.07, 0.06, 0.07], HULL_DARK, 1); // tobera (bajo el núcleo)
 
   // Puertos: un brazo de acople (clamp) en cada lado ESTE/OESTE del radio, con la tile como tapa exterior.
   const ports: DockPortPlacement[] = [];
@@ -98,9 +92,13 @@ function buildHumanStation(): HumanStationBuild {
   }
 
   const emissive: StationEmissivePoints = {
-    fire: [firePoint(13), firePoint(37)],          // fuego sobre 2 puntos del toroide (segmentos intactos)
-    motor: [0, -(CORE_HALF + 0.14), 0],            // tobera bajo el núcleo (motor "apagado", rojo/naranja)
+    fire: [],                                       // sin fuego (feedback del usuario)
+    motor: [0, -(CORE_HALF + 0.04), 0],            // tobera bajo el núcleo (referencia; el motor es una bola emissive)
   };
+
+  // Manchas de daño: ~18 regiones rusty con núcleo quemado, repartidas por toroide/pasadizos/núcleo
+  // (deterministas por semilla; el landmark se regenera idéntico). Ver feedback del usuario.
+  applyDamageStains(mesh, `${HUMAN_STATION_ID}-damage`, 18, 0.14, 0.05);
 
   return { geo: toTypedMesh(mesh), ports, emissive };
 }
@@ -138,11 +136,11 @@ export class HumanSpaceStation extends SpaceStation {
     return HUMAN.emissive;
   }
 
-  public override getMotorGlowsLocal(): Array<{ center: [number, number, number]; radius: number }> {
-    const y = CORE_HALF + 0.12; // extremo de cada tobera del núcleo
+  public override getMotorGlowsLocal(): Array<{ center: [number, number, number]; radius: number; flattenY?: number }> {
+    // Un solo motor: bola saliendo de la boca de la tobera (posición de antes), tamaño 58, aplastada por el
+    // eje Y de la estación (M&M).
     return [
-      { center: [0, y, 0], radius: 72 },
-      { center: [0, -y, 0], radius: 72 },
+      { center: [0, -(CORE_HALF + 0.12), 0], radius: 58, flattenY: 0.45 },
     ];
   }
 }

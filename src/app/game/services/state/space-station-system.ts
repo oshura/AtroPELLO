@@ -1,10 +1,9 @@
 import { Vector3 } from '../../../types/game.types';
 import { HumanSpaceStation, HUMAN_STATION_ID } from '../../game-objects/stations/human-space-station';
 import { DockPort } from '../../game-objects/stations/dock-port';
-import { StationMotorGlow } from '../../game-objects/stations/station-motor';
-
-/** Color RGB [0..1] para partículas. */
-export interface RgbColor { r: number; g: number; b: number; }
+import { StationEmissiveBall } from '../../game-objects/stations/station-emissive-ball';
+import { DockedShipWreck } from '../../game-objects/stations/docked-ship-wreck';
+import { WreckMesh } from '../../game-objects/stations/ship-wreck-geometry';
 
 /** Puente del sistema con el motor (todo via host: sin acoplar a GameEngine, testeable). */
 export interface SpaceStationHost {
@@ -13,7 +12,7 @@ export interface SpaceStationHost {
   isHumanSystem(): boolean;             // la estación humana solo existe en el sistema humano
   isBusy(): boolean;                    // animación/void jump activos → no spawnear todavía
   onDockReady(port: DockPort | null): void; // puerto acoplable dentro de rango (o null)
-  emitParticle(pos: Vector3, color: RgbColor, scale: number): void; // fuego/motor
+  getShipWreckMesh(): WreckMesh | null; // malla de alambre de la nave (para réplicas atracadas)
   isDockingBusy(): boolean;             // acoplada o en animación de atraque → congelar el giro
   log(msg: string, data?: unknown): void;
 }
@@ -21,27 +20,27 @@ export interface SpaceStationHost {
 const SPAWN_DIST = 2500;       // u desde la nave del jugador (dentro de la cola; localizar y dirigirse a ella)
 const STATION_RADIUS = 800;    // radio exterior del toroide (grandota)
 const PORT_SIZE = 8;           // tamaño de la tile de acople (20% del anterior)
-const EMIT_INTERVAL = 0.06;    // s entre emisiones de partículas de fuego/motor (llama más continua)
-const FIRE_COLOR: RgbColor = { r: 1.0, g: 0.40, b: 0.08 };   // fuego naranja
-const FIRE_YELLOW: RgbColor = { r: 1.0, g: 0.78, b: 0.22 };  // núcleo de la llama (amarillo)
-const MOTOR_COLOR: RgbColor = { r: 0.8, g: 0.18, b: 0.06 };  // motor "apagado" rojo/naranja
-const SPIN_SPEED = 0.05;       // rad/s — giro lento sobre su eje (como un planeta)
+const SPIN_SPEED = 0.05;       // rad/s — giro lento sobre el propio eje del toroide (rueda; núcleo = eje)
 const TILT = (25 * Math.PI) / 180; // inclinación inicial (~25°) en un par de ejes
+const MOTOR_COLOR: [number, number, number] = [1.0, 0.40, 0.10]; // motor "apagado" rojo/naranja (bola emissive)
+const WRECK_SCALE = 22;        // semieje (mundo) del pecio atracado (nave del jugador, sólido rusty)
+const WRECK_OFFSET = 18;       // separación (mundo) del pecio hacia afuera del puerto (a lo largo de la normal)
+const FREE_PORTS = new Set<number>([0, 5]); // puertos LIBRES (sin pecio, acoplables); el resto llevan réplica
 export const DOCK_RANGE = 50;  // u: a esta distancia de un puerto se enciende el piloto de acople
 
 /**
  * Estación espacial humana como LANDMARK FIJO del sistema humano (regenerado idéntico por semilla; sin
  * persistencia). Lógica FUERA del GameEngine (regla #1): el motor llama `update` por frame y
- * `getRenderable`/`getPorts` en el pase de render/targeting. docs/ESTACIONES.md Fase 9.
+ * `getRenderable`/`getPorts`/`getMotors`/`getWrecks` en el pase de render/targeting.
+ * docs/ESTACIONES.md Fase 9.
  */
 export class SpaceStationSystem {
   private station: HumanSpaceStation | null = null;
   private ports: DockPort[] = [];
   private dockCandidate: DockPort | null = null;
-  private fireWorld: Vector3[] = [];      // focos de fuego en mundo (toroide)
-  private motorWorld: Vector3 | null = null; // núcleo de motores en mundo
-  private motors: StationMotorGlow[] = []; // "bolas" de motor (geometría emissive)
-  private emitTimer = 0;
+  private motors: StationEmissiveBall[] = [];         // "bola" de motor (tobera del núcleo)
+  private motorLocals: [number, number, number][] = []; // centros LOCALES de los motores
+  private wrecks: Array<{ obj: DockedShipWreck; port: number }> = []; // réplicas atracadas por puerto
 
   getRenderable(): HumanSpaceStation | null {
     return this.station;
@@ -52,8 +51,13 @@ export class SpaceStationSystem {
   }
 
   /** "Bolas" de motor (geometría emissive) que el engine renderiza en el pase emissive. */
-  getMotors(): StationMotorGlow[] {
+  getMotors(): StationEmissiveBall[] {
     return this.motors;
+  }
+
+  /** Réplicas atracadas (pecios sólidos rusty) que el engine renderiza con iluminación. */
+  getWrecks(): DockedShipWreck[] {
+    return this.wrecks.map(w => w.obj);
   }
 
   /** Puerto acoplable más cercano dentro de rango (null si ninguno). Lo usa el flujo de acople. */
@@ -65,10 +69,9 @@ export class SpaceStationSystem {
     this.station = null;
     this.ports = [];
     this.dockCandidate = null;
-    this.fireWorld = [];
-    this.motorWorld = null;
     this.motors = [];
-    this.emitTimer = 0;
+    this.motorLocals = [];
+    this.wrecks = [];
   }
 
   update(host: SpaceStationHost, dt: number): void {
@@ -90,10 +93,10 @@ export class SpaceStationSystem {
       return;
     }
 
-    // Giro lento sobre su eje (como un planeta), congelado mientras está acoplada/en animación de atraque
-    // (para que la nave acoplada no se "despegue" del puerto). Re-deriva puertos/motores/focos.
+    // Giro como una RUEDA sobre el propio eje del toroide (spin = Y local, más interno que la inclinación).
+    // Congelado mientras está acoplada/en animación (para que la nave acoplada no se "despegue" del puerto).
     if (!host.isDockingBusy()) {
-      this.station.rotation.y += SPIN_SPEED * dt;
+      this.station.spin += SPIN_SPEED * dt;
       this.station.updateModelMatrix();
       this.rebuildWorldTransforms();
     }
@@ -119,19 +122,6 @@ export class SpaceStationSystem {
       this.dockCandidate = best;
       host.onDockReady(best);
     }
-
-    // Partículas de fuego (toroide) + motor "apagado" (núcleo), a intervalos. Fuego grande y denso.
-    this.emitTimer += dt;
-    if (this.emitTimer >= EMIT_INTERVAL) {
-      this.emitTimer = 0;
-      for (const p of this.fireWorld) {
-        host.emitParticle(p, FIRE_COLOR, 3.0);
-        host.emitParticle(p, FIRE_YELLOW, 1.8);
-      }
-      if (this.motorWorld) {
-        host.emitParticle(this.motorWorld, MOTOR_COLOR, 1.2);
-      }
-    }
   }
 
   private spawn(host: SpaceStationHost, ship: Vector3, earth: Vector3 | null): void {
@@ -150,31 +140,57 @@ export class SpaceStationSystem {
       z: ship.z + dir.z * SPAWN_DIST,
     };
     const station = new HumanSpaceStation(pos, STATION_RADIUS, HUMAN_STATION_ID);
-    // Inclinación inicial (~25°) en un par de ejes; luego gira lentamente sobre su eje Y (ver update).
+    // Inclinación inicial (~25°) en un par de ejes; el giro (spin) se aplica en update sobre el eje del toroide.
     station.rotation.x = TILT;
     station.rotation.z = TILT;
+    station.spin = 0;
     station.updateModelMatrix();
     this.station = station;
 
-    // Crear los objetos de puertos y motores UNA vez; sus transformaciones en mundo las fija rebuildWorldTransforms.
+    // Puertos: 2 libres (acoplables) y el resto ocupados por una réplica atracada.
     this.ports = [];
-    for (const pl of station.getPortPlacements()) {
+    const placements = station.getPortPlacements();
+    for (let i = 0; i < placements.length; i++) {
+      const pl = placements[i];
       const port = new DockPort(`${station.id}-port-${pl.id}`, { ...pos }, station.id, PORT_SIZE, pl.intact);
       port.voidMassUnits = station.voidMassUnits; // el detalle muestra características del padre
+      if (!FREE_PORTS.has(i)) {
+        port.occupied = true; // ocupado por un pecio → no acoplable (el piloto no se enciende ahí)
+      }
       this.ports.push(port);
     }
+
+    // Motor(es): bola(s) emissive en la tobera del núcleo.
     this.motors = [];
+    this.motorLocals = [];
     let mi = 0;
     for (const g of station.getMotorGlowsLocal()) {
-      this.motors.push(new StationMotorGlow(`${station.id}-motor-${mi++}`, { ...pos }, g.radius));
+      this.motors.push(new StationEmissiveBall(`${station.id}-motor-${mi++}`, { ...pos }, g.radius, MOTOR_COLOR, g.flattenY ?? 1));
+      this.motorLocals.push([g.center[0], g.center[1], g.center[2]]);
     }
-    this.emitTimer = 0;
-    this.rebuildWorldTransforms();
 
-    host.log('Space station spawned (human landmark)', { pos, ports: this.ports.length });
+    // Réplicas atracadas: pecios (nave del jugador) en todos los puertos menos los libres.
+    this.wrecks = [];
+    const wreckMesh = host.getShipWreckMesh();
+    if (wreckMesh) {
+      for (let i = 0; i < this.ports.length; i++) {
+        if (FREE_PORTS.has(i)) {
+          continue;
+        }
+        const obj = new DockedShipWreck(`${station.id}-wreck-${i}`, { ...pos }, wreckMesh, WRECK_SCALE, `${station.id}-wreck-${i}`);
+        this.wrecks.push({ obj, port: i });
+      }
+    }
+
+    this.rebuildWorldTransforms();
+    host.log('Space station spawned (human landmark)', { pos, ports: this.ports.length, wrecks: this.wrecks.length });
   }
 
-  /** Re-deriva la posición/orientación en MUNDO de puertos, motores y focos desde el modelMatrix (rotado) de la estación. */
+  /**
+   * Re-deriva posición/orientación en MUNDO de puertos, motores y pecios desde el modelMatrix (inclinado +
+   * girando). Puertos y pecios se orientan con una BASE ORTONORMAL exacta extraída del modelMatrix (no con
+   * ángulos de Euler), para que queden perfectamente pegados a su cara aunque la estación gire.
+   */
   private rebuildWorldTransforms(): void {
     const station = this.station;
     if (!station) {
@@ -186,39 +202,58 @@ export class SpaceStationSystem {
       y: m[1] * l[0] + m[5] * l[1] + m[9] * l[2] + m[13],
       z: m[2] * l[0] + m[6] * l[1] + m[10] * l[2] + m[14],
     });
-    const toDir = (l: [number, number, number]): Vector3 => ({
+    const norm = (v: Vector3): Vector3 => {
+      const l = Math.hypot(v.x, v.y, v.z) || 1;
+      return { x: v.x / l, y: v.y / l, z: v.z / l };
+    };
+    const toDir = (l: [number, number, number]): Vector3 => norm({
       x: m[0] * l[0] + m[4] * l[1] + m[8] * l[2],
       y: m[1] * l[0] + m[5] * l[1] + m[9] * l[2],
       z: m[2] * l[0] + m[6] * l[1] + m[10] * l[2],
     });
+    const cross = (a: Vector3, b: Vector3): Vector3 => ({
+      x: a.y * b.z - a.z * b.y,
+      y: a.z * b.x - a.x * b.z,
+      z: a.x * b.y - a.y * b.x,
+    });
+    // Ejes de la estación en mundo (base ortonormal) — referencia para orientar tiles/pecios/motor sin gimbal.
+    const exRef = toDir([1, 0, 0]);
+    const upRef = toDir([0, 1, 0]);
+    const ezRef = toDir([0, 0, 1]);
 
+    // Puertos: base exacta (normal = eje de acople; right/up en el plano de la cara).
     const placements = station.getPortPlacements();
     for (let i = 0; i < this.ports.length; i++) {
       const pl = placements[i];
       const port = this.ports[i];
       const w = toWorld(pl.localCenter);
-      port.position.x = w.x; port.position.y = w.y; port.position.z = w.z;
-      const nw = toDir(pl.localNormal);
-      const nl = Math.hypot(nw.x, nw.y, nw.z) || 1;
-      port.approachNormal = { x: nw.x / nl, y: nw.y / nl, z: nw.z / nl };
-      port.faceNormal(nw);
-      port.updateModelMatrix();
-      // Refrescar el centro del bounding sphere (selección lo usa); el sistema mueve el puerto a mano.
+      const n = toDir(pl.localNormal);
+      const right = norm(cross(upRef, n));
+      const up = cross(n, right);
+      port.setWorldBasis(w, right, up, n);
       if (port.boundingSphere) {
         port.boundingSphere.center = { x: w.x, y: w.y, z: w.z };
       }
     }
 
-    const glows = station.getMotorGlowsLocal();
+    // Motor (bola emissive): orientado con la base de la estación para que el aplastado (M&M) siga su eje Y.
     for (let i = 0; i < this.motors.length; i++) {
-      const w = toWorld(glows[i].center);
-      const mtr = this.motors[i];
-      mtr.position.x = w.x; mtr.position.y = w.y; mtr.position.z = w.z;
-      mtr.updateModelMatrix();
+      const w = toWorld(this.motorLocals[i]);
+      this.motors[i].setWorldBasis(w, exRef, upRef, ezRef);
     }
 
-    const emissive = station.getEmissivePointsLocal();
-    this.fireWorld = emissive.fire.map(toWorld);
-    this.motorWorld = emissive.motor ? toWorld(emissive.motor) : null;
+    // Pecios: pegados a su puerto (misma base), morro (+Z) hacia afuera a lo largo de la normal.
+    for (const wk of this.wrecks) {
+      const port = this.ports[wk.port];
+      const n = port.approachNormal;
+      const right = norm(cross(upRef, n));
+      const up = cross(n, right);
+      const pos: Vector3 = {
+        x: port.position.x + n.x * WRECK_OFFSET,
+        y: port.position.y + n.y * WRECK_OFFSET,
+        z: port.position.z + n.z * WRECK_OFFSET,
+      };
+      wk.obj.setWorldBasis(pos, right, up, n);
+    }
   }
 }
