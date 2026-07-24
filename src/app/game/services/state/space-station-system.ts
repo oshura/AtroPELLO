@@ -20,7 +20,7 @@ export interface SpaceStationHost {
 const SPAWN_DIST = 2500;       // u desde la nave del jugador (dentro de la cola; localizar y dirigirse a ella)
 const STATION_RADIUS = 800;    // radio exterior del toroide (grandota)
 const PORT_SIZE = 8;           // tamaño de la tile de acople (20% del anterior)
-const SPIN_SPEED = 0.05;       // rad/s — giro lento sobre el propio eje del toroide (rueda; núcleo = eje)
+const SPIN_SPEED = 0.025;      // rad/s — giro lento sobre el propio eje del toroide (rueda; núcleo = eje). Mitad de velocidad (antes 0.05)
 const TILT = (25 * Math.PI) / 180; // inclinación inicial (~25°) en un par de ejes
 const MOTOR_COLOR: [number, number, number] = [1.0, 0.40, 0.10]; // motor "apagado" rojo/naranja (bola emissive)
 const WRECK_SCALE = 22;        // semieje (mundo) del pecio atracado (nave del jugador, sólido rusty)
