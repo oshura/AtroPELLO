@@ -988,6 +988,72 @@ Cumple regla #1 (motor solo delega/encoge): toda la lógica en clases/servicios 
 
 ---
 
+### Fase 10 — Identidad visual del espacio (superficies planetarias procedurales + nave)
+
+**Motivación (usuario, 2026-07-24):** los planetas se ven "una mierda" — de cerca son esferas de
+**color liso** (sin textura de superficie) y de lejos un **sprite billboard que se regenera cada 5s**
+(`BillboardRenderer.REGENERATE_INTERVAL_MS`) re-horneando la iluminación → **flicker**. El usuario quiere
+planetas realistas: textura de **atmósfera** (terrestres/gaseosos) o de **suelo rocoso** (sin atmósfera),
+iguales de cerca y de lejos, sin parpadeo. Son **pocas esferas** (planetas + sol) → no es carga.
+Intentos anteriores (IAs antiguas) fallaron intentando cargar imágenes equirectangulares; el motor **ya
+demuestra la técnica correcta** (fbm procedural sobre esfera: `stormShellProgram`, `weatherLayerProgram`).
+
+**Alcance de la rama `feature/nave-planetas-visuales`** (decidido con el usuario): **planetas primero**,
+luego **rediseño de la nave** (para la nave se le mocarán 2-3 variantes de silueta antes de comprometerse).
+
+#### 10.1 Diagnóstico (estado ANTES) — `GameEngine.renderPlanets()` (~7843)
+Cuatro tiers por distancia, ninguno con superficie por planeta:
+- `distShip<5000`: `texturedProgram` con **una única textura de ruido 64×64 compartida por TODOS** los
+  planetas, sólo re-tintada por `u_baseColor` (`TextureManager.createMetallicTexture`).
+- `5000–20000`: `litProgram` color liso (sin textura). `>20000`: `basicProgram` (vertex color plano).
+- `distCam>50000`: `BillboardRenderer` sprite canvas (regenerado cada 5s → flicker).
+- Sin fresnel/atmósfera en ningún planeta del espacio. Anillos de Saturno **sólo** en el sprite lejano
+  (de cerca `RingedPlanet` es una bola lisa). Sol = esfera `basicProgram` + glow aditivo.
+
+#### 10.2 Decisiones de diseño (planetas)
+1. **Superficie 100% procedural en shader**, patrón ya probado (`stormShell`): un programa nuevo que
+   calcula albedo por fragmento desde **fbm 3D sobre la posición objeto** (sin costura ni pinchazo polar),
+   con **semilla por planeta** (`hash(planetId)`, ya persistido) + paleta derivada de `kind`+`baseColorName`.
+2. **Adiós al sprite y al LOD de billboard.** Se dibuja **la esfera procedural real a todas las distancias**
+   (pocas esferas → coste trivial). Idéntica cerca/lejos, sin pop ni flicker. `BillboardRenderer` queda
+   huérfano → **se elimina** (import+campo+construcción del motor y el fichero).
+3. **Tipo de superficie dirigido por DATO** (`planetType` + `baseColorName`, nunca por id — regla §7.3):
+   `rocky` (0, sin atmósfera: cráteres/rugosidad), `terrestrial` (1: océano+tierra+casquetes+nubes+specular
+   de agua + rim atmosférico), `gaseous` (2: bandas+tormentas+rim), `ice` (3: alta reflectancia+grietas+rim).
+   Mapa: Gaseous/Giant/Ringed→gaseous; Planetoid/Dwarf/Protoplanet con `azul_hielo`→ice,
+   `verde`/`azul_marino`→terrestrial, resto→rocky.
+4. **Terminador día/noche** desde la dirección del Sol (ya disponible) + **rim de atmósfera fresnel** en la
+   propia esfera (sin segundo pase de geometría) para los que tienen atmósfera.
+5. **Casos especiales intactos:** el **Sol** mantiene su render (core + glow) y la **Tierra partida**
+   (`earth_split`: geometría partida, tapas emisivas, núcleo, storm shell) se deja EXACTAMENTE como está —
+   es la "buena" de referencia. Ambos se enrutan por su rama previa, el resto por el shader nuevo.
+
+#### 10.3 Encaje arquitectónico (regla #1: el motor NO crece)
+- Shader + dibujo en un **servicio nuevo** `game/rendering/PlanetSurfaceRenderer.ts` (≤400 líneas): posee su
+  `WebGLProgram`, sus uniforms, el **resolutor de estilo** (`resolveStyle(planet)`, puro/testable) y el
+  `renderPlanet(...)` (usa `planet.render(gl, program,…)`, que ya bindea `a_position`/`a_normal`).
+- `GameEngine` **encoge**: se borra el bloque de sprite (~140 líneas) y se colapsan los 4 tiers a una llamada
+  al servicio (sol y tierra partida conservan su rama). Net del motor: fuertemente negativo.
+- FPS: fbm 5 octavas sobre un puñado de esferas es despreciable (juego en navegador, pocas esferas).
+
+#### 10.4 Sub-fases
+- **10.a ✅** shader procedural (rocky/terrestrial/gaseous/ice) + rim atmósfera + quitar sprite/billboard
+  (`PlanetSurfaceRenderer`). Sol y Tierra intactos. `BillboardRenderer` borrado.
+- **10.b ✅** anillos reales de cerca para `Ringed` (`PlanetRingRenderer`, annulus + bandas + huecos Cassini,
+  a todas las distancias, conviven con el cinturón de megaasteroides) + **Sol procedural**
+  (`PlanetSurfaceRenderer.renderSun`: granulación + manchas + oscurecimiento del limbo). SIN cáscara de
+  atmósfera exterior (decisión del usuario: NO).
+- **10.c ✅** rediseño de la nave: variante **A "Vástago"** (caza sci-fi pulido) elegida por el usuario.
+  `game/rendering/ship/` = `ship-geometry.ts` (malla procedural por partes) + `ShipRenderer.ts` (shader propio:
+  casco metálico con **líneas de panel + desgaste + rim fresnel + acentos emisivos**; transformadas dinámicas:
+  pitch del morro, plegado de alas, escala+color del escape). El motor **encoge** (−790 líneas acumuladas):
+  borrados `renderModularSpaceship` + 6 `renderSpaceship*` + `ensureShipModuleVAO`/`drawShipModule`/`computeNormals`/
+  `renderTexturedSpaceship`/`renderOrientationIndicator`/`debugNormalAttribEnabled` y los campos `shipVAO`/`shipBuffers`.
+  Los `Spaceship.createXxxGeometry` SE QUEDAN (los consume el pecio de estaciones `ship-wreck-geometry.ts`).
+  Pendiente menor: la nave del jugador y su pecio ya no comparten diseño (el pecio sigue con la malla antigua).
+
+---
+
 ## 6. Proceso de desarrollo y ciclo de vida del código
 
 ### 6.1 Flujo de trabajo

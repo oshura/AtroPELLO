@@ -24,7 +24,7 @@ import { PortalPersistenceService } from './services/game/portal-persistence.ser
 import { PortalRegistryService } from './services/game/portal-registry.service';
 import { SolarSystemRuntimeSerializerService } from './services/game/solar-system-runtime-serializer.service';
 import { applyPlanetSnapshotFields, defaultColorForKind, normalizePlanetKind } from './services/game/planet-state.codec';
-import { EARTH_PLANET_ID, RINGED_PLANET_ID, isEarthPlanet, isRingedPlanet } from './game-objects/planet-classification';
+import { EARTH_PLANET_ID, RINGED_PLANET_ID, isRingedPlanet } from './game-objects/planet-classification';
 import { collisionDamageForType, collisionDamageForConstructor } from './services/state/collision-damage';
 import { LandingPanelController, LandingPanelHost } from './services/state/landing-panel-controller';
 import { AtmosphereAutoLandingCamera, AtmosphereAutoLandingCameraHost } from './services/state/atmosphere-auto-landing-camera';
@@ -66,7 +66,9 @@ import { RespawnAnchorMetadata } from './types/respawn.types';
 import { GameStartContext, PlayerResetState } from './types/universe-state.types';
 import { ScreenOverlayRenderer } from './rendering/ScreenOverlayRenderer';
 import { InstancedAsteroidRenderer } from './rendering/InstancedAsteroidRenderer';
-import { BillboardRenderer } from './rendering/BillboardRenderer';
+import { PlanetSurfaceRenderer } from './rendering/PlanetSurfaceRenderer';
+import { PlanetRingRenderer } from './rendering/PlanetRingRenderer';
+import { ShipRenderer } from './rendering/ship/ShipRenderer';
 import { TargetOutline2DRenderer } from './hud/TargetOutline2DRenderer';
 import { LoggingService, LogCategory, LogLevel } from '../services/logging.service';
 import { CollisionResponseService } from './services/physics/collision-response.service';
@@ -788,37 +790,14 @@ export class GameEngine {
       : false,
     isPrecisionRotationActive: () => this.isPrecisionRotationActive(),
   };
-  // Debug: track potential attribute collisions/state
-  private onceLoggedAttribCollision: boolean = false;
-  private lastNormalAttribEnabled: boolean | null = null;
   // Feature flag: toggle instanced rendering for asteroids
   private readonly USE_INSTANCING = true;
   private instancedRenderer: InstancedAsteroidRenderer | null = null;
-  private billboardRenderer: BillboardRenderer | null = null;
+  private planetSurfaceRenderer: PlanetSurfaceRenderer | null = null;
+  private planetRingRenderer: PlanetRingRenderer | null = null;
+  private shipRenderer: ShipRenderer | null = null;
   // Tipos de target que NO deben ser descartados por culling distancia/frustum
   private readonly neverCullTypes = new Set([TargetType.PLANET]);
-
-  // VAOs/VBOs cache for spaceship modules (to avoid per-frame buffer churn)
-  private shipVAO: {
-    nose: WebGLVertexArrayObject | null,
-    body: WebGLVertexArrayObject | null,
-    cockpit: WebGLVertexArrayObject | null,
-    nozzle: WebGLVertexArrayObject | null,
-    wings: WebGLVertexArrayObject | null,
-    thruster: WebGLVertexArrayObject | null,
-  } = { nose: null, body: null, cockpit: null, nozzle: null, wings: null, thruster: null };
-  private shipBuffers: {
-    nose?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
-    body?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
-    cockpit?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
-    nozzle?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
-    wings?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
-    thruster?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer; indexCount: number };
-  } = {};
-  // Record the last applied dynamic scale for the thruster to refresh geometry when it changes
-  private lastThrusterScale: number = -1;
-  private lastWingDeploymentProgress: number = -1;
-  private wingGeometryDirty = true;
   private pendingWingDeploymentProgress: number | null = null;
   private pendingNoseAnchorProgress: number | null = null;
   // Simple ephemeral text overlay (e.g., "ANIMATION NUMBER X.")
@@ -1177,10 +1156,7 @@ export class GameEngine {
       this.pendingWingDeploymentProgress = typeof progress === 'number' ? progress : 0;
       return;
     }
-    const changed = this.spaceship.setWingDeploymentProgress(progress);
-    if (changed) {
-      this.wingGeometryDirty = true;
-    }
+    this.spaceship.setWingDeploymentProgress(progress);
     this.pendingWingDeploymentProgress = null;
   }
 
@@ -3394,8 +3370,12 @@ export class GameEngine {
       if (this.USE_INSTANCING) {
         this.instancedRenderer = new InstancedAsteroidRenderer(this.gl, this.shaderManager);
       }
-  // Billboard renderer for distant impostors (planets, etc.)
-      this.billboardRenderer = new BillboardRenderer(this.gl);
+  // Superficie planetaria procedural (esfera a todas las distancias, sin sprite/flicker) — docs §10
+      this.planetSurfaceRenderer = new PlanetSurfaceRenderer(this.gl);
+  // Anillos reales de planetas anillados (Saturno), a todas las distancias — docs §10.b
+      this.planetRingRenderer = new PlanetRingRenderer(this.gl);
+  // Nave del jugador (Vástago): servicio de render con shader propio — docs §10.c
+      this.shipRenderer = new ShipRenderer(this.gl);
   // Overlay renderer for robust full-screen fades and image flashes
   this.overlayRenderer = new ScreenOverlayRenderer(this.gl);
     // Nuevo renderer encapsulado para portales (visual halo/eye futuro)
@@ -3883,7 +3863,6 @@ export class GameEngine {
       
       if (this.pendingWingDeploymentProgress !== null) {
         this.spaceship.setWingDeploymentProgress(this.pendingWingDeploymentProgress);
-        this.wingGeometryDirty = true;
         this.pendingWingDeploymentProgress = null;
       }
       if (this.pendingNoseAnchorProgress !== null) {
@@ -6642,8 +6621,6 @@ export class GameEngine {
     this.landingDamageSuppressed = false;
     this.atmosphereCollisionGrace.reset();
     this.voidJumpActive = false;
-    this.lastWingDeploymentProgress = -1;
-    this.wingGeometryDirty = true;
     this.pendingWingDeploymentProgress = null;
     try { this.spaceship?.setWingDeploymentProgress(0); } catch {}
     this.resetPanelInteractionState('restart-loop');
@@ -7843,11 +7820,6 @@ export class GameEngine {
   private renderPlanets(): void {
     if (!this.gl || !this.shaderManager) return;
     const cam = this.camera;
-    const proj = cam.projectionMatrix as unknown as Float32Array;
-    const f = proj[5] || 1.0;
-    const fovV = 2 * Math.atan(1 / f);
-    const viewportH = (this.gl.canvas as HTMLCanvasElement).height || 1;
-    const SPRITE_LOD_DISTANCE = 50000; // u
   // Guardar estado mínimo para no interferir con otros pases
     const prevProgram = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
     const wasBlend = this.gl.isEnabled(this.gl.BLEND);
@@ -7876,163 +7848,13 @@ export class GameEngine {
         // Reducir base ambiental para más contraste lejos del Sol
         ambientStrengthLocal = Math.min(0.6, 0.03 + inv * 0.55);
       }
-      // Distancia desde la nave (criterio de cercanía pedido)
-      const dx = p.position.x - this.spaceship.position.x;
-      const dy = p.position.y - this.spaceship.position.y;
-      const dz = p.position.z - this.spaceship.position.z;
-      const distShip = Math.hypot(dx, dy, dz);
-
-      // Distancia cámara-planet para LOD de sprite
+      // Distancia cámara-planet (para decidir la textura de magma del Sol)
       const cdx = p.position.x - cam.position.x;
       const cdy = p.position.y - cam.position.y;
       const cdz = p.position.z - cam.position.z;
       const distCam = Math.hypot(cdx, cdy, cdz);
 
-  // LOD de sprite: a partir de 50k u, render como billboard para mayor estabilidad/ rendimiento
-  // EXCEPCIÓN: el Sol nunca usa sprite para asegurar el glow y la estabilidad de brillo
-  if (this.billboardRenderer && distCam >= SPRITE_LOD_DISTANCE && !isSun) {
-        // Calcular diámetro en píxeles según tamaño angular geométrico y clamp
-        const Rw = (p as any).scale?.x ?? 1;
-        let diameterPx = (2 * Rw * viewportH) / (Math.max(1e-3, distCam) * fovV);
-        diameterPx = Math.max(8, Math.min(256, diameterPx));
-          // Textura: especial para Tierra partida, genérica circular para otros (tint = blanco)
-        const isEarthSplit = (p as any).planetType === 'Tierra';
-          const isEarthBillboard = isEarthPlanet(p.id, (p as any).planetType);
-        // Calcular dirección de luz desde el Sol al planeta para iluminación dinámica
-        let lightDir: { x: number; y: number; z: number } | undefined;
-        if (this.gameState.sun) {
-          // Vector desde planeta hacia Sol (normalizado)
-          const toSunX = this.gameState.sun.position.x - p.position.x;
-          const toSunY = this.gameState.sun.position.y - p.position.y;
-          const toSunZ = this.gameState.sun.position.z - p.position.z;
-          const sunDist = Math.sqrt(toSunX * toSunX + toSunY * toSunY + toSunZ * toSunZ) || 1;
-          const sunDirWorldX = toSunX / sunDist;
-          const sunDirWorldY = toSunY / sunDist;
-          const sunDirWorldZ = toSunZ / sunDist;
-          
-          // Calcular base de cámara para transformar a espacio de vista
-          const camToPlanetX = p.position.x - cam.position.x;
-          const camToPlanetY = p.position.y - cam.position.y;
-          const camToPlanetZ = p.position.z - cam.position.z;
-          const camToPlanetDist = Math.sqrt(camToPlanetX*camToPlanetX + camToPlanetY*camToPlanetY + camToPlanetZ*camToPlanetZ) || 1;
-          // Forward = dirección hacia el planeta (normalizado)
-          const fwdX = camToPlanetX / camToPlanetDist;
-          const fwdY = camToPlanetY / camToPlanetDist;
-          const fwdZ = camToPlanetZ / camToPlanetDist;
-          
-          // Right = forward x up (producto cruz)
-          const upX = cam.up.x, upY = cam.up.y, upZ = cam.up.z;
-          const rightX = fwdY * upZ - fwdZ * upY;
-          const rightY = fwdZ * upX - fwdX * upZ;
-          const rightZ = fwdX * upY - fwdY * upX;
-          const rightLen = Math.sqrt(rightX*rightX + rightY*rightY + rightZ*rightZ) || 1;
-          const rightNormX = rightX / rightLen;
-          const rightNormY = rightY / rightLen;
-          const rightNormZ = rightZ / rightLen;
-          
-          // Up = right x forward (reorthonormalizado)
-          const upNewX = rightNormY * fwdZ - rightNormZ * fwdY;
-          const upNewY = rightNormZ * fwdX - rightNormX * fwdZ;
-          const upNewZ = rightNormX * fwdY - rightNormY * fwdX;
-          
-          // Proyectar dirección del Sol en el espacio de vista del billboard
-          // X = componente a la derecha (right), Y = componente arriba (up), Z = profundidad (forward)
-          const lightViewX = sunDirWorldX * rightNormX + sunDirWorldY * rightNormY + sunDirWorldZ * rightNormZ;
-          const lightViewY = sunDirWorldX * upNewX + sunDirWorldY * upNewY + sunDirWorldZ * upNewZ;
-          const lightViewZ = sunDirWorldX * fwdX + sunDirWorldY * fwdY + sunDirWorldZ * fwdZ;
-          
-          lightDir = { x: lightViewX, y: lightViewY, z: Math.abs(lightViewZ) + 0.5 }; // Asegurar z positivo para visibilidad
-        }
-        const tex = isEarthSplit
-          ? this.billboardRenderer.getEarthSplitTexture()
-          : this.billboardRenderer.getCircleTexture(this.rgbToHex(p.color.r, p.color.g, p.color.b), lightDir);
-        const tint: [number,number,number,number] = [1,1,1,1];
-        // Compute camera basis (forward from target-position; right = forward x up; up re-orthonormalized)
-        const fwdU = this.normalize({ x: cam.target.x - cam.position.x, y: cam.target.y - cam.position.y, z: cam.target.z - cam.position.z });
-        const upW = cam.up;
-        const right = this.normalize({ x: fwdU.y*upW.z - fwdU.z*upW.y, y: fwdU.z*upW.x - fwdU.x*upW.z, z: fwdU.x*upW.y - fwdU.y*upW.x });
-        const upB = { x: right.y*fwdU.z - right.z*fwdU.y, y: right.z*fwdU.x - right.x*fwdU.z, z: right.x*fwdU.y - right.y*fwdU.x };
-        // If planet is Ringed (e.g., Saturn), draw ring in two parts: upper half behind, lower half in front
-        const isRinged = ((p as any)?.planetType === PlanetType.Ringed || String((p as any)?.planetType||'').toLowerCase()==='ringed');
-        const earthRingDiameterPx = isEarthBillboard ? Math.min(320, diameterPx * 1.25) : 0;
-        if (isEarthBillboard) {
-          const ringTexUpper = this.billboardRenderer.getRingTextureUpper('ring-earth');
-          this.billboardRenderer.render(
-            p.position,
-            earthRingDiameterPx,
-            cam.viewMatrix,
-            cam.projectionMatrix,
-            cam.position,
-            upB,
-            right,
-            [0.85,0.95,1,0.7],
-            ringTexUpper
-          );
-        }
-        if (isRinged) {
-          const ringTexUpper = this.billboardRenderer.getRingTextureUpper('ring-saturn');
-          const ringDiameterPx = Math.min(384, diameterPx * 2.2);
-          // Render upper half of ring first (behind planet)
-          this.billboardRenderer.render(
-            p.position,
-            ringDiameterPx,
-            cam.viewMatrix,
-            cam.projectionMatrix,
-            cam.position,
-            upB,
-            right,
-            [1,1,1,0.98],
-            ringTexUpper
-          );
-        }
-        // Render planet sphere
-        this.billboardRenderer.render(
-          p.position,
-          diameterPx,
-          cam.viewMatrix,
-          cam.projectionMatrix,
-          cam.position,
-          upB,
-          right,
-          tint,
-          tex
-        );
-        // If ringed, render lower half of ring in front of planet
-        if (isRinged) {
-          const ringTexLower = this.billboardRenderer.getRingTextureLower('ring-saturn');
-          const ringDiameterPx = Math.min(384, diameterPx * 2.2);
-          this.billboardRenderer.render(
-            p.position,
-            ringDiameterPx,
-            cam.viewMatrix,
-            cam.projectionMatrix,
-            cam.position,
-            upB,
-            right,
-            [1,1,1,0.98],
-            ringTexLower
-          );
-        }
-        if (isEarthBillboard) {
-          const ringTexLower = this.billboardRenderer.getRingTextureLower('ring-earth');
-          this.billboardRenderer.render(
-            p.position,
-            earthRingDiameterPx,
-            cam.viewMatrix,
-            cam.projectionMatrix,
-            cam.position,
-            upB,
-            right,
-            [0.85,0.95,1,0.85],
-            ringTexLower
-          );
-        }
-        // Saltar render geométrico y pases especiales (caps/glow) en modo sprite
-        continue;
-      }
-
-      // Render normal; caps emisivas se pintan en un segundo pase después
-
+      // Render de la esfera (a todas las distancias, sin sprite/flicker). Caps emisivas en 2º pase.
       if (isSun) {
         // Distancia cámara-Sol para decidir magma
         // Usar flat color hasta muy cerca (20ku) para evitar flickering por aliasing de textura
@@ -8044,15 +7866,29 @@ export class GameEngine {
           this.shaderManager.setUnlitTexMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
           this.shaderManager.setUnlitDiffuseTexture(magma);
           p.render(this.gl, this.shaderManager.unlitTexProgram!, cam.viewMatrix, cam.projectionMatrix);
+        } else if (this.planetSurfaceRenderer) {
+          // Sun core procedural: granulación + manchas + oscurecimiento del limbo — docs §10.b
+          this.calculateNormalMatrix(p.modelMatrix);
+          const sunCamPos = new Float32Array([cam.position.x, cam.position.y, cam.position.z]);
+          this.planetSurfaceRenderer.renderSun(p as Planet, p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix, sunCamPos, performance.now() / 1000);
         } else {
-          // Sun core: self-lit, flat color (estable a grandes distancias)
+          // Fallback: self-lit, flat color
           this.shaderManager.useBasicProgram();
           this.calculateNormalMatrix(p.modelMatrix);
           this.shaderManager.setBasicMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
           p.render(this.gl, this.shaderManager.basicProgram!, cam.viewMatrix, cam.projectionMatrix);
         }
-      } else if (distShip < 5000) {
-        // Cercano: texturizado tintado con baseColor (detalle alto)
+      } else if (this.planetSurfaceRenderer && this.planetSurfaceRenderer.handles(p as Planet)) {
+        // Superficie procedural (rocky/terrestrial/gaseous/ice + rim de atmósfera). docs/ARQUITECTURA.md §10
+        this.calculateNormalMatrix(p.modelMatrix);
+        const camPos = new Float32Array([cam.position.x, cam.position.y, cam.position.z]);
+        this.planetSurfaceRenderer.renderPlanet(
+          p as Planet, p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix,
+          camPos, lightDir, lightColorLocal, this.ambientColor, ambientStrengthLocal,
+          performance.now() / 1000
+        );
+      } else {
+        // Tierra partida (earth_split): render texturizado con núcleo emisivo (se conserva su look especial)
         this.shaderManager.useTexturedProgram();
         this.calculateNormalMatrix(p.modelMatrix);
         this.shaderManager.setTexturedMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
@@ -8063,60 +7899,16 @@ export class GameEngine {
         if (metallicTexture && gradientTexture) {
           this.shaderManager.setTexturedTextures(metallicTexture, gradientTexture);
         }
-        // Emissive point light from Earth's core (only for Earth)
-        if (isEarthPlanet(p.id, (p as any).planetType)) {
-          const lp = new Float32Array([p.position.x, p.position.y, p.position.z]);
-          const lc = new Float32Array([1.0, 0.25, 0.05]);
-          this.shaderManager.setPointLightTextured(lp, lc, 2.0, 1500.0, true);
-        } else {
-          const lp = new Float32Array([0,0,0]);
-          const lc = new Float32Array([0,0,0]);
-          this.shaderManager.setPointLightTextured(lp, lc, 0.0, 0.0, false);
-        }
+        // Emisivo desde el núcleo de la Tierra
+        const lp = new Float32Array([p.position.x, p.position.y, p.position.z]);
+        const lc = new Float32Array([1.0, 0.25, 0.05]);
+        this.shaderManager.setPointLightTextured(lp, lc, 2.0, 1500.0, true);
         p.render(this.gl, this.shaderManager.texturedProgram!, cam.viewMatrix, cam.projectionMatrix);
-      } else if (distShip < 20000) {
-        // Medio: por defecto lit sin especular para estabilidad; EXCEPCIÓN Tierra: mantener shader texturizado
-        const isEarth = isEarthPlanet(p.id, (p as any).planetType);
-        if (isEarth) {
-          // Mantener texturas visibles en semiesferas a media distancia
-          this.shaderManager.useTexturedProgram();
-          this.calculateNormalMatrix(p.modelMatrix);
-          this.shaderManager.setTexturedMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-          const base = new Float32Array([p.color.r, p.color.g, p.color.b]);
-          this.shaderManager.setTexturedLighting(lightDir, lightColorLocal, this.ambientColor, ambientStrengthLocal, base);
-          const metallicTexture = this.textureManager.getTexture('metallic');
-          const gradientTexture = this.textureManager.getTexture('gradient');
-          if (metallicTexture && gradientTexture) {
-            this.shaderManager.setTexturedTextures(metallicTexture, gradientTexture);
-          }
-          // Emisivo desde el núcleo de la Tierra
-          const lp = new Float32Array([p.position.x, p.position.y, p.position.z]);
-          const lc = new Float32Array([1.0, 0.25, 0.05]);
-          this.shaderManager.setPointLightTextured(lp, lc, 1.5, 2000.0, true);
-          p.render(this.gl, this.shaderManager.texturedProgram!, cam.viewMatrix, cam.projectionMatrix);
-        } else {
-          this.shaderManager.useLitProgram();
-          this.calculateNormalMatrix(p.modelMatrix);
-          this.shaderManager.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-          this.shaderManager.setLighting(lightDir, lightColorLocal, this.ambientColor, ambientStrengthLocal);
-          // Anular especular en mid-range (reduce ruido por precisión)
-          const camPos = new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]);
-          this.shaderManager.setSpecular(camPos, 0.0, 1.0);
-          this.shaderManager.setLitColor(new Float32Array([p.color.r, p.color.g, p.color.b]));
-          // Sin punto emisivo en el resto
-          const lp = new Float32Array([0,0,0]);
-          const lc = new Float32Array([0,0,0]);
-          this.shaderManager.setPointLightLit(lp, lc, 0.0, 0.0, false);
-          p.render(this.gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
-        }
-      } else {
-        // Lejano: sin iluminación (flat color) para máxima estabilidad visual
-        this.shaderManager.useBasicProgram();
-        // Reutilizar la misma normalMatrix para consistencia en model transform, aunque basic no usa normal
-        this.calculateNormalMatrix(p.modelMatrix);
-        this.shaderManager.setBasicMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
-        // El color por vértice ya es el base del planeta (generateVertexColors), así evitamos uniforms extra
-        p.render(this.gl, this.shaderManager.basicProgram!, cam.viewMatrix, cam.projectionMatrix);
+      }
+
+      // Anillos reales (Saturno): tras la superficie, a todas las distancias — docs §10.b
+      if (this.planetRingRenderer && (p as Planet).planetType === PlanetType.Ringed) {
+        this.planetRingRenderer.render(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix);
       }
 
       // Segundo pase: tapas emisivas del planeta partido (si aplica)
@@ -8690,34 +8482,13 @@ export class GameEngine {
     if (!this.gl || !this.shaderManager || !this.spaceship || !this.textureManager) {
       return;
     }
-
-    // Verificar que la nave tiene buffers inicializados
     if (!this.spaceship.vertexBuffer) {
-  this.logger.log(LogLevel.ERROR, LogCategory.RENDER, 'Spaceship has no vertex buffer - skipping render');
+      this.logger.log(LogLevel.ERROR, LogCategory.RENDER, 'Spaceship has no vertex buffer - skipping render');
       return;
     }
-
-    // Aislar: la nave se renderiza SOLO con el shader lit
+    // Estado GL limpio para el pase lit (compartido con otros pases)
     this.resetGLForLitDraw();
-
-    // Debug: attribute collision check once
-    if (!this.onceLoggedAttribCollision) {
-      const litNormalIdx = this.shaderManager.litAttributes['normal'];
-      const basicColorIdx = this.shaderManager.basicAttributes['color'];
-  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Attrib indices check', { litNormalIdx, basicColorIdx, equal: litNormalIdx === basicColorIdx });
-      this.onceLoggedAttribCollision = true;
-    }
-
-    // Calcular matriz normal
-    this.calculateNormalMatrix(this.spaceship.modelMatrix);
-    // Configurar matrices para lit y asegurar iluminación
-    this.shaderManager.setLitMatrices(
-      this.spaceship.modelMatrix,
-      this.camera.viewMatrix,
-      this.camera.projectionMatrix,
-      this.normalMatrix
-    );
-    // Iluminación de la nave: dirigir la luz desde el Sol hacia la nave si existe
+    // Iluminacion de la nave: luz desde el Sol si existe
     let shipLightDir = this.lightDirection;
     let shipLightColor = this.lightColor;
     if (this.gameState.sun) {
@@ -8726,27 +8497,15 @@ export class GameEngine {
       const lz = this.spaceship.position.z - this.gameState.sun.position.z;
       const len = Math.hypot(lx, ly, lz) || 1;
       shipLightDir = new Float32Array([lx / len, ly / len, lz / len]);
-      // Luz algo más cálida para la nave
       shipLightColor = new Float32Array([1.0, 0.95, 0.8]);
     }
-    this.shaderManager.setLighting(
-      shipLightDir,
-      shipLightColor,
-      this.ambientColor,
-      this.ambientStrength
-    );
-    // Habilitar iluminación a doble cara para evitar caras negras en módulos finos (alas)
-    // Usamos setPointLightLit con intensidad 0 como vector para fijar u_twoSidedLighting = 1.0
-    this.shaderManager.setPointLightLit(new Float32Array([0,0,0]), new Float32Array([0,0,0]), 0.0, 0.0, true);
-
-  // Debug: before ship modules, check a_normal enabled state
-  this.debugNormalAttribEnabled('before-ship-modules');
-
-  // Renderizar usando el método texturizado personalizado
-  this.renderModularSpaceship();
-
-  // Debug: after ship modules
-  this.debugNormalAttribEnabled('after-ship-modules');
+    // Render de la nave (Vastago) delegado al servicio ShipRenderer - docs/ARQUITECTURA.md 10.c
+    if (this.shipRenderer) {
+      this.shipRenderer.render(this.spaceship, this.camera, shipLightDir, shipLightColor, this.ambientColor, this.ambientStrength, performance.now() / 1000);
+    }
+    // Restaurar programa lit y pintar la retícula de targeting (se pinta junto a la nave)
+    this.shaderManager.useLitProgram();
+    this.renderReticleSystem();
   }
 
   // Aísla el draw lit: apaga blending, desbindea texturas y reestablece programa/iluminación para la nave
@@ -8781,507 +8540,6 @@ export class GameEngine {
   }
 
   /**
-   * Renderiza la nave con atributos de textura
-   */
-  private renderTexturedSpaceship(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
-
-    const program = this.shaderManager.texturedProgram;
-    if (!program) return;
-
-    // Configurar atributos de posición
-    const positionLocation = this.shaderManager.texturedAttributes['position'];
-    if (positionLocation >= 0) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.spaceship.vertexBuffer);
-      this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
-
-    // Configurar atributos de normales
-    const normalLocation = this.shaderManager.texturedAttributes['normal'];
-    if (normalLocation >= 0 && this.spaceship.normalBuffer) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.spaceship.normalBuffer);
-      this.gl.enableVertexAttribArray(normalLocation);
-      this.gl.vertexAttribPointer(normalLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
-
-    // Configurar atributos UV
-    const uvLocation = this.shaderManager.texturedAttributes['uv'];
-    if (uvLocation >= 0 && this.spaceship.uvBuffer) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.spaceship.uvBuffer);
-      this.gl.enableVertexAttribArray(uvLocation);
-      this.gl.vertexAttribPointer(uvLocation, 2, this.gl.FLOAT, false, 0, 0);
-    }
-
-    // Dibujar
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.spaceship.indexBuffer);
-    this.gl.drawElements(this.gl.TRIANGLES, this.spaceship.indices.length, this.gl.UNSIGNED_SHORT, 0);
-
-    // Limpiar atributos
-    if (positionLocation >= 0) this.gl.disableVertexAttribArray(positionLocation);
-    if (normalLocation >= 0) this.gl.disableVertexAttribArray(normalLocation);
-    if (uvLocation >= 0) this.gl.disableVertexAttribArray(uvLocation);
-  }
-
-  /**
-   * Renderiza la nave con componentes modulares
-   */
-  private renderModularSpaceship(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
-
-    // Renderizar cada componente de la nave por separado
-    this.renderSpaceshipNose();
-    this.renderSpaceshipBody();
-    this.renderSpaceshipCockpit();  // Cabina del piloto
-    this.renderSpaceshipEngineNozzle();  // Tubo del motor
-    this.renderSpaceshipWings();
-    this.renderSpaceshipThruster();
-    // this.renderOrientationIndicator(); // Temporalmente deshabilitada
-    
-  // HUD se renderiza al final del frame para asegurar que quede por encima de todo
-    
-    // Renderizar sistema de retícula (FASE 2)
-    this.renderReticleSystem();
-
-    // Debug: after reticle render, check which program is active
-    if (this.gl) {
-      const prog = this.gl.getParameter(this.gl.CURRENT_PROGRAM);
-  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Program after reticle render', { programId: prog ? (prog as any) : null });
-    }
-  }
-
-  // Ensure VAO and buffers for a ship module; compute normals once
-  private ensureShipModuleVAO(
-    key: keyof GameEngine['shipVAO'],
-    geometry: { vertices: Float32Array; indices: Uint16Array },
-    normalAttribName: 'normal' = 'normal',
-    forceBufferRefresh: boolean = false
-  ): void {
-    if (!this.gl || !this.shaderManager) return;
-    // Create buffers if missing
-    if (!this.shipBuffers[key]) {
-      const v = this.gl.createBuffer()!;
-      const n = this.gl.createBuffer()!;
-      const i = this.gl.createBuffer()!;
-      // Upload geometry
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, v);
-      this.gl.bufferData(this.gl.ARRAY_BUFFER, geometry.vertices, this.gl.STATIC_DRAW);
-      const normals = this.computeNormals(geometry.vertices, geometry.indices);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, n);
-      this.gl.bufferData(this.gl.ARRAY_BUFFER, normals, this.gl.STATIC_DRAW);
-      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, i);
-      this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, geometry.indices, this.gl.STATIC_DRAW);
-      this.shipBuffers[key] = { v, n, i, indexCount: geometry.indices.length } as any;
-    } else if (forceBufferRefresh) {
-      const normals = this.computeNormals(geometry.vertices, geometry.indices);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers[key]!.v);
-      this.gl.bufferData(this.gl.ARRAY_BUFFER, geometry.vertices, this.gl.STATIC_DRAW);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers[key]!.n);
-      this.gl.bufferData(this.gl.ARRAY_BUFFER, normals, this.gl.STATIC_DRAW);
-      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.shipBuffers[key]!.i);
-      this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, geometry.indices, this.gl.STATIC_DRAW);
-      this.shipBuffers[key]!.indexCount = geometry.indices.length;
-    }
-    // Create VAO if missing
-    if (!this.shipVAO[key]) {
-      const vao = this.gl.createVertexArray();
-      if (!vao) return;
-      this.shipVAO[key] = vao;
-      this.gl.bindVertexArray(vao);
-      // Bind attribute layout for lit program
-      const aPos = this.shaderManager.litAttributes['position'];
-      const aNrm = this.shaderManager.litAttributes[normalAttribName];
-      // Position
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers[key]!.v);
-      if (aPos >= 0) {
-        this.gl.enableVertexAttribArray(aPos);
-        this.gl.vertexAttribPointer(aPos, 3, this.gl.FLOAT, false, 0, 0);
-      }
-      // Normal
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers[key]!.n);
-      if (aNrm >= 0) {
-        this.gl.enableVertexAttribArray(aNrm);
-        this.gl.vertexAttribPointer(aNrm, 3, this.gl.FLOAT, false, 0, 0);
-      }
-      // Indices
-      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.shipBuffers[key]!.i);
-      // Unbind VAO
-      this.gl.bindVertexArray(null);
-    }
-  }
-
-  private drawShipModule(key: keyof GameEngine['shipVAO']): void {
-    if (!this.gl) return;
-    if (!this.shipVAO[key] || !this.shipBuffers[key]) return;
-    this.gl.bindVertexArray(this.shipVAO[key]);
-    this.gl.drawElements(this.gl.TRIANGLES, this.shipBuffers[key]!.indexCount, this.gl.UNSIGNED_SHORT, 0);
-    this.gl.bindVertexArray(null);
-  }
-
-  /**
-   * Renderiza el cono/pirámide de la punta delantera (textura naranja)
-   */
-  private renderSpaceshipNose(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
-
-    // No renderizar el nose en modo COCKPIT para tener vista despejada
-    const isInCockpitMode = this.camera.getCurrentMode() === CameraMode.COCKPIT;
-    if (isInCockpitMode) {
-      return; // Salir sin renderizar nada
-    }
-
-    const noseGeometry = this.spaceship.createNoseGeometry();
-    const program = this.shaderManager.litProgram;
-    if (!program) return;
-    this.gl.useProgram(program);
-    // Ensure VAO + buffers
-    this.ensureShipModuleVAO('nose', noseGeometry);
-
-    // Configurar matriz de transformación
-    this.spaceship.updateModelMatrix();
-    const noseMatrix = mat4.clone(this.spaceship.modelMatrix as unknown as mat4);
-    const anchorProgress = this.spaceship.getNoseAnchorProgress?.() ?? 0;
-    if (anchorProgress > 0) {
-      const pivotZ = 0.35;
-      const dropOffset = 0.08 * anchorProgress;
-      const forwardSlide = 0.04 * anchorProgress;
-      const localTransform = mat4.create();
-      mat4.translate(localTransform, localTransform, [0, 0, pivotZ]);
-      const pitchRadians = (18 * Math.PI / 180) * anchorProgress;
-      mat4.rotateX(localTransform, localTransform, pitchRadians);
-      mat4.translate(localTransform, localTransform, [0, 0, -pivotZ]);
-      mat4.translate(localTransform, localTransform, [0, dropOffset, forwardSlide]);
-      mat4.multiply(noseMatrix, noseMatrix, localTransform);
-    }
-    const renderMatrix = noseMatrix as unknown as Float32Array;
-    this.calculateNormalMatrix(renderMatrix);
-
-    this.shaderManager.setLitMatrices(
-      renderMatrix,
-      this.camera.viewMatrix,
-      this.camera.projectionMatrix,
-      this.normalMatrix
-    );
-
-  // Color naranja para el nose (asegurar baseColor por módulo)
-  this.shaderManager.setLitColor(new Float32Array([1.0, 0.6, 0.2]));
-
-    // Draw
-    this.drawShipModule('nose');
-  }
-
-  /**
-   * Renderiza el cuerpo esférico principal (textura metálica)
-   */
-  private renderSpaceshipBody(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
-
-    const bodyGeometry = this.spaceship.createBodyGeometry();
-    const program = this.shaderManager.litProgram;
-    if (!program) return;
-
-    this.gl.useProgram(program);
-    // Ensure VAO + buffers
-    this.ensureShipModuleVAO('body', bodyGeometry);
-
-    // Configurar matriz de transformación
-    this.spaceship.updateModelMatrix();
-    this.calculateNormalMatrix(this.spaceship.modelMatrix);
-
-    this.shaderManager.setLitMatrices(
-      this.spaceship.modelMatrix,
-      this.camera.viewMatrix,
-      this.camera.projectionMatrix,
-      this.normalMatrix
-    );
-
-    // Color metálico plateado para el body (asegurar baseColor por módulo)
-  this.shaderManager.setLitColor(new Float32Array([0.7, 0.7, 0.8]));
-    // Especular metálico medio para el cuerpo
-    this.shaderManager.setSpecular(new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]), 0.25, 48.0);
-
-    // Draw
-    this.drawShipModule('body');
-  }
-
-  /**
-   * Renderiza la cabina del piloto (esfera azul oscuro reflectante)
-   */
-  private renderSpaceshipCockpit(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
-
-    // No renderizar la cabina en modo COCKPIT para tener vista despejada
-    const isInCockpitMode = this.camera.getCurrentMode() === CameraMode.COCKPIT;
-    if (isInCockpitMode) {
-      return; // Salir sin renderizar nada
-    }
-
-  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Renderizando cabina del piloto');
-  const cockpitGeometry = this.spaceship.createCockpitGeometry();
-  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Geometría de cabina creada', { vertices: cockpitGeometry.vertices.length });
-    const program = this.shaderManager.litProgram;
-    if (!program) return;
-
-    this.gl.useProgram(program);
-    // Ensure VAO + buffers
-    this.ensureShipModuleVAO('cockpit', cockpitGeometry);
-
-    // Configurar matriz de transformación
-    this.spaceship.updateModelMatrix();
-    this.calculateNormalMatrix(this.spaceship.modelMatrix);
-
-    this.shaderManager.setLitMatrices(
-      this.spaceship.modelMatrix,
-      this.camera.viewMatrix,
-      this.camera.projectionMatrix,
-      this.normalMatrix
-    );
-
-  // Color azul eléctrico para la cabina del piloto (asegurar baseColor)
-  this.shaderManager.setLitColor(new Float32Array([0.0, 0.5, 1.0])); 
-
-    // Draw
-    this.drawShipModule('cockpit');
-  }
-
-  /**
-   * Renderiza el tubo del motor que conecta el cuerpo con el thruster
-   */
-  private renderSpaceshipEngineNozzle(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
-
-  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'Renderizando tubo del motor');
-  const nozzleGeometry = this.spaceship.createEngineNozzleGeometry();
-    const program = this.shaderManager.litProgram;
-    if (!program) return;
-
-    this.gl.useProgram(program);
-    // Ensure VAO + buffers
-    this.ensureShipModuleVAO('nozzle', nozzleGeometry);
-
-    // Configurar matriz de transformación
-    this.spaceship.updateModelMatrix();
-    this.calculateNormalMatrix(this.spaceship.modelMatrix);
-
-    this.shaderManager.setLitMatrices(
-      this.spaceship.modelMatrix,
-      this.camera.viewMatrix,
-      this.camera.projectionMatrix,
-      this.normalMatrix
-    );
-
-  // Color metálico oscuro para el tubo del motor (asegurar baseColor)
-  this.shaderManager.setLitColor(new Float32Array([0.4, 0.4, 0.45])); // Gris metálico
-
-    // Draw
-    this.drawShipModule('nozzle');
-  }
-
-  /**
-   * Renderiza las alas laterales (textura azul metálica)
-   */
-  private renderSpaceshipWings(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
-
-  const wingsGeometry = this.spaceship.createWingsGeometry();
-    const currentProgress = this.spaceship.getWingDeploymentProgress?.() ?? 0;
-    const progressChanged = this.wingGeometryDirty || Math.abs(currentProgress - this.lastWingDeploymentProgress) > 1e-4;
-    const program = this.shaderManager.litProgram;
-    if (!program) return;
-
-    this.gl.useProgram(program);
-    // Ensure VAO + buffers
-    this.ensureShipModuleVAO('wings', wingsGeometry, 'normal', progressChanged);
-    if (progressChanged) {
-      this.lastWingDeploymentProgress = currentProgress;
-      this.wingGeometryDirty = false;
-    }
-
-    // Configurar matriz de transformación
-    this.spaceship.updateModelMatrix();
-    this.calculateNormalMatrix(this.spaceship.modelMatrix);
-
-    this.shaderManager.setLitMatrices(
-      this.spaceship.modelMatrix,
-      this.camera.viewMatrix,
-      this.camera.projectionMatrix,
-      this.normalMatrix
-    );
-
-  // Color azul metálico para las wings (asegurar baseColor)
-  this.shaderManager.setLitColor(new Float32Array([0.2, 0.4, 0.8]));
-
-    // Draw
-    this.drawShipModule('wings');
-  }
-
-  /**
-   * Renderiza la esfera del thruster trasero (color dinámico rojo→amarillo)
-   */
-  private renderSpaceshipThruster(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
-
-  const thrusterGeometry = this.spaceship.createThrusterGeometry();
-    const program = this.shaderManager.litProgram;
-    if (!program) return;
-
-    this.gl.useProgram(program);
-    // Ensure VAO + buffers
-    this.ensureShipModuleVAO('thruster', thrusterGeometry);
-
-    // Si el factor de escala del thruster ha cambiado, actualizar los buffers con nueva geometría
-    const currentScale = this.spaceship.thrusterScaleFactor;
-    if (this.shipBuffers['thruster'] && Math.abs(currentScale - this.lastThrusterScale) > 0.005) {
-      const geom = this.spaceship.createThrusterGeometry();
-      const normals = this.computeNormals(geom.vertices, geom.indices);
-      // Re-subir datos a los buffers existentes
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers['thruster']!.v);
-      this.gl.bufferData(this.gl.ARRAY_BUFFER, geom.vertices, this.gl.STATIC_DRAW);
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, this.shipBuffers['thruster']!.n);
-      this.gl.bufferData(this.gl.ARRAY_BUFFER, normals, this.gl.STATIC_DRAW);
-      this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, this.shipBuffers['thruster']!.i);
-      this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, geom.indices, this.gl.STATIC_DRAW);
-      this.shipBuffers['thruster']!.indexCount = geom.indices.length;
-      this.lastThrusterScale = currentScale;
-    } else if (!this.shipBuffers['thruster']) {
-      // Primera creación: registrar el scale actual
-      this.lastThrusterScale = currentScale;
-    }
-
-    // Configurar matriz de transformación
-    this.spaceship.updateModelMatrix();
-    this.calculateNormalMatrix(this.spaceship.modelMatrix);
-
-    this.shaderManager.setLitMatrices(
-      this.spaceship.modelMatrix,
-      this.camera.viewMatrix,
-      this.camera.projectionMatrix,
-      this.normalMatrix
-    );
-
-    // Color dinámico del thruster basado en velocidad: rojo (0) → naranja (medio) → amarillo (máx)
-    const speedRatio = Math.max(0, Math.min(1, this.spaceship.currentSpeed / Math.max(1e-6, this.spaceship.maxSpeed)));
-    const lerp = (a: number, b: number, t: number) => a + (b - a) * t;
-    const mix = (c0: [number,number,number], c1: [number,number,number], t: number): [number,number,number] => [
-      lerp(c0[0], c1[0], t),
-      lerp(c0[1], c1[1], t),
-      lerp(c0[2], c1[2], t)
-    ];
-    // Escalera/gradiente: rojo → naranja → amarillo
-    const RED: [number,number,number] = [1.0, 0.15, 0.05];
-    const ORANGE: [number,number,number] = [1.0, 0.6, 0.0];
-    const YELLOW: [number,number,number] = [1.0, 0.95, 0.2];
-
-    let color: [number,number,number] = RED;
-    if (speedRatio <= 0.5) {
-      color = mix(RED, ORANGE, speedRatio / 0.5);
-    } else {
-      color = mix(ORANGE, YELLOW, (speedRatio - 0.5) / 0.5);
-    }
-    // Ajuste de brillo para simular emisivo leve según actividad
-    let brightness = 1.0;
-    switch (this.spaceship.thrusterState) {
-      case ThrusterState.IDLE:
-        brightness = 0.9;
-        break;
-      case ThrusterState.BRAKING:
-        // Frenando: rojo más intenso independientemente de la velocidad
-        color = [1.2, 0.2, 0.08];
-        brightness = 1.8;
-        break;
-      case ThrusterState.ACCELERATING:
-      case ThrusterState.CRUISING:
-        brightness = 1.0 + speedRatio * 1.1; // hasta ~2.1 en máximo
-        break;
-    }
-    const red = color[0] * brightness;
-    const green = color[1] * brightness;
-    const blue = color[2] * brightness;
-
-    this.shaderManager.setLitColor(new Float32Array([red, green, blue]));
-  // Especular alto para tobera brillante
-  this.shaderManager.setSpecular(new Float32Array([this.camera.position.x, this.camera.position.y, this.camera.position.z]), 0.4, 64.0);
-
-  // Draw
-  this.drawShipModule('thruster');
-
-    // NO RESETEAR COLOR - dejar que cada objeto maneje el suyo
-
-    // No buffer deletion; cached
-  }
-
-  /**
-   * Renderiza una bola negra indicadora de orientación (arriba de la nave)
-   */
-  private renderOrientationIndicator(): void {
-    if (!this.gl || !this.shaderManager || !this.spaceship) return;
-
-    // Usar la geometría del thruster pero más pequeña (esfera)
-    const indicatorGeometry = this.spaceship.createThrusterGeometry();
-    const program = this.shaderManager.litProgram;
-    if (!program) return;
-
-    this.gl.useProgram(program);
-
-    // Crear buffers temporales
-    const indicatorVertexBuffer = this.gl.createBuffer();
-    const indicatorIndexBuffer = this.gl.createBuffer();
-
-    // Configurar geometría
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, indicatorVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, indicatorGeometry.vertices, this.gl.STATIC_DRAW);
-
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, indicatorIndexBuffer);
-    this.gl.bufferData(this.gl.ELEMENT_ARRAY_BUFFER, indicatorGeometry.indices, this.gl.STATIC_DRAW);
-
-    // Configurar atributos
-    const positionLocation = this.shaderManager.litAttributes['position'];
-    if (positionLocation >= 0) {
-      this.gl.bindBuffer(this.gl.ARRAY_BUFFER, indicatorVertexBuffer);
-      this.gl.enableVertexAttribArray(positionLocation);
-      this.gl.vertexAttribPointer(positionLocation, 3, this.gl.FLOAT, false, 0, 0);
-    }
-
-    // Crear geometría modificada: más pequeña y desplazada hacia arriba
-    const modifiedVertices = new Float32Array(indicatorGeometry.vertices.length);
-    
-    // Escalar los vértices (hacer la bola más pequeña) y desplazar hacia arriba
-    for (let i = 0; i < indicatorGeometry.vertices.length; i += 3) {
-      modifiedVertices[i] = indicatorGeometry.vertices[i] * 0.3;         // X * 0.3 (más pequeña)
-      modifiedVertices[i + 1] = indicatorGeometry.vertices[i + 1] * 0.3 + 0.4; // Y * 0.3 + 0.4 (arriba)
-      modifiedVertices[i + 2] = indicatorGeometry.vertices[i + 2] * 0.3 + 0.2; // Z * 0.3 + 0.2 (adelante)
-    }
-    
-    // Actualizar el buffer con la geometría modificada
-    this.gl.bindBuffer(this.gl.ARRAY_BUFFER, indicatorVertexBuffer);
-    this.gl.bufferData(this.gl.ARRAY_BUFFER, modifiedVertices, this.gl.STATIC_DRAW);
-    
-    // Usar la matriz modelo de la nave directamente
-    this.spaceship.updateModelMatrix();
-    
-    // Usar directamente la matriz de la nave (más simple)
-    this.calculateNormalMatrix(this.spaceship.modelMatrix);
-
-    this.shaderManager.setLitMatrices(
-      this.spaceship.modelMatrix,
-      this.camera.viewMatrix,
-      this.camera.projectionMatrix,
-      this.normalMatrix
-    );
-
-    // NO establecer color específico - usar el color por defecto del sistema
-    // Los asteroides manejan sus propios colores internamente
-
-    // Renderizar
-    this.gl.bindBuffer(this.gl.ELEMENT_ARRAY_BUFFER, indicatorIndexBuffer);
-    this.gl.drawElements(this.gl.TRIANGLES, indicatorGeometry.indices.length, this.gl.UNSIGNED_SHORT, 0);
-
-    // Limpiar buffers temporales
-    this.gl.deleteBuffer(indicatorVertexBuffer);
-    this.gl.deleteBuffer(indicatorIndexBuffer);
-  }
-
-  /**
    * Renderiza un objeto individual
    */
   private renderObject(object: GameObject): void {
@@ -9311,18 +8569,6 @@ export class GameEngine {
     object.render(this.gl, this.shaderManager.litProgram!, this.camera.viewMatrix, this.camera.projectionMatrix);
   }
 
-  // Debug helper: check if lit.a_normal attribute array is enabled in default VAO
-  private debugNormalAttribEnabled(where: string): void {
-    if (!this.gl || !this.shaderManager) return;
-    const idx = this.shaderManager.litAttributes['normal'];
-    if (idx < 0) return;
-    const enabled = !!this.gl.getVertexAttrib(idx, this.gl.VERTEX_ATTRIB_ARRAY_ENABLED);
-    if (this.lastNormalAttribEnabled !== enabled) {
-  this.logger.log(LogLevel.DEBUG, LogCategory.RENDER, 'a_normal enabled state changed', { where, enabled });
-      this.lastNormalAttribEnabled = enabled;
-    }
-  }
-
   /**
    * Calcula la matriz normal para iluminación
    */
@@ -9335,37 +8581,6 @@ export class GameEngine {
     this.normalMatrix[4] = modelMatrix[4];  this.normalMatrix[5] = modelMatrix[5];  this.normalMatrix[6] = modelMatrix[6];   this.normalMatrix[7] = 0;
     this.normalMatrix[8] = modelMatrix[8];  this.normalMatrix[9] = modelMatrix[9];  this.normalMatrix[10] = modelMatrix[10]; this.normalMatrix[11] = 0;
     this.normalMatrix[12] = 0;              this.normalMatrix[13] = 0;              this.normalMatrix[14] = 0;               this.normalMatrix[15] = 1;
-  }
-
-  // Calcula normales por vértice acumulando normales de cara y normalizando
-  private computeNormals(vertices: Float32Array, indices: Uint16Array): Float32Array {
-    const vCount = vertices.length / 3;
-    const normals = new Float32Array(vertices.length);
-    for (let i = 0; i < indices.length; i += 3) {
-      const i0 = indices[i] * 3;
-      const i1 = indices[i + 1] * 3;
-      const i2 = indices[i + 2] * 3;
-      const v0x = vertices[i0], v0y = vertices[i0 + 1], v0z = vertices[i0 + 2];
-      const v1x = vertices[i1], v1y = vertices[i1 + 1], v1z = vertices[i1 + 2];
-      const v2x = vertices[i2], v2y = vertices[i2 + 1], v2z = vertices[i2 + 2];
-      const e1x = v1x - v0x, e1y = v1y - v0y, e1z = v1z - v0z;
-      const e2x = v2x - v0x, e2y = v2y - v0y, e2z = v2z - v0z;
-      // Cross e1 x e2
-      const nx = e1y * e2z - e1z * e2y;
-      const ny = e1z * e2x - e1x * e2z;
-      const nz = e1x * e2y - e1y * e2x;
-      normals[i0] += nx; normals[i0 + 1] += ny; normals[i0 + 2] += nz;
-      normals[i1] += nx; normals[i1 + 1] += ny; normals[i1 + 2] += nz;
-      normals[i2] += nx; normals[i2 + 1] += ny; normals[i2 + 2] += nz;
-    }
-    // Normalize
-    for (let i = 0; i < vCount; i++) {
-      const ix = i * 3;
-      const nx = normals[ix], ny = normals[ix + 1], nz = normals[ix + 2];
-      const len = Math.hypot(nx, ny, nz) || 1;
-      normals[ix] = nx / len; normals[ix + 1] = ny / len; normals[ix + 2] = nz / len;
-    }
-    return normals;
   }
 
   private setLandingDamageSuppressed(active: boolean, reason?: string): void {
@@ -11457,16 +10672,11 @@ export class GameEngine {
     if (this.particleEffects) {
       this.particleEffects.cleanup();
     }
-    // Cleanup VAOs and buffers for ship modules
+    // Cleanup de renderers propios (nave/planetas)
+    this.shipRenderer?.cleanup();
+    this.planetSurfaceRenderer?.cleanup();
+    this.planetRingRenderer?.cleanup();
     if (this.gl) {
-      const delVAO = (v: WebGLVertexArrayObject | null) => { if (v) this.gl!.deleteVertexArray(v); };
-      delVAO(this.shipVAO.nose); delVAO(this.shipVAO.body); delVAO(this.shipVAO.cockpit);
-      delVAO(this.shipVAO.nozzle); delVAO(this.shipVAO.wings); delVAO(this.shipVAO.thruster);
-      const delBuf = (b?: { v: WebGLBuffer; n: WebGLBuffer; i: WebGLBuffer }) => {
-        if (!b) return; this.gl!.deleteBuffer(b.v); this.gl!.deleteBuffer(b.n); this.gl!.deleteBuffer(b.i);
-      };
-      delBuf(this.shipBuffers.nose); delBuf(this.shipBuffers.body); delBuf(this.shipBuffers.cockpit);
-      delBuf(this.shipBuffers.nozzle); delBuf(this.shipBuffers.wings); delBuf(this.shipBuffers.thruster);
       if (this.voidCocoonShieldGeometry) {
         if (this.voidCocoonShieldGeometry.vbo) this.gl.deleteBuffer(this.voidCocoonShieldGeometry.vbo);
         if (this.voidCocoonShieldGeometry.ibo) this.gl.deleteBuffer(this.voidCocoonShieldGeometry.ibo);
