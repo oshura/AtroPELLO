@@ -65,12 +65,29 @@ function tri(m: Raw, a: number[], b: number[], c: number[]): void {
   m.n.push(nx, ny, nz, nx, ny, nz, nx, ny, nz);
 }
 
+/**
+ * Orienta las normales planas hacia AFUERA del origen (los primitivos se construyen centrados en 0).
+ * Robusto ante el sentido de bobinado → evita conos/cilindros con normales hacia adentro (sin sombra).
+ * NO usar en el elipsoide (normales suaves ya correctas).
+ */
+function orientOutward(m: Raw): Raw {
+  for (let i = 0; i < m.p.length; i += 9) {
+    const cx = (m.p[i] + m.p[i + 3] + m.p[i + 6]) / 3;
+    const cy = (m.p[i + 1] + m.p[i + 4] + m.p[i + 7]) / 3;
+    const cz = (m.p[i + 2] + m.p[i + 5] + m.p[i + 8]) / 3;
+    if (m.n[i] * cx + m.n[i + 1] * cy + m.n[i + 2] * cz < 0) {
+      for (let k = i; k < i + 9; k++) m.n[k] = -m.n[k];
+    }
+  }
+  return m;
+}
+
 function box(w: number, h: number, d: number): Raw {
   const m = raw(); const x = w / 2, y = h / 2, z = d / 2;
   const v = [[-x, -y, -z], [x, -y, -z], [x, y, -z], [-x, y, -z], [-x, -y, z], [x, -y, z], [x, y, z], [-x, y, z]];
   const q = (a: number, b: number, c: number, d2: number) => { tri(m, v[a], v[b], v[c]); tri(m, v[a], v[c], v[d2]); };
   q(4, 5, 6, 7); q(1, 0, 3, 2); q(5, 1, 2, 6); q(0, 4, 7, 3); q(3, 7, 6, 2); q(0, 1, 5, 4);
-  return m;
+  return orientOutward(m);
 }
 function ellip(rx: number, ry: number, rz: number, LA = 14, LO = 20): Raw {
   const m = raw();
@@ -99,7 +116,7 @@ function cone(r: number, h: number, seg = 18): Raw {
     const b0 = [Math.cos(a0) * r, -h / 2, Math.sin(a0) * r], b1 = [Math.cos(a1) * r, -h / 2, Math.sin(a1) * r];
     tri(m, b0, b1, ap); tri(m, b1, b0, [0, -h / 2, 0]);
   }
-  return m;
+  return orientOutward(m);
 }
 function cyl(r: number, h: number, seg = 16): Raw {
   const m = raw();
@@ -110,7 +127,7 @@ function cyl(r: number, h: number, seg = 16): Raw {
     tri(m, b0, b1, t1); tri(m, b0, t1, t0);
     tri(m, [0, h / 2, 0], t0, t1); tri(m, [0, -h / 2, 0], b1, b0);
   }
-  return m;
+  return orientOutward(m);
 }
 
 function toPart(m: Raw, material: ShipMaterial, dyn: ShipPartDyn, extra: Partial<ShipPart> = {}): ShipPart {
