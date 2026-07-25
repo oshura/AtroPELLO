@@ -18,7 +18,7 @@ export interface DockingSequenceContext {
   onComplete: (aborted: boolean) => void;  // el motor abre el menú / restaura cámara
 }
 
-const DOCK_DIST = 24;     // u desde el puerto donde queda acoplada la nave
+const INSIDE_DEPTH = 30;  // u que la nave se adentra ATRAVESANDO el puerto (queda "dentro" de la estación)
 const DEPART_DIST = 200;  // u a los que se aleja al despegar
 const APPROACH_DIST = 58; // u frente al puerto (punto de control del arco de aproximación)
 
@@ -51,7 +51,8 @@ export class DockingSequenceAnimation extends BaseAnimation {
     const worldUp: Vector3 = Math.abs(this.n.y) > 0.9 ? { x: 1, y: 0, z: 0 } : { x: 0, y: 1, z: 0 };
     this.right = this.norm(this.cross(worldUp, this.n));
 
-    const dockPose = this.add(this.ctx.portPosition, this.scale(this.n, DOCK_DIST));
+    // Pose final DENTRO de la estación: la nave atraviesa el tile hacia el lado interior (-normal).
+    const dockPose = this.add(this.ctx.portPosition, this.scale(this.n, -INSIDE_DEPTH));
     const departPose = this.add(this.ctx.portPosition, this.scale(this.n, DEPART_DIST));
     this.startPos = { ...ship.position };
     this.startFwd = this.norm({ ...ship.forwardDirection });
@@ -149,16 +150,33 @@ export class DockingSequenceAnimation extends BaseAnimation {
     if (!cam) { return; }
     const port = this.ctx.portPosition;
     const s = smoothstep(p);
-    const ang = docking ? lerp(-0.85, 0.35, s) : lerp(0.2, 1.0, s);
-    const dist = docking ? lerp(96, 66, s) : lerp(72, 155, s);
-    // Dirección de cámara: mayormente lateral (right) + siempre por delante del puerto (n>0) para no clipar la estación.
-    const dir = this.norm(this.add(
-      this.scale(this.right, Math.cos(ang)),
-      this.scale(this.n, 0.55 + 0.5 * Math.sin(ang))
-    ));
-    const anchor = this.lerpVec(shipPos, port, 0.35);
-    const camPos = this.add(this.add(anchor, this.scale(dir, dist)), { x: 0, y: 26, z: 0 });
-    const target = this.lerpVec(shipPos, port, 0.4);
+    let dir: Vector3;
+    let dist: number;
+    let camY: number;
+    let targetT: number;
+    if (docking) {
+      // Fly-in: de una vista lateral (aproximación) a DETRÁS-FUERA mirando al puerto, para ver la nave
+      // atravesar el tile y meterse dentro (se aleja de la cámara hacia el interior de la estación).
+      const behind = smoothstep(clamp01((p - 0.5) / 0.5));
+      const side = 1 - behind;
+      const ang = lerp(-0.9, 0.15, s);
+      dir = this.norm(this.add(
+        this.scale(this.right, Math.cos(ang) * side * 0.9),
+        this.scale(this.n, 0.5 + 1.1 * behind + 0.4 * side)   // siempre fuera (+n); al final casi puro +n
+      ));
+      dist = lerp(92, 58, s);
+      camY = lerp(24, 13, behind);
+      targetT = lerp(0.4, 0.8, behind);                       // al final mira al puerto (la nave ya está dentro)
+    } else {
+      const ang = lerp(0.2, 1.0, s);
+      dir = this.norm(this.add(this.scale(this.right, Math.cos(ang)), this.scale(this.n, 0.55 + 0.5 * Math.sin(ang))));
+      dist = lerp(72, 155, s);
+      camY = 26;
+      targetT = 0.4;
+    }
+    const anchor = this.lerpVec(shipPos, port, 0.3);
+    const camPos = this.add(this.add(anchor, this.scale(dir, dist)), { x: 0, y: camY, z: 0 });
+    const target = this.lerpVec(shipPos, port, targetT);
     try {
       cam.seedManualTransform?.(camPos, target, { x: 0, y: 1, z: 0 });
       cam.markDirty?.();
