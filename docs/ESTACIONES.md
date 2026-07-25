@@ -170,8 +170,12 @@ Slice 2 enchufa cinemática + tablas de sucesos + descubrimiento real de hechizo
 - ⚠️ **DIFERIDO — Cinemática de recuerdos a pantalla completa** (estilo intro, con imágenes/zoom): es un
   subsistema de "presentación" que el juego AÚN NO TIENE (no existe cinemática de intro reutilizable).
   Debe diseñarse junto con la intro del juego. Por ahora los recuerdos se entregan como texto en el menú.
-- ⚠️ **DIFERIDO — Animación de acople "hangar/muelle"**: el menú se abre directo al aproximarse despacio a
-  un puerto. La animación cinemática de aproximación se diseñará aparte (reusar holds de cámara de aterrizaje).
+- ✅ **Animación de acople cinemática** (`services/animations/docking-sequence.animation.ts`, patrón
+  `BaseAnimation`+`AnimationManager`): al pulsar ENTER la nave describe un ARCO (Bezier) hasta encarar el
+  puerto, despliega el tren (alas), frena con retro y la cámara ORBITA encuadrando nave+puerto+estación;
+  al despegar, empuje hacia afuera con giro de 180°. Sustituyó el glide lineal inline del motor
+  (`beginStationDockAnim`… borrados; el motor solo delega vía `startStationDocking`/`onStationDockingComplete`).
+  docs/ARQUITECTURA.md §10.c (nave) comparte el patrón de cinemáticas.
 - ⚠️ **DIFERIDO — Colisión real de la estación** (bounding OFF por decisión del usuario): volúmenes
   compuestos o por secciones, a diseñar.
 

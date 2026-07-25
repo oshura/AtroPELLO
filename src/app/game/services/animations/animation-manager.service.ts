@@ -7,6 +7,7 @@ import { LogCategory } from '../../../services/logging.service';
 import { SpellType } from '../../types/spell.types';
 import { LandingApproachContext } from '../../types/landing.types';
 import { ElderGod } from '../../types/cosmic-life.types';
+import { DockingSequenceContext } from './docking-sequence.animation';
 
 type AnimationCtor = { new (): GameAnimation };
 type PrepareFn = (anim: GameAnimation) => void;
@@ -54,6 +55,7 @@ export class AnimationManagerService {
     'atmosphere-landing': () => import('./atmosphere-landing.animation').then(m => m.AtmosphereLandingAnimation),
     'ground-takeoff': () => import('./ground-takeoff.animation').then(m => m.GroundTakeoffAnimation),
     'takeoff-sequence': () => import('./takeoff-sequence.animation').then(m => m.TakeoffSequenceAnimation),
+    'docking-sequence': () => import('./docking-sequence.animation').then(m => m.DockingSequenceAnimation),
   };
 
   private elderGodFlashImages: Record<ElderGod, string> = {
@@ -64,7 +66,7 @@ export class AnimationManagerService {
   };
   private fallbackFlashImages: string[] = ['/assets/Nodens.webp'];
   private flashIndex = 0;
-  private readonly nonInterruptibleAnimationNames = new Set<string>(['landing-sequence', 'takeoff-sequence', 'ground-takeoff']);
+  private readonly nonInterruptibleAnimationNames = new Set<string>(['landing-sequence', 'takeoff-sequence', 'ground-takeoff', 'docking-sequence']);
 
   constructor() {
     // Best-effort: precargar todos los módulos para evitar el retardo del primer uso.
@@ -137,6 +139,13 @@ export class AnimationManagerService {
     const name = phase === 'ground' ? 'ground-takeoff' : 'takeoff-sequence';
     return this.launch(engine, name, (anim) => {
       applyConfigure(anim, context, { phase, suppressOverlay: options?.suppressOverlay ?? false });
+      anim.start(engine);
+    });
+  }
+
+  public startDockingSequence(engine: GameEngine, context: DockingSequenceContext): boolean {
+    return this.launch(engine, 'docking-sequence', (anim) => {
+      applyConfigure(anim, context);
       anim.start(engine);
     });
   }

@@ -703,15 +703,8 @@ export class GameEngine {
   private stationDockPromptTimer = 0;
   // Modo de cámara previo al atraque (se restaura al despegar; se mantiene la cámara cinemática mientras está acoplada).
   private stationDockPrevCamMode: CameraMode | null = null;
-  // Animación (dirigida por el motor) de atraque/separación a un puerto de estación. Reusa cámara MANUAL + ship fields.
-  private stationDockAnim: {
-    mode: 'docking' | 'undocking';
-    t: number; dur: number;
-    port: DockPort;
-    normal: { x: number; y: number; z: number };
-    shipStart: { x: number; y: number; z: number };
-    shipEnd: { x: number; y: number; z: number };
-  } | null = null;
+  // Atraque/separación en curso (cinemática DockingSequenceAnimation vía AnimationManager). docs/ESTACIONES.md §3.
+  private stationDockingActive = false;
   private readonly spaceStationHost: SpaceStationHost = {
     getShipPosition: () => this.spaceship ? { ...this.spaceship.position } : null,
     getEarthPosition: () => {
@@ -728,7 +721,7 @@ export class GameEngine {
       }
     },
     getShipWreckMesh: () => this.spaceship ? buildShipWreckMesh(this.spaceship) : null,
-    isDockingBusy: () => this.stationPanelOpen || this.stationDockAnim !== null,
+    isDockingBusy: () => this.stationPanelOpen || this.stationDockingActive,
     log: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
   };
   // Track last applied snapshot id (debug)
@@ -3582,7 +3575,7 @@ export class GameEngine {
     this.stationDockCandidate = null;
     this.stationPanelOpen = false;
     this.stationDockedPort = null;
-    this.stationDockAnim = null;
+    this.stationDockingActive = false;
     this.stationDockPromptTimer = 0;
     const persistedDebrisPlanets = new Set<string>();
     if (Array.isArray(snapshot.planetDebris)) {
@@ -4429,7 +4422,6 @@ export class GameEngine {
     this.spaceTurtleSystem.update(this.spaceTurtleHost, deltaTime);
     this.spaceStationSystem.update(this.spaceStationHost, deltaTime);
     this.updateStationDocking(deltaTime);
-    this.updateStationDockAnimation(deltaTime);
 
     // Apply ongoing collision slide (lateral reposition over ~1s)
     if (this.collisionSlide) {
@@ -6736,7 +6728,7 @@ export class GameEngine {
     this.stationDockCandidate = null;
     this.stationPanelOpen = false;
     this.stationDockedPort = null;
-    this.stationDockAnim = null;
+    this.stationDockingActive = false;
     this.stationDockPromptTimer = 0;
 
       // Clear cluster service (will be repopulated by createGameObjects)
@@ -8076,7 +8068,7 @@ export class GameEngine {
    * El piloto "Land" del HUD también se enciende (ver updateLandingTelemetry). docs/ESTACIONES.md §3-4.
    */
   private updateStationDocking(dt: number): void {
-    if (this.stationPanelOpen || this.stationDockAnim) {
+    if (this.stationPanelOpen || this.stationDockingActive) {
       return;
     }
     if (!this.isStationDockReady()) {
@@ -8090,122 +8082,46 @@ export class GameEngine {
     }
   }
 
-  /** ENTER: inicia la animación de atraque si se puede acoplar (puerto a tiro + nave lenta). */
+  /** ENTER: inicia la cinemática de atraque si se puede acoplar (puerto a tiro + nave lenta). */
   public requestStationDock(): boolean {
-    if (this.stationPanelOpen || this.stationDockAnim) {
+    if (this.stationPanelOpen || this.stationDockingActive) {
       return false;
     }
     if (!this.isStationDockReady()) {
       return false;
     }
-    this.beginStationDockAnim('docking', this.spaceStationSystem.getDockCandidate()!);
+    this.startStationDocking('docking', this.spaceStationSystem.getDockCandidate()!);
     return true;
   }
 
-  /** Configura la animación de atraque/separación (cámara MANUAL + congela la nave). */
-  private beginStationDockAnim(mode: 'docking' | 'undocking', port: DockPort): void {
-    const ship = this.spaceship;
-    if (!ship) {
+  /** Lanza la cinemática de atraque/separación (DockingSequenceAnimation) y guarda el modo de cámara previo. */
+  private startStationDocking(mode: 'docking' | 'undocking', port: DockPort): void {
+    if (!this.spaceship) {
       return;
     }
-    const n = port.approachNormal ?? { x: 0, y: 1, z: 0 };
-    const dist = mode === 'docking' ? 26 : 180; // atraque: pegado al puerto; separación: lejos
-    const end = { x: port.position.x + n.x * dist, y: port.position.y + n.y * dist, z: port.position.z + n.z * dist };
-    // Desactivar controles + gasto de void energy durante el atraque (petición del usuario).
-    ship.voidEnergyPaused = true;
-    ship.currentSpeed = 0; ship.targetSpeed = 0;
-    ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
-    // Solo capturamos el modo de cámara HUD al ATRACAR (al despegar la cámara actual ya es MANUAL del hold).
     if (mode === 'docking') {
       this.stationDockPrevCamMode = this.camera?.getCurrentMode?.() ?? null;
     }
-    try { this.camera?.setCameraMode?.(CameraMode.MANUAL); } catch {}
-    this.stationDockAnim = {
-      mode, t: 0, dur: mode === 'docking' ? 6.0 : 5.0, port, normal: n, // lentas (se ve bien la nave)
-      shipStart: { ...ship.position }, shipEnd: end,
-    };
+    this.stationDockingActive = true;
+    const started = this.animationManager.startDockingSequence(this, {
+      mode,
+      portPosition: { ...port.position },
+      approachNormal: { ...(port.approachNormal ?? { x: 0, y: 1, z: 0 }) },
+      onComplete: (aborted: boolean) => this.onStationDockingComplete(mode, port, aborted),
+    });
+    if (!started) {
+      this.stationDockingActive = false;
+    }
   }
 
-  /** Avanza la animación de atraque/separación: mueve la nave y encuadra la cámara cinemática. */
-  private updateStationDockAnimation(dt: number): void {
-    const ship = this.spaceship;
-    if (!ship) {
-      return;
-    }
-    const a = this.stationDockAnim;
-    if (!a) {
-      // Acoplada con el menú abierto: mantener la cámara cinemática sobre el puerto y la nave.
-      if (this.stationPanelOpen && this.stationDockedPort) {
-        this.setStationDockCamera(ship.position, this.stationDockedPort.position);
+  /** Fin de la cinemática: al atracar abre el menú (la cámara MANUAL se mantiene); al separar restaura la cámara. */
+  private onStationDockingComplete(mode: 'docking' | 'undocking', port: DockPort, aborted: boolean): void {
+    this.stationDockingActive = false;
+    if (mode === 'docking') {
+      if (!aborted) {
+        this.openStationPanel(port);
       }
-      return;
-    }
-    a.t += dt;
-    const p = Math.min(1, a.t / a.dur);
-    const e = p * p * (3 - 2 * p); // smoothstep (velocidad regular y lenta)
-    ship.position.x = a.shipStart.x + (a.shipEnd.x - a.shipStart.x) * e;
-    ship.position.y = a.shipStart.y + (a.shipEnd.y - a.shipStart.y) * e;
-    ship.position.z = a.shipStart.z + (a.shipEnd.z - a.shipStart.z) * e;
-    ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
-    ship.currentSpeed = 0; ship.targetSpeed = 0;
-    this.zeroShipControls(ship);
-    this.setStationDockCamera(ship.position, a.port.position);
-    if (p >= 1) {
-      this.finishStationDockAnim(a);
-    }
-  }
-
-  private zeroShipControls(ship: Spaceship): void {
-    const c = ship.controls;
-    c.forward = c.backward = c.left = c.right = c.up = c.down = false;
-    c.speedUp = c.speedDown = c.rollLeft = c.rollRight = false;
-  }
-
-  /** Cámara cinemática: a ~75u de la NAVE, en perpendicular, mirando a la nave con el puerto en cuadro. */
-  private setStationDockCamera(shipPos: { x: number; y: number; z: number }, portPos: { x: number; y: number; z: number }): void {
-    let tx = portPos.x - shipPos.x, ty = portPos.y - shipPos.y, tz = portPos.z - shipPos.z;
-    const tl = Math.hypot(tx, ty, tz) || 1; tx /= tl; ty /= tl; tz /= tl;
-    // side = (nave→puerto) x worldUp  →  (-tz, 0, tx)
-    let sx = -tz, sy = 0, sz = tx;
-    let sl = Math.hypot(sx, sy, sz);
-    if (sl < 1e-3) { sx = 1; sy = 0; sz = 0; sl = 1; }
-    sx /= sl; sz /= sl;
-    const camPos = { x: shipPos.x + sx * 70, y: shipPos.y + 28, z: shipPos.z + sz * 70 };
-    // Mira a un punto entre la nave y el puerto (sesgado a la nave) para que ambos queden en cuadro.
-    const target = {
-      x: shipPos.x * 0.65 + portPos.x * 0.35,
-      y: shipPos.y * 0.65 + portPos.y * 0.35,
-      z: shipPos.z * 0.65 + portPos.z * 0.35,
-    };
-    try {
-      this.camera?.setCameraMode?.(CameraMode.MANUAL);
-      this.camera?.seedManualTransform?.(camPos, target, { x: 0, y: 1, z: 0 });
-      this.camera?.markDirty?.();
-    } catch {}
-  }
-
-  private finishStationDockAnim(a: NonNullable<GameEngine['stationDockAnim']>): void {
-    const ship = this.spaceship;
-    this.stationDockAnim = null;
-    if (!ship) {
-      return;
-    }
-    ship.position = { ...a.shipEnd };
-    if (a.mode === 'docking') {
-      // Mira hacia el puerto (acoplada). Controles y void energy desactivados mientras esté atracada.
-      try { ship.applyOrientationSnapshot?.({ forward: { x: -a.normal.x, y: -a.normal.y, z: -a.normal.z }, up: { x: 0, y: 1, z: 0 } }); } catch {}
-      ship.voidEnergyPaused = true;
-      ship.currentSpeed = 0; ship.targetSpeed = 0;
-      this.zeroShipControls(ship);
-      // NO restauramos la cámara: se mantiene cinemática sobre el puerto mientras el menú está abierto.
-      this.openStationPanel(a.port);
     } else {
-      // Separación: orienta por la normal, leve rotación, y acelera un 25% en esa dirección; devuelve control.
-      try { ship.applyOrientationSnapshot?.({ forward: { ...a.normal }, up: { x: 0, y: 1, z: 0 } }); } catch {}
-      const sp = (ship.maxSpeed || 10) * 0.25;
-      ship.currentSpeed = sp; ship.targetSpeed = sp;
-      ship.rotation.z += 0.25; // leve rotación sobre el eje de avance
-      ship.voidEnergyPaused = false;
       try { if (this.stationDockPrevCamMode != null) this.camera?.setCameraMode?.(this.stationDockPrevCamMode); } catch {}
       this.stationDockPrevCamMode = null;
     }
@@ -8231,7 +8147,7 @@ export class GameEngine {
     this.stationDockedPort = null;
     if (port) {
       port.occupied = false;
-      this.beginStationDockAnim('undocking', port);
+      this.startStationDocking('undocking', port);
     }
   }
 
