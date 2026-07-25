@@ -8084,13 +8084,20 @@ export class GameEngine {
 
   /** ENTER: inicia la cinemática de atraque si se puede acoplar (puerto a tiro + nave lenta). */
   public requestStationDock(): boolean {
+    // Auto-sanar: si el flag quedó colgado pero no hay cinemática de acople REAL en curso, resetearlo.
+    if (this.stationDockingActive &&
+        (this.animationManager?.getCurrentAnimation?.()?.name ?? null) !== 'docking-sequence') {
+      this.stationDockingActive = false;
+    }
     if (this.stationPanelOpen || this.stationDockingActive) {
       return false;
     }
-    if (!this.isStationDockReady()) {
-      return false;
+    const cand = this.spaceStationSystem.getDockCandidate();
+    if (!cand || !cand.isDockable()) {
+      return false; // no hay puerto libre a tiro → ENTER no es para acoplar
     }
-    this.startStationDocking('docking', this.spaceStationSystem.getDockCandidate()!);
+    // ENTER es deliberado: acoplamos a cualquier velocidad dentro de rango (la cinemática frena la nave).
+    this.startStationDocking('docking', cand);
     return true;
   }
 
@@ -8103,14 +8110,22 @@ export class GameEngine {
       this.stationDockPrevCamMode = this.camera?.getCurrentMode?.() ?? null;
     }
     this.stationDockingActive = true;
-    const started = this.animationManager.startDockingSequence(this, {
-      mode,
-      portPosition: { ...port.position },
-      approachNormal: { ...(port.approachNormal ?? { x: 0, y: 1, z: 0 }) },
-      onComplete: (aborted: boolean) => this.onStationDockingComplete(mode, port, aborted),
-    });
+    let started = false;
+    try {
+      started = this.animationManager.startDockingSequence(this, {
+        mode,
+        portPosition: { ...port.position },
+        approachNormal: { ...(port.approachNormal ?? { x: 0, y: 1, z: 0 }) },
+        onComplete: (aborted: boolean) => this.onStationDockingComplete(mode, port, aborted),
+      });
+    } catch (e) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'startDockingSequence lanzó excepción', e);
+    }
     if (!started) {
       this.stationDockingActive = false;
+      const blocking = this.animationManager?.getCurrentAnimation?.()?.name ?? 'ninguna';
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'La cinemática de acople no arrancó', { blocking, mode });
+      try { this.showPlaceholderText(`No se pudo iniciar el acople (animación en curso: ${blocking})`, 3000); } catch {}
     }
   }
 

@@ -144,10 +144,12 @@ export class AnimationManagerService {
   }
 
   public startDockingSequence(engine: GameEngine, context: DockingSequenceContext): boolean {
+    // forceReplace: el acople preempta una animación interrumpible en curso (como el glide inline antiguo,
+    // que corría al margen del AnimationManager). Las no-interrumpibles (aterrizaje/despegue) se respetan.
     return this.launch(engine, 'docking-sequence', (anim) => {
       applyConfigure(anim, context);
       anim.start(engine);
-    });
+    }, { forceReplace: true });
   }
 
   // ---- Núcleo de carga/arranque (unifica busy-check + caché + lazy import + stub) ----
