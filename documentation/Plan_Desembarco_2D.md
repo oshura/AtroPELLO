@@ -48,14 +48,23 @@ La lista canónica vive en `ReTimeline/docs/PLAN-OLDONE.md §4` (y en runtime, e
 
 ## 4. Checklist
 
-- [ ] `DisembarkService` (o similar): `landingContextToEntryCode()` + `openTileGame(code)`
-      (`window.open` con la URL del contrato) + tests unitarios del mapeo
-- [ ] Botón **"Bajar de la nave"** en `LandingPanelComponent` (header o footer contextual),
-      visible en TODAS las pestañas del panel cuando hay mapeo; menús actuales intactos
-- [ ] Copy/estilo lovecraftiano del botón + entrada en la bitácora del panel al desembarcar
+- [x] `DisembarkService` (`services/game/disembark.service.ts`, servicio puro + 7 tests):
+      `landingContextToEntryCode(site)` + `canDisembark(site)` + `disembark(site)` (`window.open` a
+      `oldone.html?entry=<code>&return=<url 3D>`, nueva pestaña). **Hecho + desplegado (build 51).**
+- [x] Botón **"Bajar de la nave"** en `LandingPanelComponent` (footer, visible en TODAS las vistas
+      cuando hay mapeo) **y** en `StationLandingPanelComponent`; menús actuales intactos. **Hecho.**
+- [~] Copy/estilo del botón: estilo base puesto (verde eldritch en estación; `btn primary` en planeta).
+      Pulido lovecraftiano + entrada en la bitácora del panel al desembarcar → pendiente (polish).
 - [ ] Wiki/docs: actualizar `Sistema_Landing_Narrativa.md` (nueva acción del panel)
 - [ ] (v2 opcional) same-tab: save antes de navegar + `?resume=landing`
-- [ ] Coordinar despliegue SOLO cuando cambie el contrato de códigos (el 2D se despliega solo)
+- [x] Coordinar despliegue: AtroPELLO ya despliega el botón; el 2D se despliega aparte.
+
+> **⚠️ COORDINACIÓN CON EL 2D (para la otra sesión) — 2026-07-26:** AtroPELLO **ya envía** (en prod,
+> build 51) estos `entry`: **`estacion-humana`** (atraque), **`planeta-tierra`** (Tierra partida) y
+> **`planeta-rocoso`** (resto de planetas aterrizables). Añade `&return=<url del 3D>` (fallback si
+> `window.close()` no puede). Para el MVP: el 2D debe tener esos `ENTRY_POINTS` **o** hacer que un
+> `entry` desconocido caiga al mundo inicial (`nave`) — así el botón SIEMPRE abre algo pisable.
+> Si cambiáis nombres de código, avisad y actualizo el `switch` (1 línea).
 
 ## 5. Bitácora
 
@@ -64,3 +73,46 @@ La lista canónica vive en `ReTimeline/docs/PLAN-OLDONE.md §4` (y en runtime, e
   TIPO de sitio (los planetas procedurales comparten mundo 2D por bioma), contrato canónico en el
   repo del 2D. Pendiente de que el 2D complete sus fases F0-F3 + primer mundo para tener algo que
   abrir.
+- **2026-07-26** — **F6 (lado AtroPELLO) IMPLEMENTADO Y DESPLEGADO** (build 51, prod): `DisembarkService`
+  + botón "Bajar de la nave" en el panel de planeta (footer, todas las vistas) y en el de estación +
+  7 tests. Envía `estacion-humana`/`planeta-tierra`/`planeta-rocoso` con `&return`. Decisiones del
+  usuario: v1 (nueva pestaña); MVP con inventarios **separados** por ahora, **compartidos después**
+  (ver §6). Pendiente el lado 2D (F0-F4 + `oldone.html`) para probar el flujo completo end-to-end.
+
+## 6. Estado cruzado entre juegos (inventario / XP / cordura / daño) — DISEÑO (no implementado)
+
+> Objetivo del usuario (2026-07-26): que un **canal** lleve info de IDA y VUELTA entre el 3D y el 2D —
+> equipo/inventario, experiencia, daños, cordura, algún avance clave — para que **cada juego se entere**
+> de lo del otro. El MVP v1 **NO** lo hace (progresiones separadas); esto es la siguiente iteración
+> ("más ajustes" pendientes). Contrato documentado aquí para coordinar ambas sesiones antes de implementar.
+
+### 6.1 Canal — NO reutilizar la cookie de auth
+`atropello-session` es el ID Token de Cognito (auth): **no** meter estado de juego ahí (tamaño, HttpOnly,
+la gestiona el auth-launcher). Opciones:
+- **(A) Cookie de estado dedicada** `atropello-xstate` en `.atropello-games.es`, **no** HttpOnly (legible
+  por el 3D Angular vía `document.cookie` y por el 2D .NET server-side): JSON compacto y **versionado**.
+  Sin infra nueva. Límite ~4KB → solo un RESUMEN. Tamperable → el receptor no debe confiar para nada
+  explotable (a esta escala, riesgo bajo).
+- **(B) Backend compartido** (recomendado a medio plazo para inventario REAL): el estado canónico
+  (personaje/inventario) vive en UN sitio (probablemente la BD del 2D, ya autoritativa) y el 3D lo
+  lee/escribe por API con el mismo ID Token. Robusto y sin límite de tamaño. Es el "más ajustes" real:
+  hoy el 3D usa **Cloud Saves propio** → hay que decidir dónde vive el inventario canónico.
+- **(C) Handoff por query/postMessage**: token de traspaso en la URL de ida + confirmación en la vuelta.
+  Más plomería; útil si se quiere evitar cookies.
+
+### 6.2 Contrato propuesto (v0, a acordar entre ambos repos)
+`atropello-xstate` = JSON `{ v:1, at:<ts>, from:'3d'|'2d', char:{ xp, sanity, hp, credits },
+inv:[{id,qty}], equip:[{slot,id}], flags:{<clave>:<valor>} }`. Reglas:
+- **Ida (3D→2D)**: antes de `window.open`, el 3D escribe su snapshot relevante (o el 2D lo lee del backend si vamos por B).
+- **Vuelta (2D→3D)**: el 2D escribe su snapshot antes de cerrar; al reactivarse la pestaña del 3D
+  (`visibilitychange`/`focus`), el 3D lee y **reconcilia** (merge, no pisar a ciegas).
+- Cada juego **lee lo que entiende e ignora el resto** (forward-compat por `v`).
+
+### 6.3 Recomendación
+- **Ahora (MVP)**: nada (separado), como está.
+- **Paso 1 barato**: cookie (A) con un resumen (xp, cordura, hp, flags clave) → "el otro juego se entera"
+  sin unificar inventarios. Bidireccional y versionado.
+- **Paso 2 (inventario realmente compartido)**: backend (B) — decidir dónde vive el inventario canónico
+  (unificar Cloud Saves del 3D con la BD del 2D). Es lo que el usuario marcó como "más ajustes".
+- **A decidir con el usuario** antes de implementar: qué campos exactos viajan y quién es la fuente de
+  verdad de cada uno.
