@@ -1,6 +1,7 @@
 import { Component, EventEmitter, HostListener, Input, Output, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StationLandingService, StationActionResult } from '../../services/game/station-landing.service';
+import { DisembarkService } from '../../services/game/disembark.service';
 
 /**
  * Menú de aterrizaje de la ESTACIÓN espacial (propio, no el de planetas). Acciones: buscar (50%) /
@@ -23,6 +24,7 @@ import { StationLandingService, StationActionResult } from '../../services/game/
           <button type="button" (click)="onSearch()">Buscar por la estación <small>(50%)</small></button>
           <button type="button" (click)="onRest()">Descansar <small>(100%)</small></button>
           <button type="button" (click)="onRefuel()">Recuperar vacío <small>(100%)</small></button>
+          <button type="button" class="station-panel__disembark" (click)="onDisembark()">Bajar de la nave</button>
           <button type="button" class="station-panel__takeoff" (click)="onTakeoff()">Despegar</button>
         </div>
 
@@ -52,6 +54,7 @@ import { StationLandingService, StationActionResult } from '../../services/game/
     .station-panel__actions button:hover { background: #1b3450; }
     .station-panel__actions button small { color: #7f9bb5; }
     .station-panel__takeoff { grid-column: 1 / -1; background: #3a1b22 !important; border-color: #6a2a3a !important; }
+    .station-panel__disembark { grid-column: 1 / -1; background: #16302a !important; border-color: #2f6a52 !important; color: #bdeccf !important; }
     .station-panel__log { margin-top: 18px; display: flex; flex-direction: column; gap: 12px; }
     .station-panel__event { background: rgba(10, 20, 32, 0.6); border: 1px solid #1d3146; border-radius: 8px;
       padding: 10px 12px; }
@@ -71,7 +74,15 @@ export class StationLandingPanelComponent implements OnChanges {
 
   protected log: StationActionResult[] = [];
 
-  constructor(private readonly station: StationLandingService) {}
+  constructor(
+    private readonly station: StationLandingService,
+    private readonly disembark: DisembarkService
+  ) {}
+
+  /** Salta al juego 2D (nueva pestaña) en el mundo de la estación humana. */
+  protected onDisembark(): void {
+    this.disembark.disembark({ kind: 'station' });
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['visible'] && !this.visible) {

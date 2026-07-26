@@ -4,6 +4,7 @@ import { Modal } from '../modal/modal';
 import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/landing.types';
 import { LandingMenuComponent } from '../landing-menu/landing-menu';
 import { GameStateStore } from '../../services/game/game-state.store';
+import { DisembarkService } from '../../services/game/disembark.service';
 import {
   PLANET_INTEL_STATUS,
   PlanetIntelSnapshot,
@@ -29,7 +30,22 @@ export class LandingPanelComponent implements OnChanges {
   @Output() stay = new EventEmitter<void>();
   protected viewMode: 'overview' | 'actions' | 'diplomacy' = 'overview';
 
-  constructor(private readonly gameState: GameStateStore) {}
+  constructor(
+    private readonly gameState: GameStateStore,
+    private readonly disembark: DisembarkService
+  ) {}
+
+  /** ¿Este planeta tiene mundo 2D? (muestra el botón "Bajar de la nave"). */
+  protected get canDisembark(): boolean {
+    return !!this.context && this.disembark.canDisembark({ kind: 'planet', planetType: this.context.planetType });
+  }
+
+  /** Salta al juego 2D (nueva pestaña) en el bioma del planeta. */
+  onDisembark(): void {
+    if (this.context) {
+      this.disembark.disembark({ kind: 'planet', planetType: this.context.planetType });
+    }
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if ((changes['visible'] && !this.visible) || changes['context']) {

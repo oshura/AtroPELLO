@@ -87,6 +87,7 @@
   </div>
 
   <div slot="footer" class="landing-panel__actions">
+    <button *ngIf="canDisembark" type="button" class="btn primary" (click)="onDisembark()">Bajar de la nave</button>
     <ng-container *ngIf="!inMenuView; else menuFooter">
       <button type="button" class="btn primary" (click)="enterMenu()">Permanecer</button>
       <button type="button" class="btn primary" (click)="onTakeoff()">
