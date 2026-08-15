@@ -8,6 +8,9 @@
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
     "test:headless": "ng test --watch=false --browsers=ChromeHeadless",
+    "deploy": "npm run build && npm run deploy:sync && npm run deploy:invalidate",
+    "deploy:sync": "aws s3 sync dist/atropello-game/browser s3://to3-pre-alpha --delete",
+    "deploy:invalidate": "aws cloudfront create-invalidation --distribution-id E2ZSJEHDE5STC --paths \"/*\"",
     "serve:ssr:atropello-game": "node dist/atropello-game/server/server.mjs",
     "gen:audio:placeholders": "powershell -ExecutionPolicy Bypass -File ./scripts/audio/generate-placeholders.ps1"
   },
