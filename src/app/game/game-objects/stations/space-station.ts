@@ -1,6 +1,7 @@
 import { Vector3 } from '../../../types/game.types';
 import { GameObject } from '../../GameObject';
 import type { StructuredShape } from '../../services/physics/collision/collision-shape.types';
+import type { StationWindowMeshes } from './station-windows';
 import { TargetType } from '../../types/targeting.types';
 import { GameObjectType } from '../../types/game-object.types';
 import { GameObjectAnimosity } from '../../types/animosity.types';
@@ -111,5 +112,14 @@ export abstract class SpaceStation extends GameObject {
    */
   public getStructuredShapesLocal(): readonly StructuredShape[] {
     return [];
+  }
+
+  /**
+   * Capas de VENTANAS en espacio unidad (docs/ESTACIONES.md §7 I0): quads emissive a las alturas de
+   * cubierta. Por defecto ninguna; cada subclase aporta las suyas. Las instancia el system y las
+   * dibuja StationRenderer con el modelMatrix de la propia estación.
+   */
+  public getWindowMeshesLocal(): StationWindowMeshes | null {
+    return null;
   }
 }

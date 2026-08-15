@@ -35,8 +35,7 @@ import { TardisCompanionSystem, TardisCompanionHost } from './services/state/tar
 import { SpaceTurtleSystem, SpaceTurtleHost } from './services/state/space-turtle-system';
 import { SpaceStationSystem, SpaceStationHost } from './services/state/space-station-system';
 import { DockPort } from './game-objects/stations/dock-port';
-import { StationEmissiveBall } from './game-objects/stations/station-emissive-ball';
-import { DockedShipWreck } from './game-objects/stations/docked-ship-wreck';
+import { StationRenderer, StationRenderHost } from './rendering/StationRenderer';
 import { buildShipWreckMesh } from './game-objects/stations/ship-wreck-geometry';
 import { createPortalFromSnapshot } from './services/game/portal-state.codec';
 import { captureLesserBeingSnapshot, cloneLesserBeingSnapshot } from './services/game/lesser-being-state.codec';
@@ -691,13 +690,20 @@ export class GameEngine {
 
   // Estación espacial humana: landmark fijo del sistema humano (toroide + puertos de acople). Lógica FUERA del engine.
   private readonly spaceStationSystem = new SpaceStationSystem();
-  private renderedStation: import('./game-objects/stations/human-space-station').HumanSpaceStation | null = null;
-  private renderedPorts: DockPort[] = [];
-  private renderedMotors: StationEmissiveBall[] = [];
-  private renderedWrecks: DockedShipWreck[] = [];
+  // Render de la estación extraído a StationRenderer (regla #1); el motor solo delega.
+  private readonly stationRenderer = new StationRenderer();
+  private readonly stationRenderHost: StationRenderHost = {
+    getGl: () => this.gl,
+    getShaderManager: () => this.shaderManager,
+    getCamera: () => this.camera,
+    getStationSystem: () => this.spaceStationSystem,
+    getTextureManager: () => this.textureManager ?? null,
+    getLightDirection: () => this.lightDirection,
+    getLightColor: () => this.lightColor,
+    getAmbientColor: () => this.ambientColor,
+    getAmbientStrength: () => this.ambientStrength,
+  };
   private stationDockCandidate: DockPort | null = null;
-  private stationDiffuseTex: WebGLTexture | null = null;
-  private stationTexLoading = false;
   private stationPanelOpen = false;
   private stationDockedPort: DockPort | null = null;
   private stationDockPromptTimer = 0;
@@ -3589,7 +3595,7 @@ export class GameEngine {
     this.planetDebris.clear();
     this.tardisCompanionSystem.clear();
     this.spaceTurtleSystem.clear();
-    this.clearRenderedStation();
+    this.stationRenderer.clear();
     this.spaceStationSystem.clear(this.spaceStationHost);
     this.stationDockCandidate = null;
     this.stationPanelOpen = false;
@@ -6446,7 +6452,7 @@ export class GameEngine {
       this.planetDebris.clear();
     this.tardisCompanionSystem.clear();
     this.spaceTurtleSystem.clear();
-    this.clearRenderedStation();
+    this.stationRenderer.clear();
     this.spaceStationSystem.clear(this.spaceStationHost);
     this.stationDockCandidate = null;
     this.stationPanelOpen = false;
@@ -7730,7 +7736,7 @@ export class GameEngine {
     // Renderizar debris asociados a planetas con LOD sencillo
     this.renderPlanetDebris();
     this.renderSpaceTurtle();
-    this.renderSpaceStation();
+    this.stationRenderer.render(this.stationRenderHost);
     // Desbindeo explícito de texturas usadas por el pase texturizado de planetas
     this.gl.activeTexture(this.gl.TEXTURE0);
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
@@ -7887,106 +7893,6 @@ export class GameEngine {
       port.occupied = false;
       this.startStationDocking('undocking', port);
     }
-  }
-
-  /** Libera los buffers de la estación y sus puertos (al cambiar de sistema o regenerar). */
-  private clearRenderedStation(): void {
-    if (this.gl) {
-      if (this.renderedStation) { try { this.renderedStation.destroy(this.gl); } catch {} }
-      for (const p of this.renderedPorts) { try { p.destroy(this.gl); } catch {} }
-      for (const m of this.renderedMotors) { try { m.destroy(this.gl); } catch {} }
-      for (const w of this.renderedWrecks) { try { w.destroy(this.gl); } catch {} }
-    }
-    this.renderedStation = null;
-    this.renderedPorts = [];
-    this.renderedMotors = [];
-    this.renderedWrecks = [];
-  }
-
-  /**
-   * Renderiza la estación espacial humana (cuerpo texturizado + puertos azules emissive). Cuerpo con cull
-   * desactivado (toroide visible por ambas caras). La textura del casco se carga perezosamente; mientras,
-   * cae a color por vértice (gris). docs/ESTACIONES.md Fase 9.
-   */
-  private renderSpaceStation(): void {
-    const station = this.spaceStationSystem.getRenderable();
-    if (station !== this.renderedStation) {
-      this.clearRenderedStation();
-      this.renderedStation = station;
-    }
-    if (!station || !this.gl || !this.shaderManager || !this.camera) {
-      return;
-    }
-    const gl = this.gl;
-    const cam = this.camera;
-    const camPosArr = new Float32Array([cam.position.x, cam.position.y, cam.position.z]);
-
-    // Carga perezosa de la textura de casco (CC0). Hasta que llega, se usa el color por vértice (gris).
-    if (!this.stationDiffuseTex && !this.stationTexLoading && this.textureManager) {
-      this.stationTexLoading = true;
-      this.textureManager.loadTextureFromUrl('station-panel', '/assets/textures/station_panel.jpg')
-        .then(t => { this.stationDiffuseTex = t; })
-        .catch(() => {})
-        .finally(() => { this.stationTexLoading = false; });
-    }
-
-    gl.enable(gl.DEPTH_TEST);
-    gl.depthMask(true);
-    const wasCull = gl.isEnabled(gl.CULL_FACE);
-    gl.disable(gl.CULL_FACE); // toroide + tiles visibles por ambas caras
-
-    // Cuerpo de la estación
-    if (!station.vertexBuffer) station.initBuffers(gl);
-    this.shaderManager.useLitProgram();
-    this.calculateNormalMatrix(station.modelMatrix);
-    this.shaderManager.setLitMatrices(station.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-    this.shaderManager.setLighting(this.lightDirection, this.lightColor, this.ambientColor, this.ambientStrength);
-    this.shaderManager.setSpecular(camPosArr, 0.35, 28.0);
-    // Color por vértice (tono metálico gris/azulado) modulado por la textura de casco metálica.
-    this.shaderManager.setLitVertexColorMode(true);
-    if (this.stationDiffuseTex) {
-      this.shaderManager.setLitTexture(true, this.stationDiffuseTex);
-    }
-    station.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
-    this.shaderManager.setLitTexture(false);
-    this.shaderManager.setLitVertexColorMode(false);
-
-    // Puertos de acople: los ACOPLABLES (libres) lucen azul emissive; los ocupados por un pecio quedan
-    // "apagados" (sin emissive), ya que no se puede aterrizar en ellos.
-    this.shaderManager.setLitVertexColorMode(true);
-    for (const p of this.spaceStationSystem.getPorts()) {
-      if (!p.isActive()) continue;
-      if (!p.vertexBuffer) { p.initBuffers(gl); this.renderedPorts.push(p); }
-      this.shaderManager.setLitEmissive(p.isDockable() ? 1.0 : 0.0);
-      this.calculateNormalMatrix(p.modelMatrix);
-      this.shaderManager.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-      p.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
-    }
-    // "Bola" de motor (rojo/naranja, tobera del núcleo) — emissive más suave ("apagado").
-    this.shaderManager.setLitEmissive(0.75);
-    for (const m of this.spaceStationSystem.getMotors()) {
-      if (!m.isActive()) continue;
-      if (!m.vertexBuffer) { m.initBuffers(gl); this.renderedMotors.push(m); }
-      this.calculateNormalMatrix(m.modelMatrix);
-      this.shaderManager.setLitMatrices(m.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-      m.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
-    }
-    this.shaderManager.setLitVertexColorMode(false);
-    this.shaderManager.setLitEmissive(0.0);
-
-    // Réplicas atracadas (pecios): SÓLIDO rusty/quemado con iluminación (color por vértice, sin textura).
-    this.shaderManager.setLitVertexColorMode(true);
-    this.shaderManager.setSpecular(camPosArr, 0.08, 8.0);
-    for (const w of this.spaceStationSystem.getWrecks()) {
-      if (!w.isActive()) continue;
-      if (!w.vertexBuffer) { w.initBuffers(gl); this.renderedWrecks.push(w); }
-      this.calculateNormalMatrix(w.modelMatrix);
-      this.shaderManager.setLitMatrices(w.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-      w.render(gl, this.shaderManager.litProgram!, cam.viewMatrix, cam.projectionMatrix);
-    }
-    this.shaderManager.setLitVertexColorMode(false);
-
-    if (wasCull) gl.enable(gl.CULL_FACE);
   }
 
   /** Renderiza los mega-asteroides de debris vinculados a planetas con un LOD simple */

@@ -5,6 +5,7 @@ import type { StructuredColliderDef } from '../physics/collision/collision-shape
 import { DockPort } from '../../game-objects/stations/dock-port';
 import { StationEmissiveBall } from '../../game-objects/stations/station-emissive-ball';
 import { DockedShipWreck } from '../../game-objects/stations/docked-ship-wreck';
+import { StationWindowMesh } from '../../game-objects/stations/station-windows';
 import { WreckMesh } from '../../game-objects/stations/ship-wreck-geometry';
 
 /** Puente del sistema con el motor (todo via host: sin acoplar a GameEngine, testeable). */
@@ -45,6 +46,7 @@ export class SpaceStationSystem {
   private motors: StationEmissiveBall[] = [];         // "bola" de motor (tobera del núcleo)
   private motorLocals: [number, number, number][] = []; // centros LOCALES de los motores
   private wrecks: Array<{ obj: DockedShipWreck; port: number }> = []; // réplicas atracadas por puerto
+  private windows: { steady: StationWindowMesh; flicker: StationWindowMesh } | null = null; // §7 I0
 
   getRenderable(): HumanSpaceStation | null {
     return this.station;
@@ -69,6 +71,11 @@ export class SpaceStationSystem {
     return this.dockCandidate;
   }
 
+  /** Capas de ventanas (fijas + parpadeantes) en espacio unidad; se dibujan con el modelMatrix de la estación. */
+  getWindows(): { steady: StationWindowMesh; flicker: StationWindowMesh } | null {
+    return this.windows;
+  }
+
   clear(host?: SpaceStationHost): void {
     if (this.station) {
       host?.unregisterCollider(this.station.id);
@@ -79,6 +86,7 @@ export class SpaceStationSystem {
     this.motors = [];
     this.motorLocals = [];
     this.wrecks = [];
+    this.windows = null;
   }
 
   update(host: SpaceStationHost, dt: number): void {
@@ -188,6 +196,15 @@ export class SpaceStationSystem {
         this.wrecks.push({ obj, port: i });
       }
     }
+
+    // Ventanas exteriores (§7 I0): capas en espacio unidad, dibujadas con el modelMatrix de la estación.
+    const wm = station.getWindowMeshesLocal();
+    this.windows = wm
+      ? {
+          steady: new StationWindowMesh(`${station.id}-windows`, { ...pos }, wm.steady),
+          flicker: new StationWindowMesh(`${station.id}-windows-flicker`, { ...pos }, wm.flicker),
+        }
+      : null;
 
     this.rebuildWorldTransforms();
 

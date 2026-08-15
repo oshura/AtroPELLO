@@ -1,7 +1,8 @@
 import { Vector3 } from '../../../types/game.types';
 import { SpaceStation, DockPortPlacement, StationEmissivePoints } from './space-station';
-import { MeshData, createMesh, pushBox, pushTorus, toTypedMesh, applyDamageStains } from './station-geometry';
+import { MeshData, createMesh, pushBox, pushTorus, toTypedMesh, applyDamageStains, seededRng } from './station-geometry';
 import type { StructuredShape } from '../../services/physics/collision/collision-shape.types';
+import type { StationWindowMeshes } from './station-windows';
 
 /** Id canónico de la estación humana (landmark fijo; el daño/puertos se regeneran idénticos por semilla). */
 export const HUMAN_STATION_ID = 'human-station';
@@ -143,10 +144,88 @@ function buildHumanStationColliders(): StructuredShape[] {
   return shapes;
 }
 
+// --- Ventanas exteriores (docs/ESTACIONES.md §7, rebanada I0) ---
+// 3 filas a las alturas de las 3 CUBIERTAS (pisos) del tubo, solo en segmentos vivos y en la cara
+// exterior. Energía inestable: mayoría muertas, algunas encendidas, unas pocas parpadeando.
+const WINDOW_DECKS = 3;
+const WINDOWS_PER_SEGMENT = 3;
+const WINDOW_HALF_U = 0.006;    // media anchura (dirección del anillo) → ~4.8 u de mundo
+const WINDOW_HALF_V = 0.0045;   // media altura (meridiano del tubo) → ~3.6 u
+const WINDOW_LIFT = 0.003;      // despegue de la superficie (anti z-fighting) → ~2.4 u
+const WINDOW_FLICKER_RATIO = 0.05;
+const WINDOW_LIT_RATIO = 0.15;
+const WINDOW_DEAD: [number, number, number] = [0.030, 0.034, 0.050]; // cristal muerto (casi negro azulado)
+const WINDOW_LIT: [number, number, number] = [1.0, 0.72, 0.35];      // cálido tenue (habitado... una vez)
+const WINDOW_FLICKER: [number, number, number] = [1.0, 0.55, 0.25];  // más rojizo (circuito sufriendo)
+
+/** Añade un quad de ventana: centro + tangentes (anillo/meridiano) + normal saliente + color. */
+function pushWindowQuad(
+  mesh: MeshData,
+  c: [number, number, number],
+  tu: [number, number, number],
+  tv: [number, number, number],
+  n: [number, number, number],
+  col: [number, number, number],
+): void {
+  const base = mesh.vertices.length / 3;
+  for (const [su, sv] of [[-1, -1], [1, -1], [-1, 1], [1, 1]] as const) {
+    mesh.vertices.push(
+      c[0] + tu[0] * su * WINDOW_HALF_U + tv[0] * sv * WINDOW_HALF_V,
+      c[1] + tu[1] * su * WINDOW_HALF_U + tv[1] * sv * WINDOW_HALF_V,
+      c[2] + tu[2] * su * WINDOW_HALF_U + tv[2] * sv * WINDOW_HALF_V,
+    );
+    mesh.normals.push(n[0], n[1], n[2]);
+    mesh.uvs.push(0, 0);
+    mesh.colors.push(col[0], col[1], col[2]);
+  }
+  mesh.indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
+}
+
+/** Construye las dos capas de ventanas (fijas + parpadeantes). Exportado para el spec. */
+export function buildHumanStationWindows(): StationWindowMeshes {
+  const steady = createMesh();
+  const flicker = createMesh();
+  const rng = seededRng(`${HUMAN_STATION_ID}-windows`);
+  const destroyed = new Set<number>(DESTROYED_SEGMENTS);
+  for (let i = 0; i < RING_SEG; i++) {
+    if (destroyed.has(i)) continue;
+    for (let d = 0; d < WINDOW_DECKS; d++) {
+      // Alturas de piso: tubo Ø 2r partido en 3 cubiertas → centros en -2r/3, 0, +2r/3.
+      const deckY = (d - 1) * ((2 * TUBE_RADIUS) / WINDOW_DECKS);
+      const v = Math.asin(deckY / TUBE_RADIUS); // cara EXTERIOR (cos v > 0)
+      const cv = Math.cos(v), sv = Math.sin(v);
+      for (let w = 0; w < WINDOWS_PER_SEGMENT; w++) {
+        const u = ((i + (w + 0.5) / WINDOWS_PER_SEGMENT) / RING_SEG) * Math.PI * 2;
+        const cu = Math.cos(u), su = Math.sin(u);
+        const n: [number, number, number] = [cv * cu, sv, cv * su];
+        const rx = RING_RADIUS + TUBE_RADIUS * cv;
+        const c: [number, number, number] = [
+          rx * cu + n[0] * WINDOW_LIFT,
+          TUBE_RADIUS * sv + n[1] * WINDOW_LIFT,
+          rx * su + n[2] * WINDOW_LIFT,
+        ];
+        const tu: [number, number, number] = [-su, 0, cu];
+        const tv: [number, number, number] = [-sv * cu, cv, -sv * su];
+        const roll = rng();
+        if (roll < WINDOW_FLICKER_RATIO) {
+          pushWindowQuad(flicker, c, tu, tv, n, WINDOW_FLICKER);
+        } else if (roll < WINDOW_FLICKER_RATIO + WINDOW_LIT_RATIO) {
+          pushWindowQuad(steady, c, tu, tv, n, WINDOW_LIT);
+        } else {
+          pushWindowQuad(steady, c, tu, tv, n, WINDOW_DEAD);
+        }
+      }
+    }
+  }
+  return { steady: toTypedMesh(steady), flicker: toTypedMesh(flicker) };
+}
+
 /** Malla + puertos + puntos emissive compartidos (deterministas) — se construyen UNA vez al cargar el módulo. */
 const HUMAN = buildHumanStation();
 /** Colliders compartidos (inmutables) — una vez por módulo, como la malla. */
 const HUMAN_COLLIDERS = buildHumanStationColliders();
+/** Ventanas compartidas (deterministas por semilla) — una vez por módulo. */
+const HUMAN_WINDOWS = buildHumanStationWindows();
 
 /**
  * Estación espacial humana: toroide de hábitats/almacenes/mantenimiento unido por 4 radios a un núcleo de
@@ -188,5 +267,9 @@ export class HumanSpaceStation extends SpaceStation {
 
   public override getStructuredShapesLocal(): readonly StructuredShape[] {
     return HUMAN_COLLIDERS;
+  }
+
+  public override getWindowMeshesLocal(): StationWindowMeshes | null {
+    return HUMAN_WINDOWS;
   }
 }
