@@ -59,8 +59,11 @@ bloquearía volar entre los radios y meterse en los puertos, que es la gracia. P
 - **Sin colisión por ahora** en el cuerpo de la estación: en el constructor de `SpaceStation` se hace
   `this.boundingSphere = null` y NO se definen `setCollisionShapes`. `GameObject.checkCollision` devuelve
   vacío sin esfera ni shapes → la nave atraviesa la estructura libremente (aceptable en Slice 1).
-- **Detección de colisión "de otra forma"**: PENDIENTE de diseñar más adelante (p. ej. volúmenes
-  compuestos anillo-de-esferas + radios + núcleo, o colisión por secciones). No se implementa en Slice 1.
+- **Detección de colisión "de otra forma"**: DISEÑADA (2026-08-15) en `docs/COLISIONES.md`
+  (Fase 11 de ARQUITECTURA): esfera de activación autocalculada (~744 u) + narrow phase por SDF en
+  espacio local (toro con gaps de secciones destruidas + cajas de radios/núcleo). El
+  `boundingSphere = null` SE MANTIENE (el gate estructurado no usa `GameObject.boundingSphere`).
+  Implementación pendiente (rebanadas R1–R5). No se implementa en Slice 1.
 - **Selección/targeting**: los **puertos** (`DockPort`) son los targets (cada uno con su pequeña bounding
   sphere propia, esférica y correcta). El **acople** mide distancia **nave↔puerto** (centro del
   `DockPort`). La selección del **cuerpo** de la estación se reabordará junto con la colisión (no en
@@ -176,8 +179,9 @@ Slice 2 enchufa cinemática + tablas de sucesos + descubrimiento real de hechizo
   al despegar, empuje hacia afuera con giro de 180°. Sustituyó el glide lineal inline del motor
   (`beginStationDockAnim`… borrados; el motor solo delega vía `startStationDocking`/`onStationDockingComplete`).
   docs/ARQUITECTURA.md §10.c (nave) comparte el patrón de cinemáticas.
-- ⚠️ **DIFERIDO — Colisión real de la estación** (bounding OFF por decisión del usuario): volúmenes
-  compuestos o por secciones, a diseñar.
+- ⚠️ **DIFERIDO — Colisión real de la estación** (bounding OFF por decisión del usuario): diseño
+  CERRADO en `docs/COLISIONES.md` (Fase 11: bounding-gate + SDF estructurado, unifica también
+  asteroides/planetas/sol bajo un solo sistema y adelgaza el motor); implementación pendiente.
 
 ## 5.1 Estado de ejecución (registro autónomo)
 

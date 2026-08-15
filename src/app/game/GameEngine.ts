@@ -25,7 +25,6 @@ import { PortalRegistryService } from './services/game/portal-registry.service';
 import { SolarSystemRuntimeSerializerService } from './services/game/solar-system-runtime-serializer.service';
 import { applyPlanetSnapshotFields, defaultColorForKind, normalizePlanetKind } from './services/game/planet-state.codec';
 import { EARTH_PLANET_ID, RINGED_PLANET_ID, isRingedPlanet } from './game-objects/planet-classification';
-import { collisionDamageForType, collisionDamageForConstructor } from './services/state/collision-damage';
 import { LandingPanelController, LandingPanelHost } from './services/state/landing-panel-controller';
 import { AtmosphereAutoLandingCamera, AtmosphereAutoLandingCameraHost } from './services/state/atmosphere-auto-landing-camera';
 import { LandingCameraHold, LandingCameraHoldHost } from './services/state/landing-camera-hold';
@@ -73,6 +72,7 @@ import { TargetOutline2DRenderer } from './hud/TargetOutline2DRenderer';
 import { LoggingService, LogCategory, LogLevel } from '../services/logging.service';
 import { CollisionResponseService } from './services/physics/collision-response.service';
 import { CollisionManagerService } from './services/physics/collision-manager.service';
+import { ShipCollisionSystem, ShipCollisionHost } from './services/physics/collision/ship-collision-system';
 import { PanelEventCoordinator } from './services/ui/panel-event-coordinator.service';
 import { SpellIOCoordinator } from './services/spells/spell-io-coordinator.service';
 import { GameStateStore } from '../services/game/game-state.store';
@@ -737,14 +737,29 @@ export class GameEngine {
   private collapseClusterSerial: number = 0;
   // Collision damage cooldown tracking (object id -> next allowed timestamp ms)
   private collisionDamageCooldown: Map<string, number> = new Map();
-  private collisionPairCooldown: Map<string, number> = new Map(); // Cooldown para pares de objetos (ship-obj)
   // Impact camera effect (red vignette) 0..1
   private impactVignetteLevel: number = 0;
-  // Smooth lateral displacement after large-object collisions
-  private collisionSlide: { start: { x: number; y: number; z: number }; end: { x: number; y: number; z: number }; t: number; duration: number } | null = null;
-  // Collision debug logging throttle
-  private _lastCollisionLogSec: number = 0;
   private _lastIndependentLogTime: number = 0; // Throttle para logs de asteroides independientes
+
+  // Colisiones nave↔mundo extraídas a sistema externo (Fase 11 R2, docs/COLISIONES.md)
+  private shipCollisionSystem!: ShipCollisionSystem;
+  private readonly shipCollisionHost: ShipCollisionHost = {
+    getShip: () => this.spaceship ?? null,
+    isSuppressed: () => this.collisionsDisabled || this.isLandingDamageSuppressed() || this.isAtmosphereCollisionGraceActive(),
+    getClusters: () => this.asteroidClusterService.getClusters(),
+    getEphemeralAsteroids: () => this.ephemeralAsteroids,
+    forEachPlanetDebris: (cb) => { for (const arr of this.planetDebris.values()) { for (const d of arr) cb(d.obj); } },
+    getLesserBeings: () => this.lesserBeings,
+    applyShipDamage: (amount, sourceId, reason, options) => this.applyShipDamage(amount, sourceId, reason, options),
+    applyDamageToObject: (obj, dmg) => this.applyDamageToObject(obj, dmg),
+    makeAsteroidIndependent: (obj) => this.makeAsteroidIndependent(obj),
+    emitShipDamageMarquee: (text) => { try { this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SHIP_DAMAGE, text); } catch {} },
+    addImpactVignette: (bump) => { this.impactVignetteLevel = Math.max(this.impactVignetteLevel, Math.min(1, this.impactVignetteLevel + bump)); },
+    isAudioUnlocked: () => !!this.audio && this.audioUnlocked,
+    hasSfx: (name) => !!this.audio?.has(name),
+    playSfx: (name, volume) => { try { this.audio?.play(name, { bus: 'sfx', volume, fadeInMs: 0 }); } catch {} },
+    getWeatherImpactVolumeScale: () => this.getWeatherImpactVolumeScale(),
+  };
 
   private lesserBeings: LesserBeingBase[] = [];
   public lesserBeingController: LesserBeingController | null = null;
@@ -756,7 +771,6 @@ export class GameEngine {
   // Landing minigame removed
   
   // Configuración del mundo
-  private readonly WORLD_SIZE = 50;
   private readonly ASTEROID_COUNT = 15;
   
   // Configuración de iluminación
@@ -875,6 +889,7 @@ export class GameEngine {
     this.music = musicDirector || null;
     // Logger
     this.logger = loggingService;
+    this.shipCollisionSystem = new ShipCollisionSystem(this.gameState, this.collisionManager, this.logger);
     this.registerDefaultAuxiliaryAbilities();
 
     this.lesserBeingController = new LesserBeingController(this);
@@ -4423,22 +4438,8 @@ export class GameEngine {
     this.spaceStationSystem.update(this.spaceStationHost, deltaTime);
     this.updateStationDocking(deltaTime);
 
-    // Apply ongoing collision slide (lateral reposition over ~1s)
-    if (this.collisionSlide) {
-      this.collisionSlide.t += deltaTime;
-      const k = Math.max(0, Math.min(1, this.collisionSlide.t / Math.max(1e-6, this.collisionSlide.duration)));
-      // Smoothstep easing
-      const s = k * k * (3 - 2 * k);
-      const nx = this.collisionSlide.start.x + (this.collisionSlide.end.x - this.collisionSlide.start.x) * s;
-      const ny = this.collisionSlide.start.y + (this.collisionSlide.end.y - this.collisionSlide.start.y) * s;
-      const nz = this.collisionSlide.start.z + (this.collisionSlide.end.z - this.collisionSlide.start.z) * s;
-      this.spaceship.position.x = nx;
-      this.spaceship.position.y = ny;
-      this.spaceship.position.z = nz;
-      this.spaceship.updateModelMatrix();
-      try { if (this.spaceship.boundingSphere) this.spaceship.boundingSphere.center = { ...this.spaceship.position }; } catch {}
-      if (k >= 1) this.collisionSlide = null;
-    }
+    // Apply ongoing collision slide (lateral reposition), antes de que la cámara lea la posición
+    this.shipCollisionSystem.applySlide(this.shipCollisionHost, deltaTime);
 
     // Decay impact vignette
     if (this.impactVignetteLevel > 0) {
@@ -5133,7 +5134,7 @@ export class GameEngine {
     }
 
     // Detectar colisiones
-    this.checkCollisions();
+    this.shipCollisionSystem.checkCollisions(this.shipCollisionHost);
 
     // Landing system removed
   }
@@ -5588,287 +5589,6 @@ export class GameEngine {
 
   private normalize(v: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
     return vec3Normalize(v);
-  }
-
-  /**
-   * Mantiene objetos dentro de los límites del mundo
-   */
-  private wrapPosition(object: GameObject): void {
-    const halfWorld = this.WORLD_SIZE / 2;
-    
-    if (object.position.x > halfWorld) object.position.x = -halfWorld;
-    if (object.position.x < -halfWorld) object.position.x = halfWorld;
-    
-    if (object.position.y > halfWorld) object.position.y = -halfWorld;
-    if (object.position.y < -halfWorld) object.position.y = halfWorld;
-    
-    if (object.position.z > halfWorld) object.position.z = -halfWorld;
-    if (object.position.z < -halfWorld) object.position.z = halfWorld;
-  }
-
-  /**
-   * Detecta colisiones entre objetos
-   */
-  private checkCollisions(): void {
-    if (!this.spaceship || this.collisionsDisabled || this.isLandingDamageSuppressed() || this.isAtmosphereCollisionGraceActive()) {
-      return;
-    }
-    const now = performance.now();
-    // Debug: log ship bounding sphere status once per second
-    if (Math.floor(now / 1000) % 5 === 0 && !this._lastCollisionLogSec || Math.floor(now / 1000) !== this._lastCollisionLogSec) {
-      this._lastCollisionLogSec = Math.floor(now / 1000);
-      const shipBS = this.spaceship.boundingSphere;
-      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Collision check', { 
-        shipBS: shipBS ? { r: shipBS.radius.toFixed(1), pos: `(${shipBS.center.x.toFixed(0)}, ${shipBS.center.y.toFixed(0)}, ${shipBS.center.z.toFixed(0)})` } : 'null'
-      });
-    }
-    // Helper to apply damage with cooldown per object
-    const applyDamage = (obj: any, amount: number, label: string): void => {
-      if (!obj || !obj.id) return;
-      const nextAllowed = this.gameState.collisionCooldowns.get(obj.id) || 0;
-      if (now < nextAllowed) return; // still in cooldown
-      this.gameState.collisionCooldowns.set(obj.id, now + 500); // 0.5s cooldown per source
-      // Portal is ethereal: ignore negative/zero damage
-      if (amount <= 0) return;
-      const dealt = this.applyShipDamage(amount, obj.id, label, {
-        suppressHud: true,
-        sourceObject: obj
-      });
-      if (dealt <= 0) {
-        return;
-      }
-      // Simple HUD feedback: add marquee message
-      try {
-        const remaining = this.spaceship
-          ? `${Math.round(this.spaceship.healthCurrent)}/${Math.round(this.spaceship.healthMax)}`
-          : '0/0';
-        this.hudManager?.emitMarqueeEvent?.(
-          HudMarqueeEventType.SHIP_DAMAGE,
-          `Impacto: -${Math.round(dealt)}u (${remaining})`
-        );
-      } catch {}
-    };
-    // Aggregate potential collision sources (clusters members, super, mega, planets, sun, ephemerals)
-    const sources: any[] = [];
-    try {
-      this.asteroidClusterService.getClusters().forEach(c => {
-        // Include ALL cluster objects regardless of LOD mode to ensure SuperAsteroids are checked
-        c.objects.forEach(o => { if (o.isActive && o.isActive()) sources.push(o); });
-        // Also include proxy if present (avoid duplicates via lodMode check)
-        if (c.lodMode === 'proxy' && c.proxy && !c.representativeId && c.proxy.isActive && c.proxy.isActive()) sources.push(c.proxy);
-      });
-    } catch {}
-    try { this.ephemeralAsteroids.forEach(a => { if (a.isActive && a.isActive()) sources.push(a); }); } catch {}
-    try { this.gameState.independentAsteroids.forEach(a => { if (a.isActive && a.isActive()) sources.push(a); }); } catch {}
-    try { this.gameState.planets.forEach(p => { if (p.isActive && p.isActive()) sources.push(p); }); } catch {}
-    try { if (this.gameState.sun && this.gameState.sun.isActive && this.gameState.sun.isActive()) sources.push(this.gameState.sun); } catch {}
-    try { this.gameState.portals.forEach(p => { if (p.isActive && p.isActive()) sources.push(p); }); } catch {}
-    // Mega asteroides en planetDebris
-    try { for (const arr of this.planetDebris.values()) { for (const d of arr) { if (d.obj.isActive && d.obj.isActive()) sources.push(d.obj); } } } catch {}
-    try {
-      for (const lb of this.lesserBeings) {
-        if (!lb || !lb.active || !lb.visible || !lb.isActive()) {
-          continue;
-        }
-        if (lb.beingType === LesserBeing.VAMPIRO_FUEGO) {
-          continue;
-        }
-        sources.push(lb);
-      }
-    } catch {}
-    // Debug: log sources count periodically
-    if (this._lastCollisionLogSec && Math.floor(now / 1000) === this._lastCollisionLogSec) {
-      this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Collision sources', { count: sources.length });
-    }
-    for (const obj of sources) {
-      try {
-        // Check collision pair cooldown (500ms) para permitir que física se aplique
-        const pairKey = `ship-${obj.id}`;
-        const pairCooldownUntil = this.collisionPairCooldown.get(pairKey) || 0;
-        if (now < pairCooldownUntil) continue; // Skip this pair, still in cooldown
-        
-        const collided = this.spaceship.checkCollision(obj);
-        if (collided) {
-          // Set cooldown for this collision pair (500ms)
-          this.collisionPairCooldown.set(pairKey, now + 500);
-          
-          const rawName = (obj as any)?.constructor?.name || 'Unknown';
-          const name = rawName.startsWith('_') ? rawName.substring(1) : rawName;
-          const objectType = (obj as GameObject)?.getType?.() ?? GameObjectType.UNKNOWN;
-          let dmg = collisionDamageForType(objectType);
-          if (objectType === GameObjectType.LESSER_BEING && obj instanceof LesserBeingBase) {
-            if (obj.beingType === LesserBeing.SHOGGOTH || obj.beingType === LesserBeing.SEMILLAS_ESTELARES) {
-              dmg = 150;
-            } else if (obj.beingType === LesserBeing.VAMPIRO_FUEGO) {
-              dmg = 0;
-            } else if (dmg === null) {
-              dmg = 75; // default impact for other corporeal lesser beings
-            }
-          } else if (dmg === null) {
-            dmg = collisionDamageForConstructor(name);
-          }
-
-          // Debug: log collision detected
-          this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Collision detected!', {
-            name,
-            rawName,
-            objectType,
-            id: obj.id,
-            damage: dmg ?? 0
-          });
-
-          const resolvedDamage = dmg ?? 0;
-          if (resolvedDamage > 0) {
-            // Physics response before applying potential fatal damage
-            this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Calling handleCollisionResponse', { name, objectType, dmg: resolvedDamage, audioUnlocked: this.audioUnlocked });
-            try { 
-              this.handleCollisionResponse(obj, name, resolvedDamage); 
-            } catch (e) {
-              this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'handleCollisionResponse failed', e);
-            }
-            applyDamage(obj, resolvedDamage, name);
-            
-            // Apply mutual damage: ship deals 50 damage to the object
-            this.applyDamageToObject(obj, 50);
-          }
-        }
-      } catch {}
-    }
-  }
-
-  /** Handle physical response, camera effect and audio for a collision */
-  private handleCollisionResponse(obj: any, name: string, dmg: number): void {
-    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'handleCollisionResponse start', { name, dmg, audioUnlocked: this.audioUnlocked });
-    if (!this.spaceship || !this.collisionManager) return;
-    
-    // Determinar si el objetivo es miembro de cluster
-    const isClusterMember = !this.gameState.isIndependentAsteroid(obj.id) && 
-                            !this.ephemeralAsteroids.some(a => a.id === obj.id);
-    
-    // Delegar TODA la lógica al CollisionManager
-    const result = this.collisionManager.handleCollision(
-      this.spaceship,
-      obj,
-      isClusterMember
-    );
-    
-    // Aplicar resultados según tipo de colisión
-    if (result.collisionType === 'small-movable') {
-      // Física completa 3D: actualizar nave y asteroide
-      
-      this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '📊 Physics response calculated', {
-        asteroidId: obj.id,
-        newVelocity: result.targetNewVelocity ? 
-          `(${result.targetNewVelocity.x.toFixed(2)}, ${result.targetNewVelocity.y.toFixed(2)}, ${result.targetNewVelocity.z.toFixed(2)})` : 'null',
-        shouldEject: result.shouldEject,
-        impulseMagnitude: result.impulseMagnitude.toFixed(2)
-      });
-      
-      // IMPORTANTE: Marcar como independiente ANTES de aplicar velocidad para evitar sobreescritura
-      // Incluso con impulso pequeño, el asteroide debe mantener su velocidad de colisión
-      if (result.impulseMagnitude > 0.1) {
-        (obj as any)._isIndependent = true;
-        this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '📌 Asteroid marked as independent (preserves velocity)', {
-          asteroidId: obj.id,
-          impulse: result.impulseMagnitude.toFixed(2)
-        });
-      }
-      
-      // Aplicar resultado a la nave
-      this.spaceship.position = result.newPosition;
-      this.spaceship.velocity = result.newVelocity;
-      this.spaceship.updateModelMatrix();
-      
-      // Actualizar bounding sphere de la nave
-      try {
-        if (this.spaceship.boundingSphere) {
-          this.spaceship.boundingSphere.center = { ...this.spaceship.position };
-        }
-      } catch {}
-      
-      // Eyectar de cluster si hay cualquier colisión real (impulso > 0.1)
-      // Esto asegura que el asteroide se añade a independentAsteroids y no se recalcula como cluster member
-      if (result.impulseMagnitude > 0.1 && isClusterMember) {
-        this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '🚀 Ejecting asteroid from cluster', {
-          asteroidId: obj.id,
-          reason: 'Collision detected',
-          impulse: result.impulseMagnitude.toFixed(2),
-          highImpulse: result.shouldEject
-        });
-        this.makeAsteroidIndependent(obj);
-      }
-      
-      // Aplicar resultado al asteroide (sale disparado según ángulo de impacto)
-      // IMPORTANTE: Hacer esto DESPUÉS de eyectar para que no sea sobreescrito por applyCenterDrivenFullUpdate
-      if (result.targetNewVelocity && obj.velocity) {
-        obj.velocity.x = result.targetNewVelocity.x;
-        obj.velocity.y = result.targetNewVelocity.y;
-        obj.velocity.z = result.targetNewVelocity.z;
-        
-        this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, '✅ Velocity applied to asteroid', {
-          asteroidId: obj.id,
-          velocityAfter: `(${obj.velocity.x.toFixed(2)}, ${obj.velocity.y.toFixed(2)}, ${obj.velocity.z.toFixed(2)})`,
-          isIndependent: this.gameState.isIndependentAsteroid(obj.id),
-          hasPendingEjection: !!(obj as any)._pendingEjection
-        });
-      }
-      
-    } else if (result.collisionType === 'large-immovable' || result.collisionType === 'massive-slide') {
-      // Slide suave para objetos grandes/masivos
-      const R = Math.max(10, (obj.boundingSphere?.radius ?? 200));
-      const slide = Math.max(30, Math.min(250, R * 0.1));
-      
-      // Calcular dirección de slide (tangente + normal)
-      const dx = this.spaceship.position.x - obj.position.x;
-      const dy = this.spaceship.position.y - obj.position.y;
-      const dz = this.spaceship.position.z - obj.position.z;
-      const dist = Math.hypot(dx, dy, dz) || 1;
-      const normal = { x: dx / dist, y: dy / dist, z: dz / dist };
-      
-      // Tangente perpendicular a velocidad y normal
-      const v = this.spaceship.velocity;
-      const tangent = {
-        x: v.x - (v.x * normal.x + v.y * normal.y + v.z * normal.z) * normal.x,
-        y: v.y - (v.x * normal.x + v.y * normal.y + v.z * normal.z) * normal.y,
-        z: v.z - (v.x * normal.x + v.y * normal.y + v.z * normal.z) * normal.z
-      };
-      const tlen = Math.hypot(tangent.x, tangent.y, tangent.z) || 1;
-      tangent.x /= tlen; tangent.y /= tlen; tangent.z /= tlen;
-      
-      const start = { ...this.spaceship.position };
-      const end = {
-        x: start.x + tangent.x * slide + normal.x * 5,
-        y: start.y + tangent.y * slide + normal.y * 5,
-        z: start.z + tangent.z * slide + normal.z * 5
-      };
-      
-      this.collisionSlide = { start, end, t: 0, duration: 0.3 };
-      this.spaceship.velocity = result.newVelocity;
-      
-    } else if (result.collisionType === 'ethereal') {
-      // Sin física (portales)
-      // No hacer nada
-    }
-
-    // Camera impact vignette bump
-    const bump = Math.min(0.9, 0.08 + (dmg / 250));
-    this.impactVignetteLevel = Math.max(this.impactVignetteLevel, Math.min(1, this.impactVignetteLevel + bump));
-    this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Vignette effect triggered', { bump, impactVignetteLevel: this.impactVignetteLevel });
-
-    // Audio cue (light/heavy)
-    try {
-      if (this.audio && this.audioUnlocked) {
-        const heavy = dmg >= 80;
-        const desired = heavy ? 'sfx_collision_heavy' : 'sfx_collision_light';
-        const clip = this.audio.has(desired) ? desired : (heavy ? 'sfx_whoosh' : 'ui_select');
-        const baseVolume = Math.max(0.2, Math.min(0.9, 0.25 + dmg / 180));
-        const vol = Math.min(1, baseVolume * this.getWeatherImpactVolumeScale());
-        this.audio.play(clip, { bus: 'sfx', volume: vol, fadeInMs: 0 });
-      } else if (!this.audioUnlocked) {
-        this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, 'Collision sound skipped - audio not unlocked');
-      }
-    } catch {}
-
   }
 
   /**
@@ -6599,9 +6319,8 @@ export class GameEngine {
     this.portalPrevDistances.clear();
     this.lastShipPos = null;
     this.collisionDamageCooldown.clear();
-    this.collisionPairCooldown.clear();
+    this.shipCollisionSystem.reset();
     this.impactVignetteLevel = 0;
-    this.collisionSlide = null;
     this.pendingMapSelectId = null;
     this.landingSequenceActive = false;
     this.takeoffSequenceActive = false;
@@ -6743,8 +6462,8 @@ export class GameEngine {
       
       // Reset camera effects
       this.impactVignetteLevel = 0;
-      this.collisionSlide = null;
-      
+      this.shipCollisionSystem.reset();
+
       // Reset portal state
       this.portalTraversalCooldownSec = 0;
       this.portalPrevDistances.clear();
@@ -6919,7 +6638,7 @@ export class GameEngine {
         
         // Reset camera effects
         this.impactVignetteLevel = 0;
-        this.collisionSlide = null;
+        this.shipCollisionSystem.reset();
         
         // Restart audio: ambient loop and thruster (at idle volume)
         try {

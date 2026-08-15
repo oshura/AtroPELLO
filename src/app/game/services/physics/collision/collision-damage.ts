@@ -1,4 +1,4 @@
-import { GameObjectType } from '../../game-objects';
+import { GameObjectType } from '../../../game-objects';
 
 /**
  * Tabla ÚNICA de daño por colisión según el objeto impactado. Antes vivía DUPLICADA en GameEngine: una

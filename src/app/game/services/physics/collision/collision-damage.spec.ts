@@ -1,5 +1,5 @@
 import { collisionDamageForType, collisionDamageForConstructor } from './collision-damage';
-import { GameObjectType } from '../../game-objects';
+import { GameObjectType } from '../../../game-objects';
 
 describe('collision-damage', () => {
   it('daño por tipo de objeto', () => {

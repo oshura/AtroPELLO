@@ -1054,6 +1054,28 @@ Cuatro tiers por distancia, ninguno con superficie por planeta:
 
 ---
 
+### Fase 11 — Colisiones unificadas del espacio (bounding-gate + colliders estructurados)
+
+**Motivación (usuario, 2026-08-15):** dar colisión REAL a la estación espacial (hoy la nave la
+atraviesa: `boundingSphere = null` por decisión 2026-06-29, ver `docs/ESTACIONES.md` §1.2.1) con un
+patrón en dos niveles: **esfera de activación** barata (garantiza que el objeto cabe dentro; fuera
+de ella no corre nada) y **narrow phase por SDF** que se ajusta a la estructura real (toro con
+boquetes + radios + núcleo). El sistema es **genérico** (contrato de registro para objetos futuros)
+y de paso **unifica bajo un solo servicio** las colisiones nave↔mundo existentes (asteroides
+normales/super/mega, planetas, sol, portales, debris, lesser beings), añadiendo el broad-gate por
+cluster que hoy no existe (`checkCollisions` aplana TODOS los miembros cada frame).
+
+**Diseño + plan completos:** `docs/COLISIONES.md`. Cumple regla #1 con creces: el driver
+(`checkCollisions` + `handleCollisionResponse` + slide, ~250 líneas) sale del motor a
+`services/physics/collision/ship-collision-system.ts` (neto motor ≈ −225). La respuesta física
+existente (`collision-{manager,response,physics}.service.ts`) se reutiliza intacta para el camino
+esférico; el camino estructurado usa la **normal de superficie** del SDF (no centro→centro).
+
+**Estado:** diseño ✅ (2026-08-15); implementación pendiente por rebanadas R1–R5 (R2 = extracción
+con comportamiento idéntico; R4 = estación colisionable con spec de conformidad malla↔collider).
+
+---
+
 ## 6. Proceso de desarrollo y ciclo de vida del código
 
 ### 6.1 Flujo de trabajo
