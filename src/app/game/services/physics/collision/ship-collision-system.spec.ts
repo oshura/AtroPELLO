@@ -87,6 +87,7 @@ function makeHost(ship: FakeShip, sources: { independent?: FakeObj[] }, store: G
     getShip: () => ship as unknown as Spaceship,
     isSuppressed: () => false,
     getClusters: () => [],
+    getClusterExtentRadius: () => 50,
     getEphemeralAsteroids: () => [],
     forEachPlanetDebris: () => {},
     getLesserBeings: () => [],
@@ -99,6 +100,7 @@ function makeHost(ship: FakeShip, sources: { independent?: FakeObj[] }, store: G
     hasSfx: () => false,
     playSfx: () => {},
     getWeatherImpactVolumeScale: () => 1,
+    isStructuredSuppressed: () => false,
   };
   return { host, damage };
 }
@@ -162,6 +164,78 @@ describe('ShipCollisionSystem', () => {
     expect(mid).not.toEqual(before);
     expect(end).not.toEqual(mid);
     expect({ ...ship.position }).toEqual(end);
+  });
+
+  it('broad gate por cluster: un cluster lejano no testea a sus miembros (Fase 11 R3)', () => {
+    const ship = makeShip();
+    const store = makeStore();
+    const { host } = makeHost(ship, {}, store);
+    const member = makeAsteroid('m1');
+    const makeCluster = (cx: number) => ({
+      center: { x: cx, y: 0, z: 0 },
+      objects: [member],
+      lodMode: 'full',
+      proxy: undefined,
+      representativeId: null,
+    });
+    const system = new ShipCollisionSystem(store, makeManager({}), makeLogger());
+
+    const far: ShipCollisionHost = {
+      ...host,
+      getClusters: () => [makeCluster(10000)] as unknown as ReturnType<ShipCollisionHost['getClusters']>,
+    };
+    system.checkCollisions(far);
+    expect(ship.checkCollision).not.toHaveBeenCalled();
+
+    const near: ShipCollisionHost = {
+      ...host,
+      getClusters: () => [makeCluster(0)] as unknown as ReturnType<ShipCollisionHost['getClusters']>,
+    };
+    system.checkCollisions(near);
+    expect(ship.checkCollision).toHaveBeenCalledTimes(1);
+  });
+
+  it('collider estructurado: gate + push-out por normal de superficie + deslizamiento + daño por impacto (Fase 11 R4)', () => {
+    const ship = makeShip();
+    ship.checkCollision.and.returnValue(false);
+    ship.velocity = { x: -3, y: 0, z: 0 };
+    ship.position = { x: 8, y: 0, z: 0 };
+    const store = makeStore();
+    const { host, damage } = makeHost(ship, {}, store);
+    const system = new ShipCollisionSystem(store, makeManager({}), makeLogger());
+
+    const identity = new Float32Array([1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1]);
+    const source = {
+      id: 'station-1',
+      position: { x: 0, y: 0, z: 0 },
+      scale: { x: 1, y: 1, z: 1 },
+      modelMatrix: identity,
+    } as unknown as GameObject;
+    system.registerStructured({
+      id: 'station-1',
+      source,
+      shapesLocal: [{ kind: 'sphere', center: [0, 0, 0], radius: 10 }],
+      objectType: GameObjectType.SPACE_STATION,
+    });
+
+    // Lejos del gate (activación = 10 + radioNave 5): sin narrow, sin daño.
+    ship.position = { x: 100, y: 0, z: 0 };
+    system.checkCollisions(host);
+    expect(damage).not.toHaveBeenCalled();
+
+    // Penetrando (centro de nave a 8 del centro, superficie en 10): push-out hacia +X.
+    ship.position = { x: 8, y: 0, z: 0 };
+    system.checkCollisions(host);
+    expect(ship.position.x).toBeGreaterThanOrEqual(15); // fuera de la esfera (10 + radioNave 5)
+    expect(ship.velocity.x).toBe(0); // componente contra la superficie anulada (deslizamiento)
+    // Daño escalado: velocidad de impacto 3 u/s → 10 + 140·(3-1)/11 ≈ 35.
+    expect(damage).toHaveBeenCalledWith(35, 'station-1', jasmine.any(String), jasmine.objectContaining({ suppressHud: true }));
+
+    // Baja del registro (despawn/cambio de sistema): sin push aunque penetre.
+    system.unregisterStructured('station-1');
+    ship.position = { x: 8, y: 0, z: 0 };
+    system.checkCollisions(host);
+    expect(ship.position.x).toBe(8); // ya no hay collider registrado
   });
 
   it('reset limpia cooldowns y slide', () => {

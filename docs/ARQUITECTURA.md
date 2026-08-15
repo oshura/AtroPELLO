@@ -1071,8 +1071,9 @@ cluster que hoy no existe (`checkCollisions` aplana TODOS los miembros cada fram
 existente (`collision-{manager,response,physics}.service.ts`) se reutiliza intacta para el camino
 esférico; el camino estructurado usa la **normal de superficie** del SDF (no centro→centro).
 
-**Estado:** diseño ✅ (2026-08-15); implementación pendiente por rebanadas R1–R5 (R2 = extracción
-con comportamiento idéntico; R4 = estación colisionable con spec de conformidad malla↔collider).
+**Estado:** ✅ R1–R4 implementadas (2026-08-15, builds 52–53, 345 tests verdes): motor −281 líneas
+netas (R2), broad gate por cluster (R3), estación colisionable por SDF con spec de conformidad
+malla↔collider y supresión mientras está acoplada (R4). Pendiente solo R5 (pulido opcional).
 
 ---
 

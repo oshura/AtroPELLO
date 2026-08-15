@@ -330,7 +330,7 @@ export class AsteroidClusterService {
    * persistentes de sus miembros. Usa el mayor entre config.radius y el máximo
    * módulo de offset registrado. Esto es estable incluso en modo proxy.
    */
-  private getClusterExtentRadius(cluster: AsteroidClusterInstance): number {
+  getClusterExtentRadius(cluster: AsteroidClusterInstance): number {
     let base = cluster.config.radius ?? 10;
     let max = base;
     for (const off of cluster.memberOffsets.values()) {

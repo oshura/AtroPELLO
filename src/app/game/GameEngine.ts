@@ -722,6 +722,8 @@ export class GameEngine {
     },
     getShipWreckMesh: () => this.spaceship ? buildShipWreckMesh(this.spaceship) : null,
     isDockingBusy: () => this.stationPanelOpen || this.stationDockingActive,
+    registerCollider: (def) => this.shipCollisionSystem.registerStructured(def),
+    unregisterCollider: (id) => this.shipCollisionSystem.unregisterStructured(id),
     log: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
   };
   // Track last applied snapshot id (debug)
@@ -747,6 +749,7 @@ export class GameEngine {
     getShip: () => this.spaceship ?? null,
     isSuppressed: () => this.collisionsDisabled || this.isLandingDamageSuppressed() || this.isAtmosphereCollisionGraceActive(),
     getClusters: () => this.asteroidClusterService.getClusters(),
+    getClusterExtentRadius: (c) => this.asteroidClusterService.getClusterExtentRadius(c),
     getEphemeralAsteroids: () => this.ephemeralAsteroids,
     forEachPlanetDebris: (cb) => { for (const arr of this.planetDebris.values()) { for (const d of arr) cb(d.obj); } },
     getLesserBeings: () => this.lesserBeings,
@@ -759,6 +762,7 @@ export class GameEngine {
     hasSfx: (name) => !!this.audio?.has(name),
     playSfx: (name, volume) => { try { this.audio?.play(name, { bus: 'sfx', volume, fadeInMs: 0 }); } catch {} },
     getWeatherImpactVolumeScale: () => this.getWeatherImpactVolumeScale(),
+    isStructuredSuppressed: () => this.stationPanelOpen || this.stationDockingActive,
   };
 
   private lesserBeings: LesserBeingBase[] = [];
@@ -3586,7 +3590,7 @@ export class GameEngine {
     this.tardisCompanionSystem.clear();
     this.spaceTurtleSystem.clear();
     this.clearRenderedStation();
-    this.spaceStationSystem.clear();
+    this.spaceStationSystem.clear(this.spaceStationHost);
     this.stationDockCandidate = null;
     this.stationPanelOpen = false;
     this.stationDockedPort = null;
@@ -6443,7 +6447,7 @@ export class GameEngine {
     this.tardisCompanionSystem.clear();
     this.spaceTurtleSystem.clear();
     this.clearRenderedStation();
-    this.spaceStationSystem.clear();
+    this.spaceStationSystem.clear(this.spaceStationHost);
     this.stationDockCandidate = null;
     this.stationPanelOpen = false;
     this.stationDockedPort = null;

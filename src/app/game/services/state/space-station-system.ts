@@ -1,5 +1,7 @@
 import { Vector3 } from '../../../types/game.types';
+import { GameObjectType } from '../../types/game-object.types';
 import { HumanSpaceStation, HUMAN_STATION_ID } from '../../game-objects/stations/human-space-station';
+import type { StructuredColliderDef } from '../physics/collision/collision-shape.types';
 import { DockPort } from '../../game-objects/stations/dock-port';
 import { StationEmissiveBall } from '../../game-objects/stations/station-emissive-ball';
 import { DockedShipWreck } from '../../game-objects/stations/docked-ship-wreck';
@@ -14,6 +16,8 @@ export interface SpaceStationHost {
   onDockReady(port: DockPort | null): void; // puerto acoplable dentro de rango (o null)
   getShipWreckMesh(): WreckMesh | null; // malla de alambre de la nave (para réplicas atracadas)
   isDockingBusy(): boolean;             // acoplada o en animación de atraque → congelar el giro
+  registerCollider(def: StructuredColliderDef): void;   // alta del collider estructurado (Fase 11 R4)
+  unregisterCollider(id: string): void;                 // baja al despawnear/cambiar de sistema
   log(msg: string, data?: unknown): void;
 }
 
@@ -65,7 +69,10 @@ export class SpaceStationSystem {
     return this.dockCandidate;
   }
 
-  clear(): void {
+  clear(host?: SpaceStationHost): void {
+    if (this.station) {
+      host?.unregisterCollider(this.station.id);
+    }
     this.station = null;
     this.ports = [];
     this.dockCandidate = null;
@@ -77,7 +84,7 @@ export class SpaceStationSystem {
   update(host: SpaceStationHost, dt: number): void {
     if (!host.isHumanSystem()) {
       if (this.station) {
-        this.clear();
+        this.clear(host);
       }
       return;
     }
@@ -183,7 +190,18 @@ export class SpaceStationSystem {
     }
 
     this.rebuildWorldTransforms();
-    host.log('Space station spawned (human landmark)', { pos, ports: this.ports.length, wrecks: this.wrecks.length });
+
+    // Collider estructurado (Fase 11 R4): formas locales de la propia estación, transform vivo.
+    const shapes = station.getStructuredShapesLocal();
+    if (shapes.length > 0) {
+      host.registerCollider({
+        id: station.id,
+        source: station,
+        shapesLocal: shapes,
+        objectType: GameObjectType.SPACE_STATION,
+      });
+    }
+    host.log('Space station spawned (human landmark)', { pos, ports: this.ports.length, wrecks: this.wrecks.length, colliderShapes: shapes.length });
   }
 
   /**

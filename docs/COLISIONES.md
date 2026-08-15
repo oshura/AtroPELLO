@@ -1,6 +1,6 @@
 # Colisiones del ESPACIO — Fase 11: bounding-gate + colliders estructurados
 
-**Estado: DISEÑO (2026-08-15). Implementación pendiente (rebanadas en §6).**
+**Estado: R1–R4 IMPLEMENTADAS (2026-08-15, builds 52–53, 345 tests verdes). Pendiente solo R5 (pulido opcional).**
 Referencia cruzada: `docs/ARQUITECTURA.md` Fase 11 · `docs/ESTACIONES.md` §1.2.1 y §5.9 (deuda que esta fase salda).
 
 **Decisiones del usuario (2026-08-15):**
@@ -179,21 +179,24 @@ Esfera de activación autocalculada: `0.93 × 800 = 744 u` (+ radio nave). La es
 
 ## 6. Plan por rebanadas (build + tests verdes en cada una; `build+1` en version-settings por checkpoint)
 
-- **R1 — matemática pura.** `collision-shape.types.ts` + `collider-sdf.ts` + specs (distancias y
-  normales conocidas de toro/caja/esfera; gaps angulares). No toca motor. Riesgo ~0.
-- **R2 — extracción del driver (comportamiento IDÉNTICO).** `ship-collision-system.ts` absorbe
-  `checkCollisions` + `handleCollisionResponse` + slide + cooldowns; host adapter; mover
-  `collision-damage.ts`. Motor ≈ −225 líneas netas. Spec del sistema con host fake; smoke:
-  asteroides/planetas/sol/portales como antes.
-- **R3 — broad gates de grupo.** Gate por cluster (centro + extent + margen). Equivalencia
-  funcional; spec: cluster lejano ⇒ 0 tests de miembros (spy).
-- **R4 — camino estructurado + estación.** Registro, SDF narrow, respuesta por normal de
-  superficie, daño escalado, formas en `human-space-station.ts`, registro en `SpaceStationSystem`,
-  entrada `SPACE_STATION` en la tabla de daño, actualizar `stations.spec.ts` (el null de
-  boundingSphere sigue: el gate estructurado NO usa `GameObject.boundingSphere`). Smoke: chocar
-  contra anillo/radios/núcleo, volar por el boquete, acoplar sin interferencias.
-- **R5 — pulido (opcional).** Clamps, colliders de pecios, velocidad tangencial del spin en la
-  respuesta (el anillo "arrastra"), panel debug de contacto.
+- **R1 ✅ — matemática pura.** `collision-shape.types.ts` + `collider-sdf.ts` + specs (distancias y
+  normales conocidas de toro/caja/esfera; gaps angulares). No toca motor.
+- **R2 ✅ — extracción del driver (comportamiento IDÉNTICO).** `ship-collision-system.ts` absorbe
+  `checkCollisions` + `handleCollisionResponse` + slide + cooldowns; host adapter; movido
+  `collision-damage.ts`. Motor −281 líneas netas (commit `fad338f`). Spec del sistema con host fake.
+- **R3 ✅ — broad gates de grupo.** Gate por cluster (centro + `getClusterExtentRadius` ahora público
+  + `CLUSTER_GATE_MARGIN`). Spec: cluster lejano ⇒ 0 tests de miembros (spy).
+- **R4 ✅ — camino estructurado + estación.** `structured-collision.ts` (registro + gate con
+  histéresis + narrow SDF, sin mutar la nave) + respuesta en el sistema; formas co-ubicadas en
+  `human-space-station.ts` (incluidos los 8 clamps: los exige la conformidad malla↔collider);
+  registro/baja en `SpaceStationSystem.spawn/clear(host)`. El daño escalado vive en constantes del
+  sistema (`STRUCTURED_IMPACT_*`), NO en la tabla (que sigue siendo solo del camino esférico). El
+  null de `boundingSphere` sigue: el gate estructurado no usa `GameObject.boundingSphere`.
+  **Ajuste descubierto al implementar:** la pose ACOPLADA (30 u tras la tile) cae DENTRO del volumen
+  del clamp → el camino estructurado se suprime con `host.isStructuredSuppressed()` (= panel de
+  estación abierto o cinemática de atraque, igual que ya se congela el spin).
+- **R5 — pulido (opcional, PENDIENTE).** Colliders de pecios, velocidad tangencial del spin en la
+  respuesta (el anillo "arrastra"), tapas en las caras de corte de los boquetes, panel debug de contacto.
 
 ## 7. Specs clave
 

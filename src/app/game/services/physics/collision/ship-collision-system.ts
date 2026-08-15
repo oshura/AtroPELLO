@@ -8,6 +8,8 @@ import { LoggingService, LogCategory, LogLevel } from '../../../../services/logg
 import { CollisionManagerService } from '../collision-manager.service';
 import { AsteroidClusterInstance } from '../../game/asteroid-cluster.service';
 import { collisionDamageForConstructor, collisionDamageForType } from './collision-damage';
+import { StructuredColliderDef } from './collision-shape.types';
+import { StructuredColliderSet, StructuredHit } from './structured-collision';
 
 /**
  * Driver unificado de colisiones nave↔mundo (Fase 11 R2, docs/COLISIONES.md §3.2).
@@ -22,6 +24,8 @@ export interface ShipCollisionHost {
   /** collisionsDisabled ‖ supresión de aterrizaje ‖ gracia atmosférica. */
   isSuppressed(): boolean;
   getClusters(): AsteroidClusterInstance[];
+  /** Radio de extensión del cluster (miembro más lejano del centro), para el broad gate por cluster. */
+  getClusterExtentRadius(c: AsteroidClusterInstance): number;
   getEphemeralAsteroids(): Asteroid[];
   forEachPlanetDebris(cb: (obj: GameObject) => void): void;
   getLesserBeings(): LesserBeingBase[];
@@ -39,6 +43,8 @@ export interface ShipCollisionHost {
   hasSfx(name: string): boolean;
   playSfx(name: string, volume: number): void;
   getWeatherImpactVolumeScale(): number;
+  /** true mientras la nave está acoplada o en cinemática de atraque (su pose queda DENTRO del clamp). */
+  isStructuredSuppressed(): boolean;
 }
 
 interface CollisionSlideState {
@@ -54,6 +60,15 @@ type AsteroidMarks = GameObject & { _isIndependent?: boolean; _pendingEjection?:
 const PAIR_COOLDOWN_MS = 500;
 const DAMAGE_COOLDOWN_MS = 500;
 const MUTUAL_DAMAGE_TO_OBJECT = 50;
+/** Holgura del broad gate por cluster (u): cubre radio de miembro + deriva entre frames. */
+const CLUSTER_GATE_MARGIN = 150;
+/** Push-out extra al resolver penetración estructurada (u). */
+const STRUCTURED_PUSH_PADDING = 1.5;
+/** Daño estructurado escalado por velocidad de impacto normal (u/s → daño). Rozar pica; estamparse casi mata. */
+const STRUCTURED_IMPACT_SPEED_MIN = 1;
+const STRUCTURED_IMPACT_SPEED_MAX = 12;
+const STRUCTURED_IMPACT_DMG_MIN = 10;
+const STRUCTURED_IMPACT_DMG_MAX = 150;
 
 export class ShipCollisionSystem {
   /** Cooldown por par nave-objeto para permitir que la física se aplique sin re-daño. */
@@ -62,6 +77,8 @@ export class ShipCollisionSystem {
   private slide: CollisionSlideState | null = null;
   /** Throttle del logging de debug (1/s). */
   private lastLogSec = 0;
+  /** Colliders estructurados registrados (estación y objetos futuros). */
+  private readonly structured = new StructuredColliderSet();
 
   constructor(
     private readonly gameState: GameStateStore,
@@ -84,29 +101,17 @@ export class ShipCollisionSystem {
         shipBS: shipBS ? { r: shipBS.radius.toFixed(1), pos: `(${shipBS.center.x.toFixed(0)}, ${shipBS.center.y.toFixed(0)}, ${shipBS.center.z.toFixed(0)})` } : 'null'
       });
     }
-    // Helper to apply damage with cooldown per object
-    const applyDamage = (obj: GameObject, amount: number, label: string): void => {
-      if (!obj || !obj.id) return;
-      const nextAllowed = this.gameState.collisionCooldowns.get(obj.id) || 0;
-      if (now < nextAllowed) return; // still in cooldown
-      this.gameState.collisionCooldowns.set(obj.id, now + DAMAGE_COOLDOWN_MS);
-      // Portal is ethereal: ignore negative/zero damage
-      if (amount <= 0) return;
-      const dealt = host.applyShipDamage(amount, obj.id, label, {
-        suppressHud: true,
-        sourceObject: obj
-      });
-      if (dealt <= 0) {
-        return;
-      }
-      // Simple HUD feedback: add marquee message
-      const remaining = `${Math.round(ship.healthCurrent)}/${Math.round(ship.healthMax)}`;
-      host.emitShipDamageMarquee(`Impacto: -${Math.round(dealt)}u (${remaining})`);
-    };
     // Aggregate potential collision sources (clusters members, super, mega, planets, sun, ephemerals)
     const sources: GameObject[] = [];
+    const shipR = ship.boundingSphere?.radius ?? 0;
     try {
       host.getClusters().forEach(c => {
+        // Broad gate por CLUSTER (Fase 11 R3): 1 comparación barata en vez de N tests de miembros.
+        const gate = host.getClusterExtentRadius(c) + shipR + CLUSTER_GATE_MARGIN;
+        const gx = c.center.x - ship.position.x;
+        const gy = c.center.y - ship.position.y;
+        const gz = c.center.z - ship.position.z;
+        if (gx * gx + gy * gy + gz * gz > gate * gate) return;
         // Include ALL cluster objects regardless of LOD mode to ensure SuperAsteroids are checked
         c.objects.forEach(o => { if (o.isActive && o.isActive()) sources.push(o); });
         // Also include proxy if present (avoid duplicates via lodMode check)
@@ -171,7 +176,7 @@ export class ShipCollisionSystem {
             } catch (e) {
               this.logger.log(LogLevel.ERROR, LogCategory.GAME_LOOP, 'handleCollisionResponse failed', e);
             }
-            applyDamage(obj, resolvedDamage, name);
+            this.applyDamageCooldowned(host, ship, now, obj, resolvedDamage, name);
 
             // Apply mutual damage: ship deals damage to the object
             host.applyDamageToObject(obj, MUTUAL_DAMAGE_TO_OBJECT);
@@ -179,6 +184,87 @@ export class ShipCollisionSystem {
         }
       } catch {}
     }
+
+    // Colliders estructurados (estación y futuros). Suprimidos mientras la nave está acoplada:
+    // la pose de atraque (30u tras la tile) queda DENTRO del volumen del brazo de acople.
+    if (!host.isStructuredSuppressed()) {
+      this.structured.check(
+        ship,
+        hit => this.respondStructured(host, ship, now, hit),
+        (id, inside) => this.logger.log(LogLevel.DEBUG, LogCategory.COLLISION_PHYSICS,
+          inside ? 'Structured gate ENTER' : 'Structured gate EXIT', { id }),
+      );
+    }
+  }
+
+  /** Registra un collider estructurado (formas locales + transform vivo). Ver docs/COLISIONES.md §3.4. */
+  registerStructured(def: StructuredColliderDef): void {
+    this.structured.register(def);
+    this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, 'Structured collider registered', {
+      id: def.id, shapes: def.shapesLocal.length
+    });
+  }
+
+  unregisterStructured(id: string): void {
+    this.structured.unregister(id);
+  }
+
+  /** Daño a la nave con cooldown por objeto (compartido por los caminos esférico y estructurado). */
+  private applyDamageCooldowned(host: ShipCollisionHost, ship: Spaceship, now: number, obj: GameObject, amount: number, label: string): void {
+    if (!obj || !obj.id) return;
+    const nextAllowed = this.gameState.collisionCooldowns.get(obj.id) || 0;
+    if (now < nextAllowed) return; // still in cooldown
+    this.gameState.collisionCooldowns.set(obj.id, now + DAMAGE_COOLDOWN_MS);
+    // Portal is ethereal: ignore negative/zero damage
+    if (amount <= 0) return;
+    const dealt = host.applyShipDamage(amount, obj.id, label, {
+      suppressHud: true,
+      sourceObject: obj
+    });
+    if (dealt <= 0) {
+      return;
+    }
+    // Simple HUD feedback: add marquee message
+    const remaining = `${Math.round(ship.healthCurrent)}/${Math.round(ship.healthMax)}`;
+    host.emitShipDamageMarquee(`Impacto: -${Math.round(dealt)}u (${remaining})`);
+  }
+
+  /**
+   * Respuesta al contacto estructurado: push-out por la normal de SUPERFICIE (idempotente, cada frame de
+   * contacto) + deslizamiento (anula la componente de velocidad contra la superficie, conserva la
+   * tangencial) + daño escalado por velocidad de impacto (con cooldowns). docs/COLISIONES.md §3.5.
+   */
+  private respondStructured(host: ShipCollisionHost, ship: Spaceship, now: number, hit: StructuredHit): void {
+    const push = hit.depthWorld + STRUCTURED_PUSH_PADDING;
+    ship.position.x += hit.nx * push;
+    ship.position.y += hit.ny * push;
+    ship.position.z += hit.nz * push;
+    ship.updateModelMatrix();
+    try { if (ship.boundingSphere) ship.boundingSphere.center = { ...ship.position }; } catch {}
+
+    const v = ship.velocity;
+    const vDotN = v.x * hit.nx + v.y * hit.ny + v.z * hit.nz;
+    if (vDotN < 0) {
+      v.x -= hit.nx * vDotN;
+      v.y -= hit.ny * vDotN;
+      v.z -= hit.nz * vDotN;
+    }
+
+    if (hit.approachSpeed >= STRUCTURED_IMPACT_SPEED_MIN) {
+      const pairKey = `ship-${hit.def.id}`;
+      if (now >= (this.pairCooldown.get(pairKey) || 0)) {
+        this.pairCooldown.set(pairKey, now + PAIR_COOLDOWN_MS);
+        const t = Math.min(1, (hit.approachSpeed - STRUCTURED_IMPACT_SPEED_MIN) /
+          (STRUCTURED_IMPACT_SPEED_MAX - STRUCTURED_IMPACT_SPEED_MIN));
+        const dmg = Math.round(STRUCTURED_IMPACT_DMG_MIN + (STRUCTURED_IMPACT_DMG_MAX - STRUCTURED_IMPACT_DMG_MIN) * t);
+        this.logger.log(LogLevel.INFO, LogCategory.COLLISION_PHYSICS, 'Structured collision', {
+          id: hit.def.id, shape: hit.contact.shapeIndex, speed: hit.approachSpeed.toFixed(2), dmg
+        });
+        this.applyDamageCooldowned(host, ship, now, hit.def.source, dmg, hit.def.source.constructor?.name || 'Structure');
+        this.impactFeedback(host, dmg);
+      }
+    }
+    hit.def.onContact?.(hit.contact);
   }
 
   /** Handle physical response, camera effect and audio for a collision */
@@ -284,6 +370,11 @@ export class ShipCollisionSystem {
       // Sin física (portales)
     }
 
+    this.impactFeedback(host, dmg);
+  }
+
+  /** Viñeta de cámara + cue de audio (light/heavy) de un impacto, escalados por el daño. */
+  private impactFeedback(host: ShipCollisionHost, dmg: number): void {
     // Camera impact vignette bump
     const bump = Math.min(0.9, 0.08 + (dmg / 250));
     host.addImpactVignette(bump);

@@ -1,5 +1,6 @@
 import { Vector3 } from '../../../types/game.types';
 import { GameObject } from '../../GameObject';
+import type { StructuredShape } from '../../services/physics/collision/collision-shape.types';
 import { TargetType } from '../../types/targeting.types';
 import { GameObjectType } from '../../types/game-object.types';
 import { GameObjectAnimosity } from '../../types/animosity.types';
@@ -99,6 +100,16 @@ export abstract class SpaceStation extends GameObject {
    * defecto ninguna; las subclases lo aportan.
    */
   public getMotorGlowsLocal(): Array<{ center: [number, number, number]; radius: number; flattenY?: number }> {
+    return [];
+  }
+
+  /**
+   * Colliders ESTRUCTURADOS en espacio LOCAL/unidad (Fase 11, docs/COLISIONES.md): la colisión real de la
+   * estación sin resucitar la bounding sphere (que sigue null, regla §1.2.1). Por defecto ninguno (la
+   * estación no colisiona); cada subclase aporta formas ajustadas a SU geometría. El system los registra
+   * en el ShipCollisionSystem al spawnear.
+   */
+  public getStructuredShapesLocal(): readonly StructuredShape[] {
     return [];
   }
 }

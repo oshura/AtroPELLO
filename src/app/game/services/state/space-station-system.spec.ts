@@ -14,6 +14,8 @@ function makeHost(opts: {
     busy: opts.busy ?? false,
     dockEvents: [] as Array<DockPort | null>,
     logs: [] as string[],
+    collidersRegistered: [] as string[],
+    collidersUnregistered: [] as string[],
   };
   const host: SpaceStationHost = {
     getShipPosition: () => state.ship,
@@ -23,6 +25,8 @@ function makeHost(opts: {
     onDockReady: (p) => state.dockEvents.push(p),
     getShipWreckMesh: () => null, // sin réplicas en tests (el sistema lo omite)
     isDockingBusy: () => false,
+    registerCollider: (def) => state.collidersRegistered.push(def.id),
+    unregisterCollider: (id) => state.collidersUnregistered.push(id),
     log: (m) => state.logs.push(m),
   };
   return { host, state };
@@ -102,5 +106,17 @@ describe('SpaceStationSystem', () => {
     sys.update(host, 0.016);
     expect(sys.getRenderable()).toBeNull();
     expect(sys.getPorts().length).toBe(0);
+  });
+
+  it('registra el collider estructurado al spawnear y lo da de baja al limpiar (Fase 11 R4)', () => {
+    const sys = new SpaceStationSystem();
+    const { host, state } = makeHost();
+    sys.update(host, 0.016); // spawn
+    const station = sys.getRenderable()!;
+    expect(state.collidersRegistered).toEqual([station.id]);
+    expect(station.getStructuredShapesLocal().length).toBeGreaterThan(0);
+    state.human = false;
+    sys.update(host, 0.016); // clear
+    expect(state.collidersUnregistered).toEqual([station.id]);
   });
 });

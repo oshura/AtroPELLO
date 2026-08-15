@@ -1,6 +1,7 @@
 import { Vector3 } from '../../../types/game.types';
 import { SpaceStation, DockPortPlacement, StationEmissivePoints } from './space-station';
 import { MeshData, createMesh, pushBox, pushTorus, toTypedMesh, applyDamageStains } from './station-geometry';
+import type { StructuredShape } from '../../services/physics/collision/collision-shape.types';
 
 /** Id canónico de la estación humana (landmark fijo; el daño/puertos se regeneran idénticos por semilla). */
 export const HUMAN_STATION_ID = 'human-station';
@@ -18,6 +19,9 @@ const CORE_HALF = 0.16;       // semi-lado del núcleo central (motores)
 const CLAMP_OUT = 0.04;       // protrusión (media) hacia el lado del radio
 const CLAMP_W = 0.022;        // media anchura a lo largo del radio
 const CLAMP_H = 0.05;         // media altura (Y)
+// Segmentos del toroide destruidos por el Incidente: corte grande {6..9} + pequeño {30,31}.
+// Compartidos por la MALLA y los COLLIDERS (por el boquete se puede volar; el spec de conformidad lo blinda).
+const DESTROYED_SEGMENTS: readonly number[] = [6, 7, 8, 9, 30, 31];
 const HULL: [number, number, number] = [0.62, 0.68, 0.78];       // gris azulado metálico (casco)
 const HULL_DARK: [number, number, number] = [0.42, 0.47, 0.56];  // metálico más oscuro (estructura / brazos)
 const CORE_COL: [number, number, number] = [0.50, 0.55, 0.64];   // núcleo metálico
@@ -33,8 +37,7 @@ function buildHumanStation(): HumanStationBuild {
   const mesh: MeshData = createMesh();
 
   // Toroide con SOLO un corte grande + uno pequeño (el resto intacto). Ver feedback del usuario.
-  const destroyedSeg = new Set<number>([6, 7, 8, 9]); // corte grande
-  destroyedSeg.add(30); destroyedSeg.add(31);          // como mucho 1 más (pequeño)
+  const destroyedSeg = new Set<number>(DESTROYED_SEGMENTS);
   pushTorus(mesh, RING_RADIUS, TUBE_RADIUS, RING_SEG, TUBE_SEG, HULL, 1, i => !destroyedSeg.has(i));
 
   // 4 radios (pasadizos) a lo largo de ±X y ±Z, hacia el núcleo.
@@ -103,8 +106,47 @@ function buildHumanStation(): HumanStationBuild {
   return { geo: toTypedMesh(mesh), ports, emissive };
 }
 
+/**
+ * Colliders estructurados (Fase 11 R4): mismas constantes de diseño que la malla, en el MISMO fichero.
+ * El spec de conformidad malla↔collider (station-collider-conformance.spec) revienta si alguien toca la
+ * geometría sin tocar esto. Excluidos deliberadamente: tiles de puerto (DockPort, trigger ETHEREAL),
+ * bola de motor (FX emisivo) y pecios (decorativos).
+ */
+function buildHumanStationColliders(): StructuredShape[] {
+  const shapes: StructuredShape[] = [
+    { kind: 'torus', center: [0, 0, 0], ringRadius: RING_RADIUS, tubeRadius: TUBE_RADIUS, segments: RING_SEG, gapSegments: DESTROYED_SEGMENTS },
+    { kind: 'box', center: [0, 0, 0], half: [CORE_HALF, CORE_HALF, CORE_HALF] },                 // núcleo
+    { kind: 'box', center: [0, -CORE_HALF - 0.05, 0], half: [0.07, 0.06, 0.07] },                // tobera
+  ];
+  const mid = (SPOKE_INNER + SPOKE_OUTER) / 2;
+  const halfLen = (SPOKE_OUTER - SPOKE_INNER) / 2;
+  for (const s of [{ axis: 'x', sign: 1 }, { axis: 'x', sign: -1 }, { axis: 'z', sign: 1 }, { axis: 'z', sign: -1 }] as const) {
+    // Radios (pasadizos), idénticos a buildHumanStation.
+    shapes.push(s.axis === 'x'
+      ? { kind: 'box', center: [s.sign * mid, 0, 0], half: [halfLen, SPOKE_HALF, SPOKE_HALF] }
+      : { kind: 'box', center: [0, 0, s.sign * mid], half: [SPOKE_HALF, SPOKE_HALF, halfLen] });
+    // Brazos de acople (clamps), a cada lado este/oeste del radio.
+    const perp: [number, number, number] = s.axis === 'x' ? [0, 0, 1] : [1, 0, 0];
+    const center: [number, number, number] = s.axis === 'x' ? [s.sign * mid, 0, 0] : [0, 0, s.sign * mid];
+    for (const ps of [1, -1]) {
+      shapes.push({
+        kind: 'box',
+        center: [
+          center[0] + perp[0] * ps * (SPOKE_HALF + CLAMP_OUT),
+          0,
+          center[2] + perp[2] * ps * (SPOKE_HALF + CLAMP_OUT),
+        ],
+        half: s.axis === 'x' ? [CLAMP_W, CLAMP_H, CLAMP_OUT] : [CLAMP_OUT, CLAMP_H, CLAMP_W],
+      });
+    }
+  }
+  return shapes;
+}
+
 /** Malla + puertos + puntos emissive compartidos (deterministas) — se construyen UNA vez al cargar el módulo. */
 const HUMAN = buildHumanStation();
+/** Colliders compartidos (inmutables) — una vez por módulo, como la malla. */
+const HUMAN_COLLIDERS = buildHumanStationColliders();
 
 /**
  * Estación espacial humana: toroide de hábitats/almacenes/mantenimiento unido por 4 radios a un núcleo de
@@ -142,5 +184,9 @@ export class HumanSpaceStation extends SpaceStation {
     return [
       { center: [0, -(CORE_HALF + 0.12), 0], radius: 58, flattenY: 0.45 },
     ];
+  }
+
+  public override getStructuredShapesLocal(): readonly StructuredShape[] {
+    return HUMAN_COLLIDERS;
   }
 }

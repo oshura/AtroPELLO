@@ -1,5 +1,5 @@
-import { GameObject } from '../../../GameObject';
-import { GameObjectType } from '../../../game-objects';
+import type { GameObject } from '../../../GameObject';
+import type { GameObjectType } from '../../../types/game-object.types';
 
 /**
  * Catálogo de formas para colliders ESTRUCTURADOS (Fase 11, docs/COLISIONES.md §3.3).
