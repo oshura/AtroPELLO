@@ -418,6 +418,9 @@ atenuado dentro. El diseño narrativo se cierra en `docs/HISTORIA.md` §5 antes 
 ### 7.5 Rebanadas (cada una build+tests verdes + bump)
 - **I0** — **ventanas exteriores** ✅ (build 54): 3 filas a las alturas de cubierta, solo segmentos
   vivos; ~80% muertas / ~15% encendidas / ~5% parpadeo; `StationRenderer` extraído del motor.
+  Ampliado en build 56 (petición del usuario): mismas 3 filas también en la **cara interior** del
+  tubo (la que mira al núcleo), con semilla propia (`-windows-inner`) para no reordenar el patrón
+  exterior ya validado.
 - **I0b** — **tapas-sección** ✅ (build 55): disco + forjados + compuertas + tabiques + tuberías por
   boca de corte, acentos emissive fusionados con las ventanas; SDF de arco con tapas planas en
   `collider-sdf.ts` (regresión "teletransporte" cubierta por spec).

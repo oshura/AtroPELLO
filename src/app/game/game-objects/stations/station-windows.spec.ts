@@ -27,8 +27,8 @@ describe('Ventanas de la estación humana (§7 I0)', () => {
   const built = buildHumanStationWindows();
   const centers = [...quadCenters(built.steady.vertices), ...quadCenters(built.flicker.vertices)];
 
-  it('hay 3 ventanas × 3 cubiertas por segmento VIVO (ninguna en los boquetes)', () => {
-    expect(centers.length).toBe(LIVE_SEGMENTS * PER_SEGMENT);
+  it('hay 3 ventanas × 3 cubiertas por segmento VIVO y por CARA (ninguna en los boquetes)', () => {
+    expect(centers.length).toBe(LIVE_SEGMENTS * PER_SEGMENT * 2); // caras exterior + interior
     for (const [x, , z] of centers) {
       let angle = Math.atan2(z, x);
       if (angle < 0) angle += Math.PI * 2;
@@ -37,12 +37,15 @@ describe('Ventanas de la estación humana (§7 I0)', () => {
     }
   });
 
-  it('todas pegadas a la superficie del casco (a la distancia de despegue) y en la cara exterior', () => {
+  it('todas pegadas a la superficie del casco, mitad en cada cara del tubo', () => {
+    let outer = 0;
     for (const [x, y, z] of centers) {
       const d = sdfTorus(HULL_TORUS, x, y, z);
       expect(Math.abs(d - 0.003)).toBeLessThan(1e-6); // WINDOW_LIFT
-      expect(Math.hypot(x, z)).toBeGreaterThan(0.8);  // lado exterior del tubo (radio > ringRadius)
+      if (Math.hypot(x, z) > 0.8) outer++;            // radio > ringRadius = cara exterior
     }
+    expect(outer).toBe(LIVE_SEGMENTS * PER_SEGMENT);
+    expect(centers.length - outer).toBe(LIVE_SEGMENTS * PER_SEGMENT); // cara interior (mira al núcleo)
   });
 
   it('la mayoría muertas, algunas encendidas y unas pocas parpadeantes (determinista)', () => {

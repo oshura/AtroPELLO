@@ -195,23 +195,21 @@ function pushWindowQuad(
   mesh.indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
 }
 
-/**
- * Construye las dos capas de ventanas (fijas + parpadeantes). Exportado para el spec (que las construye
- * puras); en runtime se le pasan mallas ya sembradas con los acentos de las tapas para fusionarlos.
- */
-export function buildHumanStationWindows(
-  steady: MeshData = createMesh(),
-  flicker: MeshData = createMesh(),
-): StationWindowMeshes {
-  const rng = seededRng(`${HUMAN_STATION_ID}-windows`);
+/** Emite las 3 filas de ventanas de UNA cara del tubo (+1 exterior, −1 interior, que mira al núcleo). */
+function pushWindowFace(
+  steady: MeshData,
+  flicker: MeshData,
+  face: 1 | -1,
+  rng: () => number,
+): void {
   const destroyed = new Set<number>(DESTROYED_SEGMENTS);
   for (let i = 0; i < RING_SEG; i++) {
     if (destroyed.has(i)) continue;
     for (let d = 0; d < WINDOW_DECKS; d++) {
       // Alturas de piso: tubo Ø 2r partido en 3 cubiertas → centros en -2r/3, 0, +2r/3.
       const deckY = (d - 1) * ((2 * TUBE_RADIUS) / WINDOW_DECKS);
-      const v = Math.asin(deckY / TUBE_RADIUS); // cara EXTERIOR (cos v > 0)
-      const cv = Math.cos(v), sv = Math.sin(v);
+      const v = Math.asin(deckY / TUBE_RADIUS);
+      const cv = face * Math.cos(v), sv = Math.sin(v); // cara interior = meridiano π−v (cos invertido)
       for (let w = 0; w < WINDOWS_PER_SEGMENT; w++) {
         const u = ((i + (w + 0.5) / WINDOWS_PER_SEGMENT) / RING_SEG) * Math.PI * 2;
         const cu = Math.cos(u), su = Math.sin(u);
@@ -235,6 +233,19 @@ export function buildHumanStationWindows(
       }
     }
   }
+}
+
+/**
+ * Construye las dos capas de ventanas (fijas + parpadeantes), en AMBAS caras del tubo. Exportado para
+ * el spec (que las construye puras); en runtime se le pasan mallas ya sembradas con los acentos de las
+ * tapas para fusionarlos. La cara interior usa semilla propia: añadirla no reordena el patrón exterior.
+ */
+export function buildHumanStationWindows(
+  steady: MeshData = createMesh(),
+  flicker: MeshData = createMesh(),
+): StationWindowMeshes {
+  pushWindowFace(steady, flicker, 1, seededRng(`${HUMAN_STATION_ID}-windows`));
+  pushWindowFace(steady, flicker, -1, seededRng(`${HUMAN_STATION_ID}-windows-inner`));
   return { steady: toTypedMesh(steady), flicker: toTypedMesh(flicker) };
 }
 
