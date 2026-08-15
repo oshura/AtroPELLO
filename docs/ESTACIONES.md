@@ -326,7 +326,7 @@ Slice 2 enchufa cinemática + tablas de sucesos + descubrimiento real de hechizo
 - **Primera persona (futuro)**: las secciones/corredores se diseñan ahora a nivel de geometría/narrativa
   para recorrerlos a pie más adelante (como la superficie de planetas). No se implementa el modo a pie aquí.
 
-## 7. Interior del toroide — DISEÑO (2026-08-15, pendiente de implementar)
+## 7. Interior del toroide — DISEÑO (2026-08-15; REVISADO 2026-08-16, ver nota de revisión)
 
 **Motivación (usuario, validando Fase 11 R4):** intentó meterse con la nave por la boca de corte del
 boquete y chocó. Correcto con el modelo actual (casco MACIZO), pero el usuario quiere el interior
@@ -350,7 +350,25 @@ La nave (~15 u) cabe de sobra; el reto es visual y de cámara, no de espacio.
    **parpadeando** de forma irregular. Cuentan los pisos desde fuera sin entrar. Determinista por
    semilla (qué ventana está viva); el parpadeo es FX de tiempo (función tiempo+semilla, sin estado).
 
-### 7.1 Colisión (extiende Fase 11, coste bajo)
+**REVISIÓN (usuario, 2026-08-16, validando I0 en producción):** las bocas de corte deben CERRARSE con
+una **tapa-sección visible** que enseñe la arquitectura interior (compuertas entre secciones, forjados
+de los 3 pisos, trozos de salas/habitáculos) — "puede ser solo una tapa con algunos detalles y texturas".
+Y decisión de alcance clave: **si se hace un FPS para bajar de la nave, NO será sobre este mallado** —
+será otro render/mundo aparte (se retira todo el espacio del sistema en esa transición; enlaza con
+`documentation/Plan_Desembarco_2D.md`). Consecuencias:
+- El toroide queda **SELLADO**: no se vuela por dentro. Las rebanadas I1 (casco hueco), I2 (interior
+  navegable) e I3 (clamp de cámara) quedan **RETIRADAS** del plan; §7.1–§7.3 se conservan solo como
+  histórico de diseño. El §7.4 (contenido) se replantea para la experiencia FPS futura.
+- **I0b — tapas-sección** (IMPLEMENTADO): `station-caps.ts` hornea en la malla de la estación un disco
+  por frontera vivo↔destruido (4 tapas) con forjados a las alturas de las cubiertas, compuerta por piso,
+  tabiques rotos y tuberías; acentos emissive (luz de emergencia parpadeante + borde de puerta cálido)
+  fusionados con las capas de ventanas de I0. Determinista por semilla; cero draw calls y cero líneas
+  de motor nuevas. Colisión: `collider-sdf.ts` sustituye el `Infinity` del boquete por el SDF del
+  **arco con tapas planas** (`max(tubo, plano de corte)`) → chocar de frente contra la tapa da normal
+  de plano y profundidad real (antes, entrar por el centro del corte teletransportaba a la pared
+  radial). Sin extensiones de catálogo (no hicieron falta caja orientada ni formas sustractivas).
+
+### 7.1 Colisión (extiende Fase 11, coste bajo) — HISTÓRICO (retirado por la revisión 2026-08-16)
 - `TorusShape` gana `wall?: number` (grosor de pared, ~0.012 unidad ≈ 10 u): material = cáscara
   `{ p : |d_superficie(p)| ≤ wall }` → `sdf_hueco = |sdf_actual| − wall`. Normal = gradiente
   (`sign(d)·normal_actual`): dentro de la cavidad empuja hacia el EJE del tubo — deslizas por la pared
@@ -366,7 +384,7 @@ La nave (~15 u) cabe de sobra; el reto es visual y de cámara, no de espacio.
   correcta; atravesar una puerta de la tapa sin contacto y chocar contra la tapa fuera de las puertas;
   conformidad malla↔collider actualizada (las superficies interiores nuevas también caen en material).
 
-### 7.2 Visual interior (el trabajo de verdad)
+### 7.2 Visual interior (el trabajo de verdad) — HISTÓRICO (retirado por la revisión 2026-08-16)
 La malla actual es SOLO la superficie exterior con backface culling → desde dentro se vería
 transparente. Plan:
 - **Forro interior**: segunda superficie de tubo (mismo `pushTorus`, radio `TUBE_RADIUS − wall`,
@@ -386,7 +404,7 @@ transparente. Plan:
 - **Luz interior**: puntos emissive tenues cada pocos segmentos — ámbar de emergencia, mismo lenguaje
   de "energía inestable" que las ventanas (algunos tramos a oscuras).
 
-### 7.3 Cámara
+### 7.3 Cámara — HISTÓRICO (retirado por la revisión 2026-08-16)
 La cámara de seguimiento orbita DETRÁS de la nave → dentro del túnel atravesaría la pared. Necesita
 clamp: raycast/SDF de la posición de cámara contra el MISMO collider hueco (reutilizar
 `collider-sdf`), acercándola a la nave cuando no quepa. Diseñar como servicio pequeño reutilizable
@@ -398,13 +416,11 @@ Candidatos: restos flotantes (pecios pequeños con física de asteroide), un pic
 atenuado dentro. El diseño narrativo se cierra en `docs/HISTORIA.md` §5 antes de implementar.
 
 ### 7.5 Rebanadas (cada una build+tests verdes + bump)
-- **I0** — **ventanas exteriores** (independiente del interior: visible YA desde fuera, sin abrir el
-  casco). Buen primer entregable para validar el lenguaje de "energía inestable".
-- **I1** — colisión: casco hueco (`wall`) + cubiertas + tapas con puertas (caja orientada + formas
-  sustractivas en el catálogo) + specs. Se activa junto a I2.
-- **I2** — visual interior (forro + 3 cubiertas rotas + tapas-sección con puertas/tubos/pasillos +
-  costillas + luz interior).
-- **I3** — clamp de cámara en interiores.
-- **I4** — contenido (restos/memoria/criatura) tras cerrar §7.4.
-Riesgo mayor: I2/I3 (percepción). I1 solo se activa cuando I2 exista — hasta entonces el casco sigue
-macizo para no enseñar un interior transparente.
+- **I0** — **ventanas exteriores** ✅ (build 54): 3 filas a las alturas de cubierta, solo segmentos
+  vivos; ~80% muertas / ~15% encendidas / ~5% parpadeo; `StationRenderer` extraído del motor.
+- **I0b** — **tapas-sección** ✅ (build 55): disco + forjados + compuertas + tabiques + tuberías por
+  boca de corte, acentos emissive fusionados con las ventanas; SDF de arco con tapas planas en
+  `collider-sdf.ts` (regresión "teletransporte" cubierta por spec).
+- ~~I1 colisión hueca~~ / ~~I2 visual interior~~ / ~~I3 cámara~~ — RETIRADAS (revisión 2026-08-16:
+  el toroide queda sellado; el interior se vivirá como FPS en otro render/mundo).
+- **I4** — contenido: se replantea para la experiencia FPS aparte (cerrar §7.4 + HISTORIA §5 antes).

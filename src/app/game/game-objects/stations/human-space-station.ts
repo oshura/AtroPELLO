@@ -1,6 +1,7 @@
 import { Vector3 } from '../../../types/game.types';
 import { SpaceStation, DockPortPlacement, StationEmissivePoints } from './space-station';
 import { MeshData, createMesh, pushBox, pushTorus, toTypedMesh, applyDamageStains, seededRng } from './station-geometry';
+import { StationCapAccents, pushStationCaps } from './station-caps';
 import type { StructuredShape } from '../../services/physics/collision/collision-shape.types';
 import type { StationWindowMeshes } from './station-windows';
 
@@ -31,6 +32,8 @@ interface HumanStationBuild {
   geo: ReturnType<typeof toTypedMesh>;
   ports: DockPortPlacement[];
   emissive: StationEmissivePoints;
+  /** Acentos emissive de las tapas-sección (§7 I0b), a fusionar con las capas de ventanas. */
+  capAccents: StationCapAccents;
 }
 
 /** Construye la estación humana (toroide + 4 radios + núcleo + brazos de acople) y sus puertos. */
@@ -104,7 +107,18 @@ function buildHumanStation(): HumanStationBuild {
   // (deterministas por semilla; el landmark se regenera idéntico). Ver feedback del usuario.
   applyDamageStains(mesh, `${HUMAN_STATION_ID}-damage`, 18, 0.14, 0.05);
 
-  return { geo: toTypedMesh(mesh), ports, emissive };
+  // Tapas-sección en los cortes del toroide (§7 I0b): arquitectura interior a la vista. Se añaden TRAS
+  // las manchas (el muestreo de manchas del casco no cambia y las tapas conservan sus colores propios).
+  const capAccents: StationCapAccents = { steady: createMesh(), flicker: createMesh() };
+  pushStationCaps(mesh, capAccents, {
+    ringRadius: RING_RADIUS,
+    tubeRadius: TUBE_RADIUS,
+    ringSeg: RING_SEG,
+    destroyed: DESTROYED_SEGMENTS,
+    seed: HUMAN_STATION_ID,
+  });
+
+  return { geo: toTypedMesh(mesh), ports, emissive, capAccents };
 }
 
 /**
@@ -181,10 +195,14 @@ function pushWindowQuad(
   mesh.indices.push(base, base + 1, base + 2, base + 1, base + 3, base + 2);
 }
 
-/** Construye las dos capas de ventanas (fijas + parpadeantes). Exportado para el spec. */
-export function buildHumanStationWindows(): StationWindowMeshes {
-  const steady = createMesh();
-  const flicker = createMesh();
+/**
+ * Construye las dos capas de ventanas (fijas + parpadeantes). Exportado para el spec (que las construye
+ * puras); en runtime se le pasan mallas ya sembradas con los acentos de las tapas para fusionarlos.
+ */
+export function buildHumanStationWindows(
+  steady: MeshData = createMesh(),
+  flicker: MeshData = createMesh(),
+): StationWindowMeshes {
   const rng = seededRng(`${HUMAN_STATION_ID}-windows`);
   const destroyed = new Set<number>(DESTROYED_SEGMENTS);
   for (let i = 0; i < RING_SEG; i++) {
@@ -224,8 +242,8 @@ export function buildHumanStationWindows(): StationWindowMeshes {
 const HUMAN = buildHumanStation();
 /** Colliders compartidos (inmutables) — una vez por módulo, como la malla. */
 const HUMAN_COLLIDERS = buildHumanStationColliders();
-/** Ventanas compartidas (deterministas por semilla) — una vez por módulo. */
-const HUMAN_WINDOWS = buildHumanStationWindows();
+/** Capas de luces compartidas: acentos de las tapas + ventanas, fusionados (deterministas por semilla). */
+const HUMAN_WINDOWS = buildHumanStationWindows(HUMAN.capAccents.steady, HUMAN.capAccents.flicker);
 
 /**
  * Estación espacial humana: toroide de hábitats/almacenes/mantenimiento unido por 4 radios a un núcleo de

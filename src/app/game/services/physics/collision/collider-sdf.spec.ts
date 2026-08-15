@@ -66,10 +66,30 @@ describe('collider-sdf', () => {
 
     it('los boquetes del Incidente no tienen material; los segmentos vivos sí', () => {
       const mid = (i: number): number => ((i + 0.5) / 48) * Math.PI * 2;
-      const inGap = mid(7);
+      const inGap = mid(7); // vecinos 6 y 8 también destruidos → material inalcanzable
       expect(sdfTorus(STATION_TORUS, 0.8 * Math.cos(inGap), 0, 0.8 * Math.sin(inGap))).toBe(Infinity);
       const alive = mid(4);
       expect(sdfTorus(STATION_TORUS, 0.8 * Math.cos(alive), 0, 0.8 * Math.sin(alive))).toBeCloseTo(-0.13, 10);
+    });
+
+    it('desde el boquete, la tapa del corte está a la distancia del plano (I0b)', () => {
+      const a = (6 / 48) * Math.PI * 2; // frontera vivo(5)↔destruido(6)
+      const theta = a + 0.002;          // apenas dentro del boquete, centro del tubo
+      expect(sdfTorus(STATION_TORUS, 0.8 * Math.cos(theta), 0, 0.8 * Math.sin(theta)))
+        .toBeCloseTo(0.8 * Math.sin(0.002), 6);
+    });
+
+    it('la tapa manda al entrar por el corte: profundidad pequeña, no la del tubo (regresión teletransporte)', () => {
+      const a = (6 / 48) * Math.PI * 2;
+      const theta = a - 0.002;          // apenas dentro del material, a ras de la tapa, centro del tubo
+      const out = contact();
+      const p: [number, number, number] = [0.8 * Math.cos(theta), 0, 0.8 * Math.sin(theta)];
+      expect(evaluateShapes([STATION_TORUS], p[0], p[1], p[2], out)).toBeTrue();
+      expect(out.distance).toBeCloseTo(-0.8 * Math.sin(0.002), 6); // NO −0.13 (pared radial)
+      // La normal es la del plano de corte (horizontal, hacia el boquete), no la radial del tubo.
+      expect(out.nx).toBeCloseTo(-Math.sin(a), 3);
+      expect(out.ny).toBeCloseTo(0, 10);
+      expect(out.nz).toBeCloseTo(Math.cos(a), 3);
     });
   });
 

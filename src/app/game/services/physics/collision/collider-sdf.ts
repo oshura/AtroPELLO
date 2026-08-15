@@ -41,18 +41,93 @@ export function torusSegmentIndex(t: TorusShape, px: number, pz: number): number
   return Math.min(idx, segments - 1); // guarda para angle == 2π por redondeo
 }
 
-/** Devuelve +Infinity si el punto cae en un segmento destruido (sin material en ese arco). */
-export function sdfTorus(t: TorusShape, px: number, py: number, pz: number): number {
-  if (t.gapSegments && t.gapSegments.length > 0) {
-    const seg = torusSegmentIndex(t, px, pz);
-    if (seg >= 0 && t.gapSegments.includes(seg)) return Infinity;
-  }
+/** Rasgo dominante del toro con boquetes: distancia + si manda una TAPA (plano de corte) y su normal. */
+interface TorusFeature {
+  d: number;
+  cut: boolean;
+  cnx: number;
+  cnz: number;
+}
+// Scratch de módulo (HOT: sin alocaciones; un solo hilo, sin reentradas).
+const TORUS_FEATURE: TorusFeature = { d: 0, cut: false, cnx: 0, cnz: 0 };
+
+/** Distancia del tubo del toro clásico (ignora boquetes). */
+function torusTubeDistance(t: TorusShape, px: number, py: number, pz: number): number {
   const lx = px - t.center[0];
   const ly = py - t.center[1];
   const lz = pz - t.center[2];
   const ringLen = Math.sqrt(lx * lx + lz * lz);
   const qx = ringLen - t.ringRadius;
   return Math.sqrt(qx * qx + ly * ly) - t.tubeRadius;
+}
+
+/**
+ * Distancia con signo al plano de corte (vertical, por el eje del toro) en el ángulo `a`, cuya cara
+ * mira hacia `side` (+1 = ángulos crecientes, −1 = decrecientes). Positivo del lado SIN material.
+ */
+function cutPlaneDistance(lx: number, lz: number, a: number, side: 1 | -1): number {
+  return side * (Math.cos(a) * lz - Math.sin(a) * lx);
+}
+
+/** Si la tapa en `a` (cara hacia `side`) acota más que lo acumulado, pasa a mandar (intersección = max). */
+function applyCutMax(out: TorusFeature, lx: number, lz: number, a: number, side: 1 | -1): void {
+  const dc = cutPlaneDistance(lx, lz, a, side);
+  if (dc > out.d) {
+    out.d = dc;
+    out.cut = true;
+    out.cnx = -side * Math.sin(a);
+    out.cnz = side * Math.cos(a);
+  }
+}
+
+/** Candidato "arco vivo tras la tapa en `a`" visto desde un boquete; se queda el más cercano (unión = min). */
+function applyArcMin(out: TorusFeature, tube: number, lx: number, lz: number, a: number, side: 1 | -1): void {
+  const dc = cutPlaneDistance(lx, lz, a, side);
+  const cand = Math.max(tube, dc);
+  if (cand < out.d) {
+    out.d = cand;
+    out.cut = dc >= tube;
+    out.cnx = -side * Math.sin(a);
+    out.cnz = side * Math.cos(a);
+  }
+}
+
+/**
+ * SDF del toro CON boquetes como sólido real (§7 I0b): cada arco vivo termina en una TAPA plana en la
+ * frontera con un segmento destruido (aprox. sólido∩semiespacio = max, exacta junto a caras y superficie).
+ * Así, entrar de frente por el corte da una normal de tapa limpia y profundidad pequeña — sin el
+ * teletransporte a la pared radial que daba el SDF radial puro. En mitad de un boquete (sin vecino vivo)
+ * devuelve +Infinity: material inalcanzable. Escribe el rasgo dominante para la normal.
+ */
+function torusFeature(t: TorusShape, px: number, py: number, pz: number, out: TorusFeature): void {
+  out.cut = false;
+  out.d = torusTubeDistance(t, px, py, pz);
+  const segments = t.segments ?? 0;
+  const gaps = t.gapSegments;
+  if (!gaps || gaps.length === 0 || segments <= 0) return;
+  const seg = torusSegmentIndex(t, px, pz);
+  const lx = px - t.center[0];
+  const lz = pz - t.center[2];
+  const segArc = TWO_PI / segments;
+  const prevGap = gaps.includes((seg + segments - 1) % segments);
+  const nextGap = gaps.includes((seg + 1) % segments);
+  if (!gaps.includes(seg)) {
+    // Segmento vivo: cada vecino destruido añade una tapa que ACOTA el material.
+    if (prevGap) applyCutMax(out, lx, lz, seg * segArc, -1);
+    if (nextGap) applyCutMax(out, lx, lz, (seg + 1) * segArc, 1);
+    return;
+  }
+  // Punto EN un boquete: el material más cercano es el arco vivo tras la tapa adyacente (si la hay).
+  const tube = out.d;
+  out.d = Infinity;
+  if (!prevGap) applyArcMin(out, tube, lx, lz, seg * segArc, 1);
+  if (!nextGap) applyArcMin(out, tube, lx, lz, (seg + 1) * segArc, -1);
+}
+
+/** Toro con boquetes = arcos vivos con tapas planas en los cortes (ver {@link torusFeature}). */
+export function sdfTorus(t: TorusShape, px: number, py: number, pz: number): number {
+  torusFeature(t, px, py, pz, TORUS_FEATURE);
+  return TORUS_FEATURE.d;
 }
 
 export function sdfShape(shape: StructuredShape, px: number, py: number, pz: number): number {
@@ -99,6 +174,12 @@ export function shapeNormal(shape: StructuredShape, px: number, py: number, pz: 
       return;
     }
     case 'torus': {
+      // Si el rasgo dominante es una tapa (plano de corte del boquete), la normal es la del plano.
+      torusFeature(shape, px, py, pz, TORUS_FEATURE);
+      if (TORUS_FEATURE.cut) {
+        out.nx = TORUS_FEATURE.cnx; out.ny = 0; out.nz = TORUS_FEATURE.cnz;
+        return;
+      }
       const lx = px - shape.center[0];
       const ly = py - shape.center[1];
       const lz = pz - shape.center[2];

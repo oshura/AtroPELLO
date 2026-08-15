@@ -109,6 +109,11 @@ type StructuredShape =
 - **`gapSegments`**: el toro conoce sus secciones destruidas (la humana: `{6,7,8,9}` y `{30,31}`
   de 48) → volar POR el boquete del Incidente es posible y no colisiona. El mapeo índice→ángulo se
   toma de `pushTorus` (misma convención que la malla, verificado por spec §7.2).
+  Desde I0b (ESTACIONES §7), el boquete NO es `Infinity` a secas: cada arco vivo termina en una
+  **TAPA plana** (plano de corte vertical) — `sdf = max(tubo, plano)` junto a las fronteras, con
+  normal del plano cuando manda la tapa. Chocar de frente contra la tapa-sección empuja hacia atrás
+  con profundidad real (antes, cruzar el plano por el centro del tubo daba profundidad radial ~tubeRadius
+  y teletransportaba la nave a la pared). En mitad del boquete (sin vecino vivo) sigue siendo `Infinity`.
 - **`enabled`** por forma → futuras estaciones destructibles apagan colliders de secciones voladas.
 - El resultado gana al pipeline esférico en lo esencial: la **normal es la de la SUPERFICIE real**
   (volar bajo el anillo te empuja hacia abajo, no hacia el centro de la estación).
