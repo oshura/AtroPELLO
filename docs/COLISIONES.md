@@ -196,7 +196,11 @@ Esfera de activación autocalculada: `0.93 × 800 = 744 u` (+ radio nave). La es
   del clamp → el camino estructurado se suprime con `host.isStructuredSuppressed()` (= panel de
   estación abierto o cinemática de atraque, igual que ya se congela el spin).
 - **R5 — pulido (opcional, PENDIENTE).** Colliders de pecios, velocidad tangencial del spin en la
-  respuesta (el anillo "arrastra"), tapas en las caras de corte de los boquetes, panel debug de contacto.
+  respuesta (el anillo "arrastra"), panel debug de contacto.
+- **Interior del toroide (fase propia, DISEÑADA 2026-08-15):** el usuario quiere volar POR DENTRO del
+  tubo entrando por los cortes. Diseño completo en `docs/ESTACIONES.md` §7 (toro HUECO vía `wall` en
+  `TorusShape` + visual interior + clamp de cámara + contenido). Hasta implementar su visual, el casco
+  sigue macizo a propósito.
 
 ## 7. Specs clave
 

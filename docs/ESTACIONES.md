@@ -325,3 +325,56 @@ Slice 2 enchufa cinemática + tablas de sucesos + descubrimiento real de hechizo
   dispara al ENTRAR en rango desde fuera (flanco de subida) — nunca al spawnear ni nada más despegar.
 - **Primera persona (futuro)**: las secciones/corredores se diseñan ahora a nivel de geometría/narrativa
   para recorrerlos a pie más adelante (como la superficie de planetas). No se implementa el modo a pie aquí.
+
+## 7. Interior del toroide — DISEÑO (2026-08-15, pendiente de implementar)
+
+**Motivación (usuario, validando Fase 11 R4):** intentó meterse con la nave por la boca de corte del
+boquete y chocó. Correcto con el modelo actual (casco MACIZO), pero el usuario quiere el interior
+completo: volar POR DENTRO del tubo del toroide como un túnel, entrando por las caras de corte del
+Incidente. Decisión: diseñar el interior entero (visual + colisión + cámara + contenido) como fase
+propia; NO parchear solo la colisión.
+
+Datos base (espacio unidad ×800): tubo de radio 0.13 (Ø 208 u); dos arcos vivos entre los cortes
+(segmentos 10–29 y 32–47+0–5, es decir ~150° y ~135° de túnel curvo); 4 bocas de entrada (2 por corte).
+La nave (~15 u) cabe de sobra; el reto es visual y de cámara, no de espacio.
+
+### 7.1 Colisión (extiende Fase 11, coste bajo)
+- `TorusShape` gana `wall?: number` (grosor de pared, ~0.012 unidad ≈ 10 u): material = cáscara
+  `{ p : |d_superficie(p)| ≤ wall }` → `sdf_hueco = |sdf_actual| − wall`. Normal = gradiente
+  (`sign(d)·normal_actual`): dentro de la cavidad empuja hacia el EJE del tubo — deslizas por la pared
+  interior igual que por el casco. Los `gapSegments` siguen funcionando (las bocas quedan abiertas).
+- Mamparos OPCIONALES por gameplay: cajas finas transversales cada N segmentos (compartimentos con
+  boquetes propios), usando el mismo catálogo de formas. A decidir con el contenido (§7.4).
+- Spec: puntos dentro de la cavidad sin contacto; contra pared interior/exterior con normal correcta;
+  conformidad malla↔collider actualizada (la superficie interior nueva también debe caer en la cáscara).
+
+### 7.2 Visual interior (el trabajo de verdad)
+La malla actual es SOLO la superficie exterior con backface culling → desde dentro se vería
+transparente. Plan:
+- Segunda superficie de tubo (mismo `pushTorus`, radio `TUBE_RADIUS − wall`, normales INVERTIDAS,
+  paleta oscura `HULL_DARK`×0.5) — el "forro" interior. Mismas constantes, mismo fichero.
+- **Costillas/cuadernas**: anillos de refuerzo cada ~4 segmentos (toros parciales finos o cajas
+  curvadas aproximadas) para dar lectura de profundidad al túnel.
+- **Luz**: puntos emissive tenues (patrón `StationEmissivePoints`/bolas emissive ya existente) cada
+  pocos segmentos — ámbar de emergencia, parpadeo sutil determinista por semilla.
+- **Bocas de corte**: collar de "metal desgarrado" (anillo corto de quads irregulares por semilla) en
+  las 4 caras de corte, que vende la entrada y tapa el canto hueco de la cáscara.
+
+### 7.3 Cámara
+La cámara de seguimiento orbita DETRÁS de la nave → dentro del túnel atravesaría la pared. Necesita
+clamp: raycast/SDF de la posición de cámara contra el MISMO collider hueco (reutilizar
+`collider-sdf`), acercándola a la nave cuando no quepa. Diseñar como servicio pequeño reutilizable
+(servirá igual para cañones/cuevas futuras).
+
+### 7.4 Contenido y gameplay (a decidir con el usuario antes de implementar)
+Candidatos: restos flotantes (pecios pequeños con física de asteroide), un pickup de memoria por arco
+(enlaza con las memorias de HISTORIA §5), un lesser being acechando en un arco, targeting exterior
+atenuado dentro. El diseño narrativo se cierra en `docs/HISTORIA.md` §5 antes de implementar.
+
+### 7.5 Rebanadas (cada una build+tests verdes + bump)
+- **I1** — colisión hueca (`wall`) + specs + conformidad actualizada. Jugable: entras y deslizas.
+- **I2** — visual interior (forro + costillas + luz + collares de corte).
+- **I3** — clamp de cámara en interiores.
+- **I4** — contenido (restos/memoria/criatura) tras cerrar §7.4.
+Riesgo mayor: I2/I3 (percepción). I1 solo se activa cuando I2 exista — hasta entonces el casco sigue
+macizo para no enseñar un interior transparente.
