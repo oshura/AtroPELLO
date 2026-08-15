@@ -191,17 +191,17 @@ function mixWhite(c: { r: number; g: number; b: number }, t: number): [number, n
 export class PlanetSurfaceRenderer {
   private program: WebGLProgram | null = null;
   private uniforms: Record<string, WebGLUniformLocation | null> = {};
+  // Compilación EN PARALELO (KHR_parallel_shader_compile): el constructor lanza compile+link sin
+  // consultar NINGÚN estado (cada consulta obliga al driver a terminar el trabajo en el hilo
+  // principal — este shader de ruido fractal tardaba ~2 s y congelaba el formulario de bienvenida).
+  // ensureReady() sondea un estado no bloqueante por frame y resuelve uniforms al terminar.
+  private pendingProgram: WebGLProgram | null = null;
+  private pendingVs: WebGLShader | null = null;
+  private pendingFs: WebGLShader | null = null;
+  private parallelExt: { COMPLETION_STATUS_KHR: number } | null = null;
 
   constructor(private gl: WebGL2RenderingContext) {
-    this.program = this.build();
-    if (this.program) {
-      const names = [
-        'u_modelMatrix', 'u_viewMatrix', 'u_projectionMatrix', 'u_normalMatrix',
-        'u_surfaceType', 'u_seed', 'u_hasAtmosphere', 'u_colorLow', 'u_colorHigh', 'u_colorAtmo',
-        'u_lightDir', 'u_lightColor', 'u_ambientColor', 'u_ambientStrength', 'u_cameraPos', 'u_time'
-      ];
-      for (const nm of names) this.uniforms[nm] = gl.getUniformLocation(this.program, nm);
-    }
+    this.beginBuild();
   }
 
   /** true si este planeta debe renderizarse con el shader procedural (no Sol, no Tierra partida). */
@@ -258,7 +258,7 @@ export class PlanetSurfaceRenderer {
     timeSec: number
   ): void {
     const gl = this.gl;
-    if (!this.program) return;
+    if (!this.ensureReady() || !this.program) return;
     const style = this.resolveStyle(planet);
     gl.useProgram(this.program);
     const u = this.uniforms;
@@ -293,7 +293,7 @@ export class PlanetSurfaceRenderer {
     timeSec: number
   ): void {
     const gl = this.gl;
-    if (!this.program) return;
+    if (!this.ensureReady() || !this.program) return;
     gl.useProgram(this.program);
     const u = this.uniforms;
     const c = planet.color;
@@ -313,41 +313,74 @@ export class PlanetSurfaceRenderer {
     planet.render(gl, this.program, viewMatrix, projectionMatrix);
   }
 
-  private build(): WebGLProgram | null {
+  /** Lanza compile+link SIN consultar estados (el driver trabaja en segundo plano si puede). */
+  private beginBuild(): void {
     const gl = this.gl;
-    const vs = this.compile(gl.VERTEX_SHADER, VERTEX_SRC);
-    const fs = this.compile(gl.FRAGMENT_SHADER, FRAGMENT_SRC);
-    if (!vs || !fs) return null;
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
     const prog = gl.createProgram();
-    if (!prog) return null;
+    if (!vs || !fs || !prog) return;
+    gl.shaderSource(vs, VERTEX_SRC);
+    gl.shaderSource(fs, FRAGMENT_SRC);
+    gl.compileShader(vs);
+    gl.compileShader(fs);
     gl.attachShader(prog, vs);
     gl.attachShader(prog, fs);
     gl.linkProgram(prog);
-    gl.deleteShader(vs);
-    gl.deleteShader(fs);
-    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
-      try { GameLogger.error(LogCategory.SHADERS, 'PlanetSurfaceRenderer link error', { info: gl.getProgramInfoLog(prog) }); } catch {}
-      gl.deleteProgram(prog);
-      return null;
-    }
-    return prog;
+    this.parallelExt = gl.getExtension('KHR_parallel_shader_compile');
+    this.pendingProgram = prog;
+    this.pendingVs = vs;
+    this.pendingFs = fs;
   }
 
-  private compile(type: number, src: string): WebGLShader | null {
+  /**
+   * true cuando el programa está listo. Mientras el driver compila en paralelo devuelve false SIN
+   * bloquear (ese frame no se pinta la superficie; en la práctica termina durante los diálogos de
+   * bienvenida). Sin la extensión, la primera consulta bloquea UNA vez en el primer frame de juego.
+   */
+  private ensureReady(): boolean {
+    if (this.program) return true;
+    const prog = this.pendingProgram;
+    if (!prog) return false;
     const gl = this.gl;
-    const sh = gl.createShader(type);
-    if (!sh) return null;
-    gl.shaderSource(sh, src);
-    gl.compileShader(sh);
-    if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
-      try { GameLogger.error(LogCategory.SHADERS, 'PlanetSurfaceRenderer compile error', { info: gl.getShaderInfoLog(sh) }); } catch {}
-      gl.deleteShader(sh);
-      return null;
+    if (this.parallelExt && !gl.getProgramParameter(prog, this.parallelExt.COMPLETION_STATUS_KHR)) {
+      return false; // aún compilando en segundo plano
     }
-    return sh;
+    const vs = this.pendingVs;
+    const fs = this.pendingFs;
+    this.pendingProgram = null;
+    this.pendingVs = null;
+    this.pendingFs = null;
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      try {
+        GameLogger.error(LogCategory.SHADERS, 'PlanetSurfaceRenderer link error', {
+          info: gl.getProgramInfoLog(prog),
+          vs: vs ? gl.getShaderInfoLog(vs) : null,
+          fs: fs ? gl.getShaderInfoLog(fs) : null,
+        });
+      } catch {}
+      if (vs) gl.deleteShader(vs);
+      if (fs) gl.deleteShader(fs);
+      gl.deleteProgram(prog);
+      return false;
+    }
+    if (vs) gl.deleteShader(vs);
+    if (fs) gl.deleteShader(fs);
+    const names = [
+      'u_modelMatrix', 'u_viewMatrix', 'u_projectionMatrix', 'u_normalMatrix',
+      'u_surfaceType', 'u_seed', 'u_hasAtmosphere', 'u_colorLow', 'u_colorHigh', 'u_colorAtmo',
+      'u_lightDir', 'u_lightColor', 'u_ambientColor', 'u_ambientStrength', 'u_cameraPos', 'u_time'
+    ];
+    for (const nm of names) this.uniforms[nm] = gl.getUniformLocation(prog, nm);
+    this.program = prog;
+    return true;
   }
 
   public cleanup(): void {
-    if (this.program) { this.gl.deleteProgram(this.program); this.program = null; }
+    const gl = this.gl;
+    if (this.pendingVs) { gl.deleteShader(this.pendingVs); this.pendingVs = null; }
+    if (this.pendingFs) { gl.deleteShader(this.pendingFs); this.pendingFs = null; }
+    if (this.pendingProgram) { gl.deleteProgram(this.pendingProgram); this.pendingProgram = null; }
+    if (this.program) { gl.deleteProgram(this.program); this.program = null; }
   }
 }
