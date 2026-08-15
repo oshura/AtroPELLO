@@ -338,27 +338,53 @@ Datos base (espacio unidad ×800): tubo de radio 0.13 (Ø 208 u); dos arcos vivo
 (segmentos 10–29 y 32–47+0–5, es decir ~150° y ~135° de túnel curvo); 4 bocas de entrada (2 por corte).
 La nave (~15 u) cabe de sobra; el reto es visual y de cámara, no de espacio.
 
+**Iteración de diseño (usuario, 2026-08-15):** el tubo NO es un conducto hueco — era zona habitada con
+**3 CUBIERTAS (pisos)** apiladas dentro (Ø 208 u → ~55–65 u por piso con estructura). Consecuencias:
+1. **Tapas de corte con anatomía**: cada boca del Incidente se CIERRA con una tapa-sección donde se ve
+   el corte de los 3 pisos: **puertas** (los huecos por los que se entra con la nave), **tuberías** y
+   **trozos de pasillo rotos** a las 3 alturas. Se entra por las puertas/boquetes de la tapa, no por
+   un agujero limpio.
+2. **Ventanas exteriores a las 3 alturas de cubierta**: filas de ventanas en la superficie exterior
+   del toroide, en las 3 latitudes de piso. La estación está muy dañada y la energía es inestable →
+   la MAYORÍA apagadas (cristal muerto oscuro), solo ALGUNAS encendidas (cálido tenue) y 1–2
+   **parpadeando** de forma irregular. Cuentan los pisos desde fuera sin entrar. Determinista por
+   semilla (qué ventana está viva); el parpadeo es FX de tiempo (función tiempo+semilla, sin estado).
+
 ### 7.1 Colisión (extiende Fase 11, coste bajo)
 - `TorusShape` gana `wall?: number` (grosor de pared, ~0.012 unidad ≈ 10 u): material = cáscara
   `{ p : |d_superficie(p)| ≤ wall }` → `sdf_hueco = |sdf_actual| − wall`. Normal = gradiente
   (`sign(d)·normal_actual`): dentro de la cavidad empuja hacia el EJE del tubo — deslizas por la pared
   interior igual que por el casco. Los `gapSegments` siguen funcionando (las bocas quedan abiertas).
+- **Cubiertas**: cajas finas por segmento vivo siguiendo la curva (3 pisos × ~34 segmentos), con
+  TRAMOS AUSENTES por semilla (suelo roto = agujeros entre pisos, volables).
+- **Tapas de corte**: exigen dos extensiones del catálogo de Fase 11: caja ORIENTADA (basis/yaw
+  local — las caras de corte no están alineadas a los ejes) y formas SUSTRACTIVAS
+  (`subtract: true`: material = tapa MENOS huecos de puerta, `max(d_tapa, −d_puerta)`).
 - Mamparos OPCIONALES por gameplay: cajas finas transversales cada N segmentos (compartimentos con
   boquetes propios), usando el mismo catálogo de formas. A decidir con el contenido (§7.4).
-- Spec: puntos dentro de la cavidad sin contacto; contra pared interior/exterior con normal correcta;
-  conformidad malla↔collider actualizada (la superficie interior nueva también debe caer en la cáscara).
+- Spec: puntos dentro de la cavidad sin contacto; contra pared interior/exterior/cubiertas con normal
+  correcta; atravesar una puerta de la tapa sin contacto y chocar contra la tapa fuera de las puertas;
+  conformidad malla↔collider actualizada (las superficies interiores nuevas también caen en material).
 
 ### 7.2 Visual interior (el trabajo de verdad)
 La malla actual es SOLO la superficie exterior con backface culling → desde dentro se vería
 transparente. Plan:
-- Segunda superficie de tubo (mismo `pushTorus`, radio `TUBE_RADIUS − wall`, normales INVERTIDAS,
-  paleta oscura `HULL_DARK`×0.5) — el "forro" interior. Mismas constantes, mismo fichero.
-- **Costillas/cuadernas**: anillos de refuerzo cada ~4 segmentos (toros parciales finos o cajas
-  curvadas aproximadas) para dar lectura de profundidad al túnel.
-- **Luz**: puntos emissive tenues (patrón `StationEmissivePoints`/bolas emissive ya existente) cada
-  pocos segmentos — ámbar de emergencia, parpadeo sutil determinista por semilla.
-- **Bocas de corte**: collar de "metal desgarrado" (anillo corto de quads irregulares por semilla) en
-  las 4 caras de corte, que vende la entrada y tapa el canto hueco de la cáscara.
+- **Forro interior**: segunda superficie de tubo (mismo `pushTorus`, radio `TUBE_RADIUS − wall`,
+  normales INVERTIDAS, paleta oscura `HULL_DARK`×0.5). Mismas constantes, mismo fichero.
+- **3 cubiertas**: bandas curvas de suelo a las 3 alturas (quads por segmento vivo), con tramos rotos
+  por semilla (bordes irregulares); barandillas/costillas opcionales. Es lo que da escala y lectura
+  de "esto era una estación habitada".
+- **Tapas de corte** (sustituyen al collar de metal desgarrado): disco-sección en cada boca con el
+  corte de los 3 pisos visible — marcos de **puerta** (los huecos navegables, borde emissive tenue),
+  **tuberías** cortadas (cilindros/quads oscuros) y **trozos de pasillo** asomando. Todo geometría
+  low-poly por semilla, mismas constantes que las cubiertas.
+- **Ventanas exteriores**: quads emissive pequeños sobre la superficie del toroide en las 3 latitudes
+  de cubierta, solo en segmentos vivos. Estados por semilla: ~80% muertas (oscuras, no emissive),
+  ~15% encendidas (cálido tenue), ~5% parpadeo irregular (modulación por función tiempo+semilla en el
+  pase emissive, patrón bolas de motor/puertos ya existente). Sin luz real: solo emissive.
+- **Costillas/cuadernas**: anillos de refuerzo cada ~4 segmentos para dar profundidad al túnel.
+- **Luz interior**: puntos emissive tenues cada pocos segmentos — ámbar de emergencia, mismo lenguaje
+  de "energía inestable" que las ventanas (algunos tramos a oscuras).
 
 ### 7.3 Cámara
 La cámara de seguimiento orbita DETRÁS de la nave → dentro del túnel atravesaría la pared. Necesita
@@ -372,8 +398,12 @@ Candidatos: restos flotantes (pecios pequeños con física de asteroide), un pic
 atenuado dentro. El diseño narrativo se cierra en `docs/HISTORIA.md` §5 antes de implementar.
 
 ### 7.5 Rebanadas (cada una build+tests verdes + bump)
-- **I1** — colisión hueca (`wall`) + specs + conformidad actualizada. Jugable: entras y deslizas.
-- **I2** — visual interior (forro + costillas + luz + collares de corte).
+- **I0** — **ventanas exteriores** (independiente del interior: visible YA desde fuera, sin abrir el
+  casco). Buen primer entregable para validar el lenguaje de "energía inestable".
+- **I1** — colisión: casco hueco (`wall`) + cubiertas + tapas con puertas (caja orientada + formas
+  sustractivas en el catálogo) + specs. Se activa junto a I2.
+- **I2** — visual interior (forro + 3 cubiertas rotas + tapas-sección con puertas/tubos/pasillos +
+  costillas + luz interior).
 - **I3** — clamp de cámara en interiores.
 - **I4** — contenido (restos/memoria/criatura) tras cerrar §7.4.
 Riesgo mayor: I2/I3 (percepción). I1 solo se activa cuando I2 exista — hasta entonces el casco sigue
