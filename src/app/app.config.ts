@@ -12,7 +12,13 @@ import { CloudSettings, CLOUD_SETTINGS, resolveCloudSettings } from './settings/
 import { LandingSettings, LANDING_SETTINGS, normalizeLandingUrl, resolveLandingSettings } from './settings/landing-settings';
 
 function initAudioManifest(manifest: AudioManifestService) {
-  return () => manifest.init();
+  // NO bloqueante: arranca la descarga/decodificación del audio (~37 MB) y deja pintar la app YA.
+  // Antes se devolvía la promesa y el bootstrap entero (formulario de bienvenida incluido) esperaba
+  // a decodificar TODO el audio — segundos de pantalla congelada en producción. La música y los SFX
+  // ya esperan su buffer bajo demanda (whenReady/loadByName), así que no necesitan este bloqueo.
+  return () => {
+    void manifest.init();
+  };
 }
 
 const baseCloudSettings = resolveCloudSettings();

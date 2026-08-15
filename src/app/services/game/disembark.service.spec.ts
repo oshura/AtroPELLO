@@ -1,7 +1,7 @@
 import { DisembarkService } from './disembark.service';
 import { PlanetType } from '../../game/game-objects/Planet';
 
-describe('DisembarkService', () => {
+describe('DisembarkService (placeholder: sin salto a juegos externos)', () => {
   let svc: DisembarkService;
   let logger: { info: jasmine.Spy; warn: jasmine.Spy };
 
@@ -10,43 +10,23 @@ describe('DisembarkService', () => {
     svc = new DisembarkService(logger as any);
   });
 
-  it('mapea la estación → estacion-humana', () => {
-    expect(svc.landingContextToEntryCode({ kind: 'station' })).toBe('estacion-humana');
-  });
-
-  it('mapea la Tierra → planeta-tierra', () => {
-    expect(svc.landingContextToEntryCode({ kind: 'planet', planetType: PlanetType.Tierra })).toBe('planeta-tierra');
-  });
-
-  it('mapea planetas rocosos (y sin tipo) → planeta-rocoso', () => {
-    expect(svc.landingContextToEntryCode({ kind: 'planet', planetType: PlanetType.Planetoid })).toBe('planeta-rocoso');
-    expect(svc.landingContextToEntryCode({ kind: 'planet', planetType: PlanetType.Dwarf })).toBe('planeta-rocoso');
-    expect(svc.landingContextToEntryCode({ kind: 'planet' })).toBe('planeta-rocoso');
-  });
-
-  it('el Sol no es aterrizable → null (botón oculto)', () => {
-    expect(svc.landingContextToEntryCode({ kind: 'planet', planetType: PlanetType.Sun })).toBeNull();
-    expect(svc.canDisembark({ kind: 'planet', planetType: PlanetType.Sun })).toBe(false);
-  });
-
-  it('canDisembark refleja el mapeo', () => {
+  it('el botón se muestra en estación y planetas (también sin tipo)', () => {
     expect(svc.canDisembark({ kind: 'station' })).toBe(true);
+    expect(svc.canDisembark({ kind: 'planet', planetType: PlanetType.Tierra })).toBe(true);
     expect(svc.canDisembark({ kind: 'planet', planetType: PlanetType.Planetoid })).toBe(true);
+    expect(svc.canDisembark({ kind: 'planet' })).toBe(true);
   });
 
-  it('disembark abre window.open con entry + return y loguea', () => {
-    const openSpy = spyOn(window, 'open').and.returnValue(null);
-    expect(svc.disembark({ kind: 'station' })).toBe(true);
-    expect(openSpy).toHaveBeenCalledTimes(1);
-    const url = openSpy.calls.mostRecent().args[0] as string;
-    expect(url).toContain('oldone.html?entry=estacion-humana');
-    expect(url).toContain('return=');
-    expect(logger.info).toHaveBeenCalled();
-  });
-
-  it('disembark en un sitio sin mapeo no abre nada', () => {
-    const openSpy = spyOn(window, 'open');
+  it('el Sol no es aterrizable (botón oculto)', () => {
+    expect(svc.canDisembark({ kind: 'planet', planetType: PlanetType.Sun })).toBe(false);
     expect(svc.disembark({ kind: 'planet', planetType: PlanetType.Sun })).toBe(false);
+  });
+
+  it('disembark NO abre ningún otro juego ni pestaña (el salto al 2D se retiró)', () => {
+    const openSpy = spyOn(window, 'open');
+    expect(svc.disembark({ kind: 'station' })).toBe(true);
+    expect(svc.disembark({ kind: 'planet', planetType: PlanetType.Tierra })).toBe(true);
     expect(openSpy).not.toHaveBeenCalled();
+    expect(logger.info).toHaveBeenCalled();
   });
 });

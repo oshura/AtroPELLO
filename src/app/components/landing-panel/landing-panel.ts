@@ -35,12 +35,12 @@ export class LandingPanelComponent implements OnChanges {
     private readonly disembark: DisembarkService
   ) {}
 
-  /** ¿Este planeta tiene mundo 2D? (muestra el botón "Bajar de la nave"). */
+  /** ¿Se puede "bajar de la nave" aquí? (muestra el botón; el Sol no). */
   protected get canDisembark(): boolean {
     return !!this.context && this.disembark.canDisembark({ kind: 'planet', planetType: this.context.planetType });
   }
 
-  /** Salta al juego 2D (nueva pestaña) en el bioma del planeta. */
+  /** "Bajar de la nave" (placeholder: la experiencia propia está por implementar; sin salto externo). */
   onDisembark(): void {
     if (this.context) {
       this.disembark.disembark({ kind: 'planet', planetType: this.context.planetType });

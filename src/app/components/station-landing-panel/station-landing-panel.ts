@@ -79,7 +79,7 @@ export class StationLandingPanelComponent implements OnChanges {
     private readonly disembark: DisembarkService
   ) {}
 
-  /** Salta al juego 2D (nueva pestaña) en el mundo de la estación humana. */
+  /** "Bajar de la nave" (placeholder: la experiencia propia está por implementar; sin salto externo). */
   protected onDisembark(): void {
     this.disembark.disembark({ kind: 'station' });
   }
