@@ -266,11 +266,14 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
           this.updateInputEnabled(state);
         });
 
-        // Cambiar a estado listo
+        // Cambiar a estado listo. ZONELESS: este flujo async no dispara change detection solo —
+        // sin detectChanges() el velo de carga se quedaría para siempre y el diálogo jamás saldría.
         this.stateManager.setState(GameState.READY);
+        this.cdr.detectChanges();
         this.logger.info(LogCategory.GAME_INITIALIZATION, 'Game initialized successfully', result);
       } else {
         this.stateManager.setState(GameState.ERROR);
+        this.cdr.detectChanges();
         this.uiManager.showError(result.error || 'Unknown initialization error');
         this.logger.error(LogCategory.GAME_INITIALIZATION, 'Game initialization failed', result.error);
       }
@@ -283,6 +286,7 @@ export class Game implements AfterViewInit, OnDestroy, OnInit {
       }
       
       this.stateManager.setState(GameState.ERROR);
+      this.cdr.detectChanges();
       this.uiManager.showError(error instanceof Error ? error.message : 'Initialization error');
       this.logger.error(LogCategory.GAME_INITIALIZATION, 'Game initialization error', error);
     }
