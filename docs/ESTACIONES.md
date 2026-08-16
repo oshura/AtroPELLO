@@ -120,10 +120,11 @@ interface SpaceStationHost {
 ```
 
 ## 3. Acople (flujo) y animación
-1. Nave a <50u de un `DockPort` intacto y libre → **piloto de aterrizar ON** (reusar el indicador HUD
-   del aterrizaje planetario).
-2. El jugador confirma → **animación de acople**: la nave vuela desde su posición y **acopla su panza a
-   la tile** (nueva animación tipo `landing-sequence.animation.ts`, reutilizando cámara/holds del
+> REVISADO 2026-08-16 (build 60): la condición de acople pasa a ser el **corredor de marcos neón**, ver §8.
+1. Nave DENTRO del corredor de marcos de un `DockPort` acoplable y a **≤5 u/s de velocidad RELATIVA
+   al puerto** → **piloto de aterrizar ON** (reusa el indicador HUD del aterrizaje planetario).
+2. El jugador confirma (ENTER) → **animación de acople**: la nave vuela desde su posición y **acopla su
+   panza a la tile** (nueva animación tipo `landing-sequence.animation.ts`, reutilizando cámara/holds del
    aterrizaje: `landing-camera-hold`, `ship-landing-positioner`).
 3. Al terminar → **menú de aterrizaje de la estación** (§4).
 
@@ -427,3 +428,25 @@ atenuado dentro. El diseño narrativo se cierra en `docs/HISTORIA.md` §5 antes 
 - ~~I1 colisión hueca~~ / ~~I2 visual interior~~ / ~~I3 cámara~~ — RETIRADAS (revisión 2026-08-16:
   el toroide queda sellado; el interior se vivirá como FPS en otro render/mundo).
 - **I4** — contenido: se replantea para la experiencia FPS aparte (cerrar §7.4 + HISTORIA §5 antes).
+
+## 8. Corredor de acople con MARCOS NEON (build 60, 2026-08-16)
+Peticion del usuario (con esbozo): senalizar visualmente DONDE y COMO se puede atracar.
+
+- **Marcos neon**: 3 marcos rectangulares cian, finos, flotando frente a cada puerto ACOPLABLE a lo
+  largo de la normal de aproximacion (16/33/50u), formando un EMBUDO (el lejano es el mayor). Se
+  encienden en secuencia de fuera hacia dentro (lejano, medio, cercano) y se apagan en el mismo orden,
+  en ciclo (6 pasos x 0.3s) — "aterriza aqui, en esta direccion". Brillo residual 0.18 al estar
+  "apagado" para que el corredor siempre se lea.
+- **Condicion de acople**: nave DENTRO del embudo Y a <=5 u/s de velocidad RELATIVA al puerto
+  (el puerto se mueve con el giro de la estacion: v_puerto = omega x r, ~9 u/s en el radio de los
+  brazos). Cumplida -> piloto "Land" del HUD encendido; ENTER lanza la cinematica de siempre.
+- **Asistencia de atraque**: con la nave dentro del corredor, el giro de la estacion se FRENA suave
+  (easing, `SPIN_EASE_RATE`) hasta pararse; sin esto la relativa nunca bajaria de 5 con la nave
+  parada y el corredor barreria lateralmente. Al salir del corredor el giro se reanuda.
+- **Puertos NO acoplables**: los pecios rusty atracados se RETIRAN (borrados `docked-ship-wreck.ts`,
+  `ship-wreck-geometry.ts` y los 6 `createXxxGeometry` huerfanos de `Spaceship`, -364 lineas); el
+  tile queda en AZUL OSCURO sin emissive y sin marcos (no se puede atracar).
+- **Codigo**: `station-dock-frames.ts` (geometria de marcos en espacio local del tile + secuencia +
+  test de embudo, con spec); candidato/relativa/freno en `SpaceStationSystem` (host: -getShipWreckMesh,
+  +getShipVelocity); render de marcos en `StationRenderer` (mallas compartidas, 3 draws por puerto
+  acoplable con el modelMatrix del `DockPort`); motor solo delega (`isDockReady`).

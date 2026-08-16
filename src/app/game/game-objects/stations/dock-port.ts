@@ -11,6 +11,7 @@ const QUAD_N = [0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1];
 const QUAD_UV = [0, 0, 1, 0, 1, 1, 0, 1];
 const QUAD_I = [0, 1, 2, 0, 2, 3];
 const PORT_BLUE: [number, number, number] = [0.25, 0.58, 1.0]; // azul brillante (canal B=1 ⇒ luce emissive)
+const PORT_BLUE_DARK: [number, number, number] = [0.08, 0.14, 0.32]; // azul oscuro: puerto NO acoplable
 
 /**
  * "Tile" de acople: polígono azul luminoso, seleccionable como cualquier objeto del espacio. Reutilizable
@@ -26,6 +27,9 @@ export class DockPort extends GameObject {
   public occupied = false;     // true mientras una nave está acoplada
   /** Normal de acople en MUNDO (dirección de aproximación de la nave). La fija el SpaceStationSystem. */
   public approachNormal: Vector3 = { x: 0, y: 1, z: 0 };
+  /** Right/up de la cara del tile en MUNDO (completan la base del corredor de marcos neón, §8). */
+  public approachRight: Vector3 = { x: 1, y: 0, z: 0 };
+  public approachUp: Vector3 = { x: 0, y: 0, z: 1 };
 
   constructor(id: string, position: Vector3, parentStationId: string, size = 40, intact = true) {
     super(id, position, { x: 0, y: 0, z: 0 }, { x: size, y: size, z: size });
@@ -69,7 +73,16 @@ export class DockPort extends GameObject {
   public setWorldBasis(pos: Vector3, right: Vector3, up: Vector3, normal: Vector3): void {
     this.position.x = pos.x; this.position.y = pos.y; this.position.z = pos.z;
     this.approachNormal = { x: normal.x, y: normal.y, z: normal.z };
+    this.approachRight = { x: right.x, y: right.y, z: right.z };
+    this.approachUp = { x: up.x, y: up.y, z: up.z };
     composeBasisMatrix(this.modelMatrix, pos, right, up, normal, this.scale);
+  }
+
+  /** Tinte azul OSCURO para puertos permanentemente no acoplables (ocupados/destruidos). Antes de initBuffers. */
+  public setInactiveTint(): void {
+    this.colors = new Float32Array([
+      ...PORT_BLUE_DARK, ...PORT_BLUE_DARK, ...PORT_BLUE_DARK, ...PORT_BLUE_DARK,
+    ]);
   }
 
   /** ¿El puerto admite acople ahora mismo? (intacto y libre). */

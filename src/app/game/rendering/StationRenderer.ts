@@ -5,13 +5,13 @@ import { SpaceStationSystem } from '../services/state/space-station-system';
 import { HumanSpaceStation } from '../game-objects/stations/human-space-station';
 import { DockPort } from '../game-objects/stations/dock-port';
 import { StationEmissiveBall } from '../game-objects/stations/station-emissive-ball';
-import { DockedShipWreck } from '../game-objects/stations/docked-ship-wreck';
 import { StationWindowMesh, windowFlickerIntensity } from '../game-objects/stations/station-windows';
+import { buildDockFrameMeshes, dockFrameIntensity } from '../game-objects/stations/station-dock-frames';
 
 /**
  * Render de la estación espacial (extraído de GameEngine.renderSpaceStation, regla #1: el motor solo
- * delega). Cuerpo texturizado + puertos emissive + bola de motor + VENTANAS (§7 I0, capa fija +
- * parpadeante) + pecios atracados. Cull desactivado en todo el pase (toroide visible por ambas caras).
+ * delega). Cuerpo texturizado + puertos emissive + MARCOS NEÓN de acople (§8) + bola de motor +
+ * VENTANAS (§7 I0, capa fija + parpadeante). Cull desactivado en todo el pase (visible por ambas caras).
  */
 export interface StationRenderHost {
   getGl(): WebGL2RenderingContext | null;
@@ -29,8 +29,8 @@ export class StationRenderer {
   private renderedStation: HumanSpaceStation | null = null;
   private renderedPorts: DockPort[] = [];
   private renderedMotors: StationEmissiveBall[] = [];
-  private renderedWrecks: DockedShipWreck[] = [];
   private renderedWindows: StationWindowMesh[] = [];
+  private frameMeshes: StationWindowMesh[] = []; // marcos neón compartidos por puerto (0=cercano..2=lejano)
   private diffuseTex: WebGLTexture | null = null;
   private texLoading = false;
   private lastGl: WebGL2RenderingContext | null = null;
@@ -45,14 +45,14 @@ export class StationRenderer {
       if (this.renderedStation) { try { this.renderedStation.destroy(gl); } catch {} }
       for (const p of this.renderedPorts) { try { p.destroy(gl); } catch {} }
       for (const m of this.renderedMotors) { try { m.destroy(gl); } catch {} }
-      for (const w of this.renderedWrecks) { try { w.destroy(gl); } catch {} }
       for (const v of this.renderedWindows) { try { v.destroy(gl); } catch {} }
+      for (const f of this.frameMeshes) { try { f.destroy(gl); } catch {} }
     }
     this.renderedStation = null;
     this.renderedPorts = [];
     this.renderedMotors = [];
-    this.renderedWrecks = [];
     this.renderedWindows = [];
+    this.frameMeshes = [];
   }
 
   render(host: StationRenderHost): void {
@@ -104,8 +104,8 @@ export class StationRenderer {
     sm.setLitTexture(false);
     sm.setLitVertexColorMode(false);
 
-    // Puertos de acople: los ACOPLABLES (libres) lucen azul emissive; los ocupados por un pecio quedan
-    // "apagados" (sin emissive), ya que no se puede aterrizar en ellos.
+    // Puertos de acople: los ACOPLABLES lucen azul emissive; el resto va en azul OSCURO apagado
+    // (tinte del propio tile), ya que no se puede aterrizar en ellos.
     sm.setLitVertexColorMode(true);
     for (const p of system.getPorts()) {
       if (!p.isActive()) continue;
@@ -114,6 +114,28 @@ export class StationRenderer {
       this.setNormalMatrix(p.modelMatrix);
       sm.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
       p.render(gl, sm.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+    }
+
+    // Marcos NEÓN de aproximación (§8): 3 marcos por puerto acoplable a lo largo de la normal, en
+    // espacio local del tile (giran con la estación gratis). Secuencia de fuera hacia dentro.
+    const ports = system.getPorts();
+    if (this.frameMeshes.length === 0 && ports.length > 0) {
+      let fi = 0;
+      for (const md of buildDockFrameMeshes(ports[0].size)) {
+        this.frameMeshes.push(new StationWindowMesh(`dock-frames-${fi++}`, { x: 0, y: 0, z: 0 }, md));
+      }
+    }
+    const tSec = performance.now() / 1000;
+    for (const p of ports) {
+      if (!p.isActive() || !p.isDockable()) continue;
+      this.setNormalMatrix(p.modelMatrix);
+      sm.setLitMatrices(p.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
+      for (let k = 0; k < this.frameMeshes.length; k++) {
+        const fm = this.frameMeshes[k];
+        if (!fm.vertexBuffer) fm.initBuffers(gl);
+        sm.setLitEmissive(dockFrameIntensity(tSec, k));
+        fm.render(gl, sm.litProgram!, cam.viewMatrix, cam.projectionMatrix);
+      }
     }
     // "Bola" de motor (rojo/naranja, tobera del núcleo) — emissive más suave ("apagado").
     sm.setLitEmissive(0.75);
@@ -145,18 +167,6 @@ export class StationRenderer {
     }
     sm.setLitVertexColorMode(false);
     sm.setLitEmissive(0.0);
-
-    // Réplicas atracadas (pecios): SÓLIDO rusty/quemado con iluminación (color por vértice, sin textura).
-    sm.setLitVertexColorMode(true);
-    sm.setSpecular(this.camPos, 0.08, 8.0);
-    for (const w of system.getWrecks()) {
-      if (!w.isActive()) continue;
-      if (!w.vertexBuffer) { w.initBuffers(gl); this.renderedWrecks.push(w); }
-      this.setNormalMatrix(w.modelMatrix);
-      sm.setLitMatrices(w.modelMatrix, cam.viewMatrix, cam.projectionMatrix, this.normalMatrix);
-      w.render(gl, sm.litProgram!, cam.viewMatrix, cam.projectionMatrix);
-    }
-    sm.setLitVertexColorMode(false);
 
     if (wasCull) gl.enable(gl.CULL_FACE);
   }

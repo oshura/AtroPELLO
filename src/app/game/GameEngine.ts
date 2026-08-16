@@ -36,7 +36,6 @@ import { SpaceTurtleSystem, SpaceTurtleHost } from './services/state/space-turtl
 import { SpaceStationSystem, SpaceStationHost } from './services/state/space-station-system';
 import { DockPort } from './game-objects/stations/dock-port';
 import { StationRenderer, StationRenderHost } from './rendering/StationRenderer';
-import { buildShipWreckMesh } from './game-objects/stations/ship-wreck-geometry';
 import { createPortalFromSnapshot } from './services/game/portal-state.codec';
 import { captureLesserBeingSnapshot, cloneLesserBeingSnapshot } from './services/game/lesser-being-state.codec';
 import { resolveSnapshotId, resolveSystemId, resolveSystemKey } from './services/game/system-identity';
@@ -723,10 +722,10 @@ export class GameEngine {
     onDockReady: (port) => {
       this.stationDockCandidate = port;
       if (port) {
-        try { this.showPlaceholderText('Puerto espacial a tiro — pulsa ENTER para acoplar', 2600); } catch {}
+        try { this.showPlaceholderText('Corredor de acople — reduce a 5 u/s y pulsa ENTER', 2600); } catch {}
       }
     },
-    getShipWreckMesh: () => this.spaceship ? buildShipWreckMesh(this.spaceship) : null,
+    getShipVelocity: () => this.spaceship ? this.spaceship.velocity : null,
     isDockingBusy: () => this.stationPanelOpen || this.stationDockingActive,
     registerCollider: (def) => this.shipCollisionSystem.registerStructured(def),
     unregisterCollider: (id) => this.shipCollisionSystem.unregisterStructured(id),
@@ -7783,13 +7782,9 @@ export class GameEngine {
     this.shaderManager.setLitEmissive(0.0);
   }
 
-  /** ¿Se puede acoplar AHORA? Puerto acoplable a tiro Y nave a velocidad ≤ 5 u/s. */
+  /** ¿Se puede acoplar AHORA? Nave dentro del corredor de marcos Y a ≤5 u/s RELATIVA al puerto (§8). */
   private isStationDockReady(): boolean {
-    const cand = this.spaceStationSystem.getDockCandidate();
-    if (!cand || !cand.isDockable() || !this.spaceship) {
-      return false;
-    }
-    return Math.abs(this.spaceship.currentSpeed) <= 5; // u/s máx para permitir acople (piloto "Land")
+    return this.spaceStationSystem.isDockReady();
   }
 
   /**
@@ -7807,7 +7802,7 @@ export class GameEngine {
     this.stationDockPromptTimer -= dt;
     if (this.stationDockPromptTimer <= 0) {
       this.stationDockPromptTimer = 2.5;
-      try { this.showPlaceholderText('Puerto espacial a tiro — pulsa ENTER para acoplar', 2400); } catch {}
+      try { this.showPlaceholderText('Acople listo — pulsa ENTER para atracar', 2400); } catch {}
     }
   }
 
@@ -7821,11 +7816,11 @@ export class GameEngine {
     if (this.stationPanelOpen || this.stationDockingActive) {
       return false;
     }
+    // Condición §8: nave dentro del corredor de marcos Y a ≤5 u/s relativa (la que anuncia el piloto).
     const cand = this.spaceStationSystem.getDockCandidate();
-    if (!cand || !cand.isDockable()) {
-      return false; // no hay puerto libre a tiro → ENTER no es para acoplar
+    if (!cand || !this.spaceStationSystem.isDockReady()) {
+      return false; // sin corredor o demasiado rápido → ENTER no es para acoplar
     }
-    // ENTER es deliberado: acoplamos a cualquier velocidad dentro de rango (la cinemática frena la nave).
     this.startStationDocking('docking', cand);
     return true;
   }

@@ -4,18 +4,17 @@ import { HumanSpaceStation, HUMAN_STATION_ID } from '../../game-objects/stations
 import type { StructuredColliderDef } from '../physics/collision/collision-shape.types';
 import { DockPort } from '../../game-objects/stations/dock-port';
 import { StationEmissiveBall } from '../../game-objects/stations/station-emissive-ball';
-import { DockedShipWreck } from '../../game-objects/stations/docked-ship-wreck';
 import { StationWindowMesh } from '../../game-objects/stations/station-windows';
-import { WreckMesh } from '../../game-objects/stations/ship-wreck-geometry';
+import { isInsideDockCorridor } from '../../game-objects/stations/station-dock-frames';
 
 /** Puente del sistema con el motor (todo via host: sin acoplar a GameEngine, testeable). */
 export interface SpaceStationHost {
   getShipPosition(): Vector3 | null;
+  getShipVelocity(): Vector3 | null;    // velocidad de la nave en mundo (para la velocidad RELATIVA al puerto)
   getEarthPosition(): Vector3 | null;   // centro de la cola de asteroides (la Tierra partida)
   isHumanSystem(): boolean;             // la estación humana solo existe en el sistema humano
   isBusy(): boolean;                    // animación/void jump activos → no spawnear todavía
-  onDockReady(port: DockPort | null): void; // puerto acoplable dentro de rango (o null)
-  getShipWreckMesh(): WreckMesh | null; // malla de alambre de la nave (para réplicas atracadas)
+  onDockReady(port: DockPort | null): void; // nave dentro del corredor de un puerto acoplable (o null)
   isDockingBusy(): boolean;             // acoplada o en animación de atraque → congelar el giro
   registerCollider(def: StructuredColliderDef): void;   // alta del collider estructurado (Fase 11 R4)
   unregisterCollider(id: string): void;                 // baja al despawnear/cambiar de sistema
@@ -28,15 +27,14 @@ const PORT_SIZE = 8;           // tamaño de la tile de acople (20% del anterior
 const SPIN_SPEED = 0.025;      // rad/s — giro lento sobre el propio eje del toroide (rueda; núcleo = eje). Mitad de velocidad (antes 0.05)
 const TILT = (25 * Math.PI) / 180; // inclinación inicial (~25°) en un par de ejes
 const MOTOR_COLOR: [number, number, number] = [1.0, 0.40, 0.10]; // motor "apagado" rojo/naranja (bola emissive)
-const WRECK_SCALE = 22;        // semieje (mundo) del pecio atracado (nave del jugador, sólido rusty)
-const WRECK_OFFSET = 18;       // separación (mundo) del pecio hacia afuera del puerto (a lo largo de la normal)
-const FREE_PORTS = new Set<number>([0, 5]); // puertos LIBRES (sin pecio, acoplables); el resto llevan réplica
-export const DOCK_RANGE = 50;  // u: a esta distancia de un puerto se enciende el piloto de acople
+const FREE_PORTS = new Set<number>([0, 5]); // puertos ACOPLABLES (con marcos neón); el resto, azul oscuro
+export const MAX_DOCK_RELATIVE_SPEED = 5; // u/s relativa al puerto para que el piloto se encienda (§8)
+const SPIN_EASE_RATE = 1.6;    // 1/s — el giro se frena/reanuda suavemente al entrar/salir del corredor
 
 /**
  * Estación espacial humana como LANDMARK FIJO del sistema humano (regenerado idéntico por semilla; sin
  * persistencia). Lógica FUERA del GameEngine (regla #1): el motor llama `update` por frame y
- * `getRenderable`/`getPorts`/`getMotors`/`getWrecks` en el pase de render/targeting.
+ * `getRenderable`/`getPorts`/`getMotors`/`getWindows` en el pase de render/targeting.
  * docs/ESTACIONES.md Fase 9.
  */
 export class SpaceStationSystem {
@@ -45,8 +43,9 @@ export class SpaceStationSystem {
   private dockCandidate: DockPort | null = null;
   private motors: StationEmissiveBall[] = [];         // "bola" de motor (tobera del núcleo)
   private motorLocals: [number, number, number][] = []; // centros LOCALES de los motores
-  private wrecks: Array<{ obj: DockedShipWreck; port: number }> = []; // réplicas atracadas por puerto
   private windows: { steady: StationWindowMesh; flicker: StationWindowMesh } | null = null; // §7 I0
+  private spinFactor = 1;                 // 1=giro normal, →0 con la nave en el corredor ("asistencia de atraque")
+  private dockRelativeSpeed = Infinity;   // |v_nave − v_puerto| del candidato actual (u/s)
 
   getRenderable(): HumanSpaceStation | null {
     return this.station;
@@ -61,14 +60,14 @@ export class SpaceStationSystem {
     return this.motors;
   }
 
-  /** Réplicas atracadas (pecios sólidos rusty) que el engine renderiza con iluminación. */
-  getWrecks(): DockedShipWreck[] {
-    return this.wrecks.map(w => w.obj);
-  }
-
-  /** Puerto acoplable más cercano dentro de rango (null si ninguno). Lo usa el flujo de acople. */
+  /** Puerto acoplable con la nave DENTRO de su corredor de marcos (null si ninguno). Flujo de acople. */
   getDockCandidate(): DockPort | null {
     return this.dockCandidate;
+  }
+
+  /** ¿Piloto de acople encendido? Nave en el corredor Y a ≤5 u/s de velocidad RELATIVA al puerto (§8). */
+  isDockReady(): boolean {
+    return this.dockCandidate !== null && this.dockRelativeSpeed <= MAX_DOCK_RELATIVE_SPEED;
   }
 
   /** Capas de ventanas (fijas + parpadeantes) en espacio unidad; se dibujan con el modelMatrix de la estación. */
@@ -85,8 +84,9 @@ export class SpaceStationSystem {
     this.dockCandidate = null;
     this.motors = [];
     this.motorLocals = [];
-    this.wrecks = [];
     this.windows = null;
+    this.spinFactor = 1;
+    this.dockRelativeSpeed = Infinity;
   }
 
   update(host: SpaceStationHost, dt: number): void {
@@ -109,27 +109,36 @@ export class SpaceStationSystem {
     }
 
     // Giro como una RUEDA sobre el propio eje del toroide (spin = Y local, más interno que la inclinación).
-    // Congelado mientras está acoplada/en animación (para que la nave acoplada no se "despegue" del puerto).
+    // Congelado mientras está acoplada/en animación; con la nave en un corredor de acople se FRENA suave
+    // ("asistencia de atraque"): si no, el puerto barre a ~9 u/s y la velocidad relativa nunca bajaría de 5.
     if (!host.isDockingBusy()) {
-      this.station.spin += SPIN_SPEED * dt;
-      this.station.updateModelMatrix();
-      this.rebuildWorldTransforms();
+      const target = this.dockCandidate ? 0 : 1;
+      this.spinFactor += (target - this.spinFactor) * Math.min(1, dt * SPIN_EASE_RATE);
+      if (target === 0 && this.spinFactor < 0.01) {
+        this.spinFactor = 0;
+      }
+      if (this.spinFactor > 0) {
+        this.station.spin += SPIN_SPEED * this.spinFactor * dt;
+        this.station.updateModelMatrix();
+        this.rebuildWorldTransforms();
+      }
     }
 
-    // Detección de acople: puerto acoplable más cercano dentro de DOCK_RANGE.
+    // Detección de acople (§8): la nave debe estar DENTRO del corredor de marcos de un puerto acoplable.
     const ship = host.getShipPosition();
     if (!ship) {
       return;
     }
     let best: DockPort | null = null;
-    let bestDist = DOCK_RANGE;
+    let bestDepth = Infinity;
     for (const p of this.ports) {
-      if (!p.isDockable()) {
+      if (!p.isDockable() || !isInsideDockCorridor(p, ship)) {
         continue;
       }
-      const d = Math.hypot(p.position.x - ship.x, p.position.y - ship.y, p.position.z - ship.z);
-      if (d <= bestDist) {
-        bestDist = d;
+      const n = p.approachNormal;
+      const depth = (ship.x - p.position.x) * n.x + (ship.y - p.position.y) * n.y + (ship.z - p.position.z) * n.z;
+      if (depth < bestDepth) {
+        bestDepth = depth;
         best = p;
       }
     }
@@ -137,6 +146,30 @@ export class SpaceStationSystem {
       this.dockCandidate = best;
       host.onDockReady(best);
     }
+    const shipVel = host.getShipVelocity();
+    this.dockRelativeSpeed = best && shipVel
+      ? this.computeDockRelativeSpeed(best, shipVel, host.isDockingBusy())
+      : Infinity;
+  }
+
+  /**
+   * Velocidad de la nave RELATIVA al puerto (u/s). El puerto se mueve con el giro de la estación:
+   * v_puerto = ω × r, con ω = eje de giro (Y local en mundo) por la velocidad angular EFECTIVA
+   * (frenada por spinFactor / congelada durante el atraque).
+   */
+  private computeDockRelativeSpeed(port: DockPort, shipVel: Vector3, dockingBusy: boolean): number {
+    const st = this.station!;
+    const w = dockingBusy ? 0 : SPIN_SPEED * this.spinFactor;
+    const m = st.modelMatrix;
+    const al = Math.hypot(m[4], m[5], m[6]) || 1; // columna Y (lleva la escala del radio) → normalizar
+    const ax = (m[4] / al) * w, ay = (m[5] / al) * w, az = (m[6] / al) * w;
+    const rx = port.position.x - st.position.x;
+    const ry = port.position.y - st.position.y;
+    const rz = port.position.z - st.position.z;
+    const vx = ay * rz - az * ry;
+    const vy = az * rx - ax * rz;
+    const vz = ax * ry - ay * rx;
+    return Math.hypot(shipVel.x - vx, shipVel.y - vy, shipVel.z - vz);
   }
 
   private spawn(host: SpaceStationHost, ship: Vector3, earth: Vector3 | null): void {
@@ -162,7 +195,7 @@ export class SpaceStationSystem {
     station.updateModelMatrix();
     this.station = station;
 
-    // Puertos: 2 libres (acoplables) y el resto ocupados por una réplica atracada.
+    // Puertos: 2 acoplables (marcos neón); el resto, cerrados y en azul oscuro (no se puede atracar).
     this.ports = [];
     const placements = station.getPortPlacements();
     for (let i = 0; i < placements.length; i++) {
@@ -170,7 +203,10 @@ export class SpaceStationSystem {
       const port = new DockPort(`${station.id}-port-${pl.id}`, { ...pos }, station.id, PORT_SIZE, pl.intact);
       port.voidMassUnits = station.voidMassUnits; // el detalle muestra características del padre
       if (!FREE_PORTS.has(i)) {
-        port.occupied = true; // ocupado por un pecio → no acoplable (el piloto no se enciende ahí)
+        port.occupied = true; // cerrado → no acoplable (el piloto no se enciende ahí)
+      }
+      if (!port.isDockable()) {
+        port.setInactiveTint(); // azul oscuro (también el destruido por el Incidente)
       }
       this.ports.push(port);
     }
@@ -182,19 +218,6 @@ export class SpaceStationSystem {
     for (const g of station.getMotorGlowsLocal()) {
       this.motors.push(new StationEmissiveBall(`${station.id}-motor-${mi++}`, { ...pos }, g.radius, MOTOR_COLOR, g.flattenY ?? 1));
       this.motorLocals.push([g.center[0], g.center[1], g.center[2]]);
-    }
-
-    // Réplicas atracadas: pecios (nave del jugador) en todos los puertos menos los libres.
-    this.wrecks = [];
-    const wreckMesh = host.getShipWreckMesh();
-    if (wreckMesh) {
-      for (let i = 0; i < this.ports.length; i++) {
-        if (FREE_PORTS.has(i)) {
-          continue;
-        }
-        const obj = new DockedShipWreck(`${station.id}-wreck-${i}`, { ...pos }, wreckMesh, WRECK_SCALE, `${station.id}-wreck-${i}`);
-        this.wrecks.push({ obj, port: i });
-      }
     }
 
     // Ventanas exteriores (§7 I0): capas en espacio unidad, dibujadas con el modelMatrix de la estación.
@@ -218,7 +241,7 @@ export class SpaceStationSystem {
         objectType: GameObjectType.SPACE_STATION,
       });
     }
-    host.log('Space station spawned (human landmark)', { pos, ports: this.ports.length, wrecks: this.wrecks.length, colliderShapes: shapes.length });
+    host.log('Space station spawned (human landmark)', { pos, ports: this.ports.length, colliderShapes: shapes.length });
   }
 
   /**
@@ -275,20 +298,6 @@ export class SpaceStationSystem {
     for (let i = 0; i < this.motors.length; i++) {
       const w = toWorld(this.motorLocals[i]);
       this.motors[i].setWorldBasis(w, exRef, upRef, ezRef);
-    }
-
-    // Pecios: pegados a su puerto (misma base), morro (+Z) hacia afuera a lo largo de la normal.
-    for (const wk of this.wrecks) {
-      const port = this.ports[wk.port];
-      const n = port.approachNormal;
-      const right = norm(cross(upRef, n));
-      const up = cross(n, right);
-      const pos: Vector3 = {
-        x: port.position.x + n.x * WRECK_OFFSET,
-        y: port.position.y + n.y * WRECK_OFFSET,
-        z: port.position.z + n.z * WRECK_OFFSET,
-      };
-      wk.obj.setWorldBasis(pos, right, up, n);
     }
   }
 }
