@@ -3,7 +3,9 @@ import { isPlatformBrowser } from '@angular/common';
 import { LoggingService, LogCategory, LogLevel, LogEntry } from '../logging.service';
 import { CharacterProfileService } from '../game/character-profile.service';
 import { GameInitializer } from '../game/game-initializer.service';
+import { GameStateStore } from '../game/game-state.store';
 import { LesserBeing, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
+import { SpellType } from '../../game/types/spell.types';
 
 @Injectable({ providedIn: 'root' })
 export class DebugStatsOverlayService {
@@ -19,7 +21,8 @@ export class DebugStatsOverlayService {
     @Inject(PLATFORM_ID) private platformId: Object,
     private logging: LoggingService,
     private characterProfile: CharacterProfileService,
-    private gameInitializer: GameInitializer
+    private gameInitializer: GameInitializer,
+    private gameState: GameStateStore
   ) {}
 
   initialize(engine?: any): void {
@@ -89,6 +92,7 @@ export class DebugStatsOverlayService {
           <div class="dbg-controls-row">
             <button id="dbg-btn-survivability-minus">Survivencia -9%</button>
             <button id="dbg-btn-age-plus">+365 días edad</button>
+            <button id="dbg-btn-learn-all-spells">Grimorio completo (god mode)</button>
           </div>
           <div class="dbg-subheader">Spawn Lesser Beings</div>
           <div class="dbg-controls-row">
@@ -307,6 +311,10 @@ export class DebugStatsOverlayService {
     if (ageBtn) {
       ageBtn.onclick = () => this.handleAgeAdvance(365);
     }
+    const spellsBtn = this.overlayElement.querySelector('#dbg-btn-learn-all-spells') as HTMLButtonElement | null;
+    if (spellsBtn) {
+      spellsBtn.onclick = () => this.handleLearnAllSpells();
+    }
     spawnButtons.forEach(({ id, type }) => {
       const btn = this.overlayElement?.querySelector(id) as HTMLButtonElement | null;
       if (!btn) {
@@ -340,6 +348,22 @@ export class DebugStatsOverlayService {
     } catch (error) {
       this.showToolStatus('Error al ajustar edad');
       this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev age advance failed', error);
+    }
+  }
+
+  /** God mode de pruebas: aprende TODOS los glifos (el grimorio real empieza solo con Gate Rite, build 64). */
+  private handleLearnAllSpells(): void {
+    try {
+      const before = this.gameState.getKnownSpells().length;
+      for (const spell of Object.values(SpellType)) {
+        this.gameState.learnSpell(spell);
+      }
+      const total = this.gameState.getKnownSpells().length;
+      this.showToolStatus(`Grimorio completo: ${total} glifos (+${total - before}). Reabre el libro (G).`);
+      this.logging.log(LogLevel.INFO, LogCategory.HUD, 'Dev god mode: grimorio completo', { added: total - before });
+    } catch (error) {
+      this.showToolStatus('Error al aprender los glifos');
+      this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev god mode failed', error);
     }
   }
 
