@@ -39,6 +39,8 @@ export abstract class SpaceStation extends GameObject {
    * estación (aim al núcleo). NO es colisión: la bounding sphere sigue null (ver constructor). docs/ESTACIONES §1.2.1.
    */
   public radius!: number;
+  /** Resumen de puertos para el panel de detalle ("2/8 operativos"). Lo rellena el SpaceStationSystem. */
+  public portsSummary: string | null = null;
   protected stationName!: string;
   /**
    * Ángulo de giro sobre el PROPIO eje del toroide (rueda; el núcleo es el eje). La inclinación fija de la

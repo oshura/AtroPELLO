@@ -80,7 +80,7 @@ import { KeyBindingsService, GameAction } from '../services/key-bindings.service
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
-import { getDisplayLabelFromTargetType, getCategory, targetTypeToGameObjectType, GameObjectCategory } from './types/game-object.types';
+import { getSpecificDisplayLabel, getCategory, targetTypeToGameObjectType, GameObjectCategory } from './types/game-object.types';
 import {
   InventorySelection,
   InventoryPanelRegion,
@@ -5065,31 +5065,10 @@ export class GameEngine {
   // Añadir propiedades visibles comunes: masa del vacío del objeto si existe
   const voidMass = (selected as any).voidMassUnits ?? 0;
   
-  // Obtener tipo real del objeto usando getType()
+  // Label de tipo por subtipo específico (fuente única en game-object.types)
   const objectType = (selected as unknown as GameObject)?.getType?.() || GameObjectType.UNKNOWN;
-  
-  // Determinar label basado en tipo específico
-  let typeLabel: string;
-  switch (objectType) {
-    case GameObjectType.MEGA_ASTEROID:
-      typeLabel = 'MegaAsteroid';
-      break;
-    case GameObjectType.SUPER_ASTEROID:
-      typeLabel = 'SuperAsteroid';
-      break;
-    case GameObjectType.RINGED_PLANET:
-      typeLabel = 'Ringed';
-      break;
-    case GameObjectType.DWARF_PLANET:
-      typeLabel = 'Dwarf';
-      break;
-    case GameObjectType.PROTOPLANET:
-      typeLabel = 'Protoplanet';
-      break;
-    default:
-      typeLabel = getDisplayLabelFromTargetType(selType);
-  }
-  
+  const typeLabel = getSpecificDisplayLabel(objectType, selType);
+
       // Include planet-specific hints when selected is a planet
       const planetIntel = selType === TargetType.PLANET ? this.buildPlanetIntelDetails(selected as Planet) : null;
       const planetHints = (selType === TargetType.PLANET)
@@ -6905,31 +6884,10 @@ export class GameEngine {
             const base = this._targetDetailsCache?.[tgt.id] || this.getFallbackDetails(tgt as ITargetable);
             const tt = (tgt as ITargetable).getTargetType?.();
             
-            // Obtener tipo real del objeto usando getType()
+            // Label de tipo por subtipo específico (fuente única en game-object.types)
             const mapObjectType = (tgt as unknown as GameObject)?.getType?.() || GameObjectType.UNKNOWN;
-            
-            // Determinar label basado en tipo específico
-            let typeLabel: string;
-            switch (mapObjectType) {
-              case GameObjectType.MEGA_ASTEROID:
-                typeLabel = 'MegaAsteroid';
-                break;
-              case GameObjectType.SUPER_ASTEROID:
-                typeLabel = 'SuperAsteroid';
-                break;
-              case GameObjectType.RINGED_PLANET:
-                typeLabel = 'Ringed';
-                break;
-              case GameObjectType.DWARF_PLANET:
-                typeLabel = 'Dwarf';
-                break;
-              case GameObjectType.PROTOPLANET:
-                typeLabel = 'Protoplanet';
-                break;
-              default:
-                typeLabel = getDisplayLabelFromTargetType(tt);
-            }
-            
+            const typeLabel = getSpecificDisplayLabel(mapObjectType, tt);
+
             const planetIntel = (tt === TargetType.PLANET)
               ? this.buildPlanetIntelDetails(tgt as Planet)
               : null;
@@ -6962,6 +6920,7 @@ export class GameEngine {
   const stationObj = this.spaceStationSystem.getRenderable();
   if (stationObj) {
     stations.push({ id: stationObj.id, pos: { x: stationObj.position.x, y: stationObj.position.y, z: stationObj.position.z }, label: '🛰️ ' + stationObj.getDisplayName(), color: '#6fe0ff', radiusPx: 6 });
+    this.gameState.mapIdToTarget.set(stationObj.id, stationObj as unknown as ITargetable); // clic del mapa la selecciona
   }
   this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, enemies, stations, ship, portals, marginPx: 48, details });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);

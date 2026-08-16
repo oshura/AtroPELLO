@@ -233,3 +233,19 @@ export function getDisplayLabelFromTargetType(targetType: TargetType): string {
   return getDisplayLabel(targetTypeToGameObjectType(targetType));
 }
 
+/**
+ * Label de tipo para el panel de target del HUD: variantes cortas para subtipos específicos
+ * (asteroides grandes, planetas especiales) y el label estándar del TargetType para el resto.
+ * Único punto de verdad (antes duplicado en dos switches del GameEngine).
+ */
+export function getSpecificDisplayLabel(objectType: GameObjectType, targetType: TargetType): string {
+  switch (objectType) {
+    case GameObjectType.MEGA_ASTEROID: return 'MegaAsteroid';
+    case GameObjectType.SUPER_ASTEROID: return 'SuperAsteroid';
+    case GameObjectType.RINGED_PLANET: return 'Ringed';
+    case GameObjectType.DWARF_PLANET: return 'Dwarf';
+    case GameObjectType.PROTOPLANET: return 'Protoplanet';
+    default: return getDisplayLabelFromTargetType(targetType);
+  }
+}
+

@@ -68,8 +68,12 @@ bloquearía volar entre los radios y meterse en los puertos, que es la gracia. P
   dentro del clamp). Spec de conformidad malla↔collider en `station-collider-conformance.spec.ts`.
 - **Selección/targeting**: los **puertos** (`DockPort`) son los targets (cada uno con su pequeña bounding
   sphere propia, esférica y correcta). El **acople** mide distancia **nave↔puerto** (centro del
-  `DockPort`). La selección del **cuerpo** de la estación se reabordará junto con la colisión (no en
-  Slice 1); de momento se interactúa con la estación a través de sus puertos.
+  `DockPort`). ✅ El **cuerpo** también es seleccionable (build 62, 2026-08-16): radio de selección
+  "aim al núcleo" (`SELECT_RADIUS_FACTOR` = núcleo+margen ⇒ 160u, NO los 800u exteriores, que caían en
+  el dominant-gate del targeting a <~2ku), registrado en `mapIdToTarget` para el clic del mapa (M), y
+  con detalle coherente en el HUD (`TargetDetailService`): clase/estado/tripulación + `portsSummary`
+  ("2/8 operativos", lo rellena el system). Los puertos muestran estado vivo (Operativo/Cerrado/
+  Destruido) y el nombre de la estación padre.
 
 ### 1.3 Subclase `HumanSpaceStation`
 `game/game-objects/stations/human-space-station.ts` (≤400). Implementa el **toroide** con secciones

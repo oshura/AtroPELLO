@@ -24,6 +24,8 @@ export type TargetDetails =
   | { type: TargetType.CLUSTER; data: Record<string, unknown> }
   | { type: TargetType.SPACESHIP; data: ShipInfo }
   | { type: TargetType.PLANET; data: PlanetInfo }
+  | { type: TargetType.SPACE_STATION; data: Record<string, unknown> }
+  | { type: TargetType.DOCK_PORT; data: Record<string, unknown> }
   | { type: TargetType.UNKNOWN; data: Record<string, unknown> };
 
 @Injectable({ providedIn: 'root' })
@@ -85,6 +87,32 @@ export class TargetDetailService {
           type: TargetType.SPACESHIP,
           data: {}
         };
+      case TargetType.SPACE_STATION: {
+        // Estación (cuerpo seleccionable, "aim al núcleo"): lore coherente con HISTORIA §5 / ESTACIONES.
+        // El panel imprime cada clave con prettyKey; salud (16% integridad) y void mass van aparte.
+        const anyT = target as any;
+        const data: Record<string, unknown> = {
+          clase: 'Toro orbital humano',
+          estado: 'Abandonada — energía inestable',
+          'tripulación': 'Sin señales de vida',
+        };
+        if (typeof anyT.portsSummary === 'string' && anyT.portsSummary) {
+          data['puertos'] = anyT.portsSummary;
+        }
+        return { type: TargetType.SPACE_STATION, data };
+      }
+      case TargetType.DOCK_PORT: {
+        // Puerto: nombre propio + estado vivo; las características grandes son las del padre (§1.4).
+        const anyT = target as any;
+        const estado = anyT.intact === false
+          ? 'Destruido por el Incidente'
+          : (anyT.occupied ? 'Cerrado' : 'Operativo — corredor de acople activo');
+        const data: Record<string, unknown> = { estado };
+        if (typeof anyT.parentStationName === 'string' && anyT.parentStationName) {
+          data['estación'] = anyT.parentStationName;
+        }
+        return { type: TargetType.DOCK_PORT, data };
+      }
       case TargetType.PLANET:
         return {
           type: TargetType.PLANET,

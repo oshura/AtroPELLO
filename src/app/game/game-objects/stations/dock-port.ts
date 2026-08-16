@@ -23,6 +23,8 @@ export class DockPort extends GameObject {
   public readonly isDockPort = true;
   public size!: number;
   public parentStationId!: string;
+  /** Nombre legible de la estación padre (para el panel de detalle). Lo fija el SpaceStationSystem. */
+  public parentStationName: string | null = null;
   public intact!: boolean;     // false = destruido (no acoplable)
   public occupied = false;     // true mientras una nave está acoplada
   /** Normal de acople en MUNDO (dirección de aproximación de la nave). La fija el SpaceStationSystem. */

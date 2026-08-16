@@ -266,8 +266,11 @@ export class SpaceStationSystem {
       if (!port.isDockable()) {
         port.setInactiveTint(); // azul oscuro (también el destruido por el Incidente)
       }
+      port.parentStationName = station.getDisplayName();
       this.ports.push(port);
     }
+    // Resumen para el panel de detalle del cuerpo ("aim al núcleo" seleccionable, ESTACIONES §1.2.1).
+    station.portsSummary = `${this.ports.filter(p => p.isDockable()).length}/${this.ports.length} operativos`;
 
     // Motor(es): bola(s) emissive en la tobera del núcleo.
     this.motors = [];

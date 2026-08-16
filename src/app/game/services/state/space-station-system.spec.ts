@@ -150,6 +150,18 @@ describe('SpaceStationSystem', () => {
     expect(closed.colors![2]).toBeGreaterThan(closed.colors![0]); // sigue siendo azul
   });
 
+  it('rellena la intel del panel de detalle: resumen de puertos y nombre del padre', () => {
+    const sys = new SpaceStationSystem();
+    const { host } = makeHost();
+    sys.update(host, 0.016);
+    const station = sys.getRenderable()!;
+    const operational = sys.getPorts().filter(p => p.isDockable()).length;
+    expect(station.portsSummary).toBe(`${operational}/${sys.getPorts().length} operativos`);
+    for (const p of sys.getPorts()) {
+      expect(p.parentStationName).toBe(station.getDisplayName());
+    }
+  });
+
   it('un puerto destruido no enciende el piloto', () => {
     const sys = new SpaceStationSystem();
     const { host, state } = makeHost();

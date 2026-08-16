@@ -17,6 +17,9 @@ const SPOKE_INNER = 0.17;     // arranque de los radios junto al núcleo
 const SPOKE_OUTER = RING_RADIUS - TUBE_RADIUS; // llegan al borde interior del toroide
 const SPOKE_HALF = 0.05;      // semi-grosor de los radios (pasadizos)
 const CORE_HALF = 0.16;       // semi-lado del núcleo central (motores)
+// Radio de SELECCIÓN del cuerpo (targeting, "aim al núcleo"): núcleo + margen. NO es colisión ni el radio
+// exterior: con el toroide entero (1.0) el dominant-gate del targeting vetaría el cuerpo a menos de ~2ku.
+const SELECT_RADIUS_FACTOR = CORE_HALF + 0.04;
 // Brazos de acople (clamps) que salen del lado del radio; la tile del puerto los tapa.
 const CLAMP_OUT = 0.04;       // protrusión (media) hacia el lado del radio
 const CLAMP_W = 0.022;        // media anchura a lo largo del radio
@@ -265,6 +268,7 @@ const HUMAN_WINDOWS = buildHumanStationWindows(HUMAN.capAccents.steady, HUMAN.ca
 export class HumanSpaceStation extends SpaceStation {
   constructor(position: Vector3, outerRadius = 800, id: string = HUMAN_STATION_ID) {
     super(id, position, outerRadius, 'Estación Humana');
+    this.radius = outerRadius * SELECT_RADIUS_FACTOR; // selección apuntando al núcleo (ver const)
   }
 
   protected override initGeometry(): void {

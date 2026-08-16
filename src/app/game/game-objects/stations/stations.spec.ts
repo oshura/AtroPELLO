@@ -23,7 +23,10 @@ describe('HumanSpaceStation', () => {
   it('nace dañada (~16% de integridad) y es seleccionable por radio (sin colisión)', () => {
     const station = new HumanSpaceStation({ x: 0, y: 0, z: 0 });
     expect(station.healthCurrent / station.healthMax).toBeCloseTo(0.16, 2);
-    expect(station.radius).toBe(800);          // radio de selección (targeting)
+    // Radio de selección "aim al núcleo" (núcleo + margen), NO el radio exterior: con 800 el
+    // dominant-gate del targeting vetaría el cuerpo a distancias de juego.
+    expect(station.radius).toBe(160);
+    expect(station.size).toBe(800);            // el tamaño real sigue siendo el radio exterior
     expect(station.boundingSphere).toBeNull(); // pero sin bounding de colisión
   });
 
