@@ -14,6 +14,7 @@ function makeHost(opts: {
     human: opts.human ?? true,
     busy: opts.busy ?? false,
     dockEvents: [] as Array<DockPort | null>,
+    hints: [] as string[],
     logs: [] as string[],
     collidersRegistered: [] as string[],
     collidersUnregistered: [] as string[],
@@ -25,6 +26,7 @@ function makeHost(opts: {
     isHumanSystem: () => state.human,
     isBusy: () => state.busy,
     onDockReady: (p) => state.dockEvents.push(p),
+    showDockHint: (t) => state.hints.push(t),
     isDockingBusy: () => false,
     registerCollider: (def) => state.collidersRegistered.push(def.id),
     unregisterCollider: (id) => state.collidersUnregistered.push(id),
@@ -117,6 +119,9 @@ describe('SpaceStationSystem', () => {
       sys.update(host, 0.05);
     }
     expect(sys.isDockReady()).toBeTrue();
+    // El aviso HUD ha informado de la relativa mientras frenaba y del "listo" al final.
+    expect(state.hints.some(h => h.includes('frena'))).toBeTrue();
+    expect(state.hints[state.hints.length - 1]).toContain('Acople listo');
     // Giro congelado del todo mientras la nave siga en el corredor.
     const frozenSpin = station.spin;
     for (let i = 0; i < 20; i++) {

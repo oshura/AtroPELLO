@@ -1,4 +1,5 @@
 import {
+  DOCK_CORRIDOR_GRACE,
   DOCK_CORRIDOR_LENGTH,
   DOCK_FRAME_DISTANCES,
   buildDockFrameMeshes,
@@ -58,7 +59,9 @@ describe('station-dock-frames (§8 corredor de acople)', () => {
     expect(isInsideDockCorridor(port, { x: 5, y: 3, z: 25 })).toBeTrue();
     expect(isInsideDockCorridor(port, { x: 30, y: 0, z: 25 })).toBeFalse();     // fuera lateral
     expect(isInsideDockCorridor(port, { x: 0, y: 0, z: -2 })).toBeFalse();      // por detrás del tile
-    expect(isInsideDockCorridor(port, { x: 0, y: 0, z: DOCK_CORRIDOR_LENGTH + 5 })).toBeFalse();
+    // Gracia: flotar justo "en"/tras el marco lejano sigue contando dentro; mucho más allá, no.
+    expect(isInsideDockCorridor(port, { x: 0, y: 0, z: DOCK_CORRIDOR_LENGTH + 5 })).toBeTrue();
+    expect(isInsideDockCorridor(port, { x: 0, y: 0, z: DOCK_CORRIDOR_LENGTH + DOCK_CORRIDOR_GRACE + 5 })).toBeFalse();
     // El embudo se ensancha con la distancia: 12u laterales caben lejos pero no cerca del tile.
     expect(isInsideDockCorridor(port, { x: 12, y: 0, z: 5 })).toBeFalse();
     expect(isInsideDockCorridor(port, { x: 12, y: 0, z: 45 })).toBeTrue();

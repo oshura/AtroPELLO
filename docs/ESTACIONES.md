@@ -450,3 +450,15 @@ Peticion del usuario (con esbozo): senalizar visualmente DONDE y COMO se puede a
   test de embudo, con spec); candidato/relativa/freno en `SpaceStationSystem` (host: -getShipWreckMesh,
   +getShipVelocity); render de marcos en `StationRenderer` (mallas compartidas, 3 draws por puerto
   acoplable con el modelMatrix del `DockPort`); motor solo delega (`isDockReady`).
+
+### 8.1 Afinado tras feedback del usuario (build 61, 2026-08-16)
+Reporte: entre el 3er y 2o marco, casi parado relativo, el piloto no encendia. Causas: el freno de
+giro estaba acoplado a "dentro del corredor" (blanco movil: entrar frena los marcos bajo tus pies y
+el candidato parpadea en el borde) y la zona terminaba EXACTO en el plano del marco lejano.
+- Freno por PROXIMIDAD con histeresis (SPIN_BRAKE_RANGE 140u / RELEASE 180u, ease 2.5/s): los
+  marcos ya estan QUIETOS antes de enhebrar el corredor.
+- Gracia de +14u tras el marco lejano (DOCK_CORRIDOR_GRACE): flotar "en" el 3er marco cuenta dentro.
+- Piloto con histeresis: enciende a <=5 u/s relativa, no se apaga hasta >6 (sin parpadeo).
+- Feedback vivo: aviso HUD periodico en el corredor con la relativa actual ("frena: X.X u/s (max 5)")
+  o "Acople listo"; lo emite el SISTEMA via host.showDockHint (updateStationDocking del motor
+  eliminado). Y los 3 marcos del puerto listo se quedan FIJOS a plena luz (confirmacion en mundo).

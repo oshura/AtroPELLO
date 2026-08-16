@@ -15,6 +15,7 @@ export interface SpaceStationHost {
   isHumanSystem(): boolean;             // la estación humana solo existe en el sistema humano
   isBusy(): boolean;                    // animación/void jump activos → no spawnear todavía
   onDockReady(port: DockPort | null): void; // nave dentro del corredor de un puerto acoplable (o null)
+  showDockHint(text: string): void;     // aviso HUD del corredor (estado del acople / relativa en vivo)
   isDockingBusy(): boolean;             // acoplada o en animación de atraque → congelar el giro
   registerCollider(def: StructuredColliderDef): void;   // alta del collider estructurado (Fase 11 R4)
   unregisterCollider(id: string): void;                 // baja al despawnear/cambiar de sistema
@@ -29,7 +30,11 @@ const TILT = (25 * Math.PI) / 180; // inclinación inicial (~25°) en un par de 
 const MOTOR_COLOR: [number, number, number] = [1.0, 0.40, 0.10]; // motor "apagado" rojo/naranja (bola emissive)
 const FREE_PORTS = new Set<number>([0, 5]); // puertos ACOPLABLES (con marcos neón); el resto, azul oscuro
 export const MAX_DOCK_RELATIVE_SPEED = 5; // u/s relativa al puerto para que el piloto se encienda (§8)
-const SPIN_EASE_RATE = 1.6;    // 1/s — el giro se frena/reanuda suavemente al entrar/salir del corredor
+const DOCK_READY_RELEASE_SPEED = 6;  // u/s: histéresis — el piloto encendido no se apaga hasta superar esto
+const SPIN_EASE_RATE = 2.5;    // 1/s — el giro se frena/reanuda suavemente cerca de un puerto acoplable
+const SPIN_BRAKE_RANGE = 140;  // u a un puerto acoplable: se frena el giro (marcos quietos ANTES de enhebrar)
+const SPIN_BRAKE_RELEASE = 180; // u: histéresis de reanudación del giro
+const DOCK_HINT_PERIOD = 2.5;  // s entre avisos HUD mientras la nave está en el corredor
 
 /**
  * Estación espacial humana como LANDMARK FIJO del sistema humano (regenerado idéntico por semilla; sin
@@ -44,8 +49,11 @@ export class SpaceStationSystem {
   private motors: StationEmissiveBall[] = [];         // "bola" de motor (tobera del núcleo)
   private motorLocals: [number, number, number][] = []; // centros LOCALES de los motores
   private windows: { steady: StationWindowMesh; flicker: StationWindowMesh } | null = null; // §7 I0
-  private spinFactor = 1;                 // 1=giro normal, →0 con la nave en el corredor ("asistencia de atraque")
+  private spinFactor = 1;                 // 1=giro normal, →0 cerca de un puerto acoplable ("asistencia de atraque")
+  private brakeEngaged = false;           // freno de giro activo (histéresis RANGE/RELEASE)
   private dockRelativeSpeed = Infinity;   // |v_nave − v_puerto| del candidato actual (u/s)
+  private dockReadyLatch = false;         // piloto con histéresis (enciende ≤5, no se apaga hasta >6)
+  private hintTimer = 0;                  // cadencia del aviso HUD del corredor
 
   getRenderable(): HumanSpaceStation | null {
     return this.station;
@@ -65,9 +73,9 @@ export class SpaceStationSystem {
     return this.dockCandidate;
   }
 
-  /** ¿Piloto de acople encendido? Nave en el corredor Y a ≤5 u/s de velocidad RELATIVA al puerto (§8). */
+  /** ¿Piloto de acople encendido? Nave en el corredor Y a ≤5 u/s RELATIVA al puerto, con histéresis (§8). */
   isDockReady(): boolean {
-    return this.dockCandidate !== null && this.dockRelativeSpeed <= MAX_DOCK_RELATIVE_SPEED;
+    return this.dockReadyLatch;
   }
 
   /** Capas de ventanas (fijas + parpadeantes) en espacio unidad; se dibujan con el modelMatrix de la estación. */
@@ -86,7 +94,10 @@ export class SpaceStationSystem {
     this.motorLocals = [];
     this.windows = null;
     this.spinFactor = 1;
+    this.brakeEngaged = false;
     this.dockRelativeSpeed = Infinity;
+    this.dockReadyLatch = false;
+    this.hintTimer = 0;
   }
 
   update(host: SpaceStationHost, dt: number): void {
@@ -108,11 +119,35 @@ export class SpaceStationSystem {
       return;
     }
 
+    const ship = host.getShipPosition();
+
+    // Asistencia de atraque por PROXIMIDAD (histéresis RANGE/RELEASE): el giro se frena cuando la nave
+    // se acerca a un puerto acoplable, de modo que los marcos ya están QUIETOS antes de enhebrar el
+    // corredor (blanco estable y velocidad relativa legible; si no, el puerto barre a ~9 u/s).
+    if (ship) {
+      let dMin = Infinity;
+      for (const p of this.ports) {
+        if (!p.isDockable()) {
+          continue;
+        }
+        const d = Math.hypot(p.position.x - ship.x, p.position.y - ship.y, p.position.z - ship.z);
+        if (d < dMin) {
+          dMin = d;
+        }
+      }
+      if (dMin <= SPIN_BRAKE_RANGE) {
+        this.brakeEngaged = true;
+      } else if (dMin > SPIN_BRAKE_RELEASE) {
+        this.brakeEngaged = false;
+      }
+    } else {
+      this.brakeEngaged = false;
+    }
+
     // Giro como una RUEDA sobre el propio eje del toroide (spin = Y local, más interno que la inclinación).
-    // Congelado mientras está acoplada/en animación; con la nave en un corredor de acople se FRENA suave
-    // ("asistencia de atraque"): si no, el puerto barre a ~9 u/s y la velocidad relativa nunca bajaría de 5.
+    // Congelado mientras está acoplada/en animación; frenado suave con la asistencia activa.
     if (!host.isDockingBusy()) {
-      const target = this.dockCandidate ? 0 : 1;
+      const target = this.brakeEngaged ? 0 : 1;
       this.spinFactor += (target - this.spinFactor) * Math.min(1, dt * SPIN_EASE_RATE);
       if (target === 0 && this.spinFactor < 0.01) {
         this.spinFactor = 0;
@@ -125,7 +160,6 @@ export class SpaceStationSystem {
     }
 
     // Detección de acople (§8): la nave debe estar DENTRO del corredor de marcos de un puerto acoplable.
-    const ship = host.getShipPosition();
     if (!ship) {
       return;
     }
@@ -150,6 +184,30 @@ export class SpaceStationSystem {
     this.dockRelativeSpeed = best && shipVel
       ? this.computeDockRelativeSpeed(best, shipVel, host.isDockingBusy())
       : Infinity;
+
+    // Piloto con histéresis: enciende a ≤5 u/s relativa; encendido, aguanta hasta >6 (sin parpadeo).
+    if (!best) {
+      this.dockReadyLatch = false;
+    } else if (this.dockRelativeSpeed <= MAX_DOCK_RELATIVE_SPEED) {
+      this.dockReadyLatch = true;
+    } else if (this.dockRelativeSpeed > DOCK_READY_RELEASE_SPEED) {
+      this.dockReadyLatch = false;
+    }
+
+    // Aviso HUD periódico en el corredor: estado del acople o la relativa EN VIVO (para poder afinar).
+    if (best && !host.isDockingBusy()) {
+      this.hintTimer -= dt;
+      if (this.hintTimer <= 0) {
+        this.hintTimer = DOCK_HINT_PERIOD;
+        host.showDockHint(this.dockReadyLatch
+          ? 'Acople listo — pulsa ENTER para atracar'
+          : Number.isFinite(this.dockRelativeSpeed)
+            ? `Corredor de acople — frena: ${this.dockRelativeSpeed.toFixed(1)} u/s (máx ${MAX_DOCK_RELATIVE_SPEED})`
+            : 'Corredor de acople — reduce la velocidad para atracar');
+      }
+    } else {
+      this.hintTimer = 0;
+    }
   }
 
   /**

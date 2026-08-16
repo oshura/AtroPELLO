@@ -705,7 +705,6 @@ export class GameEngine {
   private stationDockCandidate: DockPort | null = null;
   private stationPanelOpen = false;
   private stationDockedPort: DockPort | null = null;
-  private stationDockPromptTimer = 0;
   // Modo de cámara previo al atraque (se restaura al despegar; se mantiene la cámara cinemática mientras está acoplada).
   private stationDockPrevCamMode: CameraMode | null = null;
   // Atraque/separación en curso (cinemática DockingSequenceAnimation vía AnimationManager). docs/ESTACIONES.md §3.
@@ -721,9 +720,9 @@ export class GameEngine {
       (typeof this.animationManager?.getCurrentAnimation === 'function' && this.animationManager.getCurrentAnimation() !== null),
     onDockReady: (port) => {
       this.stationDockCandidate = port;
-      if (port) {
-        try { this.showPlaceholderText('Corredor de acople — reduce a 5 u/s y pulsa ENTER', 2600); } catch {}
-      }
+    },
+    showDockHint: (text) => {
+      try { this.showPlaceholderText(text, 2400); } catch {}
     },
     getShipVelocity: () => this.spaceship ? this.spaceship.velocity : null,
     isDockingBusy: () => this.stationPanelOpen || this.stationDockingActive,
@@ -3600,7 +3599,6 @@ export class GameEngine {
     this.stationPanelOpen = false;
     this.stationDockedPort = null;
     this.stationDockingActive = false;
-    this.stationDockPromptTimer = 0;
     const persistedDebrisPlanets = new Set<string>();
     if (Array.isArray(snapshot.planetDebris)) {
       for (const entry of snapshot.planetDebris) {
@@ -4445,7 +4443,6 @@ export class GameEngine {
     this.lesserBeingCombat?.update(deltaTime);
     this.spaceTurtleSystem.update(this.spaceTurtleHost, deltaTime);
     this.spaceStationSystem.update(this.spaceStationHost, deltaTime);
-    this.updateStationDocking(deltaTime);
 
     // Apply ongoing collision slide (lateral reposition), antes de que la cámara lea la posición
     this.shipCollisionSystem.applySlide(this.shipCollisionHost, deltaTime);
@@ -6457,7 +6454,6 @@ export class GameEngine {
     this.stationPanelOpen = false;
     this.stationDockedPort = null;
     this.stationDockingActive = false;
-    this.stationDockPromptTimer = 0;
 
       // Clear cluster service (will be repopulated by createGameObjects)
       // Note: AsteroidClusterService doesn't have clear() method, objects will be replaced
@@ -7787,26 +7783,10 @@ export class GameEngine {
     return this.spaceStationSystem.isDockReady();
   }
 
-  /**
-   * Piloto de acople: si se puede acoplar (puerto a tiro + nave lenta), recuerda al jugador que pulse ENTER.
-   * El piloto "Land" del HUD también se enciende (ver updateLandingTelemetry). docs/ESTACIONES.md §3-4.
-   */
-  private updateStationDocking(dt: number): void {
-    if (this.stationPanelOpen || this.stationDockingActive) {
-      return;
-    }
-    if (!this.isStationDockReady()) {
-      this.stationDockPromptTimer = 0;
-      return;
-    }
-    this.stationDockPromptTimer -= dt;
-    if (this.stationDockPromptTimer <= 0) {
-      this.stationDockPromptTimer = 2.5;
-      try { this.showPlaceholderText('Acople listo — pulsa ENTER para atracar', 2400); } catch {}
-    }
-  }
+  // El aviso HUD del corredor (relativa en vivo / "acople listo") lo emite SpaceStationSystem via
+  // host.showDockHint (§8): el piloto "Land" se enciende en updateLandingTelemetry con isStationDockReady.
 
-  /** ENTER: inicia la cinemática de atraque si se puede acoplar (puerto a tiro + nave lenta). */
+  /** ENTER: inicia la cinemática de atraque si se puede acoplar (corredor + relativa ≤5). */
   public requestStationDock(): boolean {
     // Auto-sanar: si el flag quedó colgado pero no hay cinemática de acople REAL en curso, resetearlo.
     if (this.stationDockingActive &&

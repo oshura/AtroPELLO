@@ -126,6 +126,8 @@ export class StationRenderer {
       }
     }
     const tSec = performance.now() / 1000;
+    // Con el acople LISTO (piloto encendido), los marcos de ESE puerto se quedan fijos a plena luz.
+    const readyPort = system.isDockReady() ? system.getDockCandidate() : null;
     for (const p of ports) {
       if (!p.isActive() || !p.isDockable()) continue;
       this.setNormalMatrix(p.modelMatrix);
@@ -133,7 +135,7 @@ export class StationRenderer {
       for (let k = 0; k < this.frameMeshes.length; k++) {
         const fm = this.frameMeshes[k];
         if (!fm.vertexBuffer) fm.initBuffers(gl);
-        sm.setLitEmissive(dockFrameIntensity(tSec, k));
+        sm.setLitEmissive(p === readyPort ? 1.0 : dockFrameIntensity(tSec, k));
         fm.render(gl, sm.litProgram!, cam.viewMatrix, cam.projectionMatrix);
       }
     }

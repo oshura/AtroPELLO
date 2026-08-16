@@ -13,6 +13,8 @@ import { MeshData, createMesh, pushBox, toTypedMesh } from './station-geometry';
 
 /** Longitud del corredor (u mundo) desde el tile hasta el marco más lejano. */
 export const DOCK_CORRIDOR_LENGTH = 50;
+/** Margen de gracia (u) MÁS ALLÁ del último marco: flotar "en" el marco lejano sigue contando dentro. */
+export const DOCK_CORRIDOR_GRACE = 14;
 /** Semiancho del embudo en el tile (z=0) y en el extremo lejano (u mundo). */
 const CORRIDOR_HALF_NEAR = 9;
 const CORRIDOR_HALF_FAR = 26;
@@ -25,9 +27,10 @@ const NEON: [number, number, number] = [0.55, 0.92, 1.0]; // cian neón (canales
 const STEP_SECONDS = 0.3;
 const BASE_GLOW = 0.18; // brillo residual del marco "apagado" (sigue marcando la zona)
 
-/** Semiancho del embudo a profundidad `z` del tile (lineal tile→extremo). */
+/** Semiancho del embudo a profundidad `z` del tile (lineal tile→extremo; constante en la gracia). */
 export function corridorHalfAt(z: number): number {
-  return CORRIDOR_HALF_NEAR + (CORRIDOR_HALF_FAR - CORRIDOR_HALF_NEAR) * (z / DOCK_CORRIDOR_LENGTH);
+  const t = Math.min(1, z / DOCK_CORRIDOR_LENGTH);
+  return CORRIDOR_HALF_NEAR + (CORRIDOR_HALF_FAR - CORRIDOR_HALF_NEAR) * t;
 }
 
 /**
@@ -80,7 +83,7 @@ export function isInsideDockCorridor(port: DockCorridorBasis, p: Vector3): boole
   const dz = p.z - port.position.z;
   const n = port.approachNormal;
   const z = dx * n.x + dy * n.y + dz * n.z;
-  if (z < 0 || z > DOCK_CORRIDOR_LENGTH) {
+  if (z < 0 || z > DOCK_CORRIDOR_LENGTH + DOCK_CORRIDOR_GRACE) {
     return false;
   }
   const half = corridorHalfAt(z);
