@@ -202,9 +202,50 @@
     align-items: center;
     gap: 12px;
     padding: 8px 0;
-    
+
     .feature-icon {
       font-size: 20px;
     }
   }
+}
+
+// Velo de carga del motor (estado initializing): el diálogo de bienvenida espera a READY.
+// El spinner anima transform → sigue girando en el compositor aunque el hilo principal trabaje.
+.engine-loading {
+  position: fixed;
+  inset: 0;
+  z-index: 900;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: radial-gradient(ellipse at center, rgba(10, 18, 34, 0.96) 0%, rgba(3, 6, 12, 0.98) 100%);
+}
+
+.engine-loading__ring {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 3px solid rgba(102, 126, 234, 0.22);
+  border-top-color: #667eea;
+  animation: engine-loading-spin 0.9s linear infinite;
+}
+
+.engine-loading__title {
+  margin: 0;
+  color: #cfe3f5;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+}
+
+.engine-loading__hint {
+  margin: 0;
+  color: #64809c;
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+@keyframes engine-loading-spin {
+  to { transform: rotate(360deg); }
 }

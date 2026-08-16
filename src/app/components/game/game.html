@@ -4,9 +4,17 @@
   </canvas>
 </div>
 
-<!-- Welcome dialog: primer diálogo de bienvenida -->
+<!-- Velo de carga: mientras el motor compila shaders y forja el sistema, el diálogo de bienvenida
+     ESPERA (petición del usuario: mejor un indicador que un botón visible pero muerto). -->
+<div class="engine-loading" *ngIf="gameState === 'initializing'">
+  <div class="engine-loading__ring"></div>
+  <p class="engine-loading__title">Despertando el motor…</p>
+  <p class="engine-loading__hint">compilando shaders y forjando el sistema</p>
+</div>
+
+<!-- Welcome dialog: aparece SOLO con el motor listo (ready/stopped) → responsive desde el primer frame -->
 <app-welcome-dialog
-  [isVisible]="gameState !== 'running' && gameState !== 'paused' && !showControlsDialog"
+  [isVisible]="(gameState === 'ready' || gameState === 'stopped') && !showControlsDialog"
   (continue)="onWelcomeContinue()">
 </app-welcome-dialog>
 

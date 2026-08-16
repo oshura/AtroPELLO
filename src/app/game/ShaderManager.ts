@@ -6,6 +6,12 @@ import { HudShaderService } from './shaders/HudShaderService';
 import { ReticleShaderService } from './shaders/ReticleShaderService';
 import { OutlineShaderService } from './shaders/OutlineShaderService';
 
+/** Campos de programa propios (creados vía createProgram) — para anular en tanda los enlaces fallidos. */
+const PROGRAM_FIELDS = [
+  'basicProgram', 'litProgram', 'texturedProgram', 'glowProgram', 'glowInstancedProgram',
+  'unlitTexProgram', 'stormShellProgram', 'weatherLayerProgram', 'portalProgram', 'eyeProgram', 'flameProgram',
+] as const;
+
 /**
  * Shader programs para renderizado 3D
  */
@@ -72,6 +78,9 @@ export class ShaderManager {
   public glowInstancedUniforms: { [key: string]: WebGLUniformLocation | null } = {};
   // Attributes for instanced-lit are exposed via helper getters
 
+  /** Programas emitidos por createProgram pendientes de validar en tanda (ver validatePendingLinks). */
+  private pendingLinks: Array<{ label: string; prog: WebGLProgram; vs: WebGLShader; fs: WebGLShader }> = [];
+
   constructor(private webglService: WebGLService) {
     const context = webglService.getContext();
     this.gl = context as WebGL2RenderingContext | null;
@@ -91,66 +100,77 @@ export class ShaderManager {
     // Crear programa básico (sin iluminación)
     this.basicProgram = this.createProgram(
       this.getBasicVertexShader(),
-      this.getBasicFragmentShader()
+      this.getBasicFragmentShader(),
+      'basic'
     );
 
     // Crear programa con iluminación
     this.litProgram = this.createProgram(
       this.getLitVertexShader(),
-      this.getLitFragmentShader()
+      this.getLitFragmentShader(),
+      'lit'
     );
 
     // Crear programa texturizado
     this.texturedProgram = this.createProgram(
       this.getTexturedVertexShader(),
-      this.getTexturedFragmentShader()
+      this.getTexturedFragmentShader(),
+      'textured'
     );
 
     // Programa para glows con caída radial (color con alpha)
     this.glowProgram = this.createProgram(
       this.getGlowVertexShader(),
-      this.getGlowFragmentShader()
+      this.getGlowFragmentShader(),
+      'glow'
     );
 
     this.glowInstancedProgram = this.createProgram(
       this.getGlowInstancedVertexShader(),
-      this.getGlowFragmentShader()
+      this.getGlowFragmentShader(),
+      'glowInstanced'
     );
 
     // Programa texturizado sin iluminación (para magma del Sol)
     this.unlitTexProgram = this.createProgram(
       this.getUnlitTexVertexShader(),
-      this.getUnlitTexFragmentShader()
+      this.getUnlitTexFragmentShader(),
+      'unlitTex'
     );
 
     // Programa de cúpula de tormenta (procedural sobre esfera)
     this.stormShellProgram = this.createProgram(
       this.getStormShellVertexShader(),
-      this.getStormShellFragmentShader()
+      this.getStormShellFragmentShader(),
+      'stormShell'
     );
 
     // Programa genérico para capas de clima (niebla/nubes)
     this.weatherLayerProgram = this.createProgram(
       this.getWeatherLayerVertexShader(),
-      this.getWeatherLayerFragmentShader()
+      this.getWeatherLayerFragmentShader(),
+      'weatherLayer'
     );
 
     // Programa del Portal (runas + ojo central)
     this.portalProgram = this.createProgram(
       this.getPortalVertexShader(),
-      this.getPortalFragmentShader()
+      this.getPortalFragmentShader(),
+      'portal'
     );
 
     // Programa del ojo 3D (esfera + pupila)
     this.eyeProgram = this.createProgram(
       this.getEyeVertexShader(),
-      this.getEyeFragmentShader()
+      this.getEyeFragmentShader(),
+      'eye'
     );
 
     // Programa de la llama vertical desde la pupila
     this.flameProgram = this.createProgram(
       this.getFlameVertexShader(),
-      this.getFlameFragmentShader()
+      this.getFlameFragmentShader(),
+      'flame'
     );
 
     // Servicios modulares
@@ -161,6 +181,15 @@ export class ShaderManager {
     // Inicializar servicio de instanced-lit
     this.instancedLitSvc = new InstancedLitShaderService(this.webglService);
     this.instancedLitSvc.initialize();
+
+    // Validación en TANDA: a estas alturas el driver ha ido compilando los programas en paralelo.
+    const failed = this.validatePendingLinks();
+    if (failed.size > 0) {
+      for (const field of PROGRAM_FIELDS) {
+        const p = this[field];
+        if (p && failed.has(p)) this[field] = null;
+      }
+    }
 
     // Obtener ubicaciones de uniformes y atributos
     if (this.basicProgram) {
@@ -1150,55 +1179,51 @@ export class ShaderManager {
   /**
    * Crea un programa de shader
    */
-  private createProgram(vertexSource: string, fragmentSource: string): WebGLProgram | null {
+  /**
+   * Emite compile+link SIN consultas de estado: cada consulta (COMPILE/LINK_STATUS) obliga al driver
+   * a terminar ESE programa síncronamente en el hilo principal. Emitiendo los ~11 programas seguidos,
+   * el driver los compila en paralelo en sus hilos y {@link validatePendingLinks} los verifica todos
+   * al final: la espera total pasa de la SUMA de compilaciones al MÁXIMO de una (arranque congelado).
+   */
+  private createProgram(vertexSource: string, fragmentSource: string, label = 'program'): WebGLProgram | null {
     if (!this.gl) return null;
-
-    const vertexShader = this.compileShader(this.gl.VERTEX_SHADER, vertexSource);
-    const fragmentShader = this.compileShader(this.gl.FRAGMENT_SHADER, fragmentSource);
-
-    if (!vertexShader || !fragmentShader) return null;
-
-    const program = this.gl.createProgram();
-    if (!program) return null;
-
-    this.gl.attachShader(program, vertexShader);
-    this.gl.attachShader(program, fragmentShader);
-    this.gl.linkProgram(program);
-
-    // Verificar que el programa se vinculó correctamente
-    if (!this.gl.getProgramParameter(program, this.gl.LINK_STATUS)) {
-  GameLogger.error(LogCategory.SHADERS, 'Shader program link error', { info: this.gl.getProgramInfoLog(program) });
-      this.gl.deleteProgram(program);
-      return null;
-    }
-
-    // Limpiar shaders (ya no son necesarios)
-    this.gl.deleteShader(vertexShader);
-    this.gl.deleteShader(fragmentShader);
-
+    const gl = this.gl;
+    const vs = gl.createShader(gl.VERTEX_SHADER);
+    const fs = gl.createShader(gl.FRAGMENT_SHADER);
+    const program = gl.createProgram();
+    if (!vs || !fs || !program) return null;
+    gl.shaderSource(vs, vertexSource);
+    gl.shaderSource(fs, fragmentSource);
+    gl.compileShader(vs);
+    gl.compileShader(fs);
+    gl.attachShader(program, vs);
+    gl.attachShader(program, fs);
+    gl.linkProgram(program);
+    this.pendingLinks.push({ label, prog: program, vs, fs });
     return program;
   }
 
-  /**
-   * Compila un shader
-   */
-  private compileShader(type: number, source: string): WebGLShader | null {
-    if (!this.gl) return null;
-
-    const shader = this.gl.createShader(type);
-    if (!shader) return null;
-
-    this.gl.shaderSource(shader, source);
-    this.gl.compileShader(shader);
-
-    // Verificar que el shader se compiló correctamente
-    if (!this.gl.getShaderParameter(shader, this.gl.COMPILE_STATUS)) {
-  GameLogger.error(LogCategory.SHADERS, 'Shader compilation error', { info: this.gl.getShaderInfoLog(shader) });
-      this.gl.deleteShader(shader);
-      return null;
+  /** Valida en TANDA los programas emitidos; devuelve el conjunto de los que fallaron. */
+  private validatePendingLinks(): Set<WebGLProgram> {
+    const failed = new Set<WebGLProgram>();
+    const gl = this.gl;
+    if (!gl) return failed;
+    for (const p of this.pendingLinks) {
+      if (!gl.getProgramParameter(p.prog, gl.LINK_STATUS)) {
+        GameLogger.error(LogCategory.SHADERS, 'Shader program link error', {
+          label: p.label,
+          info: gl.getProgramInfoLog(p.prog),
+          vs: gl.getShaderInfoLog(p.vs),
+          fs: gl.getShaderInfoLog(p.fs),
+        });
+        gl.deleteProgram(p.prog);
+        failed.add(p.prog);
+      }
+      gl.deleteShader(p.vs);
+      gl.deleteShader(p.fs);
     }
-
-    return shader;
+    this.pendingLinks = [];
+    return failed;
   }
 
   /**
