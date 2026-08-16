@@ -1,17 +1,19 @@
-import { Component, EventEmitter, HostListener, Input, Output, OnChanges, SimpleChanges } from '@angular/core';
+import { ChangeDetectorRef, Component, EventEmitter, HostListener, Input, Output, OnChanges, SimpleChanges } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { StationLandingService, StationActionResult } from '../../services/game/station-landing.service';
 import { DisembarkService } from '../../services/game/disembark.service';
+import { PresentationService } from '../../services/game/presentation.service';
+import { PresentationPlayerComponent } from '../presentation-player/presentation-player';
 
 /**
- * Menú de aterrizaje de la ESTACIÓN espacial (propio, no el de planetas). Acciones: buscar (50%) /
- * descansar (100%) / recuperar vacío (100%) / despegar. El GameEngine lo abre vía
- * `GameComponentInstance.openStationPanel(...)` tras el acople. docs/ESTACIONES.md §4.
+ * Menú de aterrizaje de la ESTACIÓN espacial (propio, no el de planetas). Acciones: buscar (con
+ * presentación de cómic previa) / descansar (100%) / recuperar vacío (100%) / despegar. El GameEngine
+ * lo abre vía `GameComponentInstance.openStationPanel(...)` tras el acople. docs/ESTACIONES.md §4.
  */
 @Component({
   selector: 'app-station-landing-panel',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, PresentationPlayerComponent],
   template: `
     <div class="station-overlay" *ngIf="visible">
       <div class="station-panel">
@@ -21,7 +23,7 @@ import { DisembarkService } from '../../services/game/disembark.service';
         </header>
 
         <div class="station-panel__actions">
-          <button type="button" (click)="onSearch()">Buscar por la estación <small>(50%)</small></button>
+          <button type="button" (click)="onSearch()">Buscar por la estación</button>
           <button type="button" (click)="onRest()">Descansar <small>(100%)</small></button>
           <button type="button" (click)="onRefuel()">Recuperar vacío <small>(100%)</small></button>
           <button type="button" class="station-panel__disembark" (click)="onDisembark()">Bajar de la nave</button>
@@ -36,6 +38,7 @@ import { DisembarkService } from '../../services/game/disembark.service';
         </div>
       </div>
     </div>
+    <app-presentation-player></app-presentation-player>
   `,
   styles: [`
     /* Sin fondo: se ve la nave acoplada (cámara cinemática) detrás del menú, a un lado. */
@@ -76,7 +79,9 @@ export class StationLandingPanelComponent implements OnChanges {
 
   constructor(
     private readonly station: StationLandingService,
-    private readonly disembark: DisembarkService
+    private readonly disembark: DisembarkService,
+    private readonly presentation: PresentationService,
+    private readonly cdr: ChangeDetectorRef
   ) {}
 
   /** "Bajar de la nave" (placeholder: la experiencia propia está por implementar; sin salto externo). */
@@ -90,7 +95,16 @@ export class StationLandingPanelComponent implements OnChanges {
     }
   }
 
-  protected onSearch(): void { this.log.unshift(this.station.search()); }
+  /** Buscar: primero la PRESENTACIÓN de cómic (viñetas 'Base'); al terminar, el desenlace en el log. */
+  protected onSearch(): void {
+    if (this.presentation.isActive()) {
+      return;
+    }
+    void this.presentation.play('Base').then(() => {
+      this.log.unshift(this.station.search());
+      this.cdr.detectChanges(); // zoneless: la continuación async no dispara change detection sola
+    });
+  }
   protected onRest(): void { this.log.unshift(this.station.rest()); }
   protected onRefuel(): void { this.log.unshift(this.station.refuelVoid()); }
   protected onTakeoff(): void { this.takeoff.emit(); }

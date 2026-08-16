@@ -31,11 +31,25 @@ describe('StationLandingService', () => {
     store = TestBed.inject(GameStateStore);
   });
 
-  it('descansar sube +5% de memoria y reporta éxito', () => {
+  it('descansar recupera vitales pero YA NO toca la memoria (se gana buscando)', () => {
     store.memoryPercent = 10;
     const r = service.rest();
-    expect(store.memoryPercent).toBe(15);
+    expect(store.memoryPercent).toBe(10);
     expect(r.lines.some(l => l.tone === 'success')).toBe(true);
+    expect(r.lines.some(l => /memoria/i.test(l.text))).toBe(false);
+  });
+
+  it('buscar aplica +5% de memoria como parte del desenlace (capado a 100)', () => {
+    store.memoryPercent = 10;
+    spyOn(Math, 'random').and.returnValue(0.9); // fallo de búsqueda: la memoria se gana igualmente
+    const r = service.search();
+    expect(store.memoryPercent).toBe(15);
+    expect(r.lines.some(l => /\+5% de memoria/.test(l.text))).toBe(true);
+    // Con la memoria al máximo no se añade línea (ganancia real 0).
+    store.memoryPercent = 100;
+    const r2 = service.search();
+    expect(store.memoryPercent).toBe(100);
+    expect(r2.lines.some(l => /memoria/.test(l.text))).toBe(false);
   });
 
   it('recuperar vacío llena el depósito de la nave', () => {

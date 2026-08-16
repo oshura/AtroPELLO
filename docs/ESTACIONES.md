@@ -135,13 +135,22 @@ interface SpaceStationHost {
 ## 4. Menú de aterrizaje de estación (componente nuevo)
 `components/landing-menu-station/` + tipos `game/types/station-landing.types.ts` +
 `services/game/station-landing-action.service.ts` (espejo simplificado de `landing-action.service`).
-Reutiliza el *shell* (`LandingPanelController`, panel global). Acciones:
-- **Buscar por la estación (50%)** → éxito/fallo con tablas de sucesos:
+Reutiliza el *shell* (`LandingPanelController`, panel global). Acciones (REVISADO build 63, 2026-08-17):
+- **Buscar por la estación** (sin % visible) → primero la **PRESENTACIÓN DE CÓMIC** (ver abajo) y al
+  terminar el desenlace mecánico: éxito/fallo con tablas de sucesos + **+5% de memoria SIEMPRE**
+  (buscar es recordar; antes la memoria se ganaba descansando):
   - *grotescos* (cadáveres) → **−cordura** (Slice 2: textos ricos inventados desde §5).
   - *estructurales* → **−vida** (Slice 2).
   - *recompensa* → **descubrir hechizo**: por ahora **Void Jump** (`SpellType.LONGJUMP`) (Slice 2).
-- **Descansar (100%)** → +vida, +cordura, **+5% memoria**, avanza tiempo, y lanza la **cinemática de
-  recuerdos** (Slice 2).
+- **Descansar (100%)** → +vida, +cordura y avanza tiempo (YA NO da memoria ni flashbacks de texto).
+- **PRESENTACIONES de cómic** (`PresentationService` + `PresentationPlayerComponent` +
+  `presentation-assets.ts`): viñetas por CONVENCIÓN de carpetas — imagen
+  `assets/presentationAnimation/<base>-NN.png`, voz `assets/audio/presentations/<base>-NN.wav`,
+  subtítulo opcional `<base>-NN.txt` junto a la imagen (guion/narrador; se pinta bajo la viñeta).
+  Descubre desde 00 hasta el primer hueco (sondeo de imagen; el fallback SPA no cuela). Secuencia:
+  fade in 0,5s → voz completa → 1,5s → fade out → siguiente; sin voz, 4s. ESC salta. Las voces NO
+  van al `_manifest.json` (arranque ligero): se cargan bajo demanda y suenan por el bus `voice`.
+  La búsqueda de la estación usa `base = 'Base'`.
 - **Recuperar vacío (100%)** → rellena `voidEnergyCurrent` de la nave.
 - **Despegar** → cierra menú, libera puerto, animación inversa.
 

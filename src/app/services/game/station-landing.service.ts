@@ -30,17 +30,8 @@ const STRUCTURAL_EVENTS: string[] = [
   'El suelo cede sobre un hueco de tres cubiertas; te sujetas por los dedos.',
   'Una viga desprendida te aplasta contra una esclusa atascada.',
 ];
-/**
- * Recuerdos que afloran al descansar, escalando con la memoria recuperada (ver docs/HISTORIA.md §6/§2).
- * Cada umbral revela un beat más profundo del Incidente. (La cinemática a pantalla completa queda diferida.)
- */
-const MEMORY_FLASHBACKS: Array<{ upTo: number; text: string }> = [
-  { upTo: 10, text: 'Flashes inconexos: una alarma lejana, el frío del casco, un nombre que no recuerdas.' },
-  { upTo: 25, text: 'Te ves robando una nave del hangar de la secta, el grimorio bajo el brazo.' },
-  { upTo: 45, text: 'El intercomunicador chillaba: «¡¿Qué haces, loco?! ¡Para ya! ¡Aborta!».' },
-  { upTo: 70, text: 'Un grimorio abierto, un glifo mal trazado: el Gate Rite. Tu voz temblaba al recitarlo.' },
-  { upTo: 100, text: 'La Tierra partiéndose en dos ante ti, el núcleo al desnudo. Y luego, la nada.' },
-];
+/** Ganancia de memoria por búsqueda en la estación (el recuerdo llega BUSCANDO, no descansando). */
+const SEARCH_MEMORY_GAIN = 5;
 
 /**
  * Acciones del menú de aterrizaje de la ESTACIÓN (distinto del de planetas): buscar / descansar /
@@ -57,34 +48,27 @@ export class StationLandingService {
     private readonly logger: LoggingService,
   ) {}
 
-  /** Descansar (100%): recupera vida y cordura, +5% de memoria y avanza el tiempo. */
+  /** Descansar (100%): recupera vida y cordura y avanza el tiempo (la memoria se gana BUSCANDO). */
   rest(): StationActionResult {
     this.characterProfile.adjustVitals({ health: 25, sanity: 20 });
-    const before = this.gameState.memoryPercent;
-    const memGain = 5;
-    this.gameState.memoryPercent = Math.min(100, before + memGain);
-    try { this.gameState.characterProfile.memory = Math.min(100, (this.gameState.characterProfile.memory ?? 0) + memGain); } catch {}
     this.advanceTime(1);
-    this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Station rest', { memGain });
-    const flashback = this.pickMemoryFlashback(this.gameState.memoryPercent);
+    this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Station rest');
     return {
       title: 'Descanso en la estación',
       lines: [
         { tone: 'info', text: 'Aseguras una esclusa estanca y duermes entre el zumbido de los reactores.' },
         { tone: 'success', text: 'Recuperas vida y cordura.' },
-        { tone: 'success', text: `Un recuerdo aflora: +${memGain}% de memoria.` },
-        { tone: 'warning', text: flashback },
       ],
     };
   }
 
-  private pickMemoryFlashback(memoryPercent: number): string {
-    for (const fb of MEMORY_FLASHBACKS) {
-      if (memoryPercent <= fb.upTo) {
-        return fb.text;
-      }
-    }
-    return MEMORY_FLASHBACKS[MEMORY_FLASHBACKS.length - 1].text;
+  /** Suma memoria (capada a 100) y devuelve la ganancia real aplicada. */
+  private gainMemory(pct: number): number {
+    const before = this.gameState.memoryPercent;
+    const after = Math.min(100, before + pct);
+    this.gameState.memoryPercent = after;
+    try { this.gameState.characterProfile.memory = Math.min(100, (this.gameState.characterProfile.memory ?? 0) + pct); } catch { /* perfil sin memoria */ }
+    return after - before;
   }
 
   /** Recuperar vacío (100%): rellena el depósito de energía de vacío de la nave. */
@@ -107,10 +91,20 @@ export class StationLandingService {
   }
 
   /**
-   * Buscar por la estación (50%). En éxito: descubrimiento de hechizo (si falta), o suceso grotesco
-   * (−cordura) / estructural (−vida). En fallo: tropiezo estructural (−vida). Slice 2 ampliará las tablas.
+   * Buscar por la estación. El panel reproduce antes la PRESENTACIÓN de cómic (PresentationService);
+   * aquí va el desenlace mecánico: descubrimiento de hechizo (si falta) o suceso grotesco (−cordura) /
+   * estructural (−vida), y SIEMPRE +5% de memoria (buscar es recordar). Slice 2 ampliará las tablas.
    */
   search(): StationActionResult {
+    const result = this.resolveSearchOutcome();
+    const gained = this.gainMemory(SEARCH_MEMORY_GAIN);
+    if (gained > 0) {
+      result.lines.push({ tone: 'success', text: `Al remover los restos, un recuerdo encaja: +${gained}% de memoria.` });
+    }
+    return result;
+  }
+
+  private resolveSearchOutcome(): StationActionResult {
     const success = Math.random() <= 0.5;
     if (!success) {
       this.characterProfile.adjustVitals({ health: -6 });
