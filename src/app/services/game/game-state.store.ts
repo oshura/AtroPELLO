@@ -192,7 +192,12 @@ export class GameStateStore {
   private experienceCapsCache: number[] = [100, 200];
   private readonly SANITY_BASE_MAX = 99;
   private readonly DAYS_PER_YEAR = 365;
-  public readonly knownSpells: Set<SpellType> = new Set(Object.values(SpellType));
+  /**
+   * Grimorio inicial REAL: solo el Gate Rite (fin del "god mode" de pruebas con el libro lleno).
+   * El resto se DESCUBRE jugando: Void Jump buscando en la estación humana (StationLandingService);
+   * los demás en puntos de la historia (docs/ESTACIONES.md §0.6). Los savegames restauran su propio libro.
+   */
+  public readonly knownSpells: Set<SpellType> = new Set([SpellType.GATE_RITE]);
   /** Layout personalizado de glifos del grimorio (coordenadas normalizadas 0..1) */
   public grimoireGlyphLayout: Partial<Record<SpellType, { nx: number; ny: number }>> = {};
   /** Identificador persistente del piloto para Cloud Saves / progresión. */

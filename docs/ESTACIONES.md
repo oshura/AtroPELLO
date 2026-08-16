@@ -18,9 +18,11 @@
 5. **Landmark fijo, regenerado idéntico por semilla** (daño y disposición de puertos SIEMPRE iguales).
    **Sin persistencia** de daño/puertos/hechizos: nada de mini-códec. La estación se reconstruye igual.
 6. **Descubrir hechizo = idempotente**: al buscar con éxito en la estación humana, si **Void Jump
-   (`SpellType.LONGJUMP`) NO está en el grimorio, se añade**; si ya está, no pasa nada (hoy el grimorio
-   los trae todos para jugar en "god mode" de pruebas). Otros hechizos se otorgarán en otros puntos de la
-   historia más adelante (no en este trabajo).
+   (`SpellType.LONGJUMP`) NO está en el grimorio, se añade**; si ya está, no pasa nada. REVISADO
+   build 64 (2026-08-17): el "god mode" de pruebas se RETIRÓ — el grimorio inicial trae **solo el
+   Gate Rite** (`GameStateStore.knownSpells`); el GrimoirePanel OCULTA los glifos no descubiertos
+   (aparecen en su hueco al aprenderlos, via `setKnownSpellsProvider`). Los savegames restauran su
+   propio libro. Otros hechizos se otorgarán en otros puntos de la historia más adelante.
 7. **Animación de acople propia** tipo "hangar / aproximación a muelle" (no la cámara cinemática de
    aterrizaje planetario).
 8. **Apariencia con texturas reales** (no colores planos). Texturas **CC0 de Poly Haven** ya descargadas a

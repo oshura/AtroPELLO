@@ -95,6 +95,13 @@ export class GrimoirePanel {
     [SpellType.RESPAWN_SIGILLUM, SpellState.AVAILABLE]
   ]);
   private selectedSpell: SpellType | null = null;
+  /**
+   * Glifos CONOCIDOS (grimorio real): los no aprendidos NI SE DIBUJAN ni se pueden equipar; aparecen
+   * en su hueco al descubrirlos (p.ej. Void Jump buscando en la estación). Null = sin proveedor
+   * (compatibilidad: se muestran todos). Se refresca al abrir el libro.
+   */
+  private knownSpellsProvider: (() => SpellType[]) | null = null;
+  private knownSpells: Set<SpellType> | null = null;
   // Reading mode animation (zoom + slight tilt)
   private animStartMs: number = performance.now();
   private animDurMs: number = 320;
@@ -122,10 +129,25 @@ export class GrimoirePanel {
     this.initializeStaticLayout();
   }
 
+  public setKnownSpellsProvider(fn: () => SpellType[]): void {
+    this.knownSpellsProvider = fn;
+    this.refreshKnownSpells();
+  }
+
+  private refreshKnownSpells(): void {
+    this.knownSpells = this.knownSpellsProvider ? new Set(this.knownSpellsProvider()) : null;
+  }
+
+  /** ¿Se muestra/interactúa este glifo? (decorativos siempre; hechizos solo si son conocidos). */
+  private isGlyphKnown(type: GlyphPlacement['type']): boolean {
+    return !isSpellType(type) || !this.knownSpells || this.knownSpells.has(type);
+  }
+
   public setEnabled(v: boolean) {
     if (v) {
       // Start opening animation and keep enabled
       this.enabled = true;
+      this.refreshKnownSpells(); // por si se aprendió un glifo desde la última apertura
       this.animOpening = true;
       this.animStartMs = performance.now();
       this.animClosingPendingDisable = false;
@@ -212,6 +234,9 @@ export class GrimoirePanel {
   }
   
   public setSelectedSpellType(t: SpellType | null): void {
+    if (t && !this.isGlyphKnown(t)) {
+      return; // no se puede equipar un glifo no descubierto
+    }
     const wasEquipped = this.selectedSpell !== null;
     const isEquipping = t !== null && t !== this.selectedSpell;
     
@@ -479,6 +504,9 @@ export class GrimoirePanel {
     let found = -1;
     for (let i = 0; i < this.iconPlacements.length; i++) {
       const glyph = this.iconPlacements[i];
+      if (!this.isGlyphKnown(glyph.type)) {
+        continue; // glifo aún no descubierto: invisible e intocable
+      }
       if (this.pointHitsGlyph(px, py, glyph)) {
         found = i;
         break;
@@ -792,7 +820,7 @@ export class GrimoirePanel {
       }
     }
     for (let i = 0; i < this.iconPlacements.length; i++) {
-      if (i === skipIndex) {
+      if (i === skipIndex || !this.isGlyphKnown(this.iconPlacements[i].type)) {
         continue;
       }
       const p = this.iconPlacements[i];
@@ -811,7 +839,7 @@ export class GrimoirePanel {
       });
     }
     for (let i = 0; i < this.iconPlacements.length; i++) {
-      if (i === skipIndex) {
+      if (i === skipIndex || !this.isGlyphKnown(this.iconPlacements[i].type)) {
         continue;
       }
       const p = this.iconPlacements[i];

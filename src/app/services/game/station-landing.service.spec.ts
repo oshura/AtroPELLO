@@ -65,9 +65,12 @@ describe('StationLandingService', () => {
     expect(r.lines[0].tone).toBe('warning');
   });
 
+  it('el grimorio inicial REAL trae solo el Gate Rite (fin del god mode)', () => {
+    expect(store.getKnownSpells()).toEqual([SpellType.GATE_RITE]);
+  });
+
   it('buscar con éxito descubre Void Jump (LONGJUMP) si falta', () => {
-    store.forgetSpell(SpellType.LONGJUMP);
-    expect(store.hasSpell(SpellType.LONGJUMP)).toBe(false);
+    expect(store.hasSpell(SpellType.LONGJUMP)).toBe(false); // ya no viene de serie
     spyOn(Math, 'random').and.returnValue(0.1); // <= 0.5 ⇒ éxito de búsqueda
     const r = service.search();
     expect(store.hasSpell(SpellType.LONGJUMP)).toBe(true);

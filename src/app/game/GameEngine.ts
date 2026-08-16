@@ -3346,8 +3346,8 @@ export class GameEngine {
   this.systemPanel.setEnabled(false); // desactivado por defecto
   // Initialize Grimoire panel (ancient book overlay)
   try {
-    this.grimoirePanel = new GrimoirePanel(this.gl, this.audio, 1024, 1024);
-    this.grimoirePanel.setEnabled(false);
+    this.grimoirePanel = new GrimoirePanel(this.gl, this.audio, 1024, 1024); // nace deshabilitado
+    this.grimoirePanel.setKnownSpellsProvider(() => this.gameState.getKnownSpells());
     this.syncGrimoireLayoutFromState('engine-init');
     if (this.gameState.isAtmosphereLockActive()) {
       this.syncAtmosphereSpellLocks(true);
