@@ -22,6 +22,8 @@ const INSIDE_DEPTH = 30;  // u que la nave se adentra ATRAVESANDO el puerto (que
 const DEPART_DIST = 200;  // u a los que se aleja al despegar
 const APPROACH_DIST = 58; // u frente al puerto (punto de control del arco de aproximación)
 const EXIT_SPEED_FACTOR = 0.25; // fracción de maxSpeed con la que la nave sale LANZADA al sistema
+const UNDOCK_CAM_DIST = 150;    // u de la cámara FIJA de la separación (el punto inicial de antes)
+const UNDOCK_CAM_HEIGHT = 45;   // elevación de esa cámara fija
 
 export class DockingSequenceAnimation extends BaseAnimation {
   public readonly name = 'docking-sequence';
@@ -38,6 +40,7 @@ export class DockingSequenceAnimation extends BaseAnimation {
   private control!: Vector3;  // punto de control del arco
   private startFwd!: Vector3; // heading inicial de la nave
   private endFwd!: Vector3;   // heading final
+  private fixedCam: Vector3 | null = null; // cámara ESTÁTICA de la separación (solo sigue con la mirada)
 
   public configure(ctx: DockingSequenceContext): void { this.ctx = ctx; }
 
@@ -62,9 +65,15 @@ export class DockingSequenceAnimation extends BaseAnimation {
     if (docking) {
       this.endPos = dockPose;
       this.endFwd = this.scale(this.n, -1); // mira HACIA el puerto
+      this.fixedCam = null;
     } else {
       this.endPos = departPose;
       this.endFwd = { ...this.n };          // sale mirando hacia afuera
+      // Cámara FIJA de la separación: el punto inicial de la órbita anterior, calculado UNA vez.
+      const ang = 0.2;
+      const dir = this.norm(this.add(this.scale(this.right, Math.cos(ang)), this.scale(this.n, 0.55 + 0.5 * Math.sin(ang))));
+      const anchor = this.lerpVec(this.startPos, this.ctx.portPosition, 0.3);
+      this.fixedCam = this.add(this.add(anchor, this.scale(dir, UNDOCK_CAM_DIST)), { x: 0, y: UNDOCK_CAM_HEIGHT, z: 0 });
     }
 
     // Congelar la nave: sin controles ni deriva; sin gasto de void energy; sin colisiones durante el vuelo.
@@ -154,36 +163,32 @@ export class DockingSequenceAnimation extends BaseAnimation {
 
   public override render(_engine: GameEngine): void { /* cinemática con cámara física, sin overlay */ }
 
-  // ---- cámara: órbita suave encuadrando nave + puerto (+ estación al fondo) ----
+  // ---- cámara: órbita suave al acoplar; FIJA (solo mirada) al separar ----
   private updateCamera(engine: GameEngine, shipPos: Vector3, p: number, docking: boolean): void {
     const cam = engine.camera;
     if (!cam) { return; }
     const port = this.ctx.portPosition;
-    const s = smoothstep(p);
-    let dir: Vector3;
-    let dist: number;
-    let camY: number;
-    let targetT: number;
-    if (docking) {
-      // Fly-in: de una vista lateral (aproximación) a DETRÁS-FUERA mirando al puerto, para ver la nave
-      // atravesar el tile y meterse dentro (se aleja de la cámara hacia el interior de la estación).
-      const behind = smoothstep(clamp01((p - 0.5) / 0.5));
-      const side = 1 - behind;
-      const ang = lerp(-0.9, 0.15, s);
-      dir = this.norm(this.add(
-        this.scale(this.right, Math.cos(ang) * side * 0.9),
-        this.scale(this.n, 0.5 + 1.1 * behind + 0.4 * side)   // siempre fuera (+n); al final casi puro +n
-      ));
-      dist = lerp(92, 58, s);
-      camY = lerp(24, 13, behind);
-      targetT = lerp(0.4, 0.8, behind);                       // al final mira al puerto (la nave ya está dentro)
-    } else {
-      const ang = lerp(0.2, 1.0, s);
-      dir = this.norm(this.add(this.scale(this.right, Math.cos(ang)), this.scale(this.n, 0.55 + 0.5 * Math.sin(ang))));
-      dist = lerp(150, 310, s); // el DOBLE de lejos que antes: la nave se ve a la mitad o menos (petición)
-      camY = 45;
-      targetT = 0.4;
+    if (!docking) {
+      // Separación: la cámara NO se mueve — se queda en su punto inicial y sigue a la nave con la mirada.
+      try {
+        cam.seedManualTransform?.(this.fixedCam ?? this.add(shipPos, { x: 0, y: UNDOCK_CAM_HEIGHT, z: UNDOCK_CAM_DIST }), shipPos, { x: 0, y: 1, z: 0 });
+        cam.markDirty?.();
+      } catch { /* best-effort */ }
+      return;
     }
+    // Fly-in: de una vista lateral (aproximación) a DETRÁS-FUERA mirando al puerto, para ver la nave
+    // atravesar el tile y meterse dentro (se aleja de la cámara hacia el interior de la estación).
+    const s = smoothstep(p);
+    const behind = smoothstep(clamp01((p - 0.5) / 0.5));
+    const side = 1 - behind;
+    const ang = lerp(-0.9, 0.15, s);
+    const dir = this.norm(this.add(
+      this.scale(this.right, Math.cos(ang) * side * 0.9),
+      this.scale(this.n, 0.5 + 1.1 * behind + 0.4 * side)     // siempre fuera (+n); al final casi puro +n
+    ));
+    const dist = lerp(92, 58, s);
+    const camY = lerp(24, 13, behind);
+    const targetT = lerp(0.4, 0.8, behind);                   // al final mira al puerto (la nave ya está dentro)
     const anchor = this.lerpVec(shipPos, port, 0.3);
     const camPos = this.add(this.add(anchor, this.scale(dir, dist)), { x: 0, y: camY, z: 0 });
     const target = this.lerpVec(shipPos, port, targetT);
