@@ -413,6 +413,13 @@ export class AdaptiveTargetingSystem {
           return portalRadius;
         }
       }
+    // Radio de PUNTERÍA explícito del objeto (p. ej. DockPort agrandado): manda sobre la bounding sphere.
+    if (typeof anyTarget?.getTargetingRadius === 'function') {
+      const rt = Number(anyTarget.getTargetingRadius());
+      if (Number.isFinite(rt) && rt > 0) {
+        return Math.max(1, rt);
+      }
+    }
     if (anyTarget?.boundingSphere?.radius !== undefined) {
       const r = Number(anyTarget.boundingSphere.radius);
       if (Number.isFinite(r) && r > 0) {

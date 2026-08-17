@@ -12,6 +12,8 @@ const QUAD_UV = [0, 0, 1, 0, 1, 1, 0, 1];
 const QUAD_I = [0, 1, 2, 0, 2, 3];
 const PORT_BLUE: [number, number, number] = [0.25, 0.58, 1.0]; // azul brillante (canal B=1 ⇒ luce emissive)
 const PORT_BLUE_DARK: [number, number, number] = [0.08, 0.14, 0.32]; // azul oscuro: puerto NO acoplable
+// Radio de PUNTERÍA sobre `size`: la tile (8u) era difícil de clicar; 2.5 ⇒ 20u de radio de selección.
+const TARGETING_RADIUS_FACTOR = 2.5;
 
 /**
  * "Tile" de acople: polígono azul luminoso, seleccionable como cualquier objeto del espacio. Reutilizable
@@ -65,6 +67,11 @@ export class DockPort extends GameObject {
 
   public getTargetType(): TargetType {
     return this.objectType;
+  }
+
+  /** Radio de PUNTERÍA agrandado (targeting, NO colisión): lo prefiere el AdaptiveTargetingSystem. */
+  public getTargetingRadius(): number {
+    return this.size * TARGETING_RADIUS_FACTOR;
   }
 
   /**

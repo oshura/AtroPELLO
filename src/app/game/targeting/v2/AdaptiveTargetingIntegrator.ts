@@ -368,6 +368,9 @@ export class AdaptiveTargetingIntegrator {
   public cycleTarget(direction: 1 | -1 = 1): void {
     if (!this.isInitialized) return;
 
+    // Con la estación (o un subelemento suyo) seleccionada, el ciclo recorre la FAMILIA primero.
+    if (this.cycleWithinFamily(direction)) return;
+
     const now = performance.now();
     const reuse = this.canReuseCycleCandidates(now, this.mousePosition);
     if (!reuse) {
@@ -402,6 +405,41 @@ export class AdaptiveTargetingIntegrator {
         d: Math.round(next.distanceToCenter)
       });
     }
+  }
+
+  /**
+   * Ciclo por SUBELEMENTOS (docs/ESTACIONES.md §1.2.3): si lo seleccionado es un objeto con
+   * subelementos (estación → `DockPort`s, enlazados por `parentStationId`), T recorre
+   * raíz → subelementos (orden estable por id) → raíz, en vez del ciclo por cursor.
+   * Devuelve true si aplicó (la familia tiene subelementos).
+   */
+  private cycleWithinFamily(direction: 1 | -1): boolean {
+    const selected = this.adaptiveSystem.getCurrentSelected();
+    if (!selected) return false;
+    const sel = selected.target as ITargetable & { parentStationId?: unknown; isSpaceStation?: unknown };
+    const rootId = sel.isSpaceStation === true
+      ? sel.id
+      : (typeof sel.parentStationId === 'string' ? sel.parentStationId : null);
+    if (!rootId) return false;
+    let root: ITargetable | null = null;
+    const subs: ITargetable[] = [];
+    for (const list of this.adaptiveSystem.getTargetsByCategory().values()) {
+      for (const info of list) {
+        const t = info.target as ITargetable & { parentStationId?: unknown };
+        if (t.id === rootId) {
+          root = t;
+        } else if (t.parentStationId === rootId) {
+          subs.push(t);
+        }
+      }
+    }
+    if (subs.length === 0) return false;
+    subs.sort((a, b) => a.id.localeCompare(b.id));
+    const family = root ? [root, ...subs] : subs;
+    const idx = family.findIndex(t => t.id === sel.id);
+    const next = family[((idx < 0 ? 0 : idx) + direction + family.length) % family.length];
+    this.adaptiveSystem.selectTarget(next);
+    return true;
   }
 
   private canReuseCycleCandidates(now: number, mouse: { x: number; y: number }): boolean {

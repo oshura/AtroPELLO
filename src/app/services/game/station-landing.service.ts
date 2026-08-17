@@ -93,7 +93,7 @@ export class StationLandingService {
     }
     const gained = this.gainMemory(SEARCH_MEMORY_GAIN);
     if (gained > 0) {
-      lines.push({ tone: 'success', text: `Al remover los restos, un recuerdo encaja: +${gained}% de memoria.` });
+      lines.push({ tone: 'success', text: `+${gained}% de memoria.` });
     }
     if (lines.length === 1) {
       lines.push({ tone: 'info', text: 'No queda nada más que rescatar entre los restos.' });

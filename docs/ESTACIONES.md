@@ -93,6 +93,15 @@ kilometros POR DETRAS del casco (la esfera de 160u solo cubre el nucleo; el rest
   collider); el motor solo lo cablea junto al distance origin (1 linea, compensada).
 Pendiente de validacion en juego por el usuario; si convence, considerar portales/planetas.
 
+### 1.2.3 Punteria de puertos + ciclo por subelementos con T (build 69, 2026-08-18)
+- **Radio de punteria de los `DockPort` agrandado**: la tile de 8u era dificil de clicar →
+  `getTargetingRadius()` = size × 2.5 (20u), que `AdaptiveTargetingSystem.getTargetRadius` prefiere
+  sobre la bounding sphere (gancho GENERICO: cualquier objeto puede exponerlo). Solo targeting, la
+  colision no cambia.
+- **T recorre la familia**: con la estacion (o uno de sus puertos) seleccionada, T/Shift+T cicla
+  raiz → puertos (orden estable por id) → raiz (`cycleWithinFamily` en el Integrator, enlazando por
+  `parentStationId`), en vez del ciclo por cursor. Con cualquier otra seleccion, T sigue como antes.
+
 ### 1.3 Subclase `HumanSpaceStation`
 `game/game-objects/stations/human-space-station.ts` (≤400). Implementa el **toroide** con secciones
 (hábitats/almacenes/mantenimiento), **4 radios** hacia un **núcleo central de motores**, y los **puertos**

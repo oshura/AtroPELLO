@@ -158,6 +158,15 @@ describe('SpaceStationSystem', () => {
     expect(closed.colors![2]).toBeGreaterThan(closed.colors![0]); // sigue siendo azul
   });
 
+  it('los puertos tienen radio de PUNTERÍA agrandado (tile de 8u difícil de clicar → 20u)', () => {
+    const sys = new SpaceStationSystem();
+    const { host } = makeHost();
+    sys.update(host, 0.016);
+    const port = sys.getPorts()[0];
+    expect(port.getTargetingRadius()).toBeCloseTo(port.size * 2.5, 6);
+    expect(port.getTargetingRadius()).toBeGreaterThan(port.size);
+  });
+
   it('rellena la intel del panel de detalle: resumen de puertos y nombre del padre', () => {
     const sys = new SpaceStationSystem();
     const { host } = makeHost();
