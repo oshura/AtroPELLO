@@ -23,6 +23,7 @@ export interface SpaceStationHost {
 }
 
 const SPAWN_DIST = 2500;       // u desde la nave del jugador (dentro de la cola; localizar y dirigirse a ella)
+const LATERAL_OFFSET = 500;    // u PERPENDICULAR a la línea nave→Tierra: al girar la vista se ven ambas por separado
 const STATION_RADIUS = 800;    // radio exterior del toroide (grandota)
 const PORT_SIZE = 8;           // tamaño de la tile de acople (20% del anterior)
 const SPIN_SPEED = 0.025;      // rad/s — giro lento sobre el propio eje del toroide (rueda; núcleo = eje). Mitad de velocidad (antes 0.05)
@@ -31,9 +32,6 @@ const MOTOR_COLOR: [number, number, number] = [1.0, 0.40, 0.10]; // motor "apaga
 const FREE_PORTS = new Set<number>([0, 5]); // puertos ACOPLABLES (con marcos neón); el resto, azul oscuro
 export const MAX_DOCK_RELATIVE_SPEED = 5; // u/s relativa al puerto para que el piloto se encienda (§8)
 const DOCK_READY_RELEASE_SPEED = 6;  // u/s: histéresis — el piloto encendido no se apaga hasta superar esto
-const SPIN_EASE_RATE = 2.5;    // 1/s — el giro se frena/reanuda suavemente cerca de un puerto acoplable
-const SPIN_BRAKE_RANGE = 140;  // u a un puerto acoplable: se frena el giro (marcos quietos ANTES de enhebrar)
-const SPIN_BRAKE_RELEASE = 180; // u: histéresis de reanudación del giro
 const DOCK_HINT_PERIOD = 2.5;  // s entre avisos HUD mientras la nave está en el corredor
 
 /**
@@ -49,8 +47,6 @@ export class SpaceStationSystem {
   private motors: StationEmissiveBall[] = [];         // "bola" de motor (tobera del núcleo)
   private motorLocals: [number, number, number][] = []; // centros LOCALES de los motores
   private windows: { steady: StationWindowMesh; flicker: StationWindowMesh } | null = null; // §7 I0
-  private spinFactor = 1;                 // 1=giro normal, →0 cerca de un puerto acoplable ("asistencia de atraque")
-  private brakeEngaged = false;           // freno de giro activo (histéresis RANGE/RELEASE)
   private dockRelativeSpeed = Infinity;   // |v_nave − v_puerto| del candidato actual (u/s)
   private dockReadyLatch = false;         // piloto con histéresis (enciende ≤5, no se apaga hasta >6)
   private hintTimer = 0;                  // cadencia del aviso HUD del corredor
@@ -93,8 +89,6 @@ export class SpaceStationSystem {
     this.motors = [];
     this.motorLocals = [];
     this.windows = null;
-    this.spinFactor = 1;
-    this.brakeEngaged = false;
     this.dockRelativeSpeed = Infinity;
     this.dockReadyLatch = false;
     this.hintTimer = 0;
@@ -121,42 +115,13 @@ export class SpaceStationSystem {
 
     const ship = host.getShipPosition();
 
-    // Asistencia de atraque por PROXIMIDAD (histéresis RANGE/RELEASE): el giro se frena cuando la nave
-    // se acerca a un puerto acoplable, de modo que los marcos ya están QUIETOS antes de enhebrar el
-    // corredor (blanco estable y velocidad relativa legible; si no, el puerto barre a ~9 u/s).
-    if (ship) {
-      let dMin = Infinity;
-      for (const p of this.ports) {
-        if (!p.isDockable()) {
-          continue;
-        }
-        const d = Math.hypot(p.position.x - ship.x, p.position.y - ship.y, p.position.z - ship.z);
-        if (d < dMin) {
-          dMin = d;
-        }
-      }
-      if (dMin <= SPIN_BRAKE_RANGE) {
-        this.brakeEngaged = true;
-      } else if (dMin > SPIN_BRAKE_RELEASE) {
-        this.brakeEngaged = false;
-      }
-    } else {
-      this.brakeEngaged = false;
-    }
-
     // Giro como una RUEDA sobre el propio eje del toroide (spin = Y local, más interno que la inclinación).
-    // Congelado mientras está acoplada/en animación; frenado suave con la asistencia activa.
+    // La estación NUNCA frena por la nave: atracar exige IGUALAR la velocidad del puerto en movimiento
+    // (relativa ≤5 u/s con el puerto barriendo a ~9 u/s). Solo se congela acoplada/en animación.
     if (!host.isDockingBusy()) {
-      const target = this.brakeEngaged ? 0 : 1;
-      this.spinFactor += (target - this.spinFactor) * Math.min(1, dt * SPIN_EASE_RATE);
-      if (target === 0 && this.spinFactor < 0.01) {
-        this.spinFactor = 0;
-      }
-      if (this.spinFactor > 0) {
-        this.station.spin += SPIN_SPEED * this.spinFactor * dt;
-        this.station.updateModelMatrix();
-        this.rebuildWorldTransforms();
-      }
+      this.station.spin += SPIN_SPEED * dt;
+      this.station.updateModelMatrix();
+      this.rebuildWorldTransforms();
     }
 
     // Detección de acople (§8): la nave debe estar DENTRO del corredor de marcos de un puerto acoplable.
@@ -202,8 +167,8 @@ export class SpaceStationSystem {
         host.showDockHint(this.dockReadyLatch
           ? 'Acople listo — pulsa ENTER para atracar'
           : Number.isFinite(this.dockRelativeSpeed)
-            ? `Corredor de acople — frena: ${this.dockRelativeSpeed.toFixed(1)} u/s (máx ${MAX_DOCK_RELATIVE_SPEED})`
-            : 'Corredor de acople — reduce la velocidad para atracar');
+            ? `Corredor de acople — relativa al puerto: ${this.dockRelativeSpeed.toFixed(1)} u/s (máx ${MAX_DOCK_RELATIVE_SPEED})`
+            : 'Corredor de acople — iguala la velocidad del puerto para atracar');
       }
     } else {
       this.hintTimer = 0;
@@ -211,13 +176,13 @@ export class SpaceStationSystem {
   }
 
   /**
-   * Velocidad de la nave RELATIVA al puerto (u/s). El puerto se mueve con el giro de la estación:
-   * v_puerto = ω × r, con ω = eje de giro (Y local en mundo) por la velocidad angular EFECTIVA
-   * (frenada por spinFactor / congelada durante el atraque).
+   * Velocidad de la nave RELATIVA al puerto (u/s), en espacio 3D de mundo — NO se cambia el sistema
+   * de referencia de la nave. El puerto se mueve con el giro de la estación: v_puerto = ω × r, con
+   * ω = eje de giro (Y local en mundo); solo vale 0 congelada durante el atraque.
    */
   private computeDockRelativeSpeed(port: DockPort, shipVel: Vector3, dockingBusy: boolean): number {
     const st = this.station!;
-    const w = dockingBusy ? 0 : SPIN_SPEED * this.spinFactor;
+    const w = dockingBusy ? 0 : SPIN_SPEED;
     const m = st.modelMatrix;
     const al = Math.hypot(m[4], m[5], m[6]) || 1; // columna Y (lleva la escala del radio) → normalizar
     const ax = (m[4] / al) * w, ay = (m[5] / al) * w, az = (m[6] / al) * w;
@@ -240,10 +205,18 @@ export class SpaceStationSystem {
         dir = { x: dx / len, y: dy / len, z: dz / len };
       }
     }
+    // Desvío lateral DETERMINISTA (perpendicular a la línea nave→Tierra con el up del mundo; si la
+    // línea es casi vertical, con el eje X): estación y Tierra dejan de estar alineadas desde la nave.
+    let perp: Vector3 = { x: -dir.z, y: 0, z: dir.x };
+    let pl = Math.hypot(perp.x, perp.y, perp.z);
+    if (pl < 0.05) {
+      perp = { x: 0, y: dir.z, z: -dir.y };
+      pl = Math.hypot(perp.x, perp.y, perp.z) || 1;
+    }
     const pos: Vector3 = {
-      x: ship.x + dir.x * SPAWN_DIST,
-      y: ship.y + dir.y * SPAWN_DIST,
-      z: ship.z + dir.z * SPAWN_DIST,
+      x: ship.x + dir.x * SPAWN_DIST + (perp.x / pl) * LATERAL_OFFSET,
+      y: ship.y + dir.y * SPAWN_DIST + (perp.y / pl) * LATERAL_OFFSET,
+      z: ship.z + dir.z * SPAWN_DIST + (perp.z / pl) * LATERAL_OFFSET,
     };
     const station = new HumanSpaceStation(pos, STATION_RADIUS, HUMAN_STATION_ID);
     // Inclinación inicial (~25°) en un par de ejes; el giro (spin) se aplica en update sobre el eje del toroide.

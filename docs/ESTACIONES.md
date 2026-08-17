@@ -455,9 +455,9 @@ Peticion del usuario (con esbozo): senalizar visualmente DONDE y COMO se puede a
 - **Condicion de acople**: nave DENTRO del embudo Y a <=5 u/s de velocidad RELATIVA al puerto
   (el puerto se mueve con el giro de la estacion: v_puerto = omega x r, ~9 u/s en el radio de los
   brazos). Cumplida -> piloto "Land" del HUD encendido; ENTER lanza la cinematica de siempre.
-- **Asistencia de atraque**: con la nave dentro del corredor, el giro de la estacion se FRENA suave
-  (easing, `SPIN_EASE_RATE`) hasta pararse; sin esto la relativa nunca bajaria de 5 con la nave
-  parada y el corredor barreria lateralmente. Al salir del corredor el giro se reanuda.
+- ~~**Asistencia de atraque**: con la nave dentro del corredor, el giro de la estacion se FRENA suave
+  hasta pararse; al salir del corredor el giro se reanuda.~~ **RETIRADA en build 66 (§8.2)**: la
+  estacion NUNCA frena por la nave; atracar exige igualar la velocidad del puerto en movimiento.
 - **Puertos NO acoplables**: los pecios rusty atracados se RETIRAN (borrados `docked-ship-wreck.ts`,
   `ship-wreck-geometry.ts` y los 6 `createXxxGeometry` huerfanos de `Spaceship`, -364 lineas); el
   tile queda en AZUL OSCURO sin emissive y sin marcos (no se puede atracar).
@@ -470,10 +470,26 @@ Peticion del usuario (con esbozo): senalizar visualmente DONDE y COMO se puede a
 Reporte: entre el 3er y 2o marco, casi parado relativo, el piloto no encendia. Causas: el freno de
 giro estaba acoplado a "dentro del corredor" (blanco movil: entrar frena los marcos bajo tus pies y
 el candidato parpadea en el borde) y la zona terminaba EXACTO en el plano del marco lejano.
-- Freno por PROXIMIDAD con histeresis (SPIN_BRAKE_RANGE 140u / RELEASE 180u, ease 2.5/s): los
-  marcos ya estan QUIETOS antes de enhebrar el corredor.
+- ~~Freno por PROXIMIDAD con histeresis (SPIN_BRAKE_RANGE 140u / RELEASE 180u, ease 2.5/s): los
+  marcos ya estan QUIETOS antes de enhebrar el corredor.~~ RETIRADO en build 66 (§8.2).
 - Gracia de +14u tras el marco lejano (DOCK_CORRIDOR_GRACE): flotar "en" el 3er marco cuenta dentro.
 - Piloto con histeresis: enciende a <=5 u/s relativa, no se apaga hasta >6 (sin parpadeo).
 - Feedback vivo: aviso HUD periodico en el corredor con la relativa actual ("frena: X.X u/s (max 5)")
   o "Acople listo"; lo emite el SISTEMA via host.showDockHint (updateStationDocking del motor
   eliminado). Y los 3 marcos del puerto listo se quedan FIJOS a plena luz (confirmacion en mundo).
+
+### 8.2 Correccion de diseño: relativa REAL, sin freno de giro (build 66, 2026-08-18)
+Peticion del usuario: el freno de giro por proximidad NO era lo pedido — "no me cambies el sistema
+de referencia": la nave conserva su velocidad en el espacio 3D SIEMPRE; lo que se compara contra el
+umbral de 5 u/s es `|v_nave − v_puerto|` con el puerto MOVIENDOSE de verdad (v_puerto = omega x r,
+~9 u/s). Aunque la nave vaya a 10 u/s en mundo, si acompaña al puerto la relativa puede ser 2-3 u/s
+y el acople es valido dentro del embudo de marcos.
+- Freno/asistencia RETIRADOS del todo (`SPIN_BRAKE_RANGE/RELEASE`, `SPIN_EASE_RATE`, `spinFactor`,
+  `brakeEngaged` borrados): la estacion gira SIEMPRE; solo se congela acoplada/en animacion
+  (`isDockingBusy`, como antes). Atracar es una maniobra de acompañamiento, no de frenado.
+- Aviso HUD reescrito: "Corredor de acople — relativa al puerto: X.X u/s (max 5)" (antes "frena:",
+  que sugeria reducir la velocidad absoluta).
+- **Spawn con desvio lateral**: la estacion aparece a 2500u hacia la Tierra + **500u PERPENDICULARES**
+  a la linea nave→Tierra (`LATERAL_OFFSET`, perpendicular determinista con el up del mundo, fallback
+  eje X si la linea es casi vertical): al girar la vista desde el inicio se ven estacion y Tierra como
+  objetos separados, no alineados.

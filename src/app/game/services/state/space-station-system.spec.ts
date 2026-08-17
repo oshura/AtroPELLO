@@ -50,14 +50,15 @@ describe('SpaceStationSystem', () => {
     expect(sys.getRenderable()).toBeNull();
   });
 
-  it('aparece a 2500u de la nave hacia la Tierra, con 8 puertos en mundo', () => {
+  it('aparece a 2500u hacia la Tierra con desvío lateral de 500u (no tapa la Tierra), con 8 puertos', () => {
     const sys = new SpaceStationSystem();
     const { host } = makeHost({ ship: { x: 0, y: 0, z: 0 }, earth: { x: 0, y: 0, z: 10000 } });
     sys.update(host, 0.016);
     const station = sys.getRenderable();
     expect(station).not.toBeNull();
-    // 2500u hacia la Tierra (+Z).
+    // 2500u hacia la Tierra (+Z) y 500u FUERA de la línea nave→Tierra (perpendicular).
     expect(station!.position.z).toBeCloseTo(2500, 0);
+    expect(Math.hypot(station!.position.x, station!.position.y)).toBeCloseTo(500, 0);
     expect(sys.getPorts().length).toBe(8);
     // Los puertos están cerca de la estación (dentro del radio exterior).
     for (const p of sys.getPorts()) {
@@ -97,45 +98,52 @@ describe('SpaceStationSystem', () => {
     expect(sys.getDockCandidate()).toBeNull();
   });
 
-  it('piloto solo a ≤5 u/s RELATIVA: el giro se frena con la nave en el corredor y entonces se enciende', () => {
+  it('piloto por velocidad RELATIVA real: la estación NO frena su giro; hay que IGUALAR la del puerto', () => {
     const sys = new SpaceStationSystem();
     const { host, state } = makeHost();
     sys.update(host, 0.016); // spawn
     const station = sys.getRenderable()!;
     const dockable = sys.getPorts().find(p => p.isDockable())!;
-    const n = dockable.approachNormal;
-    state.ship = {
-      x: dockable.position.x + n.x * 30,
-      y: dockable.position.y + n.y * 30,
-      z: dockable.position.z + n.z * 30,
+    const inCorridor = (): Vector3 => {
+      const n = dockable.approachNormal;
+      return {
+        x: dockable.position.x + n.x * 30,
+        y: dockable.position.y + n.y * 30,
+        z: dockable.position.z + n.z * 30,
+      };
     };
-    state.shipVel = { x: 0, y: 0, z: 0 }; // nave parada en mundo
+    state.ship = inCorridor();
+    state.shipVel = { x: 0, y: 0, z: 0 }; // nave PARADA en mundo
     sys.update(host, 0.05);
     expect(sys.getDockCandidate()?.id).toBe(dockable.id);
-    // Con el giro aún vivo, el puerto barre a ~9 u/s → velocidad relativa > 5 → piloto apagado.
+    // El puerto barre a ~9 u/s con el giro vivo → relativa > 5 → piloto apagado…
     expect(sys.isDockReady()).toBeFalse();
-    // La asistencia de atraque frena el giro en unos segundos → relativa → 0 → piloto encendido.
-    for (let i = 0; i < 200; i++) {
-      sys.update(host, 0.05);
-    }
-    expect(sys.isDockReady()).toBeTrue();
-    // El aviso HUD ha informado de la relativa mientras frenaba y del "listo" al final.
-    expect(state.hints.some(h => h.includes('frena'))).toBeTrue();
-    expect(state.hints[state.hints.length - 1]).toContain('Acople listo');
-    // Giro congelado del todo mientras la nave siga en el corredor.
-    const frozenSpin = station.spin;
-    for (let i = 0; i < 20; i++) {
-      sys.update(host, 0.05);
-    }
-    expect(station.spin).toBe(frozenSpin);
-    // La nave se marcha (bien lejos del corredor) → el giro se reanuda.
-    state.ship = { x: dockable.position.x + 500, y: dockable.position.y + 500, z: dockable.position.z + 500 };
+    // …y sigue apagado por mucho que la nave espere delante: la estación NUNCA frena por proximidad.
     for (let i = 0; i < 100; i++) {
+      state.ship = inCorridor();
       sys.update(host, 0.05);
     }
-    expect(sys.getDockCandidate()).toBeNull();
-    expect(station.spin).toBeGreaterThan(frozenSpin);
-    // Y en movimiento dentro del corredor, por encima del umbral no hay piloto.
+    expect(sys.isDockReady()).toBeFalse();
+    const spinMid = station.spin;
+    state.ship = inCorridor();
+    sys.update(host, 0.05);
+    expect(station.spin).toBeGreaterThan(spinMid); // el giro avanza incluso con la nave en el corredor
+    // El aviso HUD informa de la relativa en vivo, no del "listo".
+    expect(state.hints.some(h => h.includes('relativa al puerto'))).toBeTrue();
+    expect(state.hints.some(h => h.includes('Acople listo'))).toBeFalse();
+    // IGUALANDO la velocidad del puerto (v = ω×r, medida numéricamente) la relativa cae → piloto ON,
+    // aunque la nave vaya a ~9 u/s en mundo (lo que importa es la relativa en el espacio 3D).
+    const before: Vector3 = { ...dockable.position };
+    sys.update(host, 0.05);
+    state.shipVel = {
+      x: (dockable.position.x - before.x) / 0.05,
+      y: (dockable.position.y - before.y) / 0.05,
+      z: (dockable.position.z - before.z) / 0.05,
+    };
+    expect(Math.hypot(state.shipVel.x, state.shipVel.y, state.shipVel.z)).toBeGreaterThan(5); // va "rápido" en mundo
+    state.ship = inCorridor();
+    sys.update(host, 0.05);
+    expect(sys.isDockReady()).toBeTrue();
     expect(MAX_DOCK_RELATIVE_SPEED).toBe(5);
   });
 
