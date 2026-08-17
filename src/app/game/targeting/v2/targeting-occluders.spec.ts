@@ -1,4 +1,4 @@
-import { StructuredRayOccluder } from './targeting-occluders';
+import { SphereRayOccluder, StructuredRayOccluder, collectWorldOccluders } from './targeting-occluders';
 import { HumanSpaceStation } from '../../game-objects/stations/human-space-station';
 
 /**
@@ -60,5 +60,43 @@ describe('StructuredRayOccluder', () => {
     const occ = new StructuredRayOccluder(st.id, st, st.getStructuredShapesLocal());
     expect(occ.rayHit({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 })).toBeNull();
     expect(occ.rayHit({ x: 5000, y: 0, z: 0 }, { x: 0, y: 1, z: 0 })).toBeNull();
+  });
+});
+
+describe('SphereRayOccluder (planetas/sol: silueta esférica por scale.x VIVO)', () => {
+  it('impacta el disco a la distancia mundo correcta y falla fuera de él', () => {
+    const body = { id: 'planet-x', position: { x: 0, y: 0, z: 5000 }, scale: { x: 1200 } };
+    const occ = new SphereRayOccluder(body.id, body);
+    // Al centro: impacto en la superficie cercana (5000 − 1200 = 3800).
+    expect(occ.rayHit({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })!).toBeCloseTo(3800, 3);
+    // Rayo paralelo desplazado MÁS que el radio: fuera del disco → null.
+    expect(occ.rayHit({ x: 1300, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })).toBeNull();
+    // Desplazado menos que el radio: dentro del disco → impacta.
+    expect(occ.rayHit({ x: 900, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })).not.toBeNull();
+    // Mirando en sentido contrario → null.
+    expect(occ.rayHit({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 })).toBeNull();
+  });
+
+  it('lee el radio EN VIVO (scale.x): sigue encogimientos tipo Gate Rite', () => {
+    const body = { id: 'planet-y', position: { x: 0, y: 0, z: 5000 }, scale: { x: 1200 } };
+    const occ = new SphereRayOccluder(body.id, body);
+    expect(occ.rayHit({ x: 900, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })).not.toBeNull();
+    body.scale.x = 400; // encogido: el mismo rayo ya no toca el disco
+    expect(occ.rayHit({ x: 900, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })).toBeNull();
+  });
+
+  it('con el origen DENTRO del cuerpo (atmósfera) no ocluye nada', () => {
+    const body = { id: 'planet-z', position: { x: 0, y: 0, z: 0 }, scale: { x: 1200 } };
+    const occ = new SphereRayOccluder(body.id, body);
+    expect(occ.rayHit({ x: 0, y: 500, z: 0 }, { x: 0, y: -1, z: 0 })).toBeNull();
+  });
+
+  it('collectWorldOccluders compone base + esferas, cachea por instancia e ignora nulls', () => {
+    const body = { id: 'planet-w', position: { x: 0, y: 0, z: 0 }, scale: { x: 100 } };
+    const a = collectWorldOccluders([], [body, null, undefined]);
+    const b = collectWorldOccluders([], [body]);
+    expect(a.length).toBe(1);
+    expect(b[0]).toBe(a[0]); // misma instancia (caché por cuerpo)
+    expect(a[0].targetId).toBe('planet-w');
   });
 });

@@ -91,7 +91,13 @@ kilometros POR DETRAS del casco (la esfera de 160u solo cubre el nucleo; el rest
   hueco del toroide), no hay corte: lo que se VE a traves sigue siendo seleccionable.
 - `SpaceStationSystem.getTargetOccluders()` construye el oclusor al spawnear (mismas formas que el
   collider); el motor solo lo cablea junto al distance origin (1 linea, compensada).
-Pendiente de validacion en juego por el usuario; si convence, considerar portales/planetas.
+- **Extendido a PLANETAS y SOL (build 74)**: `SphereRayOccluder` analitico (rayo↔esfera, sin marching)
+  con radio = `scale.x` EN VIVO — el radio visual real (¡algunos tipos multiplican su radio declarado
+  en el constructor: GiantPlanet ×4, RingedPlanet ×2; y el Gate Rite encoge la escala!). Matiz clave:
+  el fallo de silueta solo corta el camino normal cuando el cuerpo DOMINA la pantalla (cerca); de
+  lejos conserva la tolerancia en pixeles para no exigir punteria exacta a un disco pequeño. Con el
+  origen del rayo DENTRO del cuerpo (atmosfera) no ocluye. Composicion en `collectWorldOccluders`
+  (cache por instancia, WeakMap).
 
 ### 1.2.3 Punteria de puertos + ciclo por subelementos con T (build 69, 2026-08-18)
 - **Radio de punteria de los `DockPort` agrandado**: la tile de 8u era dificil de clicar →

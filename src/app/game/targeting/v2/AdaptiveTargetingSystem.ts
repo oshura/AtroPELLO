@@ -590,14 +590,15 @@ export class AdaptiveTargetingSystem {
     for (const targets of categorizedTargets.values()) {
       for (const info of targets) {
         const occKey = info.target.id ?? info.name;
-        if (occByTarget.has(occKey)) {
-          // Cuerpo con silueta real: candidato SOLO donde el rayo toca su geometría — sin esfera de
-          // puntería, sin fallback por píxel y sin dominant gate (el rayo ya solo "ve" casco de verdad).
-          const tHit = occByTarget.get(occKey)!;
-          if (Number.isFinite(tHit) && (!best || tHit < best.t)) best = { info, t: tHit };
+        const occHit = occByTarget.get(occKey);
+        if (occHit !== undefined && Number.isFinite(occHit)) {
+          // Silueta real impactada: el cuerpo es candidato justo ahí — sin esfera de puntería ni gate.
+          if (!best || occHit < best.t) best = { info, t: occHit };
           continue;
         }
         if (this.isDominantAndGated(info)) continue; // skip dominant gated
+        // Cuerpo con silueta que el rayo NO toca y que NO domina la pantalla (está lejos): sigue por el
+        // camino normal (esfera + tolerancia en píxeles) — no se exige puntería exacta a un disco pequeño.
         const center = this.getTargetAnchorPosition(info.target);
         const radius = this.getTargetRadius(info.target);
         if (occCut < Infinity) {

@@ -46,6 +46,7 @@ import { FlightVectorReticleState } from './hud/elements/FlightVectorReticle';
 import { FlightVectorReticleBuilder, FlightVectorReticleHost } from './hud/elements/flight-vector-reticle-builder';
 import { ReticleManager } from './targeting';
 import { AdaptiveTargetingIntegrator } from './targeting/v2/AdaptiveTargetingIntegrator';
+import { collectWorldOccluders } from './targeting/v2/targeting-occluders';
 import { AsteroidClusterService } from './services/game/asteroid-cluster.service';
 import { TargetCatalogService } from './services/target-catalog.service';
 import { AnimationManagerService } from './services/animations/animation-manager.service';
@@ -3424,16 +3425,14 @@ export class GameEngine {
       // Crear objetos del juego
       this.createGameObjects();
 
-      // Configure targeting distance origin to use the spaceship center (so distances are reported from the ship)
       if (this.reticleManager && this.spaceship) {
         this.reticleManager.setDistanceOriginProvider(() => ({ ...this.spaceship.position }));
       }
-      
-      // Configure adaptive targeting distance origin
       if (this.adaptiveTargeting && this.spaceship) {
         this.adaptiveTargeting.setDistanceOriginProvider(() => ({ ...this.spaceship.position }));
-        // Silueta real de la estación como oclusor del puntero (§1.2.2, experimental).
-        this.adaptiveTargeting.setOccluderProvider(() => this.spaceStationSystem.getTargetOccluders());
+        // Oclusores de silueta real (§1.2.2): estación (SDF) + planetas/sol (esferas, radio = scale.x vivo).
+        this.adaptiveTargeting.setOccluderProvider(() => collectWorldOccluders(
+          this.spaceStationSystem.getTargetOccluders(), [...this.gameState.planets, this.gameState.sun]));
       }
 
       // Setup panel event coordinator with all callbacks

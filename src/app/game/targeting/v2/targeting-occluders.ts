@@ -29,6 +29,18 @@ export interface OccluderSource {
   readonly modelMatrix: Float32Array | number[];
 }
 
+/**
+ * Cuerpo ESFÉRICO ocluible (planeta, sol): posición y radio se leen EN VIVO en cada rayo. El radio es
+ * `scale.x` — el radio VISUAL real renderizado. OJO: algunos tipos multiplican su radio "declarado" en
+ * el constructor (GiantPlanet ×4, RingedPlanet ×2) y otros no, pero el producto SIEMPRE acaba en la
+ * escala; y sigue en vivo efectos como el encogimiento del Gate Rite. Nunca usar radios declarados.
+ */
+export interface SphereOccluderSource {
+  id: string;
+  position: OccluderVec3;
+  scale?: { x: number };
+}
+
 const MAX_STEPS = 96;          // tope de pasos del sphere tracing
 const HIT_EPS = 0.002;         // impacto, en espacio unidad (~1.6u de mundo con escala 800)
 const MIN_STEP = 0.004;        // avance mínimo (no arrastrarse rozando una superficie)
@@ -36,6 +48,65 @@ const MAX_STEP_FRACTION = 0.5; // paso máximo relativo al bound (por los Infini
 
 // Scratch de módulo (HOT: una llamada por frame y oclusor; un solo hilo, sin reentradas).
 const SCRATCH_INV = mat4.create();
+
+/**
+ * Oclusor ESFÉRICO analítico (planetas/sol): rayo↔esfera contra el radio visual vivo (`scale.x`),
+ * sin marching. Con el origen DENTRO de la esfera (atmósfera/aterrizaje) no ocluye ni es candidato.
+ */
+export class SphereRayOccluder implements TargetOccluder {
+  constructor(
+    public readonly targetId: string,
+    private readonly source: SphereOccluderSource,
+  ) {}
+
+  rayHit(origin: OccluderVec3, dir: OccluderVec3): number | null {
+    const r = Number(this.source.scale?.x ?? 0);
+    if (!Number.isFinite(r) || r <= 0) {
+      return null;
+    }
+    const c = this.source.position;
+    const ox = origin.x - c.x;
+    const oy = origin.y - c.y;
+    const oz = origin.z - c.z;
+    const cc = ox * ox + oy * oy + oz * oz - r * r;
+    if (cc <= 0) {
+      return null; // origen dentro del cuerpo: sin oclusión (no vetar el mundo desde la atmósfera)
+    }
+    const b = ox * dir.x + oy * dir.y + oz * dir.z;
+    const disc = b * b - cc;
+    if (disc < 0) {
+      return null;
+    }
+    const t = -b - Math.sqrt(disc);
+    return t > 1e-6 ? t : null;
+  }
+}
+
+// Caché por instancia de cuerpo (el oclusor solo guarda la referencia; posición/escala van en vivo).
+const SPHERE_OCCLUDER_CACHE = new WeakMap<object, SphereRayOccluder>();
+
+/**
+ * Compone los oclusores del mundo para `AdaptiveTargetingSystem.setOccluderProvider`: los de base
+ * (estación, por SDF) más la silueta esférica de cada cuerpo dado (planetas, sol; null se ignora).
+ */
+export function collectWorldOccluders(
+  base: readonly TargetOccluder[],
+  bodies: ReadonlyArray<SphereOccluderSource | null | undefined>,
+): TargetOccluder[] {
+  const out: TargetOccluder[] = [...base];
+  for (const body of bodies) {
+    if (!body || typeof body.id !== 'string') {
+      continue;
+    }
+    let occ = SPHERE_OCCLUDER_CACHE.get(body);
+    if (!occ) {
+      occ = new SphereRayOccluder(body.id, body);
+      SPHERE_OCCLUDER_CACHE.set(body, occ);
+    }
+    out.push(occ);
+  }
+  return out;
+}
 
 /**
  * Oclusor por SDF ESTRUCTURADO: sphere tracing contra las MISMAS formas locales del collider de
