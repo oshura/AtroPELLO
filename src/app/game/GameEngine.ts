@@ -3432,15 +3432,14 @@ export class GameEngine {
       // Configure adaptive targeting distance origin
       if (this.adaptiveTargeting && this.spaceship) {
         this.adaptiveTargeting.setDistanceOriginProvider(() => ({ ...this.spaceship.position }));
+        // Silueta real de la estación como oclusor del puntero (§1.2.2, experimental).
+        this.adaptiveTargeting.setOccluderProvider(() => this.spaceStationSystem.getTargetOccluders());
       }
 
       // Setup panel event coordinator with all callbacks
       this.setupPanelEventCoordinator();
 
   // Registro de targets se realiza al crear los clusters (initializeAllBuffers)
-
-      // Integration tests removed
-
   this.logger.log(LogLevel.INFO, LogCategory.GAME_INITIALIZATION, 'GameEngine inicializado correctamente');
       // Expose a simple console hook to toggle the 2D outliner at runtime for FPS testing
       try {

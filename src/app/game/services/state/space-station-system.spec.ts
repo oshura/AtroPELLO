@@ -194,6 +194,25 @@ describe('SpaceStationSystem', () => {
     expect(sys.getPorts().length).toBe(0);
   });
 
+  it('expone un oclusor de silueta para el targeting y lo limpia al salir del sistema (§1.2.2)', () => {
+    const sys = new SpaceStationSystem();
+    const { host, state } = makeHost();
+    sys.update(host, 0.016); // spawn
+    const station = sys.getRenderable()!;
+    expect(sys.getTargetOccluders().length).toBe(1);
+    expect(sys.getTargetOccluders()[0].targetId).toBe(station.id);
+    // Desde la nave (origen) mirando al centro de la estación, el rayo impacta el casco ANTES del centro.
+    const d = Math.hypot(station.position.x, station.position.y, station.position.z);
+    const dir = { x: station.position.x / d, y: station.position.y / d, z: station.position.z / d };
+    const t = sys.getTargetOccluders()[0].rayHit({ x: 0, y: 0, z: 0 }, dir);
+    expect(t).not.toBeNull();
+    expect(t!).toBeLessThan(d);
+    expect(t!).toBeGreaterThan(d - 250); // como tarde, en el núcleo (caja de 128u de semilado)
+    state.human = false;
+    sys.update(host, 0.016); // clear
+    expect(sys.getTargetOccluders().length).toBe(0);
+  });
+
   it('registra el collider estructurado al spawnear y lo da de baja al limpiar (Fase 11 R4)', () => {
     const sys = new SpaceStationSystem();
     const { host, state } = makeHost();

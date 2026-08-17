@@ -6,6 +6,7 @@ import { DockPort } from '../../game-objects/stations/dock-port';
 import { StationEmissiveBall } from '../../game-objects/stations/station-emissive-ball';
 import { StationWindowMesh } from '../../game-objects/stations/station-windows';
 import { isInsideDockCorridor } from '../../game-objects/stations/station-dock-frames';
+import { StructuredRayOccluder, TargetOccluder } from '../../targeting/v2/targeting-occluders';
 
 /** Puente del sistema con el motor (todo via host: sin acoplar a GameEngine, testeable). */
 export interface SpaceStationHost {
@@ -47,6 +48,7 @@ export class SpaceStationSystem {
   private motors: StationEmissiveBall[] = [];         // "bola" de motor (tobera del núcleo)
   private motorLocals: [number, number, number][] = []; // centros LOCALES de los motores
   private windows: { steady: StationWindowMesh; flicker: StationWindowMesh } | null = null; // §7 I0
+  private occluders: TargetOccluder[] = []; // silueta REAL del casco para el targeting (§1.2.2, experimental)
   private dockRelativeSpeed = Infinity;   // |v_nave − v_puerto| del candidato actual (u/s)
   private dockReadyLatch = false;         // piloto con histéresis (enciende ≤5, no se apaga hasta >6)
   private hintTimer = 0;                  // cadencia del aviso HUD del corredor
@@ -79,6 +81,15 @@ export class SpaceStationSystem {
     return this.windows;
   }
 
+  /**
+   * Oclusores de SILUETA REAL para el targeting (§1.2.2, experimental): el rayo del puntero impacta
+   * contra el SDF del casco (mismo collider de Fase 11) — la estación se selecciona sobre su dibujo
+   * y lo que queda detrás del casco no se ofrece (por los huecos sí). Vacío sin estación.
+   */
+  getTargetOccluders(): readonly TargetOccluder[] {
+    return this.occluders;
+  }
+
   clear(host?: SpaceStationHost): void {
     if (this.station) {
       host?.unregisterCollider(this.station.id);
@@ -89,6 +100,7 @@ export class SpaceStationSystem {
     this.motors = [];
     this.motorLocals = [];
     this.windows = null;
+    this.occluders = [];
     this.dockRelativeSpeed = Infinity;
     this.dockReadyLatch = false;
     this.hintTimer = 0;
@@ -274,6 +286,8 @@ export class SpaceStationSystem {
         shapesLocal: shapes,
         objectType: GameObjectType.SPACE_STATION,
       });
+      // Silueta real para el targeting (§1.2.2): mismas formas, transform vivo (modelMatrix por referencia).
+      this.occluders = [new StructuredRayOccluder(station.id, station, shapes)];
     }
     host.log('Space station spawned (human landmark)', { pos, ports: this.ports.length, colliderShapes: shapes.length });
   }

@@ -13,6 +13,7 @@ import { WebGLService } from '../../../services/webgl.service';
 import { RelationService, Relation } from '../../../services/relation.service';
 import { LoggingService, LogCategory, LogLevel } from '../../../services/logging.service';
 import { AudioEngineService } from '../../../services/audio/audio-engine.service';
+import type { TargetOccluder } from './targeting-occluders';
 
 // ===================================
 // TYPES & INTERFACES
@@ -147,6 +148,10 @@ export class AdaptiveTargetingSystem {
   private lastUpdateByCategory = new Map<string, number>();
   // Hover picking options
   private useRaycastHover: boolean = true; // enable precise hover using ray→sphere
+  // Oclusores (EXPERIMENTAL): siluetas REALES de cuerpos grandes (estación). Ver targeting-occluders.ts.
+  private occluderProvider: (() => readonly TargetOccluder[]) | null = null;
+  // Margen mundo tras el impacto del oclusor: lo pegado al casco (puertos) no cae en el veto de oclusión.
+  private occlusionMarginWorld = 60;
   private dominantRadiusGateEnabled: boolean = true; // gate giant targets when they dominate screen
   private dominantRadiusFraction: number = 0.35; // fraction of min(screenW,screenH)
   // Hysteresis to avoid dominant gate flapping
@@ -556,14 +561,46 @@ export class AdaptiveTargetingSystem {
   private detectHoverWithRay(mousePos: { x: number; y: number }, categorizedTargets: Map<string, TargetDisplayInfo[]>): TargetDisplayInfo | null {
     const ray = this.screenToRay(mousePos);
     if (!ray) return null;
+    // Oclusores (silueta REAL de cuerpos grandes): un impacto del rayo contra su geometría convierte al
+    // cuerpo en candidato ahí mismo Y veta todo lo que quede más allá del corte (con margen). NaN = el
+    // cuerpo tiene silueta pero el rayo no la toca (p. ej. a través del hueco del toroide): no es candidato.
+    const occluders = this.occluderProvider ? this.occluderProvider() : [];
+    const occByTarget = new Map<string, number>();
+    let occCut = Infinity;
+    for (const occ of occluders) {
+      const tHit = occ.rayHit(ray.origin, ray.dir);
+      if (tHit !== null && tHit > 1e-6) {
+        occByTarget.set(occ.targetId, tHit);
+        if (tHit < occCut) occCut = tHit;
+      } else {
+        occByTarget.set(occ.targetId, Number.NaN);
+      }
+    }
+    const occCutLimit = occCut + this.occlusionMarginWorld;
     let best: { info: TargetDisplayInfo; t: number } | null = null;
     // Fallback by pixel distance if no precise ray hit within tolerance
     let bestByPixel: { info: TargetDisplayInfo; d: number } | null = null;
     for (const targets of categorizedTargets.values()) {
       for (const info of targets) {
+        const occKey = info.target.id ?? info.name;
+        if (occByTarget.has(occKey)) {
+          // Cuerpo con silueta real: candidato SOLO donde el rayo toca su geometría — sin esfera de
+          // puntería, sin fallback por píxel y sin dominant gate (el rayo ya solo "ve" casco de verdad).
+          const tHit = occByTarget.get(occKey)!;
+          if (Number.isFinite(tHit) && (!best || tHit < best.t)) best = { info, t: tHit };
+          continue;
+        }
         if (this.isDominantAndGated(info)) continue; // skip dominant gated
         const center = this.getTargetAnchorPosition(info.target);
         const radius = this.getTargetRadius(info.target);
+        if (occCut < Infinity) {
+          const ocx = center.x - ray.origin.x;
+          const ocy = center.y - ray.origin.y;
+          const ocz = center.z - ray.origin.z;
+          if (Math.hypot(ocx, ocy, ocz) - radius > occCutLimit) {
+            continue; // ocluido tras el casco: ni impacto de rayo ni fallback por píxel
+          }
+        }
         let t = this.raySphere(ray.origin, ray.dir, center, radius);
         if (info.type === TargetType.PORTAL && t !== null) {
           const actualRadius = this.getPortalActualRadius(info.target) ?? radius;
@@ -1035,6 +1072,11 @@ export class AdaptiveTargetingSystem {
     DISTANCE_CATEGORIES[idx] = { ...current, ...partial, name: current.name };
     // Reset last-update timers so changes take effect consistently
     this.lastUpdateByCategory.delete(name);
+  }
+
+  /** Registra la fuente de oclusores de silueta real (EXPERIMENTAL; null la desactiva). */
+  public setOccluderProvider(fn: (() => readonly TargetOccluder[]) | null): void {
+    this.occluderProvider = fn;
   }
 
   // Runtime toggles for testing

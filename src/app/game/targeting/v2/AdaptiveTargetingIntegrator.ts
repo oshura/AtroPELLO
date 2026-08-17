@@ -11,6 +11,7 @@ import { Camera } from '../../Camera';
 import { ShaderManager } from '../../ShaderManager';
 import { mat4 } from 'gl-matrix';
 import { AdaptiveTargetingSystem, TargetDisplayInfo, DistanceCategory } from './AdaptiveTargetingSystem';
+import type { TargetOccluder } from './targeting-occluders';
 import { LoggingService, LogCategory } from '../../../services/logging.service';
 import { ReticleSystemState, ScreenPosition } from '../types/reticle.types';
 
@@ -68,6 +69,11 @@ export class AdaptiveTargetingIntegrator {
 
   public setDistanceOriginProvider(fn: (() => { x: number; y: number; z: number }) | null): void {
     this.adaptiveSystem.setDistanceOriginProvider(fn);
+  }
+
+  /** Oclusores de silueta real (EXPERIMENTAL, estación): passthrough al sistema adaptativo. */
+  public setOccluderProvider(fn: (() => readonly TargetOccluder[]) | null): void {
+    this.adaptiveSystem.setOccluderProvider(fn);
   }
 
   // ===================================
