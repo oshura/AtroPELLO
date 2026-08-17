@@ -32,6 +32,7 @@ const VOICE_SAFETY_MS = 120000;  // tope duro por viñeta (por si el audio nunca
 @Injectable({ providedIn: 'root' })
 export class PresentationService {
   readonly active = signal(false);
+  readonly loading = signal(false); // velo con spinner mientras se descubren viñetas y decodifican voces
   readonly imageUrl = signal('');
   readonly caption = signal('');
   readonly shown = signal(false); // controla el fundido (opacity) de la viñeta actual
@@ -58,15 +59,22 @@ export class PresentationService {
       return;
     }
     this.aborted = false;
-    try { await this.audio.unlock(); } catch { /* sin gesto de usuario aún; play() reintenta resume */ }
-    const frames = await this.discoverFrames(base);
-    if (frames.length === 0) {
-      this.logger.warn(LogCategory.LANDING, 'Presentación sin viñetas', { base });
-      return;
-    }
+    // El velo se enciende YA, en el propio click: descubrir viñetas y decodificar voces tarda y sin
+    // feedback el botón parece muerto (mismo patrón que el velo de carga del arranque del motor).
     this.active.set(true);
+    this.loading.set(true);
     window.addEventListener('keydown', this.onKeyDown);
     try {
+      try { await this.audio.unlock(); } catch { /* sin gesto de usuario aún; play() reintenta resume */ }
+      const frames = await this.discoverFrames(base);
+      this.loading.set(false);
+      if (this.aborted) {
+        return;
+      }
+      if (frames.length === 0) {
+        this.logger.warn(LogCategory.LANDING, 'Presentación sin viñetas', { base });
+        return;
+      }
       for (const frame of frames) {
         if (this.aborted) {
           break;
@@ -82,6 +90,7 @@ export class PresentationService {
       }
     } finally {
       window.removeEventListener('keydown', this.onKeyDown);
+      this.loading.set(false);
       this.active.set(false);
       this.shown.set(false);
       this.imageUrl.set('');
@@ -92,12 +101,22 @@ export class PresentationService {
   /** Sondea viñetas desde 00 hasta el primer hueco y precarga voces y subtítulos en paralelo. */
   private async discoverFrames(base: string): Promise<PresentationFrame[]> {
     const frames: PresentationFrame[] = [];
-    for (let i = 0; i < PRESENTATION_MAX_FRAMES; i++) {
-      const imageUrl = presentationImageUrl(base, i);
-      if (!(await this.probeImage(imageUrl))) {
-        break;
+    // Sondeo por LOTES en paralelo (el criterio sigue siendo "hasta el primer hueco"): con sondas
+    // secuenciales cada viñeta costaba un round-trip completo y el velo se alargaba sin necesidad.
+    const BATCH = 8;
+    let gap = false;
+    for (let start = 0; start < PRESENTATION_MAX_FRAMES && !gap; start += BATCH) {
+      const count = Math.min(BATCH, PRESENTATION_MAX_FRAMES - start);
+      const hits = await Promise.all(Array.from({ length: count }, (_, k) =>
+        this.probeImage(presentationImageUrl(base, start + k))));
+      for (let k = 0; k < count; k++) {
+        if (!hits[k]) {
+          gap = true;
+          break;
+        }
+        const i = start + k;
+        frames.push({ imageUrl: presentationImageUrl(base, i), voiceName: presentationVoiceName(base, i), hasVoice: false, caption: '' });
       }
-      frames.push({ imageUrl, voiceName: presentationVoiceName(base, i), hasVoice: false, caption: '' });
     }
     await Promise.all(frames.map(async (frame, i) => {
       try { await this.audio.load(frame.voiceName, presentationVoiceUrl(base, i)); } catch { /* sin voz */ }

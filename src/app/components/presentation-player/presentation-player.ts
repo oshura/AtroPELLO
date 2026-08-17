@@ -13,8 +13,15 @@ import { PresentationService } from '../../services/game/presentation.service';
   imports: [CommonModule],
   template: `
     <div class="presentation" *ngIf="svc.active()">
-      <img class="presentation__frame" [class.shown]="svc.shown()" [src]="svc.imageUrl()" alt="" />
-      <p class="presentation__caption" [class.shown]="svc.shown()" *ngIf="svc.caption()">{{ svc.caption() }}</p>
+      <ng-container *ngIf="svc.loading(); else panels">
+        <div class="presentation__ring"></div>
+        <p class="presentation__loading-title">Preparando la presentación…</p>
+        <p class="presentation__loading-hint">cargando viñetas y voces</p>
+      </ng-container>
+      <ng-template #panels>
+        <img class="presentation__frame" [class.shown]="svc.shown()" [src]="svc.imageUrl()" alt="" />
+        <p class="presentation__caption" [class.shown]="svc.shown()" *ngIf="svc.caption()">{{ svc.caption() }}</p>
+      </ng-template>
       <span class="presentation__hint">ESC para saltar</span>
     </div>
   `,
@@ -22,6 +29,13 @@ import { PresentationService } from '../../services/game/presentation.service';
     .presentation { position: fixed; inset: 0; z-index: 1400; background: #04070c;
       display: flex; flex-direction: column; align-items: center; justify-content: center;
       gap: 18px; pointer-events: auto; }
+    /* Velo de carga: mismo lenguaje visual que el velo de arranque del motor (game.scss). */
+    .presentation__ring { width: 46px; height: 46px; border-radius: 50%;
+      border: 3px solid rgba(102, 126, 234, 0.22); border-top-color: #667eea;
+      animation: presentation-loading-spin 0.9s linear infinite; }
+    .presentation__loading-title { margin: 0; color: #cfe3f5; font-size: 1.05rem; letter-spacing: 0.06em; }
+    .presentation__loading-hint { margin: 0; color: #64809c; font-size: 0.85rem; font-style: italic; }
+    @keyframes presentation-loading-spin { to { transform: rotate(360deg); } }
     .presentation__frame { max-width: 92vw; max-height: 80vh; opacity: 0;
       transition: opacity 0.5s ease; border-radius: 6px;
       box-shadow: 0 0 48px rgba(20, 60, 110, 0.45); }

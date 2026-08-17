@@ -152,7 +152,10 @@ Reutiliza el *shell* (`LandingPanelController`, panel global). Acciones (REVISAD
   Descubre desde 00 hasta el primer hueco (sondeo de imagen; el fallback SPA no cuela). Secuencia:
   fade in 0,5s → voz completa → 1,5s → fade out → siguiente; sin voz, 4s. ESC salta. Las voces NO
   van al `_manifest.json` (arranque ligero): se cargan bajo demanda y suenan por el bus `voice`.
-  La búsqueda de la estación usa `base = 'Base'`.
+  La búsqueda de la estación usa `base = 'Base'`. **Velo de carga (build 66)**: el overlay se abre en
+  el propio click con spinner ("Preparando la presentación…", mismo lenguaje visual que el velo de
+  arranque del motor) mientras se sondean viñetas (por lotes de 8 en paralelo, mismo criterio de
+  primer hueco) y se decodifican las voces; ESC también cancela durante la carga.
 - **Recuperar vacío (100%)** → rellena `voidEnergyCurrent` de la nave.
 - **Despegar** → cierra menú, libera puerto, animación inversa.
 
