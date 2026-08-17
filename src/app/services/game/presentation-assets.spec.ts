@@ -8,12 +8,15 @@ import {
 } from './presentation-assets';
 
 describe('presentation-assets (convención viñeta↔voz↔subtítulo)', () => {
-  it('empareja imagen, voz y subtítulo por nombre base + índice a dos cifras', () => {
+  it('empareja imagen, voz y subtítulo por nombre base + índice a dos cifras (con ?v= anti-caché)', () => {
     expect(presentationFrameId('Base', 0)).toBe('Base-00');
     expect(presentationFrameId('Base', 12)).toBe('Base-12');
-    expect(presentationImageUrl('Base', 0)).toBe('assets/presentationAnimation/Base-00.png');
-    expect(presentationVoiceUrl('Base', 0)).toBe('assets/audio/presentations/Base-00.wav');
-    expect(presentationCaptionUrl('Base', 3)).toBe('assets/presentationAnimation/Base-03.txt');
+    expect(presentationImageUrl('Base', 0)).toMatch(/^assets\/presentationAnimation\/Base-00\.png\?v=\d+$/);
+    expect(presentationVoiceUrl('Base', 0)).toMatch(/^assets\/audio\/presentations\/Base-00\.wav\?v=\d+$/);
+    expect(presentationCaptionUrl('Base', 3)).toMatch(/^assets\/presentationAnimation\/Base-03\.txt\?v=\d+$/);
+    // El sufijo es el MISMO build en los tres (URLs consistentes entre sí).
+    const v = presentationImageUrl('Base', 0).split('?v=')[1];
+    expect(presentationVoiceUrl('Base', 0).endsWith(`?v=${v}`)).toBeTrue();
   });
 
   it('el nombre lógico del buffer no colisiona con el manifest de audio', () => {
