@@ -80,7 +80,13 @@ export class StationLandingService {
    * aquí va SOLO el bono (sin sucesos aleatorios de −vida/−cordura, decisión del usuario 2026-08-18):
    * descubrimiento de Void Jump si falta y SIEMPRE +5% de memoria (buscar es recordar).
    */
+  /** ¿Sigue disponible la búsqueda? (es ÚNICA: tras usarla, el botón desaparece del panel). */
+  isSearchAvailable(): boolean {
+    return !this.gameState.stationSearchDone;
+  }
+
   search(): StationActionResult {
+    this.gameState.stationSearchDone = true;
     this.advanceTime(1);
     const lines: StationActionLine[] = [
       { tone: 'info', text: 'Rebuscas entre los restos de la estación.' },

@@ -198,6 +198,8 @@ export class GameStateStore {
    * los demás en puntos de la historia (docs/ESTACIONES.md §0.6). Los savegames restauran su propio libro.
    */
   public readonly knownSpells: Set<SpellType> = new Set([SpellType.GATE_RITE]);
+  /** Búsqueda ÚNICA por la estación humana ya realizada: el botón desaparece del panel (ESTACIONES §4). */
+  public stationSearchDone = false;
   /** Layout personalizado de glifos del grimorio (coordenadas normalizadas 0..1) */
   public grimoireGlyphLayout: Partial<Record<SpellType, { nx: number; ny: number }>> = {};
   /** Identificador persistente del piloto para Cloud Saves / progresión. */

@@ -167,7 +167,14 @@ Reutiliza el *shell* (`LandingPanelController`, panel global). Acciones (REVISAD
   terminar SOLO el bono (build 67, decisión del usuario: **sin sucesos aleatorios** de −vida/−cordura;
   la carga narrativa la lleva la presentación): **+5% de memoria SIEMPRE** (buscar es recordar; antes
   la memoria se ganaba descansando) + **descubrir Void Jump** (`SpellType.LONGJUMP`) si falta en el
-  grimorio. Sin nada que ganar (glifo conocido y memoria al 100), línea neutra.
+  grimorio. Sin nada que ganar (glifo conocido y memoria al 100), línea neutra. **ÚNICA (build 70)**:
+  tras usarla una vez, el botón DESAPARECE del panel (ni en gris — eliminado; flag
+  `GameStateStore.stationSearchDone`, estado de jugador como `knownSpells`: sobrevive al `reset()`
+  de cambio de sistema; partida nueva = recarga → vuelve). Durante la presentación, la música
+  ambiente (bus `ambience`) baja a la MITAD y se restaura al terminar (ducking en
+  `PresentationService`). Nota (build 70): las voces "no se oían" porque los wav placeholder de
+  Base-01..03 eran SILENCIO digital puro (pico 0) — el sistema los reproducía bien; con los wav
+  reales del usuario desplegados, suenan.
 - **Descansar (100%)** → +vida, +cordura y avanza tiempo (YA NO da memoria ni flashbacks de texto).
 - **PRESENTACIONES de cómic** (`PresentationService` + `PresentationPlayerComponent` +
   `presentation-assets.ts`): viñetas por CONVENCIÓN de carpetas — imagen

@@ -51,6 +51,13 @@ describe('StationLandingService', () => {
     expect(r2.lines.some(l => /memoria/.test(l.text))).toBe(false);
   });
 
+  it('la búsqueda es ÚNICA: tras usarla deja de estar disponible (el botón desaparece del panel)', () => {
+    expect(service.isSearchAvailable()).toBe(true);
+    service.search();
+    expect(service.isSearchAvailable()).toBe(false);
+    expect(store.stationSearchDone).toBe(true);
+  });
+
   it('buscar ya NO resta vida ni cordura (sin sucesos aleatorios; solo el bono)', () => {
     const profile = TestBed.inject(CharacterProfileService);
     const vitals = spyOn(profile, 'adjustVitals');

@@ -19,6 +19,7 @@ interface PresentationFrame {
 }
 
 const FADE_MS = 500;             // fundido de entrada/salida (casado con la transición CSS del player)
+const AMBIENCE_DUCK_FACTOR = 0.5; // la música ambiente baja a la MITAD mientras suenan las voces
 const HOLD_AFTER_VOICE_MS = 1500; // espera tras terminar la voz (petición del usuario)
 const FALLBACK_FRAME_MS = 4000;  // duración de una viñeta sin audio disponible
 const VOICE_SAFETY_MS = 120000;  // tope duro por viñeta (por si el audio nunca "termina")
@@ -64,6 +65,7 @@ export class PresentationService {
     this.active.set(true);
     this.loading.set(true);
     window.addEventListener('keydown', this.onKeyDown);
+    let ambiencePrev: number | null = null; // gain del bus 'ambience' antes del ducking (se restaura al salir)
     try {
       try { await this.audio.unlock(); } catch { /* sin gesto de usuario aún; play() reintenta resume */ }
       const frames = await this.discoverFrames(base);
@@ -74,6 +76,11 @@ export class PresentationService {
       if (frames.length === 0) {
         this.logger.warn(LogCategory.LANDING, 'Presentación sin viñetas', { base });
         return;
+      }
+      // Ducking: la música ambiente a la mitad mientras dura la presentación (petición del usuario).
+      ambiencePrev = this.audio.getBusGain('ambience');
+      if (typeof ambiencePrev === 'number') {
+        this.audio.setBusGain('ambience', ambiencePrev * AMBIENCE_DUCK_FACTOR);
       }
       for (const frame of frames) {
         if (this.aborted) {
@@ -89,6 +96,9 @@ export class PresentationService {
         await this.wait(FADE_MS);
       }
     } finally {
+      if (typeof ambiencePrev === 'number') {
+        this.audio.setBusGain('ambience', ambiencePrev);
+      }
       window.removeEventListener('keydown', this.onKeyDown);
       this.loading.set(false);
       this.active.set(false);

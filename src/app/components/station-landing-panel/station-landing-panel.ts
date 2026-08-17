@@ -23,7 +23,7 @@ import { PresentationPlayerComponent } from '../presentation-player/presentation
         </header>
 
         <div class="station-panel__actions">
-          <button type="button" (click)="onSearch()">Buscar por la estación</button>
+          <button type="button" *ngIf="searchAvailable" (click)="onSearch()">Buscar por la estación</button>
           <button type="button" (click)="onRest()">Descansar <small>(100%)</small></button>
           <button type="button" (click)="onRefuel()">Recuperar vacío <small>(100%)</small></button>
           <button type="button" class="station-panel__disembark" (click)="onDisembark()">Bajar de la nave</button>
@@ -95,9 +95,14 @@ export class StationLandingPanelComponent implements OnChanges {
     }
   }
 
+  /** La búsqueda es ÚNICA: tras usarla desaparece el botón (ni en gris — eliminada). */
+  protected get searchAvailable(): boolean {
+    return this.station.isSearchAvailable();
+  }
+
   /** Buscar: primero la PRESENTACIÓN de cómic (viñetas 'Base'); al terminar, el desenlace en el log. */
   protected onSearch(): void {
-    if (this.presentation.isActive()) {
+    if (this.presentation.isActive() || !this.searchAvailable) {
       return;
     }
     void this.presentation.play('Base').then(() => {
