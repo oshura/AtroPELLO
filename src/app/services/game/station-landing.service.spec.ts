@@ -39,9 +39,8 @@ describe('StationLandingService', () => {
     expect(r.lines.some(l => /memoria/i.test(l.text))).toBe(false);
   });
 
-  it('buscar aplica +5% de memoria como parte del desenlace (capado a 100)', () => {
+  it('buscar aplica SIEMPRE +5% de memoria (capado a 100), sin azar', () => {
     store.memoryPercent = 10;
-    spyOn(Math, 'random').and.returnValue(0.9); // fallo de búsqueda: la memoria se gana igualmente
     const r = service.search();
     expect(store.memoryPercent).toBe(15);
     expect(r.lines.some(l => /\+5% de memoria/.test(l.text))).toBe(true);
@@ -50,6 +49,14 @@ describe('StationLandingService', () => {
     const r2 = service.search();
     expect(store.memoryPercent).toBe(100);
     expect(r2.lines.some(l => /memoria/.test(l.text))).toBe(false);
+  });
+
+  it('buscar ya NO resta vida ni cordura (sin sucesos aleatorios; solo el bono)', () => {
+    const profile = TestBed.inject(CharacterProfileService);
+    const vitals = spyOn(profile, 'adjustVitals');
+    const r = service.search();
+    expect(vitals).not.toHaveBeenCalled();
+    expect(r.lines.some(l => l.tone === 'danger' || l.tone === 'warning')).toBe(false);
   });
 
   it('recuperar vacío llena el depósito de la nave', () => {
@@ -69,18 +76,20 @@ describe('StationLandingService', () => {
     expect(store.getKnownSpells()).toEqual([SpellType.GATE_RITE]);
   });
 
-  it('buscar con éxito descubre Void Jump (LONGJUMP) si falta', () => {
+  it('la primera búsqueda descubre Void Jump (LONGJUMP); las siguientes no lo repiten', () => {
     expect(store.hasSpell(SpellType.LONGJUMP)).toBe(false); // ya no viene de serie
-    spyOn(Math, 'random').and.returnValue(0.1); // <= 0.5 ⇒ éxito de búsqueda
     const r = service.search();
     expect(store.hasSpell(SpellType.LONGJUMP)).toBe(true);
     expect(r.lines.some(l => /Void Jump/i.test(l.text))).toBe(true);
+    const r2 = service.search();
+    expect(r2.lines.some(l => /Void Jump/i.test(l.text))).toBe(false);
   });
 
-  it('buscar fallido (roll > 0.5) resuelve sin crashear', () => {
-    spyOn(Math, 'random').and.returnValue(0.9);
+  it('sin nada que ganar (glifo conocido y memoria a tope), buscar resuelve con línea neutra', () => {
+    store.learnSpell(SpellType.LONGJUMP);
+    store.memoryPercent = 100;
     const r = service.search();
     expect(r.title).toContain('Búsqueda');
-    expect(r.lines.length).toBeGreaterThan(0);
+    expect(r.lines.some(l => /No queda nada/i.test(l.text))).toBe(true);
   });
 });

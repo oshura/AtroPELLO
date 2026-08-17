@@ -77,6 +77,22 @@ bloquearía volar entre los radios y meterse en los puertos, que es la gracia. P
   ("2/8 operativos", lo rellena el system). Los puertos muestran estado vivo (Operativo/Cerrado/
   Destruido) y el nombre de la estación padre.
 
+### 1.2.2 Oclusor de SILUETA REAL para el targeting (EXPERIMENTAL, build 67, 2026-08-18)
+Problema reportado: con el raton sobre el dibujo de la estacion, el targeting ofrecia clusters a
+kilometros POR DETRAS del casco (la esfera de 160u solo cubre el nucleo; el resto del toroide era
+"transparente" para el puntero). Solucion — el rayo del puntero se corta contra la GEOMETRIA real:
+- `targeting/v2/targeting-occluders.ts`: `TargetOccluder` + `StructuredRayOccluder` — sphere tracing
+  del rayo contra el MISMO SDF del collider de Fase 11 (toro con tapas + nucleo + radios + clamps),
+  en espacio local via inversa del modelMatrix vivo (giro incluido). Con spec propio.
+- `AdaptiveTargetingSystem.detectHoverWithRay`: `setOccluderProvider(...)`; el impacto contra el
+  casco (a) hace candidato al CUERPO en ese punto ("mouse sobre su dibujo", sin esfera de punteria
+  ni dominant gate para el) y (b) VETA todo lo que quede a mas de 60u tras el corte (los puertos,
+  pegados al casco, no caen en el veto). Si el rayo pasa por un hueco (boquetes del Incidente, el
+  hueco del toroide), no hay corte: lo que se VE a traves sigue siendo seleccionable.
+- `SpaceStationSystem.getTargetOccluders()` construye el oclusor al spawnear (mismas formas que el
+  collider); el motor solo lo cablea junto al distance origin (1 linea, compensada).
+Pendiente de validacion en juego por el usuario; si convence, considerar portales/planetas.
+
 ### 1.3 Subclase `HumanSpaceStation`
 `game/game-objects/stations/human-space-station.ts` (≤400). Implementa el **toroide** con secciones
 (hábitats/almacenes/mantenimiento), **4 radios** hacia un **núcleo central de motores**, y los **puertos**
@@ -139,11 +155,10 @@ interface SpaceStationHost {
 `services/game/station-landing-action.service.ts` (espejo simplificado de `landing-action.service`).
 Reutiliza el *shell* (`LandingPanelController`, panel global). Acciones (REVISADO build 63, 2026-08-17):
 - **Buscar por la estación** (sin % visible) → primero la **PRESENTACIÓN DE CÓMIC** (ver abajo) y al
-  terminar el desenlace mecánico: éxito/fallo con tablas de sucesos + **+5% de memoria SIEMPRE**
-  (buscar es recordar; antes la memoria se ganaba descansando):
-  - *grotescos* (cadáveres) → **−cordura** (Slice 2: textos ricos inventados desde §5).
-  - *estructurales* → **−vida** (Slice 2).
-  - *recompensa* → **descubrir hechizo**: por ahora **Void Jump** (`SpellType.LONGJUMP`) (Slice 2).
+  terminar SOLO el bono (build 67, decisión del usuario: **sin sucesos aleatorios** de −vida/−cordura;
+  la carga narrativa la lleva la presentación): **+5% de memoria SIEMPRE** (buscar es recordar; antes
+  la memoria se ganaba descansando) + **descubrir Void Jump** (`SpellType.LONGJUMP`) si falta en el
+  grimorio. Sin nada que ganar (glifo conocido y memoria al 100), línea neutra.
 - **Descansar (100%)** → +vida, +cordura y avanza tiempo (YA NO da memoria ni flashbacks de texto).
 - **PRESENTACIONES de cómic** (`PresentationService` + `PresentationPlayerComponent` +
   `presentation-assets.ts`): viñetas por CONVENCIÓN de carpetas — imagen
