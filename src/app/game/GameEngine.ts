@@ -828,7 +828,7 @@ export class GameEngine {
   private voidCocoonShieldStartMs: number = 0;
   private voidCocoonShieldGeometry: { vbo: WebGLBuffer | null; ibo: WebGLBuffer | null; indexCount: number } | null = null;
   private cachedSpeedRiteRemainingSec: number | null = null;
-  private shipDynamicsBaseline: ShipDynamicsBaseline = { maxSpeed: 10, acceleration: 2, deceleration: 2.5 };
+  private shipDynamicsBaseline: ShipDynamicsBaseline = { maxSpeed: 20, acceleration: 2, deceleration: 2.5 };
   private shipDynamicsBaselineInitialized = false;
 
   // Material Disruption Rite beam animation
