@@ -21,6 +21,7 @@ export interface DockingSequenceContext {
 const INSIDE_DEPTH = 30;  // u que la nave se adentra ATRAVESANDO el puerto (queda "dentro" de la estación)
 const DEPART_DIST = 200;  // u a los que se aleja al despegar
 const APPROACH_DIST = 58; // u frente al puerto (punto de control del arco de aproximación)
+const EXIT_SPEED_FACTOR = 0.25; // fracción de maxSpeed con la que la nave sale LANZADA al sistema
 
 export class DockingSequenceAnimation extends BaseAnimation {
   public readonly name = 'docking-sequence';
@@ -91,7 +92,16 @@ export class DockingSequenceAnimation extends BaseAnimation {
     const pos = this.bezier(this.startPos, this.control, this.endPos, e);
     ship.position.x = pos.x; ship.position.y = pos.y; ship.position.z = pos.z;
     ship.velocity.x = ship.velocity.y = ship.velocity.z = 0;
-    ship.currentSpeed = 0; ship.targetSpeed = 0;
+    if (docking) {
+      ship.currentSpeed = 0; ship.targetSpeed = 0;
+    } else {
+      // Al separar, los thrusters ya SUENAN (y el velocímetro marca) a la velocidad de salida: el
+      // audio del motor mapea currentSpeed → volumen. La POSICIÓN la sigue mandando el bezier
+      // (velocity va a 0), así que esto solo alimenta audio/HUD/partículas, no el movimiento.
+      const exit = (ship.maxSpeed || 20) * EXIT_SPEED_FACTOR;
+      ship.currentSpeed = exit * smoothstep(clamp01(p / 0.2)); // arranque breve, sin golpe de volumen
+      ship.targetSpeed = exit;
+    }
     this.zeroControls(ship);
 
     // Orientación (nave siempre "de pie", up = mundo).
@@ -131,7 +141,7 @@ export class DockingSequenceAnimation extends BaseAnimation {
         try { ship.setWingDeploymentProgress?.(1); } catch {}
       } else {
         try { ship.setWingDeploymentProgress?.(0); } catch {}
-        const sp = (ship.maxSpeed || 10) * 0.25;
+        const sp = (ship.maxSpeed || 20) * EXIT_SPEED_FACTOR;
         ship.currentSpeed = sp; ship.targetSpeed = sp;
         ship.voidEnergyPaused = false;
         ship.thrusterState = ThrusterState.CRUISING;
@@ -170,8 +180,8 @@ export class DockingSequenceAnimation extends BaseAnimation {
     } else {
       const ang = lerp(0.2, 1.0, s);
       dir = this.norm(this.add(this.scale(this.right, Math.cos(ang)), this.scale(this.n, 0.55 + 0.5 * Math.sin(ang))));
-      dist = lerp(72, 155, s);
-      camY = 26;
+      dist = lerp(150, 310, s); // el DOBLE de lejos que antes: la nave se ve a la mitad o menos (petición)
+      camY = 45;
       targetT = 0.4;
     }
     const anchor = this.lerpVec(shipPos, port, 0.3);

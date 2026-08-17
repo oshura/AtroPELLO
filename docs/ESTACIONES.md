@@ -527,3 +527,13 @@ y el acople es valido dentro del embudo de marcos.
   a la linea nave→Tierra (`LATERAL_OFFSET`, perpendicular determinista con el up del mundo, fallback
   eje X si la linea es casi vertical): al girar la vista desde el inicio se ven estacion y Tierra como
   objetos separados, no alineados.
+
+### 8.3 Ajustes de la SEPARACION + panel (build 72, 2026-08-18)
+- Camara de la separacion al DOBLE de distancia (dist 150→310, camY 45): la nave se ve a la
+  mitad o menos de tamaño (peticion del usuario: quedaba demasiado cerca).
+- Los thrusters ya SUENAN durante la separacion a la velocidad de salida (EXIT_SPEED_FACTOR
+  0.25 de maxSpeed, la misma con la que la nave queda lanzada): la animacion alimenta
+  currentSpeed (con arranque suave) SOLO para audio/velocimetro/particulas — la posicion la
+  sigue mandando el bezier con velocity a 0.
+- Boton "Bajar de la nave" ELIMINADO del panel de la estacion (el desembarco propio se
+  diseñara aparte; DisembarkService sigue como placeholder para planetas).

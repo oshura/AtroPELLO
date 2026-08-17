@@ -15,7 +15,7 @@ declare global {
 const DEFAULT_VERSION: VersionSettings = {
   major: 0,
   minor: 0,
-  build: 71
+  build: 72
 };
 
 export const VERSION_SETTINGS = new InjectionToken<VersionSettings>('VERSION_SETTINGS', {
