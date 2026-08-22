@@ -1,5 +1,5 @@
 import { Injectable } from '@angular/core';
-import { GameStateStore } from './game-state.store';
+import { ExperienceGainResult, GameStateStore } from './game-state.store';
 import { CharacterProfile, PersonalGearItem } from '../../game/types/inventory.types';
 
 export enum ExperienceEventType {
@@ -47,8 +47,9 @@ export class CharacterProfileService {
   }
 
   /** Aplica experiencia directa con un motivo opcional para logging. */
-  awardExperience(points: number, reason: string = 'manual'): void {
-    this.gameState.adjustExperience(points, { reason });
+  /** Otorga experiencia y devuelve si el piloto ha subido de nivel (la barra se reinicia al hacerlo). */
+  awardExperience(points: number, reason: string = 'manual'): ExperienceGainResult {
+    return this.gameState.adjustExperience(points, { reason });
   }
 
   /** Registra eventos comunes descritos en documentación (destruir naves, aterrizar, etc.). */

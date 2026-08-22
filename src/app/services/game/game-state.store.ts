@@ -38,6 +38,15 @@ import {
 } from '../../game/types/planet-intel.types';
 import { LesserBeingInstanceSnapshot, PlanetInhabitants } from '../../game/types/cosmic-life.types';
 import { RaceStanding, createDefaultStanding } from '../../game/types/race.types';
+
+/** Resultado de otorgar experiencia: dice si hubo promoción, que la barra por sí sola oculta. */
+export interface ExperienceGainResult {
+  leveledUp: boolean;
+  levelBefore: number;
+  level: number;
+  experience: number;
+  experienceMax: number;
+}
 import { cloneLesserBeingSnapshot } from '../../game/services/game/lesser-being-state.codec';
 import { OrientationSnapshot, RespawnAnchorMetadata } from '../../game/types/respawn.types';
 import { Vector3 } from '../../types/game.types';
@@ -1207,9 +1216,17 @@ export class GameStateStore {
   }
 
   /** Ajusta la experiencia del piloto aplicando reglas de nivel. */
-  adjustExperience(delta: number, metadata?: { reason?: string }): void {
+  /**
+   * Suma (o resta) experiencia y devuelve el estado resultante.
+   *
+   * El retorno importa: al subir de nivel la barra se reinicia a cero, así que sin avisar de la
+   * promoción el jugador ve la misma barra vacía y cree que no ha ganado nada. Quien otorga XP usa
+   * `leveledUp` para decirlo.
+   */
+  adjustExperience(delta: number, metadata?: { reason?: string }): ExperienceGainResult {
+    const levelBefore = this.characterProfile.level;
     if (!Number.isFinite(delta) || delta === 0) {
-      return;
+      return this.buildExperienceResult(false, levelBefore);
     }
 
     if (delta > 0) {
@@ -1218,6 +1235,7 @@ export class GameStateStore {
       const nextValue = this.characterProfile.experience + delta;
       this.characterProfile.experience = Math.max(0, nextValue);
     }
+    const leveledUp = this.characterProfile.level > levelBefore;
 
     this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'character', reason: metadata?.reason ?? 'experience' } });
     this.logger.log(LogLevel.INFO, LogCategory.HUD, 'Experience adjusted', {
@@ -1225,8 +1243,20 @@ export class GameStateStore {
       reason: metadata?.reason,
       level: this.characterProfile.level,
       experience: this.characterProfile.experience,
-      experienceMax: this.characterProfile.experienceMax
+      experienceMax: this.characterProfile.experienceMax,
+      leveledUp
     });
+    return this.buildExperienceResult(leveledUp, levelBefore);
+  }
+
+  private buildExperienceResult(leveledUp: boolean, levelBefore: number): ExperienceGainResult {
+    return {
+      leveledUp,
+      levelBefore,
+      level: this.characterProfile.level,
+      experience: this.characterProfile.experience,
+      experienceMax: this.characterProfile.experienceMax
+    };
   }
 
   /** Reemplaza la lista de equipo personal (traje, botas, accesorios). */

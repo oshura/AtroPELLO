@@ -6041,8 +6041,10 @@ export class GameEngine {
 
   private rewardLesserBeingKill(being: LesserBeingBase): void {
     const rewardXp = 100;
+    let leveledUpTo: number | null = null;
     try {
-      this.characterProfileService?.awardExperience(rewardXp, 'lesser-being');
+      const gain = this.characterProfileService?.awardExperience(rewardXp, 'lesser-being');
+      leveledUpTo = gain?.leveledUp ? gain.level : null;
     } catch (error) {
       this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'Failed to award XP for lesser being kill', { error });
     }
@@ -6054,6 +6056,14 @@ export class GameEngine {
         HudMarqueeEventType.LESSER_BEING,
         `${being.getDisplayName()} destruido: +${rewardXp} XP${corChunk}`
       );
+      // Al promocionar, la barra de experiencia vuelve a cero: sin este aviso el ascenso pasa
+      // desapercibido y parece que la recompensa no se ha aplicado.
+      if (leveledUpTo !== null) {
+        this.hudManager?.emitMarqueeEvent?.(
+          HudMarqueeEventType.SYSTEM,
+          `NIVEL ${leveledUpTo} ALCANZADO`
+        );
+      }
     } catch {}
     this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Lesser being destroyed before landing', {
       beingId: being.id,
