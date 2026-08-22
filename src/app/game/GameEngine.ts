@@ -2148,8 +2148,15 @@ export class GameEngine {
       this.atmosphereTelemetryLastLogMs = now;
     }
 
+    // La intel del contexto se capturó al ENTRAR en la atmósfera; lo hecho en tierra (explorar
+    // civilización, rastrear al ser, aterrizar) muta el planeta VIVO. Sin refrescarla aquí, el
+    // panel seguía diciendo "Desconocido / Visitado: No" después de haberlo averiguado todo.
+    const atmosphereContext = this.atmosphereSceneState.context;
+    const livePlanet = atmosphereContext ? this.gameState.findPlanetById(atmosphereContext.planetId) : null;
     this.atmosphereTelemetryPanelState = buildAtmosphereTelemetryPanelState({
-      context: this.atmosphereSceneState.context,
+      context: atmosphereContext && livePlanet
+        ? { ...atmosphereContext, planetIntel: this.buildPlanetIntelDetails(livePlanet) }
+        : atmosphereContext,
       telemetry: payload,
       weather: this.atmosphereWeatherSnapshot,
       altitudeAboveGround: altitude,
