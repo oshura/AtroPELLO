@@ -14,7 +14,7 @@ export class MusicDirectorService {
   private next: { scene: MusicScene; handle: PlayingHandle | null } | null = null;
   private library: Record<MusicScene, TrackDef[]> = {
     menu: [{ name: 'music_entree', volume: 0.75, loop: false }],
-    exploration: [{ name: 'music_explore_a', volume: 0.6, loop: true }],
+    exploration: [{ name: 'music_explore_a', volume: 0.2, loop: true }],
     planet_approach: [{ name: 'music_planet', volume: 0.65, loop: true }],
     combat: [{ name: 'music_combat', volume: 0.7, loop: true }],
     spell_prep: [{ name: 'music_spell_prep', volume: 0.55, loop: true }],

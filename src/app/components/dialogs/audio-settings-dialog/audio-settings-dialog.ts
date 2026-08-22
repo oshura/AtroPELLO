@@ -148,7 +148,7 @@ export class AudioSettingsDialogComponent implements OnChanges {
     let name = 'sfx_whoosh';
     let bus: any = 'sfx';
     let vol = 0.5;
-  if (kind === 'music') { bus = 'music'; name = 'music_explore_a'; vol = 0.6; }
+  if (kind === 'music') { bus = 'music'; name = 'music_explore_a'; vol = 0.2; }
     if (kind === 'sfx') { bus = 'sfx'; name = 'sfx_whoosh'; vol = this.sfx/100; }
     if (kind === 'thruster') { bus = 'sfx'; name = 'sfx_thruster'; vol = this.thruster/100; }
   if (kind === 'ambience') { bus = 'ambience'; name = 'sfx_logdark'; const eff = Math.max(0, Math.min(2, (this.ambience/100) * 2)); vol = 0.1 * eff; }
