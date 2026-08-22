@@ -92,8 +92,8 @@ export class TargetDetailService {
         // El panel imprime cada clave con prettyKey; salud (16% integridad) y void mass van aparte.
         const anyT = target as any;
         const data: Record<string, unknown> = {
-          clase: 'Toro orbital humano',
-          estado: 'Abandonada — energía inestable',
+          clase: 'Estación orbital humana',
+          estado: 'Energía inestable',
           'tripulación': 'Sin señales de vida',
         };
         if (typeof anyT.portsSummary === 'string' && anyT.portsSummary) {

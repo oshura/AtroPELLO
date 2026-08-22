@@ -19,8 +19,8 @@ describe('TargetDetailService — estación y puerto (§1.2.1 cuerpo seleccionab
     const res = await svc.getDetails(fakeTarget(TargetType.SPACE_STATION, { portsSummary: '2/8 operativos' }));
     expect(res.type).toBe(TargetType.SPACE_STATION);
     const data = res.data as Record<string, unknown>;
-    expect(data['clase']).toBe('Toro orbital humano');
-    expect(data['estado']).toContain('Abandonada');
+    expect(data['clase']).toBe('Estación orbital humana');
+    expect(data['estado']).toBe('Energía inestable');
     expect(data['tripulación']).toBe('Sin señales de vida');
     expect(data['puertos']).toBe('2/8 operativos');
   });
