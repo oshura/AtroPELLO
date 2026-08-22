@@ -108,7 +108,10 @@ que la secta pretendía traer y acudieron a impedirlo. Llegaron a tiempo, pero n
 acólitos de Yog-Sothoth llegaron prendidos al rito, la batalla se libró sobre el cielo terrestre y,
 cuando el vacío se cerró, la Tierra tenía dos mitades.
 
-- **Dónde**: habitan siempre el sistema al que lleva el **primer Gate Rite** de la partida.
+- **Dónde**: habitan siempre el sistema al que lleva el **primer Gate Rite** de la partida. Ese sistema
+  **nunca cae bajo Yog-Sothoth** (`excludedElderGod` en `gate-rite.animation.ts`): es el único que
+  invoca vampiros de fuego, así que su dominio pondría la presa de la misión en el patio de quienes te
+  mandan a buscarla lejos — y encima son sus acólitos los que partieron la Tierra.
 - **Qué revelan**: el reparto del universo entre los tres primigenios y su papel en el Incidente
   (+5% de memoria).
 - **Qué piden**: abatir un **vampiro de fuego** en un dominio de Yog-Sothoth y traer el rescoldo.

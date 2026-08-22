@@ -199,4 +199,10 @@ export interface GenerationOptions {
   guaranteedInhabitants?: string;
   /** Fuerza el primigenio que domina el sistema (ritos sintonizados por una raza). */
   forcedElderGod?: string;
+  /**
+   * Prohíbe que el sistema caiga bajo este primigenio. Manda sobre `forcedElderGod` si ambos
+   * coinciden. Lo usa la trama con el sistema de los Grises: ver `excludedElderGod` en
+   * `gate-rite.animation.ts`.
+   */
+  excludedElderGod?: string;
 }

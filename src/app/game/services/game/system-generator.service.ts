@@ -33,8 +33,11 @@ const SUMMONABLE_ELDER_GODS: ElderGod[] = (Object.values(ElderGod) as ElderGod[]
   god => (ELDER_GOD_SUMMONS[god] ?? []).length > 0
 );
 
-function pickElderGod(rng: () => number): ElderGod {
-  const pool = SUMMONABLE_ELDER_GODS.length ? SUMMONABLE_ELDER_GODS : (Object.values(ElderGod) as ElderGod[]);
+function pickElderGod(rng: () => number, excluded?: ElderGod): ElderGod {
+  const base = SUMMONABLE_ELDER_GODS.length ? SUMMONABLE_ELDER_GODS : (Object.values(ElderGod) as ElderGod[]);
+  // Consume el rng SIEMPRE una sola vez, con o sin exclusión: así una semilla sin exclusión sigue
+  // generando exactamente el mismo sistema que antes.
+  const pool = excluded ? base.filter(god => god !== excluded) : base;
   if (!pool.length) {
     return ElderGod.CTHULHU;
   }
@@ -104,9 +107,12 @@ export class SystemGeneratorService {
      * sistema regenerado sigue dando los mismos ids.
      */
     const systemTag = hashSeed(seed).toString(36);
-    // Un rito sintonizado por una raza decide el dominio; si no, se rifa.
+    // Un rito sintonizado por una raza decide el dominio; si no, se rifa. Una exclusión de la trama
+    // manda sobre todo lo demás: el sistema NO puede quedar bajo ese primigenio.
+    const excluded = options?.excludedElderGod as ElderGod | undefined;
     const forced = options?.forcedElderGod as ElderGod | undefined;
-    const elderGod = forced && ELDER_GOD_SUMMONS[forced] ? forced : pickElderGod(rnd);
+    const honoursForced = !!forced && !!ELDER_GOD_SUMMONS[forced] && forced !== excluded;
+    const elderGod = honoursForced ? (forced as ElderGod) : pickElderGod(rnd, excluded);
 
     // Sun(s): random chance of binary if allowed
     const allowBinary = options?.sunCount === 2 || (options?.sunCount === undefined && rnd() < 0.25);

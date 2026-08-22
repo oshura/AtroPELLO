@@ -1,5 +1,5 @@
 import { SystemGeneratorService } from './system-generator.service';
-import { PlanetInhabitants, PLANET_INHABITANT_POOL } from '../../types/cosmic-life.types';
+import { ElderGod, PlanetInhabitants, PLANET_INHABITANT_POOL } from '../../types/cosmic-life.types';
 import { getDefinedRaces, getPoolableRaces } from '../../config/race-catalog.config';
 import { PLANET_INTEL_STATUS } from '../../types/planet-intel.types';
 
@@ -74,6 +74,60 @@ describe('SystemGeneratorService', () => {
       const ids = snapshot.planets.map(p => p.id);
 
       expect(new Set(ids).size).toBe(ids.length);
+    });
+  });
+
+  describe('primigenio que domina el sistema', () => {
+    const SEEDS = Array.from({ length: 120 }, (_, i) => 1000 + i * 37);
+    const godsFor = (options?: Parameters<SystemGeneratorService['generate']>[1]) =>
+      SEEDS.map(seed => new SystemGeneratorService().generate(seed, options).meta?.elderGod);
+
+    it('sin exclusión, el sorteo SÍ puede dar Yog-Sothoth', () => {
+      // Da sentido a la prueba siguiente: sin la exclusión el riesgo es real, no teórico.
+      expect(godsFor()).toContain(ElderGod.YOG_SOTHOTH);
+    });
+
+    it('el primigenio excluido no sale nunca', () => {
+      expect(godsFor({ excludedElderGod: ElderGod.YOG_SOTHOTH })).not.toContain(ElderGod.YOG_SOTHOTH);
+    });
+
+    it('excluir uno deja vivos a los otros dos', () => {
+      const gods = new Set(godsFor({ excludedElderGod: ElderGod.YOG_SOTHOTH }));
+      expect(gods).toContain(ElderGod.CTHULHU);
+      expect(gods).toContain(ElderGod.AZATHOTH);
+    });
+
+    it('la exclusión manda sobre un rito sintonizado que pidiera ese mismo primigenio', () => {
+      const gods = godsFor({ forcedElderGod: ElderGod.YOG_SOTHOTH, excludedElderGod: ElderGod.YOG_SOTHOTH });
+      expect(gods).not.toContain(ElderGod.YOG_SOTHOTH);
+    });
+
+    it('sin exclusión, un rito sintonizado sigue imponiendo su primigenio', () => {
+      const gods = new Set(godsFor({ forcedElderGod: ElderGod.YOG_SOTHOTH }));
+      expect([...gods]).toEqual([ElderGod.YOG_SOTHOTH]);
+    });
+
+    it('excluir no descuadra el resto del sistema para una misma semilla', () => {
+      // La exclusión consume el rng igual que el sorteo normal; si no, cambiaría todo lo generado
+      // después (planetas, cúmulos, nombres) y los sistemas dejarían de ser reproducibles.
+      const plain = new SystemGeneratorService().generate(4242);
+      const excluded = new SystemGeneratorService().generate(4242, { excludedElderGod: ElderGod.YOG_SOTHOTH });
+
+      expect(excluded.planets.map(p => p.id)).toEqual(plain.planets.map(p => p.id));
+      expect((excluded.clusters ?? []).map(c => c.id)).toEqual((plain.clusters ?? []).map(c => c.id));
+    });
+
+    it('el sistema de los Grises se genera sin Yog-Sothoth y con su planeta habitado', () => {
+      // Combinación exacta que aplica el primer Gate Rite (ver gate-rite.animation.ts).
+      const options = {
+        guaranteedInhabitants: PlanetInhabitants.GRISES,
+        excludedElderGod: ElderGod.YOG_SOTHOTH
+      };
+      for (const seed of SEEDS) {
+        const snapshot = new SystemGeneratorService().generate(seed, options);
+        expect(snapshot.meta?.elderGod).not.toBe(ElderGod.YOG_SOTHOTH);
+        expect(snapshot.planets.filter(p => p.inhabitants === PlanetInhabitants.GRISES).length).toBe(1);
+      }
     });
   });
 

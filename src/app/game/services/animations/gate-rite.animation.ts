@@ -9,7 +9,7 @@ import { LoggingService, LogCategory, LogLevel } from '../../../services/logging
 import { GameLogger } from '../../utils/GameLogger';
 import { SpellType } from '../../types/spell.types';
 import { ThrusterState } from '../../game-objects/Spaceship';
-import { PlanetInhabitants } from '../../types/cosmic-life.types';
+import { ElderGod, PlanetInhabitants } from '../../types/cosmic-life.types';
 import { BaseAnimation } from './base-animation';
 
 /** Hito: el primer Gate Rite ya sembró el sistema de los Grises (una sola vez por partida). */
@@ -782,6 +782,11 @@ export class GateRiteAnimation extends BaseAnimation {
           const seedsGreys = engine.gameState?.markStoryFlag?.(GREYS_SYSTEM_STORY_FLAG) === true;
           if (seedsGreys) {
             genOptions.guaranteedInhabitants = PlanetInhabitants.GRISES;
+            // El refugio gris NUNCA cae bajo Yog-Sothoth. Es el único primigenio que invoca vampiros
+            // de fuego, así que si dominara aquí habría uno en el propio patio de los Grises: la
+            // misión que te manda a cazarlo a OTRO sistema se resolvería sola y sin viajar, y encima
+            // contradice la historia (los Grises pelearon contra su raza acólita).
+            genOptions.excludedElderGod = ElderGod.YOG_SOTHOTH;
           }
           // Rito sintonizado por una raza hacia el dominio de un primigenio: de un solo uso.
           const tuning = !seedsGreys ? engine.gameState?.consumeGateTuning?.() ?? null : null;
