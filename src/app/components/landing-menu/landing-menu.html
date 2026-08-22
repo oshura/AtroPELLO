@@ -4,41 +4,84 @@
       <article class="action-group" *ngIf="showActionSections">
         <header>
           <h4>Descanso</h4>
-          <p>Recupera cordura y salud; riesgo de interrupción si hay ser menor activo.</p>
+          <p>Recupera cordura y salud; con un ser menor rondando, dormir es una apuesta.</p>
         </header>
         <button type="button" class="menu-btn" (click)="handleRest()" [disabled]="disabled">
           Descansar una jornada
+          <span class="menu-btn__odds" *ngIf="restChanceLabel">{{ restChanceLabel }}</span>
         </button>
       </article>
 
       <article class="action-group" *ngIf="showActionSections">
         <header>
           <h4>Explorar</h4>
-          <p>Acciones de riesgo 50/50. Aumentan edad +2 días.</p>
+          <p>Acciones de riesgo. Aumentan edad +2 días.</p>
         </header>
         <div class="action-grid">
-          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.ARTIFACT)" [disabled]="isArtifactActionDisabled">
-            Buscar artefacto
-          </button>
           <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.VOID_MASS)" [disabled]="isVoidMassActionDisabled">
             Capturar void mass
-          </button>
-          <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.CIVILIZATION)" [disabled]="isCivilizationActionDisabled">
-            Contactar civilización
+            <span class="menu-btn__odds">{{ exploreChanceLabel }}</span>
           </button>
           <button type="button" class="menu-btn" (click)="handleExplore(LandingExploreObjective.LESSER_BEING)" [disabled]="isLesserBeingActionDisabled">
             Rastrear lesser being
+            <span class="menu-btn__odds">{{ exploreChanceLabel }}</span>
           </button>
         </div>
       </article>
 
+      <!--
+        Contactar civilización es contextual: mientras no sepas quién vive aquí es una tirada de
+        primer contacto; una vez los conoces, abre Contacto (conversación, encargos y tratos).
+      -->
+      <article class="action-group" *ngIf="showActionSections">
+        <header>
+          <h4>Civilización</h4>
+          <p>{{ contactSummary }}</p>
+        </header>
+        <button
+          type="button"
+          class="menu-btn"
+          [class.menu-btn--primary]="canContactCivilization"
+          (click)="handleContactCivilization()"
+          [disabled]="isCivilizationActionDisabled && !canContactCivilization"
+        >
+          Contactar civilización
+          <span class="menu-btn__odds" *ngIf="!canContactCivilization">{{ exploreChanceLabel }}</span>
+        </button>
+      </article>
+
       <article class="action-group" *ngIf="showDiplomacySection">
         <header>
-          <h4>Diplomacia</h4>
+          <h4>{{ conversation?.raceLabel || 'Contacto' }}</h4>
           <ng-container *ngIf="mission as missionPreview; else diplomacyIntro">
             <p>Negocia pistas y favores para completar {{ missionPreview.missionName || 'el encargo planetario' }}.</p>
           </ng-container>
         </header>
+
+        <!-- Conversación: lo que dicen va a la bitácora de la derecha. -->
+        <div class="mission-panel mission-panel--talk" *ngIf="canConverse">
+          <span class="mission-panel__label">Conversación</span>
+          <ng-container *ngIf="conversation as chat; else conversationStart">
+            <div class="mission-panel__actions mission-panel__actions--stacked">
+              <button
+                type="button"
+                class="menu-btn"
+                *ngFor="let choice of chat.choices"
+                [class.menu-btn--primary]="choice.kind === 'accept' || choice.kind === 'turn-in'"
+                (click)="chooseDialogue(choice)"
+                [disabled]="disabled"
+              >{{ choice.label }}</button>
+            </div>
+          </ng-container>
+          <ng-template #conversationStart>
+            <div class="mission-panel__actions">
+              <button type="button" class="menu-btn menu-btn--primary" (click)="startConversation()" [disabled]="disabled">
+                Hablar con ellos
+              </button>
+            </div>
+          </ng-template>
+        </div>
+
         <div class="mission-panel mission-panel--ally" *ngIf="isAllyRelation">
           <span class="mission-panel__label">Ritos de alianza</span>
           <div class="mission-panel__actions mission-panel__actions--stacked">
@@ -252,9 +295,27 @@
         <ng-template #diplomacyEmpty>
           <!-- Los encargos ya no se siembran solos: nacen hablando (ver DialogueService). -->
           <div class="mission-panel mission-panel--empty">
-            No tienes ningún encargo de esta gente. Usa <strong>Conversar</strong> para hablar con ellos.
+            No tienes ningún encargo de esta gente. Habla con ellos para que te lo cuenten.
           </div>
         </ng-template>
+
+        <!-- Tienda: sólo abre cuando la raza te considera aliado. -->
+        <div class="mission-panel mission-panel--shop" *ngIf="shopOffers.length">
+          <span class="mission-panel__label">Taller</span>
+          <div class="mission-panel__actions mission-panel__actions--stacked">
+            <button
+              type="button"
+              class="menu-btn"
+              *ngFor="let offer of shopOffers"
+              (click)="purchaseOffer(offer)"
+              [disabled]="disabled"
+            >
+              {{ offer.label }}
+              <small>{{ offer.description }}</small>
+              <small>Coste: {{ describeOfferCost(offer) }}</small>
+            </button>
+          </div>
+        </div>
       </article>
     </section>
 

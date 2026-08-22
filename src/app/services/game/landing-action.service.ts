@@ -28,6 +28,7 @@ import { getLandingDiplomacyScript, LandingDiplomacyScript, DiplomacySubTaskConf
 import { getRaceDefinition } from '../../game/config/race-catalog.config';
 import { getSpellLabel } from '../../game/types/spell.types';
 import { LandingNarrativeService } from './landing-narrative.service';
+import { EXPLORE_SUCCESS_CHANCE, restSuccessChance } from '../../game/config/landing-odds.config';
 
 interface RollOutcome {
   success: boolean;
@@ -90,8 +91,15 @@ export class LandingActionService {
     const introText = this.pickNarrativeText(restScript?.intro, 'Acampas junto a la estela magnética del motor, dejando que la arena púrpura silencie la radio.');
     narrative.push({ tone: 'info', text: introText });
 
-    const sanityDelta = hasLesserBeing ? -1 : 1;
-    const healthDelta = hasLesserBeing ? -5 : 5;
+    // Con criatura en el planeta el descanso es una apuesta, no una condena: se puede robar una
+    // noche tranquila, pero pocas veces. La probabilidad la publica landing-odds para que el menú
+    // muestre exactamente la que se tira aquí.
+    const chance = restSuccessChance(hasLesserBeing);
+    const roll = this.roll(chance);
+    const interrupted = hasLesserBeing && !roll.success;
+
+    const sanityDelta = interrupted ? -1 : 1;
+    const healthDelta = interrupted ? -5 : 5;
     effects.sanityDelta = sanityDelta;
     effects.healthDelta = healthDelta;
     effects.ageDaysDelta = this.applyAgeDelta(1);
@@ -101,7 +109,7 @@ export class LandingActionService {
       { action: request.action, planetId: planet.id, detail: 'rest' }
     );
 
-    if (hasLesserBeing) {
+    if (interrupted) {
       planet.lesserBeingIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
       planet.markCreatureScanned();
       effects.interrupted = true;
@@ -117,13 +125,18 @@ export class LandingActionService {
         'Sueñas con constelaciones imposibles. Recuperas fuerza y cordura.'
       );
       narrative.push({ tone: 'success', text: successText });
+      if (hasLesserBeing) {
+        narrative.push({ tone: 'info', text: 'La criatura no te encontró esta noche.' });
+      }
     }
 
     const result = this.composeResult(request, planet, {
       title,
       narrative,
       effects,
-      success: !hasLesserBeing,
+      success: !interrupted,
+      roll: hasLesserBeing ? roll.roll : undefined,
+      probability: hasLesserBeing ? chance : undefined,
     });
 
     this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Rest action resolved', {
@@ -762,7 +775,7 @@ export class LandingActionService {
     planet.markVisited();
     const effects: LandingActionEffects = { ageDaysDelta: this.applyAgeDelta(2) };
     const script = this.landingNarrative.getExplorationScript(LandingExploreObjective.ARTIFACT);
-    const roll = this.roll(0.5);
+    const roll = this.roll(EXPLORE_SUCCESS_CHANCE);
     const introText = this.pickNarrativeText(
       script?.intro,
       'Sigues las runas talladas en pilares basálticos hacia una cámara de ozono quemado.'
@@ -814,7 +827,7 @@ export class LandingActionService {
         effects,
         success: true,
         roll: roll.roll,
-        probability: 0.5,
+        probability: EXPLORE_SUCCESS_CHANCE,
       });
       this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Artifact search success', { planetId: planet.id, absent: !planet.hasArtifact });
       return result;
@@ -835,7 +848,7 @@ export class LandingActionService {
       effects,
       success: false,
       roll: roll.roll,
-      probability: 0.5,
+      probability: EXPLORE_SUCCESS_CHANCE,
     });
     this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Artifact search failed', { planetId: planet.id, roll: roll.roll });
     return result;
@@ -866,7 +879,7 @@ export class LandingActionService {
       effects.experienceDelta = 1;
       narrative.push({ tone: 'warning', text: 'Los sensores confirman que el vacío fue drenado hace eras.' });
     } else {
-      const probability = 0.5;
+      const probability = EXPLORE_SUCCESS_CHANCE;
       const roll = this.roll(probability);
       planet.voidMassIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
       effects.intel = { voidMass: planet.voidMassIntelStatus };
@@ -970,7 +983,7 @@ export class LandingActionService {
     planet.markVisited();
     const effects: LandingActionEffects = { ageDaysDelta: this.applyAgeDelta(2) };
     const script = this.landingNarrative.getExplorationScript(LandingExploreObjective.CIVILIZATION);
-    const roll = this.roll(0.5);
+    const roll = this.roll(EXPLORE_SUCCESS_CHANCE);
     const introText = this.pickNarrativeText(
       script?.intro,
       'Te recibe una plaza en silencio, con emisarios telepáticos aguardando tu gesto.'
@@ -1000,7 +1013,7 @@ export class LandingActionService {
         effects,
         success: true,
         roll: roll.roll,
-        probability: 0.5,
+        probability: EXPLORE_SUCCESS_CHANCE,
       });
       this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Civilization contact success', { planetId: planet.id });
       return result;
@@ -1020,7 +1033,7 @@ export class LandingActionService {
       effects,
       success: false,
       roll: roll.roll,
-      probability: 0.5,
+      probability: EXPLORE_SUCCESS_CHANCE,
     });
     this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Civilization contact failed', { planetId: planet.id, roll: roll.roll });
     return result;
@@ -1030,7 +1043,7 @@ export class LandingActionService {
     planet.markVisited();
     const effects: LandingActionEffects = { ageDaysDelta: this.applyAgeDelta(2) };
     const script = this.landingNarrative.getExplorationScript(LandingExploreObjective.LESSER_BEING);
-    const roll = this.roll(0.5);
+    const roll = this.roll(EXPLORE_SUCCESS_CHANCE);
     const introText = this.pickNarrativeText(
       script?.intro,
       'Desciendes a catacumbas donde el eco pronuncia tu nombre al revés.'
@@ -1066,7 +1079,7 @@ export class LandingActionService {
         effects,
         success: true,
         roll: roll.roll,
-        probability: 0.5,
+        probability: EXPLORE_SUCCESS_CHANCE,
       });
       this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Lesser being search success', { planetId: planet.id, present: !!planet.lesserBeing });
       return result;
@@ -1086,7 +1099,7 @@ export class LandingActionService {
       effects,
       success: false,
       roll: roll.roll,
-      probability: 0.5,
+      probability: EXPLORE_SUCCESS_CHANCE,
     });
     this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Lesser being search failed', { planetId: planet.id, roll: roll.roll });
     return result;

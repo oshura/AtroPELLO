@@ -81,15 +81,17 @@
 
     <ng-template #landingMenuView>
       <section class="landing-panel__menu landing-panel__menu--expanded">
-        <app-landing-menu [context]="ctx" [viewMode]="landingMenuViewMode"></app-landing-menu>
+        <app-landing-menu
+          [context]="ctx"
+          [viewMode]="landingMenuViewMode"
+          (openContact)="enterDiplomacyMenu()"
+        ></app-landing-menu>
       </section>
     </ng-template>
   </div>
 
   <div slot="footer" class="landing-panel__actions">
-    <button *ngIf="canDisembark" type="button" class="btn primary" (click)="onDisembark()">Bajar de la nave</button>
     <ng-container *ngIf="!inMenuView; else menuFooter">
-      <button *ngIf="canTalk" type="button" class="btn primary" (click)="startDialogue()">Conversar</button>
       <button type="button" class="btn primary" (click)="enterMenu()">Permanecer</button>
       <button type="button" class="btn primary" (click)="onTakeoff()">
         Despegar
@@ -102,24 +104,13 @@
       <ng-container [ngSwitch]="viewMode">
         <ng-container *ngSwitchCase="'actions'">
           <button type="button" class="btn primary" (click)="exitMenu()">Embarcar</button>
-          <button *ngIf="canTalk" type="button" class="btn primary" (click)="startDialogue()">Conversar</button>
-          <button
-            *ngIf="canOpenDiplomacyPanel"
-            type="button"
-            class="btn primary"
-            (click)="enterDiplomacyMenu()"
-          >
-            Relacionarse
-          </button>
         </ng-container>
+        <!-- Contacto: la vista que fusiona conversación, encargos y tratos con la raza. -->
         <ng-container *ngSwitchCase="'diplomacy'">
-          <button type="button" class="btn primary" (click)="enterMenu()">Permanecer</button>
+          <button type="button" class="btn primary" (click)="enterMenu()">Volver</button>
           <button type="button" class="btn primary" (click)="exitMenu()">Embarcar</button>
         </ng-container>
       </ng-container>
     </ng-template>
   </div>
 </app-modal>
-
-<!-- Conversación con la raza del planeta: overlay transparente sobre la escena. -->
-<app-dialogue-overlay [visible]="dialogueVisible" (closed)="onDialogueClosed()"></app-dialogue-overlay>

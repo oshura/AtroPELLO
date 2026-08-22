@@ -4,9 +4,6 @@ import { Modal } from '../modal/modal';
 import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/landing.types';
 import { LandingMenuComponent } from '../landing-menu/landing-menu';
 import { GameStateStore } from '../../services/game/game-state.store';
-import { DisembarkService } from '../../services/game/disembark.service';
-import { DialogueService } from '../../services/game/dialogue.service';
-import { DialogueOverlayComponent } from '../dialogue-overlay/dialogue-overlay';
 import {
   PLANET_INTEL_STATUS,
   PlanetIntelSnapshot,
@@ -21,7 +18,7 @@ import { PlanetInhabitants, PLANET_INHABITANT_LABELS, LesserBeing, LESSER_BEING_
 @Component({
   selector: 'app-landing-panel',
   standalone: true,
-  imports: [CommonModule, Modal, LandingMenuComponent, DialogueOverlayComponent],
+  imports: [CommonModule, Modal, LandingMenuComponent],
   templateUrl: './landing-panel.html',
   styleUrl: './landing-panel.scss'
 })
@@ -32,52 +29,7 @@ export class LandingPanelComponent implements OnChanges {
   @Output() stay = new EventEmitter<void>();
   protected viewMode: 'overview' | 'actions' | 'diplomacy' = 'overview';
 
-  protected dialogueVisible = false;
-
-  constructor(
-    private readonly gameState: GameStateStore,
-    private readonly disembark: DisembarkService,
-    private readonly dialogue: DialogueService
-  ) {}
-
-  /** ¿Hay alguien con quien hablar aquí? (raza con guion propio escrito). */
-  protected get canTalk(): boolean {
-    const planet = this.resolveCurrentPlanet();
-    return !!planet && this.dialogue.canTalk(planet);
-  }
-
-  /**
-   * Abre la conversación. La misión ya NO se siembra sola al abrir el panel: nace aquí, cuando el
-   * jugador habla y acepta el encargo.
-   */
-  protected startDialogue(): void {
-    const planet = this.resolveCurrentPlanet();
-    if (!planet) {
-      return;
-    }
-    this.dialogueVisible = !!this.dialogue.start(planet);
-  }
-
-  protected onDialogueClosed(): void {
-    this.dialogueVisible = false;
-  }
-
-  private resolveCurrentPlanet() {
-    const planetId = this.context?.planetId;
-    return planetId ? this.gameState.findPlanetById(planetId) ?? null : null;
-  }
-
-  /** ¿Se puede "bajar de la nave" aquí? (muestra el botón; el Sol no). */
-  protected get canDisembark(): boolean {
-    return !!this.context && this.disembark.canDisembark({ kind: 'planet', planetType: this.context.planetType });
-  }
-
-  /** "Bajar de la nave" (placeholder: la experiencia propia está por implementar; sin salto externo). */
-  onDisembark(): void {
-    if (this.context) {
-      this.disembark.disembark({ kind: 'planet', planetType: this.context.planetType });
-    }
-  }
+  constructor(private readonly gameState: GameStateStore) {}
 
   ngOnChanges(changes: SimpleChanges): void {
     if ((changes['visible'] && !this.visible) || changes['context']) {

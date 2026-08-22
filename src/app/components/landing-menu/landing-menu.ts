@@ -1,5 +1,5 @@
 import { CommonModule } from '@angular/common';
-import { ChangeDetectionStrategy, Component, Input, OnChanges, SimpleChanges } from '@angular/core';
+import { ChangeDetectionStrategy, Component, EventEmitter, Input, OnChanges, Output, SimpleChanges } from '@angular/core';
 import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/landing.types';
 import {
   LandingActionKind,
@@ -29,6 +29,12 @@ import { getLandingDiplomacyScript, LandingDiplomacyScript } from '../../game/co
 import { MissionService } from '../../game/services/game/mission.service';
 import { Planet } from '../../game/game-objects/Planet';
 import { GameObjectAnimosity, RelationAffinity } from '../../game/types/animosity.types';
+import { DialogueService } from '../../services/game/dialogue.service';
+import { DialogueChoice, DialogueSessionState } from '../../game/types/dialogue.types';
+import { EXPLORE_SUCCESS_CHANCE, formatChance, restSuccessChance } from '../../game/config/landing-odds.config';
+import { RaceOutfittingBridgeService } from '../../services/game/race-outfitting-bridge.service';
+import { RaceShopOffer } from '../../game/types/race.types';
+import { CargoCompositionKind } from '../../game/types/inventory.types';
 
 @Component({
   selector: 'app-landing-menu',
@@ -41,6 +47,8 @@ import { GameObjectAnimosity, RelationAffinity } from '../../game/types/animosit
 export class LandingMenuComponent implements OnChanges {
   @Input() context: LandingApproachContext | null = null;
   @Input() viewMode: 'actions' | 'diplomacy' = 'actions';
+  /** "Contactar civilización" abre la vista de contacto, que gestiona el panel padre. */
+  @Output() openContact = new EventEmitter<void>();
 
   protected pending = false;
   protected actionLog: LandingEventResult[] = [];
@@ -51,8 +59,178 @@ export class LandingMenuComponent implements OnChanges {
   constructor(
     private readonly landingActions: LandingActionService,
     private readonly gameState: GameStateStore,
-    private readonly missionService: MissionService
+    private readonly missionService: MissionService,
+    private readonly dialogue: DialogueService,
+    private readonly raceOutfitting: RaceOutfittingBridgeService
   ) {}
+
+  // ── Probabilidades visibles ──────────────────────────────────────────────────────────────────
+  // El jugador ve la misma cifra que se tira: ambas salen de landing-odds.config.
+
+  /** "35%" si dormir es arriesgado; null en un mundo tranquilo (no se pinta nada). */
+  protected get restChanceLabel(): string | null {
+    return formatChance(restSuccessChance(this.planetHasLesserBeing));
+  }
+
+  protected get exploreChanceLabel(): string {
+    return formatChance(EXPLORE_SUCCESS_CHANCE) ?? '';
+  }
+
+  private get planetHasLesserBeing(): boolean {
+    const being = this.planetIntel?.lesserBeing;
+    return !!being && being !== LesserBeing.NONE;
+  }
+
+  // ── Contacto con la civilización ─────────────────────────────────────────────────────────────
+
+  /**
+   * ¿Hay alguien con quien tratar y el piloto lo SABE?
+   * Sin la segunda condición, el botón delataría que el mundo está habitado antes de escanearlo.
+   * Misma puerta que usa el panel para dejar entrar en Contacto.
+   */
+  protected get canContactCivilization(): boolean {
+    const inhabitants = this.planetIntel?.inhabitants;
+    if (!inhabitants || inhabitants === PlanetInhabitants.NONE) {
+      return false;
+    }
+    return this.isIntelResolved(this.planetIntel?.civilizationIntelStatus) || this.lifeIntelKnown;
+  }
+
+  /**
+   * Un solo botón para toda la relación con la raza:
+   * mientras no sepas quién vive aquí, es la tirada de primer contacto; después, abre Contacto.
+   */
+  protected handleContactCivilization(): void {
+    if (this.canContactCivilization) {
+      this.openContact.emit();
+      return;
+    }
+    this.handleExplore(LandingExploreObjective.CIVILIZATION);
+  }
+
+  /** Conversación en curso dentro de la vista de contacto. */
+  protected get conversation(): DialogueSessionState | null {
+    return this.dialogue.getState();
+  }
+
+  protected get canConverse(): boolean {
+    const planet = this.resolveContextPlanet();
+    return !!planet && this.dialogue.canTalk(planet);
+  }
+
+  /** Abre (o reabre) la charla al entrar en Contacto. */
+  protected startConversation(): void {
+    const planet = this.resolveContextPlanet();
+    if (!planet) {
+      return;
+    }
+    this.dialogue.start(planet);
+  }
+
+  /**
+   * Cada elección se resuelve y se vuelca a la bitácora: la conversación queda registrada junto al
+   * resto de eventos del aterrizaje, que es donde el jugador espera releerla.
+   */
+  protected chooseDialogue(choice: DialogueChoice): void {
+    if (choice.kind === 'leave') {
+      this.dialogue.end();
+      return;
+    }
+    const before = this.conversation?.log.length ?? 0;
+    const next = this.dialogue.choose(choice.id);
+    if (!next) {
+      return;
+    }
+    const fresh = next.log.slice(before);
+    if (fresh.length) {
+      this.appendConversationToLog(choice, fresh.map(line => ({
+        tone: line.speaker === 'narrator' ? 'info' as const : 'success' as const,
+        text: line.text,
+      })));
+    }
+    const planet = this.resolveContextPlanet();
+    if (planet) {
+      this.gameState.syncPlanetIntelFromPlanet(planet);
+    }
+  }
+
+  private appendConversationToLog(choice: DialogueChoice, narrative: LandingActionLogEntry[]): void {
+    const planetId = this.context?.planetId;
+    if (!planetId) {
+      return;
+    }
+    const title = choice.kind === 'accept'
+      ? 'Encargo aceptado'
+      : choice.kind === 'turn-in'
+        ? 'Encargo entregado'
+        : this.conversation?.raceLabel ?? 'Conversación';
+    this.persistActionResult(planetId, {
+      id: `dialogue-${Date.now().toString(36)}`,
+      planetId,
+      action: LandingActionKind.DIPLOMACY,
+      title,
+      timestamp: Date.now(),
+      narrative,
+      effects: {},
+      success: true,
+    });
+  }
+
+  private resolveContextPlanet(): Planet | null {
+    const planetId = this.context?.planetId;
+    return planetId ? this.resolveLandingPlanet(planetId) : null;
+  }
+
+  // ── Taller de la raza ────────────────────────────────────────────────────────────────────────
+
+  /** Ofertas disponibles: vacío mientras la raza no te considere aliado. */
+  protected get shopOffers(): RaceShopOffer[] {
+    const inhabitants = this.planetIntel?.inhabitants;
+    return inhabitants ? this.raceOutfitting.getShopOffers(inhabitants) : [];
+  }
+
+  protected describeOfferCost(offer: RaceShopOffer): string {
+    const parts = Object.entries(offer.cost).map(
+      ([kind, units]) => `${units} ${kind} (${this.gameState.getRawMaterialUnits(kind as CargoCompositionKind)}u)`
+    );
+    return parts.join(' + ') || 'gratis';
+  }
+
+  protected purchaseOffer(offer: RaceShopOffer): void {
+    const planetId = this.context?.planetId;
+    const inhabitants = this.planetIntel?.inhabitants;
+    if (!planetId || !inhabitants) {
+      return;
+    }
+    const failure = this.raceOutfitting.purchase(inhabitants, offer.id);
+    this.persistActionResult(planetId, {
+      id: `shop-${Date.now().toString(36)}`,
+      planetId,
+      action: LandingActionKind.DIPLOMACY,
+      title: offer.label,
+      timestamp: Date.now(),
+      narrative: [{ tone: failure ? 'warning' : 'success', text: failure ?? `${offer.label}: instalado.` }],
+      effects: {},
+      success: !failure,
+    });
+  }
+
+  /** Una línea que resume qué se puede hacer con esta gente ahora mismo. */
+  protected get contactSummary(): string {
+    if (!this.canContactCivilization) {
+      return 'Barre la superficie en busca de señales de vida inteligente.';
+    }
+    if (this.mission?.status === 'ready-to-turn-in') {
+      return 'Tienes lo que te pidieron: es momento de entregarlo.';
+    }
+    if (this.mission) {
+      return 'Tienes un encargo en curso con ellos.';
+    }
+    if (this.isEnemyRelation) {
+      return 'La órbita está tomada: no habrá tratos hasta despejarla.';
+    }
+    return 'Habla con ellos, escucha lo que ofrecen y negocia.';
+  }
 
   ngOnChanges(changes: SimpleChanges): void {
     if (changes['context']) {

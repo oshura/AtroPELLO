@@ -103,6 +103,54 @@
   opacity: 0.5;
 }
 
+/* Acción que lleva a alguna parte: contactar, hablar, aceptar o entregar un encargo. */
+.menu-btn--primary {
+  border-color: rgba(139, 122, 255, 0.7);
+  background: rgba(94, 78, 214, 0.28);
+}
+
+.menu-btn--primary:hover:not(:disabled) {
+  background: rgba(94, 78, 214, 0.45);
+}
+
+/* Probabilidad de éxito, junto al nombre de la acción. */
+.menu-btn__odds {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 0.75rem;
+  background: rgba(255, 255, 255, 0.1);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  opacity: 0.9;
+}
+
+/* Los botones de conversación y taller llevan su explicación debajo del título. */
+.mission-panel--talk .menu-btn,
+.mission-panel--shop .menu-btn {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.15rem;
+  text-align: left;
+}
+
+.mission-panel--talk .menu-btn small,
+.mission-panel--shop .menu-btn small {
+  font-weight: 400;
+  font-size: 0.72rem;
+  opacity: 0.75;
+}
+
+.mission-panel--talk {
+  border-color: rgba(139, 122, 255, 0.45);
+  background: rgba(28, 24, 60, 0.7);
+}
+
+.mission-panel--shop {
+  border-color: rgba(122, 231, 181, 0.45);
+  background: rgba(18, 40, 34, 0.7);
+}
+
 .menu-btn:not(:disabled):hover {
   background: rgba(127, 90, 240, 0.15);
   transform: translateY(-1px);

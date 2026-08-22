@@ -1,6 +1,6 @@
 # Fase 13 — Razas, conversación y misiones narrativas
 
-> Estado: implementada la base jugable (build 76). Lore en `docs/HISTORIA.md`; armamento en
+> Estado: implementada la base jugable (build 82). Lore en `docs/HISTORIA.md`; armamento en
 > `docs/ARMAS.md`; plan por slices en `documentation/Plan_Armas_Razas.md`.
 
 ## 1. Por qué
@@ -31,14 +31,37 @@ aparecen cuando la trama las convoca. El tipo ya existe; su spawn por eventos es
 | `game/types/dialogue.types.ts` | Espejo EXACTO del formato de los JSON de guion |
 | `services/game/dialogue-script.service.ts` | Carga los 13 guiones (el puente que faltaba) |
 | `services/game/dialogue.service.ts` | Máquina de conversación (sesión efímera) |
-| `components/dialogue-overlay/` | Overlay 2D transparente sobre la escena |
+| `components/landing-menu/` | Vista de Contacto: conversación, encargo, servicios y taller |
+| `game/config/landing-odds.config.ts` | Probabilidades que la UI muestra y el servicio tira |
 | `services/game/race-outfitting-bridge.service.ts` | Traduce "la raza te arma" en llamadas al motor |
 | `game/services/state/ship-outfitting.service.ts` | Mejoras permanentes de nave |
 
 **Receta: añadir una raza** = entrada en `PlanetInhabitants` + etiqueta + `landing_missions_<raza>.json`
 + entrada en `RACE_CATALOG`. Nada más. Una raza sin ficha sigue funcionando con el guion genérico.
 
-## 4. Cómo se conversa
+## 4. El menú de aterrizaje
+
+Reorganizado en la build 82 para que cada cosa esté donde el jugador la busca:
+
+| Vista | Qué ofrece |
+|---|---|
+| **Overview** | Datos del planeta. Pie: *Permanecer* · *Despegar*. |
+| **Acciones** | *Descansar* (con su probabilidad si hay criatura), *Capturar void mass* y *Rastrear lesser being* (50 % cada una), y *Contactar civilización*. Pie: *Embarcar*. |
+| **Contacto** | Todo lo que se hace con la raza: conversación, encargo, servicios según la relación y taller. Pie: *Volver* · *Embarcar*. |
+
+**"Contactar civilización" es un botón contextual**: mientras no sepas quién vive en el mundo es la
+tirada de primer contacto (y enseña su 50 %); en cuanto los conoces, abre la vista de Contacto. Así
+no delata que un planeta está habitado antes de escanearlo, y no hace falta un botón distinto para
+cada fase de la relación.
+
+**Las probabilidades se muestran junto a la acción** y salen de `landing-odds.config.ts`, la misma
+fuente que tira el dado: la interfaz no puede prometer una cifra distinta de la que se juega.
+Descansar con un ser menor rondando pasó de interrupción segura a apuesta (35 %).
+
+Se retiraron del menú *Bajar de la nave* (era un placeholder sin experiencia detrás) y los botones
+sueltos *Conversar* y *Relacionarse*, que ahora viven fusionados dentro de Contacto.
+
+## 5. Cómo se conversa
 
 Una conversación es lo que pedía el diseño: **escena narrada + preguntas + salir cuando quieras**.
 
@@ -49,7 +72,7 @@ Una conversación es lo que pedía el diseño: **escena narrada + preguntas + sa
 
 La sesión es efímera: lo que persiste es la misión que salga de ella.
 
-## 5. Misiones de caza (`type: 'hunt'`)
+## 6. Misiones de caza (`type: 'hunt'`)
 
 Novedad de esta fase, para encargos que no ocurren en un planeta sino contra una criatura:
 
@@ -61,7 +84,7 @@ Novedad de esta fase, para encargos que no ocurren en un planeta sino contra una
 
 Matar la criatura *antes* de aceptar el encargo no cuenta, y el propio diálogo lo advierte.
 
-## 6. Progreso persistido
+## 7. Progreso persistido
 
 Todo opcional, sin migración de savegames:
 
@@ -69,7 +92,7 @@ Todo opcional, sin migración de savegames:
 - `SaveGameCharacterState.raceStandings` — reputación y misiones completadas por raza.
 - `SolarSystemMeta.elderGodRevealed` — si el jugador ya sabe quién domina ese sistema.
 
-## 7. Ritos dirigidos
+## 8. Ritos dirigidos
 
 El Gate Rite dejaba el destino al azar, lo que hacía imposible encargar "ve al dominio de X":
 
@@ -79,7 +102,7 @@ El Gate Rite dejaba el destino al azar, lo que hacía imposible encargar "ve al 
   (`GameStateStore.setGateTuning`, consumido una sola vez por el rito). El sistema resultante nace con
   `elderGodRevealed`, así que el mapa te dice a dónde has llegado.
 
-## 8. Identidad de los objetos generados
+## 9. Identidad de los objetos generados
 
 Los sistemas procedurales reutilizaban los mismos ids (`planet-0`, `planet-1`…, `cloud-0000`…), así
 que el planeta de un sistema y el del mismo índice de otro eran **indistinguibles por id**. Eso
@@ -90,14 +113,14 @@ Desde la build 79, `SystemGeneratorService` antepone un `systemTag` derivado de 
 —la misma semilla da los mismos ids— y el sistema humano conserva sus ids nombrados
 (`planet-earth`, `planet-mars`…), que nunca colisionaron.
 
-## 9. Determinismo
+## 10. Determinismo
 
 La raza de un planeta se sorteaba con `Math.random()`, así que un mismo mundo cambiaba de habitantes
 entre recargas. Ahora la tirada se deriva del id del planeta (`game/utils/seeded-random.ts`), y la
 civilización de Marte tiene semilla fija. Los Grises están **fuera del sorteo**
 (`NON_POOLABLE_INHABITANTS`): sólo aparecen donde la historia los coloca.
 
-## 10. Ficha canónica: los Grises
+## 11. Ficha canónica: los Grises
 
 Ver `docs/HISTORIA.md` §9 para el lore y `landing_missions_grises.json` para el guion. Resumen técnico:
 
@@ -108,7 +131,7 @@ Ver `docs/HISTORIA.md` §9 para el lore y `landing_missions_grises.json` para el
   toberas) + sintonía del rito.
 - Tienda posterior (sólo siendo aliado): ampliar motor, anclaje extra y Vulcan.
 
-## 11. Antipatrones
+## 12. Antipatrones
 
 - Sembrar misiones fuera de una conversación.
 - Prometer una recompensa en el texto y no entregarla en código (el pecado original de esta fase).
