@@ -97,6 +97,10 @@ export class GameInputHandler {
       try { (this.gameEngine as any).cycleSelection?.(true); } catch {}
       event.preventDefault(); return true;
     }
+    if (action === 'weapon_next' || action === 'weapon_prev') {
+      this.gameEngine.cycleWeapon(action === 'weapon_prev');
+      event.preventDefault(); return true;
+    }
     if (action === 'clear_target') {
       // Forward to engine using default key (escape) regardless of rebound value
       this.gameEngine.handleKeyDown(this.keyBindings.getDefaultKey('clear_target'));

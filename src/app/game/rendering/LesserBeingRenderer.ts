@@ -2,7 +2,7 @@ import { LesserBeingBase, LesserBeingGlowConfig, LesserBeingTentacleConfig, Less
 import { ShaderManager } from '../ShaderManager';
 import { WebGLService } from '../../services/webgl.service';
 import { Vector3, Color } from '../../types/game.types';
-import { LesserBeingProjectileView } from '../services/lesser-beings/lesser-being-combat.service';
+import { ProjectileView } from '../services/weapons/projectile-system';
 
 interface CameraBasis {
   right: Vector3;
@@ -113,8 +113,13 @@ export class LesserBeingRenderer {
     this.flushGlowBatch(this.additiveGlowBatch, viewMatrix, projectionMatrix, true);
   }
 
+  /**
+   * Dibuja los proyectiles del pool unificado: los de los seres menores tienen aspecto propio
+   * (escupitajo ácido, orbe) y cualquier otro `kind` —las armas del jugador— se dibuja como
+   * fragmento luminoso con el color que trae su definición de catálogo.
+   */
   public renderProjectiles(
-    projectiles: LesserBeingProjectileView[] | null | undefined,
+    projectiles: ProjectileView[] | null | undefined,
     viewMatrix: Float32Array,
     projectionMatrix: Float32Array,
     timeSec: number
@@ -135,9 +140,95 @@ export class LesserBeingRenderer {
         case 'orb':
           this.renderOrbProjectile(projectile, cameraBasis, viewMatrix, timeSec);
           break;
+        default:
+          this.renderWeaponProjectile(projectile, cameraBasis, viewMatrix, projectionMatrix);
+          break;
       }
     }
     this.flushGlowBatch(this.projectileGlowBatch, viewMatrix, projectionMatrix, true);
+  }
+
+  /**
+   * Proyectil de arma: trazadora alargada en la dirección de vuelo (un carámbano, no una bola).
+   *
+   * A diferencia de los proyectiles de los seres menores, aquí NO se aplica el sesgo de
+   * profundidad: ese truco acerca el proyectil hasta 900 unidades hacia la cámara, lo cual está
+   * bien para un escupitajo lento a 200 u, pero en un arma de 3000 u de alcance amontona los
+   * disparos cerca de la nave y hace que parezcan volar hacia otro sitio.
+   */
+  private renderWeaponProjectile(
+    projectile: ProjectileView,
+    camera: CameraBasis,
+    viewMatrix: Float32Array,
+    projectionMatrix: Float32Array
+  ): void {
+    const direction = this.normalize(projectile.velocity);
+    const speed = Math.hypot(projectile.velocity.x, projectile.velocity.y, projectile.velocity.z);
+    const glow = Math.max(0.25, projectile.glowScale);
+    // Escala contenida: la nave del jugador mide ~2 unidades, así que una trazadora de decenas de
+    // unidades se lee como un objeto volando, no como un disparo.
+    const thickness = Math.max(0.12, projectile.radius * 0.9 * glow);
+    const [r, g, b] = projectile.color;
+
+    // Ejes del billboard: el largo sigue la trayectoria proyectada en pantalla y el ancho es su
+    // perpendicular. Con los ejes de cámara saldría un círculo mire donde mire el proyectil.
+    const alongView = this.projectToViewPlane(direction, camera);
+    const sideView = this.normalize(this.cross(camera.forward, alongView));
+
+    const head = projectile.position;
+    // Núcleo: alargado y sólo ligeramente más claro que el color del arma (sumar a los tres
+    // canales lo saturaba a blanco y el hielo perdía su tono).
+    const coreLength = Math.max(0.9, projectile.radius * 3 * glow);
+    this.drawGlowBillboard(
+      head,
+      alongView,
+      sideView,
+      coreLength,
+      thickness * 1.6,
+      [Math.min(1, r * 0.5 + 0.5), Math.min(1, g * 0.5 + 0.5), Math.min(1, b * 0.5 + 0.5), 0.85],
+      viewMatrix,
+      projectionMatrix,
+      true,
+      false
+    );
+
+    if (!projectile.trail) {
+      return;
+    }
+    // Trazadora: se alarga con la velocidad, para que un disparo rápido se lea como una raya.
+    const trailLength = Math.min(6, Math.max(1.2, speed * 0.005));
+    const segments = 3;
+    for (let i = 1; i <= segments; i++) {
+      const t = i / segments;
+      const center = this.subtractVectors(head, this.scaleVector(direction, trailLength * t * 0.5));
+      this.drawGlowBillboard(
+        center,
+        alongView,
+        sideView,
+        trailLength * 0.6,
+        thickness * (1.1 - t * 0.55),
+        [r, g, b, 0.3 * (1 - t) + 0.05],
+        viewMatrix,
+        projectionMatrix,
+        true,
+        false
+      );
+    }
+  }
+
+  /**
+   * Componente de `direction` perpendicular al eje de visión, normalizada: el eje "largo" del
+   * billboard en pantalla. Si el proyectil viaja casi hacia la cámara la proyección degenera y se
+   * cae al eje horizontal de la cámara (visto de frente, un carámbano es un punto de todos modos).
+   */
+  private projectToViewPlane(direction: Vector3, camera: CameraBasis): Vector3 {
+    const dot = direction.x * camera.forward.x + direction.y * camera.forward.y + direction.z * camera.forward.z;
+    const planar = {
+      x: direction.x - camera.forward.x * dot,
+      y: direction.y - camera.forward.y * dot,
+      z: direction.z - camera.forward.z * dot,
+    };
+    return Math.hypot(planar.x, planar.y, planar.z) < 1e-3 ? { ...camera.right } : this.normalize(planar);
   }
 
   public hasDeferredTentacles(): boolean {
@@ -149,7 +240,7 @@ export class LesserBeingRenderer {
   }
 
   private renderAcidProjectile(
-    projectile: LesserBeingProjectileView,
+    projectile: ProjectileView,
     camera: CameraBasis,
     viewMatrix: Float32Array,
     projectionMatrix: Float32Array,
@@ -236,7 +327,7 @@ export class LesserBeingRenderer {
   }
 
   private renderOrbProjectile(
-    projectile: LesserBeingProjectileView,
+    projectile: ProjectileView,
     camera: CameraBasis,
     viewMatrix: Float32Array,
     timeSec: number

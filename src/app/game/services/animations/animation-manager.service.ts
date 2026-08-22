@@ -61,8 +61,7 @@ export class AnimationManagerService {
   private elderGodFlashImages: Record<ElderGod, string> = {
     [ElderGod.CTHULHU]: '/assets/GreatCthulhu.webp',
     [ElderGod.AZATHOTH]: '/assets/Azathoth.webp',
-    [ElderGod.YOG_SOTHOTH]: '/assets/YogSothoth.jpg',
-    [ElderGod.CTHUGHA]: '/assets/Cthugha.webp'
+    [ElderGod.YOG_SOTHOTH]: '/assets/YogSothoth.jpg'
   };
   private fallbackFlashImages: string[] = ['/assets/Nodens.webp'];
   private flashIndex = 0;

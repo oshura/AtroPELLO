@@ -330,6 +330,8 @@ export class SolarSystemPanel {
     marginPx?: number;
     // Optional: details to display for the active (selected or hovered) item
     details?: Record<string, any>;
+    /** Primigenio que domina el sistema, sólo si el jugador ya lo sabe (Fase 13). */
+    elderGodLabel?: string | null;
   }): void {
     const c = this.ctx;
     const W = this.canvas.width, H = this.canvas.height;
@@ -445,6 +447,17 @@ export class SolarSystemPanel {
       c.fillText(b.label, b.x + b.w/2, b.y + b.h/2 + 1);
     }
     c.restore();
+
+    // Dominio del sistema: sólo se rotula cuando el jugador lo ha averiguado.
+    if (data.elderGodLabel) {
+      c.save();
+      c.font = '600 14px Segoe UI, Roboto, sans-serif';
+      c.textAlign = 'right';
+      c.textBaseline = 'top';
+      c.fillStyle = 'rgba(255, 90, 120, 0.9)';
+      c.fillText(`DOMINIO: ${data.elderGodLabel.toUpperCase()}`, W - 18, 16);
+      c.restore();
+    }
 
     // 3) Draw orbits as ellipses (independent from planet visibility)
     if (this.showOrbits) {

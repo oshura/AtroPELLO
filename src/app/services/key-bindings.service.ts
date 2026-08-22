@@ -8,6 +8,7 @@ export type GameAction =
   | 'map' | 'pause' | 'book' | 'spell' | 'inventory'
   | 'marquee_replay'
   | 'target_next' | 'target_prev'
+  | 'weapon_next' | 'weapon_prev'
   | 'camera_7' | 'camera_8' | 'camera_9' | 'camera_0'
   | 'stats_overlay'
   | 'start_resume' | 'clear_target' | 'resume'
@@ -34,6 +35,8 @@ const DEFAULT_BINDINGS: Record<GameAction, string> = {
   spell: 'h',
   target_next: 't',
   target_prev: 'shift+t',
+  weapon_next: 'r',
+  weapon_prev: 'shift+r',
   marquee_replay: 'backspace',
   camera_7: '7',
   camera_8: '8',

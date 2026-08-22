@@ -3,7 +3,7 @@ import { Camera, CameraMode } from '../../Camera';
 import { Spaceship, ThrusterState } from '../../game-objects/Spaceship';
 import { GameLogger } from '../../utils/GameLogger';
 import { LogCategory } from '../../../services/logging.service';
-import { buildVastago, ShipPart } from './ship-geometry';
+import { buildVastago, ShipGeometryConfig, ShipPart } from './ship-geometry';
 
 /**
  * ShipRenderer — render de la nave del jugador "Vástago". Programa propio con casco metálico (líneas de
@@ -78,6 +78,27 @@ export class ShipRenderer {
     const aPos = gl.getAttribLocation(this.program, 'a_position');
     const aNrm = gl.getAttribLocation(this.program, 'a_normal');
     for (const part of buildVastago()) this.gpu.push(this.upload(part, aPos, aNrm));
+  }
+
+  /**
+   * Reconstruye la malla con otra configuración de casco (mejora de motor, arma instalada).
+   * Es una operación FRÍA: sólo se llama al cambiar el equipamiento, nunca por frame.
+   */
+  public rebuild(config: ShipGeometryConfig): void {
+    const gl = this.gl;
+    if (!this.program) return;
+    for (const g of this.gpu) {
+      if (g.vao) gl.deleteVertexArray(g.vao);
+    }
+    this.gpu = [];
+    const aPos = gl.getAttribLocation(this.program, 'a_position');
+    const aNrm = gl.getAttribLocation(this.program, 'a_normal');
+    for (const part of buildVastago(config)) this.gpu.push(this.upload(part, aPos, aNrm));
+    GameLogger.info(LogCategory.RENDER, 'Malla de la nave reconstruida', {
+      engineTier: config.engineTier,
+      hardpoints: config.occupiedHardpoints.length,
+      parts: this.gpu.length,
+    });
   }
 
   public render(

@@ -3,6 +3,7 @@ import { SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, ClusterSnapshot } fro
 import { Vector3 } from '../../../types/game.types';
 import { PLANET_INTEL_STATUS, createEmptyResourceStock } from '../../types/planet-intel.types';
 import { PlanetInhabitants, PLANET_INHABITANT_POOL, ElderGod } from '../../types/cosmic-life.types';
+import { pickSeeded } from '../../utils/seeded-random';
 
 /**
  * HumanSolarSystemService
@@ -183,11 +184,15 @@ export class HumanSolarSystemService {
     return snapshot;
   }
 
+  /**
+   * Civilización de Marte. Determinista a propósito (regla de determinismo por semilla,
+   * ARQUITECTURA §4.2.6): el sistema humano es artesanal y debe ser el mismo en cada partida, no
+   * una tirada distinta cada vez que se arranca.
+   */
   private pickRandomCivilization(): PlanetInhabitants {
     if (!PLANET_INHABITANT_POOL.length) {
       return PlanetInhabitants.NONE;
     }
-    const idx = Math.floor(Math.random() * PLANET_INHABITANT_POOL.length);
-    return PLANET_INHABITANT_POOL[idx];
+    return pickSeeded(PLANET_INHABITANT_POOL, 'human-system:mars');
   }
 }

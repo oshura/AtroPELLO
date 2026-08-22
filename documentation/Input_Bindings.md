@@ -13,7 +13,7 @@
    - Manejan atajos reservados del shell (p. ej. `Escape` para cerrar paneles vía `gameEngine.handleKeyDown('escape')`, `P` para pause/resume, `Space` y `Enter` para diálogos, `F1` y `ñ` para overlays).
 2. **Delegación al `GameInputHandler`** – el resto de teclas pasan a `GameInputHandler` (`src/app/services/game/game-input.service.ts`), que sólo procesa eventos cuando `setInputEnabled(true)` (el componente lo enciende en estado RUNNING y lo apaga al pausar o abrir la wiki).
 3. **Normalización y búsqueda de acción** – `GameInputHandler` usa `KeyBindingsService.findActionForKey(composite)` donde `composite` incluye prefijos como `shift+`. Si encuentra una acción configurable, obtiene la tecla legacy equivalente mediante `getDefaultKey(action)` y delega hacia `GameEngine.handleKeyDown(translated)`.
-4. **Estados especiales** – el handler intercepta acciones de targeting (`target_next`, `target_prev`, `clear_target`) para invocar directamente utilidades expuestas por el motor sin requerir teclas legacy. También mantiene un `keyState` para las teclas de movimiento/velocidad que el motor consulta en cada frame.
+4. **Estados especiales** – el handler intercepta acciones de targeting (`target_next`, `target_prev`, `clear_target`) y de armamento (`weapon_next`, `weapon_prev`) para invocar directamente utilidades expuestas por el motor sin requerir teclas legacy. También mantiene un `keyState` para las teclas de movimiento/velocidad que el motor consulta en cada frame.
 5. **Motor del juego** – `GameEngine.handleKeyDown` contiene todo el comportamiento contextual. Algunos ejemplos relevantes:
    - `'m'` abre/cierra el mapa y bloquea el grimorio/inventario mientras está visible.
    - `'g'` controla el grimorio y sincroniza la selección de hechizos.
@@ -21,7 +21,8 @@
    - `'h'` dispara hechizos, `'escape'` cierra paneles o limpia el target, `'t'` cicla objetivos, etc.
    - `'shift'` no es un binding configurable: se reenvía siempre como modificador nativo para que la nave active el modo de rotación precisa (mitad de velocidad de giro) mientras la tecla se mantenga presionada.
    - `Caps Lock` (Bloq Mayús) ahora funciona como un “latch” de precisión: cada pulsación alterna la rotación precisa sin necesidad de mantener la tecla, ideal para trayectorias largas.
-6. **Sync de puntero/paneles** – Tras abrir/cerrar paneles, el motor actualiza `PanelEventCoordinator` (`updateMapClickBinding`, `updateGrimoirePointerBinding`, `updateInventoryPointerBinding`) para que el canvas sólo escuche clicks/rueda cuando corresponde y así evitar conflictos con inputs 3D.
+6. **Armamento (Fase 12)** – `weapon_next` (`r`) y `weapon_prev` (`shift+r`) rotan el arma seleccionada vía `GameEngine.cycleWeapon(prev)`. El **botón derecho del ratón en vuelo** es el gatillo: `PanelEventCoordinator` lo enruta con `onFlightPointerDown/Up` cuando no hay ningún panel abierto, suprime el menú contextual del navegador (`onFlightContextMenu`) y suelta el gatillo si el puntero abandona el canvas. La rueda sigue siendo zoom de cámara. Ver `docs/ARMAS.md`.
+7. **Sync de puntero/paneles** – Tras abrir/cerrar paneles, el motor actualiza `PanelEventCoordinator` (`updateMapClickBinding`, `updateGrimoirePointerBinding`, `updateInventoryPointerBinding`) para que el canvas sólo escuche clicks/rueda cuando corresponde y así evitar conflictos con inputs 3D.
 
 ## Servicio de key bindings
 - Definido en `src/app/services/key-bindings.service.ts`.

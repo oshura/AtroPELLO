@@ -1,0 +1,60 @@
+{
+  "meta": {
+    "race": "GRISES",
+    "memoryShare": 5,
+    "missionType": "hunt",
+    "targetHint": "Un sistema bajo el dominio de Yog-Sothoth. Sus siervos arden: busca al vampiro de fuego.",
+    "uniqueGlyphId": "SPEED",
+    "huntTarget": { "lesserBeing": "VAMPIRO_FUEGO", "elderGod": "YOG_SOTHOTH" },
+    "trophyLabel": "Rescoldo de Vampiro de Fuego"
+  },
+  "offer": {
+    "scene": "No tienen boca, y aun así los entiendes. Tres de ellos te rodean sin acercarse: cráneos anchos, ojos como pozos sin fondo, dedos que no terminan nunca. El del centro inclina la cabeza y algo se ordena dentro de la tuya.\n\n\"Te reconocemos, iniciado. Estuvimos allí el día que abriste la puerta.\"",
+    "options": [
+      {
+        "id": "origin",
+        "label": "¿Estuvisteis allí? ¿En la Tierra?",
+        "text": "\"Llevábamos seiscientos de vuestros años vigilando ese sistema. Sabíamos lo que tu secta pretendía traer y fuimos a impedirlo. Llegamos a tiempo. No fuimos suficientes.\""
+      },
+      {
+        "id": "battle",
+        "label": "Entonces, ¿qué partió la Tierra?",
+        "text": "\"Los acólitos de Yog-Sothoth llegaron contigo, prendidos al rito como parásitos a un cordón. Combatimos sobre vuestro cielo mientras el motor devoraba el núcleo. Nadie ganó. Cuando el vacío se cerró, tu mundo tenía dos mitades y nosotros la mitad de una flota.\"\n\nAlgo se remueve en tu memoria: un fogonazo violeta, voces gritando por el intercomunicador, la certeza de haber hecho algo irreparable."
+      },
+      {
+        "id": "why-me",
+        "label": "¿Por qué no me matáis?",
+        "text": "\"Porque eres lo único que queda de tu especie y porque tocaste el vacío y volviste. Eso no le ocurre a nadie dos veces sin dejar marca. Podrías sernos útil. O podrías ser la peor cosa que hayamos dejado con vida. Todavía no lo sabemos.\""
+      },
+      {
+        "id": "elder-gods",
+        "label": "¿Quiénes se reparten todo esto?",
+        "text": "\"Tres. Cthulhu, que sueña y espera. Azathoth, que no piensa y por eso no se le puede negociar nada. Y Yog-Sothoth, que es la puerta y la llave a la vez: el que respondió cuando llamaste.\n\nCada uno tiene sus dominios, sus siervos y sus guerras. Ninguna raza que conozcas está fuera de esto. Nosotros tampoco.\""
+      },
+      {
+        "id": "task",
+        "label": "¿Qué queréis de mí?",
+        "text": "\"Una prueba. Encuentra un sistema donde mande Yog-Sothoth y abate a uno de sus vampiros de fuego. Tráenos el rescoldo.\n\nNo puedes hacerlo con esa chatarra, así que la arreglaremos: más toberas, cañones que disparan hielo comprimido, un módulo de vacío que aguante el viaje. Si vuelves, hablaremos de verdad.\"\n\nUna advertencia final llega sin palabras: el rescoldo sólo se conserva si la cacería se hace después de aceptar el trato. Antes, no es más que ceniza."
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Uno de ellos dibuja en el aire la firma del vacío que dejan los sistemas de Yog-Sothoth: un temblor doble, como un latido con eco."
+    },
+    "major": {
+      "subTask": "sintonizar-rito",
+      "success": "Sintonizan tu próximo Rito de la Puerta con la firma del dominio. La siguiente puerta que abras se inclinará hacia sus tierras.",
+      "failure": "La sintonía falla y algo, al otro lado, se da cuenta de que lo estabas buscando."
+    },
+    "final": {
+      "cost": "-2 cordura",
+      "text": "Te muestran cómo mueren los suyos frente a un vampiro de fuego: no arden, se olvidan de existir. Guarda la distancia y dispara desde lejos."
+    }
+  },
+  "turnIn": {
+    "success": "El rescoldo sigue tibio cuando lo pones ante ellos. Ninguno lo toca. El del centro cierra los ojos por primera vez desde que llegaste.\n\n\"Lo has hecho. Entonces no eres sólo el que abrió la puerta.\"\n\nGraban en tu grimorio un glifo que no habías visto: el tiempo doblado, la carrera del que huye sabiendo hacia dónde. Y añaden algo más: la promesa de seguir armándote, si vuelves.",
+    "memoryFragment": "Recuerdas la sala de mando de la nave nodriza, un instante antes del rito. Tu voz, más joven, prometiendo a los demás que esta vez sí sabías lo que hacías. Recuerdas que nadie te creyó y que aun así te dejaron continuar."
+  }
+}

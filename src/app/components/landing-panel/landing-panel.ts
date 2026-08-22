@@ -5,6 +5,8 @@ import { LandingApproachContext, LandingPlanetIntel } from '../../game/types/lan
 import { LandingMenuComponent } from '../landing-menu/landing-menu';
 import { GameStateStore } from '../../services/game/game-state.store';
 import { DisembarkService } from '../../services/game/disembark.service';
+import { DialogueService } from '../../services/game/dialogue.service';
+import { DialogueOverlayComponent } from '../dialogue-overlay/dialogue-overlay';
 import {
   PLANET_INTEL_STATUS,
   PlanetIntelSnapshot,
@@ -19,7 +21,7 @@ import { PlanetInhabitants, PLANET_INHABITANT_LABELS, LesserBeing, LESSER_BEING_
 @Component({
   selector: 'app-landing-panel',
   standalone: true,
-  imports: [CommonModule, Modal, LandingMenuComponent],
+  imports: [CommonModule, Modal, LandingMenuComponent, DialogueOverlayComponent],
   templateUrl: './landing-panel.html',
   styleUrl: './landing-panel.scss'
 })
@@ -30,10 +32,40 @@ export class LandingPanelComponent implements OnChanges {
   @Output() stay = new EventEmitter<void>();
   protected viewMode: 'overview' | 'actions' | 'diplomacy' = 'overview';
 
+  protected dialogueVisible = false;
+
   constructor(
     private readonly gameState: GameStateStore,
-    private readonly disembark: DisembarkService
+    private readonly disembark: DisembarkService,
+    private readonly dialogue: DialogueService
   ) {}
+
+  /** ¿Hay alguien con quien hablar aquí? (raza con guion propio escrito). */
+  protected get canTalk(): boolean {
+    const planet = this.resolveCurrentPlanet();
+    return !!planet && this.dialogue.canTalk(planet);
+  }
+
+  /**
+   * Abre la conversación. La misión ya NO se siembra sola al abrir el panel: nace aquí, cuando el
+   * jugador habla y acepta el encargo.
+   */
+  protected startDialogue(): void {
+    const planet = this.resolveCurrentPlanet();
+    if (!planet) {
+      return;
+    }
+    this.dialogueVisible = !!this.dialogue.start(planet);
+  }
+
+  protected onDialogueClosed(): void {
+    this.dialogueVisible = false;
+  }
+
+  private resolveCurrentPlanet() {
+    const planetId = this.context?.planetId;
+    return planetId ? this.gameState.findPlanetById(planetId) ?? null : null;
+  }
 
   /** ¿Se puede "bajar de la nave" aquí? (muestra el botón; el Sol no). */
   protected get canDisembark(): boolean {
@@ -95,6 +127,12 @@ export class LandingPanelComponent implements OnChanges {
   }
 
   protected get canOpenDiplomacyPanel(): boolean {
+    // Un planeta tomado por un ser menor es zona de guerra: se puede entrar aunque no haya nadie
+    // con quien negociar. Antes esta puerta exigía civilización y dejaba "Confrontar" inalcanzable
+    // en cualquier mundo deshabitado con criatura.
+    if (this.canConfrontLesserBeing) {
+      return true;
+    }
     const snapshot = this.rawPlanetIntelSnapshot;
     if (snapshot) {
       const hasCivilization = !!snapshot.inhabitants && snapshot.inhabitants !== PlanetInhabitants.NONE;
@@ -104,6 +142,17 @@ export class LandingPanelComponent implements OnChanges {
       return snapshot.lifeScanned || this.isIntelResolved(snapshot.civilizationIntelStatus);
     }
     return Boolean(this.context?.planetIntel?.planetHasKnownSpecies);
+  }
+
+  /** ¿Hay una criatura confirmada en la superficie a la que enfrentarse? */
+  protected get canConfrontLesserBeing(): boolean {
+    const snapshot = this.rawPlanetIntelSnapshot;
+    if (snapshot) {
+      const being = snapshot.lesserBeing;
+      return !!being && being !== LesserBeing.NONE && !!snapshot.creatureScanned;
+    }
+    const fallback = this.context?.planetIntel;
+    return Boolean(fallback?.planetCreatureIntelKnown && (fallback?.planetLesserBeingDisplay ?? '').trim().length > 0);
   }
 
   protected get inhabitantsIntel(): string | null {

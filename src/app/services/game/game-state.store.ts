@@ -9,6 +9,8 @@ import { Planet } from '../../game/game-objects/Planet';
 import { Portal } from '../../game/game-objects/Portal';
 import { Sun } from '../../game/game-objects/Sun';
 import { Spaceship } from '../../game/game-objects/Spaceship';
+import { SpeedRiteBaseline } from '../../game/services/state/speed-rite-system';
+import { ShipOutfitState, createDefaultShipOutfit } from '../../game/types/weapon.types';
 import { Camera } from '../../game/Camera';
 import { GameObjectType } from '../../game/types/game-object.types';
 import { ITargetable } from '../../game/types/targeting.types';
@@ -34,7 +36,8 @@ import {
   PlanetResourceStock,
   createEmptyPlanetIntelSnapshot
 } from '../../game/types/planet-intel.types';
-import { LesserBeingInstanceSnapshot } from '../../game/types/cosmic-life.types';
+import { LesserBeingInstanceSnapshot, PlanetInhabitants } from '../../game/types/cosmic-life.types';
+import { RaceStanding, createDefaultStanding } from '../../game/types/race.types';
 import { cloneLesserBeingSnapshot } from '../../game/services/game/lesser-being-state.codec';
 import { OrientationSnapshot, RespawnAnchorMetadata } from '../../game/types/respawn.types';
 import { Vector3 } from '../../types/game.types';
@@ -136,7 +139,17 @@ export class GameStateStore {
   
   /** Nave del jugador (null antes de inicializar) */
   public spaceship: Spaceship | null = null;
-  
+
+  /**
+   * Dinámica BASE de la nave (sin el buff del Rito del Tiempo Doblado), publicada por el motor.
+   * La persistencia guarda esta y no la instantánea: si no, guardar con el rito activo dejaba la
+   * velocidad máxima duplicada para siempre.
+   */
+  private shipSpeedBaseline: SpeedRiteBaseline | null = null;
+
+  /** Equipamiento de la nave: nivel de motor, hardpoints y armas instaladas (Fase 12). */
+  private shipOutfit: ShipOutfitState = createDefaultShipOutfit();
+
   /** Sol del sistema solar actual */
   public sun: Sun | null = null;
   
@@ -200,6 +213,18 @@ export class GameStateStore {
   public readonly knownSpells: Set<SpellType> = new Set([SpellType.GATE_RITE]);
   /** Búsqueda ÚNICA por la estación humana ya realizada: el botón desaparece del panel (ESTACIONES §4). */
   public stationSearchDone = false;
+  /**
+   * Hitos de la historia ya ocurridos (Fase 13). Persisten en el savegame: son de una sola vez.
+   * P. ej. `greys-system-seeded`, puesto cuando el primer Gate Rite crea el sistema de los Grises.
+   */
+  private readonly storyFlags = new Set<string>();
+  /** Reputación con cada raza (Fase 13). Persiste con el personaje. */
+  private readonly raceStandings = new Map<PlanetInhabitants, RaceStanding>();
+  /**
+   * Primigenio hacia el que está sintonizado el PRÓXIMO Rito de la Puerta, o null.
+   * Es de un solo uso: lo consume el rito al generar el sistema destino.
+   */
+  private gateTuning: string | null = null;
   /** Layout personalizado de glifos del grimorio (coordenadas normalizadas 0..1) */
   public grimoireGlyphLayout: Partial<Record<SpellType, { nx: number; ny: number }>> = {};
   /** Identificador persistente del piloto para Cloud Saves / progresión. */
@@ -1224,6 +1249,100 @@ export class GameStateStore {
       label: removed.label
     });
     return removed;
+  }
+
+  /** ¿Ya ocurrió este hito de la historia? */
+  hasStoryFlag(flag: string): boolean {
+    return this.storyFlags.has(flag);
+  }
+
+  /** Marca un hito. Devuelve true si es la PRIMERA vez (útil para eventos de una sola vez). */
+  markStoryFlag(flag: string): boolean {
+    if (this.storyFlags.has(flag)) {
+      return false;
+    }
+    this.storyFlags.add(flag);
+    return true;
+  }
+
+  getStoryFlags(): string[] {
+    return Array.from(this.storyFlags);
+  }
+
+  replaceStoryFlags(flags: ReadonlyArray<string> | null | undefined): void {
+    this.storyFlags.clear();
+    for (const flag of flags ?? []) {
+      if (typeof flag === 'string' && flag) {
+        this.storyFlags.add(flag);
+      }
+    }
+  }
+
+  /** Sintoniza el próximo Rito de la Puerta hacia un dominio (null lo desactiva). */
+  setGateTuning(elderGod: string | null): void {
+    this.gateTuning = elderGod;
+  }
+
+  /** Lee y CONSUME la sintonía: el siguiente rito ya no la tendrá. */
+  consumeGateTuning(): string | null {
+    const tuning = this.gateTuning;
+    this.gateTuning = null;
+    return tuning;
+  }
+
+  peekGateTuning(): string | null {
+    return this.gateTuning;
+  }
+
+  /** Reputación con una raza (nunca null: por defecto, neutral y sin misiones). */
+  getRaceStanding(race: PlanetInhabitants): RaceStanding {
+    return { ...(this.raceStandings.get(race) ?? createDefaultStanding()) };
+  }
+
+  /** Actualiza la relación con una raza; `completedMission` suma una misión al historial. */
+  setRaceStanding(race: PlanetInhabitants, standing: RaceStanding['standing'], completedMission = false): void {
+    const current = this.raceStandings.get(race) ?? createDefaultStanding();
+    this.raceStandings.set(race, {
+      standing,
+      missionsCompleted: current.missionsCompleted + (completedMission ? 1 : 0),
+    });
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'reputation', race } });
+  }
+
+  getRaceStandings(): Array<{ race: PlanetInhabitants; standing: RaceStanding }> {
+    return Array.from(this.raceStandings.entries()).map(([race, standing]) => ({ race, standing: { ...standing } }));
+  }
+
+  replaceRaceStandings(entries: ReadonlyArray<{ race: PlanetInhabitants; standing: RaceStanding }> | null | undefined): void {
+    this.raceStandings.clear();
+    for (const entry of entries ?? []) {
+      if (entry?.race && entry.standing) {
+        this.raceStandings.set(entry.race, { ...entry.standing });
+      }
+    }
+  }
+
+  /** Publica la dinámica base de la nave (sin buffs temporales). La escribe el motor. */
+  setShipSpeedBaseline(baseline: SpeedRiteBaseline | null): void {
+    this.shipSpeedBaseline = baseline ? { ...baseline } : null;
+  }
+
+  /** Dinámica base de la nave, o null si el motor aún no la ha publicado. */
+  getShipSpeedBaseline(): SpeedRiteBaseline | null {
+    return this.shipSpeedBaseline ? { ...this.shipSpeedBaseline } : null;
+  }
+
+  /** Publica el equipamiento de la nave. Lo escribe el motor; lo lee la persistencia. */
+  setShipOutfit(outfit: ShipOutfitState | null | undefined): void {
+    this.shipOutfit = outfit
+      ? { ...outfit, weapons: outfit.weapons.map(w => ({ ...w })) }
+      : createDefaultShipOutfit();
+    this._notifyChange({ type: 'inventory-updated', metadata: { scope: 'weapons' } });
+  }
+
+  /** Equipamiento de la nave (copia). */
+  getShipOutfit(): ShipOutfitState {
+    return { ...this.shipOutfit, weapons: this.shipOutfit.weapons.map(w => ({ ...w })) };
   }
 
   /** Define o vacía un slot de equipo de la nave. */

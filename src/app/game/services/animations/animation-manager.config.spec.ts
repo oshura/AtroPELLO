@@ -33,8 +33,8 @@ describe('animation manager config helpers', () => {
   it('applyFlashConfig llama a setFlashConfig con las imágenes si existe', () => {
     const setFlashConfig = jasmine.createSpy('setFlashConfig');
     const anim = baseAnim({ setFlashConfig });
-    applyFlashConfig(anim, ['/assets/Cthugha.webp']);
-    expect(setFlashConfig).toHaveBeenCalledWith({ images: ['/assets/Cthugha.webp'] });
+    applyFlashConfig(anim, ['/assets/YogSothoth.jpg']);
+    expect(setFlashConfig).toHaveBeenCalledWith({ images: ['/assets/YogSothoth.jpg'] });
   });
 
   it('applyFlashConfig es no-op si no existe setFlashConfig', () => {

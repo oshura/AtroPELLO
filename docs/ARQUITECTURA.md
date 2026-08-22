@@ -1146,6 +1146,8 @@ Si hay que tocar algo más, la arquitectura ha regresado: abrir issue de deuda i
 | 5 | En curso: ✅ 5.8 (math SSOT), ✅ 5.6 (`PlayerProgressionSystem`), ✅ 5.4-parcial (`SunProximitySystem`), ✅ 5.1-parcial (atmosphere-physics PURO), ✅ label-utils. Pendientes: movimientos stateful (atmósfera/landing/spell/hud) — smoke de gameplay |
 | 6 | Parcial: ✅ `SolarSystemService.apply()/snapshot()` muertos (~190 líneas); ✅ 6.1 investigado (hallazgo abajo); ✅ 6.5-parcial `createPlanets()` legacy eliminado (~247 líneas, sistema humano hardcodeado paralelo); ✅ código muerto: `oldRespawnGame`/`resetAfterCrash`/`randomizeStartNearSun` (~140 líneas). Pendiente: separación targeting, session-cookie x3, Earth/Saturn |
 | 7 | Pendiente |
+| **12** | ✅ **Armamento del jugador** → `docs/ARMAS.md`. S0 (`SpeedRiteSystem` + fix de velocidad duplicada permanente), S1 (tipos + catálogo + `WeaponSystem` + pool de proyectiles unificado con facción + hardpoints + input + persistencia `outfit`), S2 (`WeaponsPanel` del HUD), S3 (haces continuos, misiles, minas guiadas) y S3b (los 3 haces de hechizo migrados a `BeamRenderer`: billboard correcto y VBOs cacheados). Balance: **GameEngine −74**, HUDManager −42 |
+| **13** | ✅ **Razas, diálogo y misiones narrativas** → `docs/RAZAS.md`. Conversación real que consume los 13 guiones que estaban muertos, misiones de caza, reputación por raza, ritos dirigidos, determinismo de habitantes y los **Grises** end-to-end. Reducción a **3 primigenios** (Cthugha retirado). Pendiente: razas acólitas y sistemas artesanales por raza |
 
 ### Fase 4 — plan de ejecución (para la próxima sesión, idealmente con `npm start` para verificar)
 Sin retrocompatibilidad (decisión del usuario), el colapso de los dos pipelines es:

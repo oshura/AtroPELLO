@@ -74,9 +74,8 @@ export class Spaceship extends GameObject {
   public cargoCapacityMax: number = 10;
   public cargoCapacityCurrent: number = 0;
   
-  // Armamento disponible (por ahora vacío)
-  public weapons: any[] = [];
-  
+  // El armamento vive en WeaponSystem (Fase 12 — docs/ARMAS.md), no en la nave.
+
   // Callback para notificar cambios de salud (patrón reactivo)
   private onHealthChangeCallback: ((newHealth: number, oldHealth: number) => void) | null = null;
   
@@ -753,6 +752,30 @@ export class Spaceship extends GameObject {
       z: this.orientationMatrix[6]
     };
     return { forward, right, up };
+  }
+
+  /**
+   * Lleva un punto del espacio local de la nave (+Z = morro) a coordenadas de mundo.
+   * Lo usan las bocas de cañón de los hardpoints. Escribe en `out` si se le pasa, para no
+   * generar basura en el bucle de disparo.
+   */
+  public transformLocalPoint(local: Vector3, out?: Vector3): Vector3 {
+    const basis = this.getOrientationBasis();
+    const target = out ?? { x: 0, y: 0, z: 0 };
+    target.x = this.position.x + basis.right.x * local.x + basis.up.x * local.y + basis.forward.x * local.z;
+    target.y = this.position.y + basis.right.y * local.x + basis.up.y * local.y + basis.forward.y * local.z;
+    target.z = this.position.z + basis.right.z * local.x + basis.up.z * local.y + basis.forward.z * local.z;
+    return target;
+  }
+
+  /** Igual que `transformLocalPoint` pero sin trasladar: para direcciones. */
+  public transformLocalDirection(local: Vector3, out?: Vector3): Vector3 {
+    const basis = this.getOrientationBasis();
+    const target = out ?? { x: 0, y: 0, z: 0 };
+    target.x = basis.right.x * local.x + basis.up.x * local.y + basis.forward.x * local.z;
+    target.y = basis.right.y * local.x + basis.up.y * local.y + basis.forward.y * local.z;
+    target.z = basis.right.z * local.x + basis.up.z * local.y + basis.forward.z * local.z;
+    return target;
   }
 
   /** Activa/desactiva el suavizado de velocidad para mitigar jitter a alta velocidad */

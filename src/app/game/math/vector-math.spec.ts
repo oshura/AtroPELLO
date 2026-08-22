@@ -7,6 +7,8 @@ import {
   vec3Cross,
   vec3Normalize,
   randomPerpendicularVector,
+  sweptSphereHit,
+  raySphereHit,
 } from './vector-math';
 
 describe('vector-math', () => {
@@ -53,5 +55,58 @@ describe('vector-math', () => {
       expect(vec3Length(p)).toBeCloseTo(1, 5);
       expect(Math.abs(vec3Dot(p, normal))).toBeLessThan(1e-5);
     }
+  });
+
+  describe('sweptSphereHit', () => {
+    it('detecta el objetivo atravesado a media zancada (sin tunneling)', () => {
+      // Un gauss a 1200 u/s recorre ~19 u por frame: el test por posición final fallaría.
+      const from = { x: -20, y: 0, z: 0 };
+      const to = { x: 20, y: 0, z: 0 };
+      expect(sweptSphereHit(from, to, { x: 0, y: 0, z: 0 }, 3, 1.2)).toBe(true);
+    });
+
+    it('ignora un objetivo fuera del tramo recorrido', () => {
+      const from = { x: -20, y: 0, z: 0 };
+      const to = { x: -10, y: 0, z: 0 };
+      expect(sweptSphereHit(from, to, { x: 40, y: 0, z: 0 }, 3, 1.2)).toBe(false);
+    });
+
+    it('ignora un objetivo alejado lateralmente del segmento', () => {
+      const from = { x: -20, y: 0, z: 0 };
+      const to = { x: 20, y: 0, z: 0 };
+      expect(sweptSphereHit(from, to, { x: 0, y: 50, z: 0 }, 3, 1.2)).toBe(false);
+    });
+
+    it('suma los radios de proyectil y objetivo', () => {
+      const from = { x: -10, y: 6, z: 0 };
+      const to = { x: 10, y: 6, z: 0 };
+      expect(sweptSphereHit(from, to, { x: 0, y: 0, z: 0 }, 4, 1)).toBe(false);
+      expect(sweptSphereHit(from, to, { x: 0, y: 0, z: 0 }, 4, 2.5)).toBe(true);
+    });
+
+    it('con segmento degenerado se comporta como esfera contra esfera', () => {
+      const p = { x: 1, y: 0, z: 0 };
+      expect(sweptSphereHit(p, p, { x: 0, y: 0, z: 0 }, 2, 0)).toBe(true);
+      expect(sweptSphereHit(p, p, { x: 0, y: 0, z: 0 }, 0.5, 0)).toBe(false);
+    });
+  });
+
+  describe('raySphereHit', () => {
+    it('devuelve la distancia al primer corte', () => {
+      const d = raySphereHit({ x: -10, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, 2);
+      expect(d).toBeCloseTo(8, 5);
+    });
+
+    it('devuelve null si la esfera queda a la espalda', () => {
+      expect(raySphereHit({ x: 10, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, 2)).toBeNull();
+    });
+
+    it('devuelve null si el rayo pasa de largo', () => {
+      expect(raySphereHit({ x: -10, y: 50, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, 2)).toBeNull();
+    });
+
+    it('devuelve 0 si el origen está dentro de la esfera', () => {
+      expect(raySphereHit({ x: 0, y: 0, z: 0 }, { x: 1, y: 0, z: 0 }, { x: 0, y: 0, z: 0 }, 5)).toBe(0);
+    });
   });
 });

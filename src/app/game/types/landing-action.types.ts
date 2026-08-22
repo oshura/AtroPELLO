@@ -57,7 +57,8 @@ export interface LandingActionIntelDelta {
 export interface LandingReward {
   id: string;
   label: string;
-  type: 'artifact' | 'void_mass' | 'intel' | 'resource' | 'memory';
+  /** 'spell' = glifo aprendido de verdad (entra en el grimorio), no un adorno de bitácora. */
+  type: 'artifact' | 'void_mass' | 'intel' | 'resource' | 'memory' | 'spell';
   quantity?: number;
 }
 

@@ -31,6 +31,17 @@ function normalizeMetadata(payload: SaveGamePayload): void {
 }
 
 function normalizePlayerSection(section: SaveGamePlayerSection): void {
+  if (section.character) {
+    // Hitos de historia: opcionales y sin orden significativo (Fase 13).
+    section.character.storyFlags = sortBy(section.character.storyFlags ?? [], flag => flag ?? '');
+  }
+  if (section.ship) {
+    // El outfit es opcional (savegames anteriores a la Fase 12): sin él, nave sin armamento.
+    section.ship.outfit = section.ship.outfit ?? null;
+    if (section.ship.outfit) {
+      section.ship.outfit.weapons = sortBy(section.ship.outfit.weapons ?? [], w => `${w.slotIndex}:${w.weaponId}`);
+    }
+  }
   if (!section.inventory) {
     section.inventory = { personalGear: [], equipmentLoadout: {} as any, cargoManifest: [], knownSpells: [], grimoireLayout: {} };
   }

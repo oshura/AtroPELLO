@@ -19,6 +19,8 @@ import { PortalPersistenceService } from '../../game/services/game/portal-persis
 import { PortalRegistryService } from '../../game/services/game/portal-registry.service';
 import { SolarSystemRuntimeSerializerService } from '../../game/services/game/solar-system-runtime-serializer.service';
 import { CollisionManagerService } from '../../game/services/physics/collision-manager.service';
+import { MissionService } from '../../game/services/game/mission.service';
+import { RaceOutfittingBridgeService } from './race-outfitting-bridge.service';
 import { PanelEventCoordinator } from '../../game/services/ui/panel-event-coordinator.service';
 import { GameStateStore } from './game-state.store';
 import { SpellIOCoordinator } from '../../game/services/spells/spell-io-coordinator.service';
@@ -146,8 +148,12 @@ export class GameInitializer {
       portalRegistry,
       runtimeSerializer,
       audioEngine,
-      musicDirector
+      musicDirector,
+      this.injector.get(MissionService)
     );
+
+      // Las razas necesitan poder reacondicionar la nave desde los diálogos.
+      this.injector.get(RaceOutfittingBridgeService).attachEngine(this.gameEngine);
 
       // Inicializar motor del juego
       await this.gameEngine.initialize(canvasRef);

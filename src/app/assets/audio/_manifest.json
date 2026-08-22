@@ -37,5 +37,6 @@
   "sfx_weather_fog": "/assets/audio/sfx_longdark.wav",
   "sfx_weather_dust": "/assets/audio/running-on-metal.wav",
   "sfx_weather_thunder": "/assets/audio/sfx_collision_heavy.wav",
-  "sfx_weather_meteor": "/assets/audio/sfx_whoosh.wav"
+  "sfx_weather_meteor": "/assets/audio/sfx_whoosh.wav",
+  "sfx_weapon_gauss": "/assets/audio/sfx_collision_light.wav"
 }

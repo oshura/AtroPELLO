@@ -3,6 +3,7 @@ import { LoggingService, LogCategory, LogLevel } from '../../../services/logging
 import { GameStateStore } from '../../../services/game/game-state.store';
 import { Planet } from '../../game-objects/Planet';
 import { PlanetInhabitants } from '../../types/cosmic-life.types';
+import { SpellType } from '../../types/spell.types';
 import { GameObjectAnimosity } from '../../types/animosity.types';
 import {
   MissionClueTier,
@@ -35,6 +36,12 @@ export interface MissionOfferOptions {
   preferredResourceKind?: CargoCompositionKind;
   objectiveSummary?: string;
   targetHint?: string;
+  /** Planeta que encarga la misión (donde se entrega). */
+  originPlanetId?: string;
+  /** Criatura a abatir en misiones de caza. */
+  huntTarget?: { lesserBeing: string; elderGod?: string };
+  /** Nombre de la prueba que aparecerá en la bodega al lograr la caza. */
+  trophyLabel?: string;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -66,7 +73,10 @@ export class MissionService {
       requiredClueTiers: options?.requiredClueTiers,
       subTasks: [],
       objectiveSummary: options?.objectiveSummary,
-      targetHint: options?.targetHint
+      targetHint: options?.targetHint,
+      originPlanetId: options?.originPlanetId ?? planet.id,
+      huntTarget: options?.huntTarget,
+      requiredCargoLabel: options?.trophyLabel
     };
     this.assignMissionObjective(mission, planet, options);
     const stored = this.gameState.upsertPlanetMission(mission);
@@ -214,6 +224,54 @@ export class MissionService {
       }
     }
     return updates;
+  }
+
+  /**
+   * Registra la muerte de una criatura y, si satisface una misión de caza activa, materializa la
+   * PRUEBA en la bodega (patrón del caparazón de la tortuga espacial). Devuelve la misión que
+   * quedó lista para entregar, o null si esta muerte no le servía a nadie.
+   *
+   * La prueba sólo aparece con la misión ya aceptada: matar al bicho "por si acaso" antes de que
+   * te lo encarguen no cuenta, y el propio diálogo lo advierte.
+   */
+  public registerHuntKill(lesserBeing: string, systemElderGod?: string | null): PlanetMissionState | null {
+    if (!lesserBeing) {
+      return null;
+    }
+    for (const mission of this.listMissions()) {
+      if (mission.type !== 'hunt' || mission.requiredCargoEntryId) {
+        continue;
+      }
+      if (mission.status !== 'accepted' && mission.status !== 'in-progress') {
+        continue;
+      }
+      const hunt = mission.huntTarget;
+      if (!hunt || hunt.lesserBeing !== lesserBeing) {
+        continue;
+      }
+      if (hunt.elderGod && systemElderGod && hunt.elderGod !== systemElderGod) {
+        continue; // la criatura correcta, pero en un sistema que no es el que dominaba el primigenio
+      }
+      const label = mission.requiredCargoLabel ?? 'Prueba de la cacería';
+      const entry = this.createMissionCargoEntry(mission, { label });
+      const updated = this.updateMission(
+        mission.id,
+        state => {
+          state.requiredCargoEntryId = entry.id;
+          state.requiredCargoLabel = entry.label;
+          state.status = 'ready-to-turn-in';
+        },
+        'hunt-trophy-secured',
+        { lesserBeing, cargoEntryId: entry.id }
+      );
+      this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Hunt trophy secured', {
+        missionId: mission.id,
+        lesserBeing,
+        cargoEntryId: entry.id
+      });
+      return updated;
+    }
+    return null;
   }
 
   /** Evaluates new cargo entries produced by mining to see if they satisfy material missions. */
@@ -376,6 +434,13 @@ export class MissionService {
     }
 
     if (['accepted', 'in-progress', 'ready-to-turn-in'].includes(mission.status)) {
+      // Una cacería SOLO está lista cuando existe la prueba física, que la crea `registerHuntKill`.
+      // Sin esta salvaguarda, al no llevar pistas requeridas la misión se marcaba lista en el mismo
+      // instante de aceptarla: se podía cobrar la recompensa sin cazar nada y el trofeo no llegaba
+      // a generarse nunca (registerHuntKill sólo mira misiones aceptadas o en curso).
+      if (mission.type === 'hunt' && !mission.requiredCargoEntryId) {
+        return;
+      }
       if (this.missionMeetsClueRequirements(mission)) {
         mission.status = 'ready-to-turn-in';
         return;
@@ -430,11 +495,30 @@ export class MissionService {
         this.gameState.characterProfile.experienceMax
       );
     }
-    // TODO: entregar recursos únicos al inventario de la nave.
+    // Glifo único: la recompensa que el jugador ve prometida en el diálogo. Antes se declaraba en
+    // el tipo y NADIE lo consumía, así que las razas prometían glifos que jamás llegaban.
+    const glyph = this.resolveRewardGlyph(reward.uniqueGlyphId);
+    if (glyph && !this.gameState.hasSpell(glyph)) {
+      this.gameState.learnSpell(glyph);
+      this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Mission reward glyph learned', {
+        missionId: mission.id,
+        glyph
+      });
+    }
     this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Mission reward applied', {
       missionId: mission.id,
       reward
     });
+  }
+
+  /** `uniqueGlyphId` es texto libre en los guiones: sólo vale si nombra un hechizo real. */
+  private resolveRewardGlyph(uniqueGlyphId: string | undefined): SpellType | null {
+    if (!uniqueGlyphId) {
+      return null;
+    }
+    const candidate = uniqueGlyphId.toUpperCase();
+    const known = Object.values(SpellType).find(spell => String(spell).toUpperCase() === candidate);
+    return (known as SpellType) ?? null;
   }
 
   private buildDefaultTarget(planet: Planet): PlanetMissionTarget {
@@ -479,6 +563,12 @@ export class MissionService {
   }
 
   private assignMissionObjective(mission: PlanetMissionState, origin: Planet, options?: MissionOfferOptions): void {
+    if (mission.type === 'hunt') {
+      // La caza no ocurre en un planeta: el objetivo es una criatura en algún sistema del dominio.
+      mission.objectiveSummary =
+        mission.objectiveSummary ?? `Abate a la criatura señalada y trae la prueba a ${this.describePlanet(origin)}.`;
+      return;
+    }
     if (mission.type === 'artifact') {
       const forcedTargetId = options?.targetLocation?.planetId;
       const target = forcedTargetId
@@ -578,14 +668,16 @@ export class MissionService {
     mission: PlanetMissionState,
     context: { label: string }
   ): CargoManifestEntry {
+    // Los trofeos de caza son piezas únicas y ligeras, como el artefacto; el material es a granel.
+    const unique = mission.type === 'artifact' || mission.type === 'hunt';
     const entry: CargoManifestEntry = {
       id: this.generateCargoEntryId(mission.id),
-      type: mission.type === 'artifact' ? CargoItemType.ARTIFACT : CargoItemType.RAW_MATERIAL,
+      type: unique ? CargoItemType.ARTIFACT : CargoItemType.RAW_MATERIAL,
       label: context.label,
-      massTons: mission.type === 'artifact' ? 5 : 20,
-      units: mission.type === 'artifact' ? 1 : 25,
+      massTons: unique ? 5 : 20,
+      units: unique ? 1 : 25,
       source: GameObjectType.PLANET,
-      rarity: mission.type === 'artifact' ? RarityTier.UNIQUE : RarityTier.RARE,
+      rarity: unique ? RarityTier.UNIQUE : RarityTier.RARE,
       composition: mission.requiredCargoComposition ?? 'unknown'
     };
     this.gameState.upsertCargoEntry(entry);
@@ -620,7 +712,8 @@ export class MissionService {
 
   private missionHasRequiredCargo(mission: PlanetMissionState): boolean {
     if (!mission.requiredCargoEntryId) {
-      return true;
+      // Una cacería sin trofeo no está cumplida: la prueba ES el objetivo.
+      return mission.type !== 'hunt';
     }
     return this.gameState.cargoManifest.some(entry => entry.id === mission.requiredCargoEntryId);
   }
@@ -697,8 +790,17 @@ export class MissionService {
     });
   }
 
+  /**
+   * Asciende a aliado al planeta que ENCARGÓ la misión, no al del objetivo.
+   * Antes se promocionaba `targetLocation.planetId`, que en una misión de caza es el escenario del
+   * encargo, no quien te lo dio: la raza que te ayudaba nunca llegaba a considerarte aliado.
+   */
   private promotePlanetToAlly(mission: PlanetMissionState): void {
-    const planetId = mission.targetLocation.planetId;
+    const race = mission.requestedBy ?? mission.race;
+    if (race && race !== PlanetInhabitants.NONE) {
+      this.gameState.setRaceStanding(race, 'ally', true);
+    }
+    const planetId = mission.originPlanetId ?? mission.targetLocation.planetId;
     if (!planetId) {
       return;
     }

@@ -11,8 +11,10 @@ import {
 import { SpellType } from './spell.types';
 import { LandingStatus, LandingThreatState } from './landing.types';
 import { PlanetIntelSnapshot, PlanetMissionState } from './planet-intel.types';
-import { LesserBeingInstanceSnapshot } from './cosmic-life.types';
+import { LesserBeingInstanceSnapshot, PlanetInhabitants } from './cosmic-life.types';
+import { RaceStanding } from './race.types';
 import { SolarSystemSnapshot } from './solar-system.types';
+import { ShipOutfitState } from './weapon.types';
 
 /**
  * Versión actual del esquema de partidas guardadas.
@@ -98,6 +100,12 @@ export interface SaveGameShipState {
     thrusterState?: string;
   };
   health: HealthSnapshot;
+  /**
+   * Equipamiento de la nave: nivel de motor y armas instaladas (Fase 12).
+   * Opcional a propósito: los savegames anteriores cargan con el outfit por defecto (sin armas),
+   * así que no hace falta migración ni subir SAVEGAME_SCHEMA_VERSION.
+   */
+  outfit?: ShipOutfitState | null;
 }
 
 export interface SaveGameCharacterState {
@@ -107,6 +115,13 @@ export interface SaveGameCharacterState {
   slotCapacity?: number | null;
   availableSlotIndexes?: number[] | null;
   activeSlotIndex?: number | null;
+  /**
+   * Hitos de la historia ya ocurridos (Fase 13). Opcional: los savegames anteriores cargan sin
+   * ninguno, sin migración.
+   */
+  storyFlags?: string[] | null;
+  /** Reputación con cada raza (Fase 13). Opcional: sin ella, todas empiezan neutrales. */
+  raceStandings?: Array<{ race: PlanetInhabitants; standing: RaceStanding }> | null;
 }
 
 export interface SaveGameInventoryState {

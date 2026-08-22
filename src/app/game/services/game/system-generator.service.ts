@@ -96,7 +96,9 @@ export class SystemGeneratorService {
    */
   generate(seed: RNGSeed = Date.now(), options?: GenerationOptions): SolarSystemSnapshot {
     const rnd = mulberry32(hashSeed(seed));
-    const elderGod = pickElderGod(rnd);
+    // Un rito sintonizado por una raza decide el dominio; si no, se rifa.
+    const forced = options?.forcedElderGod as ElderGod | undefined;
+    const elderGod = forced && ELDER_GOD_SUMMONS[forced] ? forced : pickElderGod(rnd);
 
     // Sun(s): random chance of binary if allowed
     const allowBinary = options?.sunCount === 2 || (options?.sunCount === undefined && rnd() < 0.25);
@@ -296,6 +298,18 @@ export class SystemGeneratorService {
         }
       } as PlanetSnapshot;
     });
+
+    // Habitante garantizado por la trama: un planeta del sistema aloja SIEMPRE a esta raza, con la
+    // civilización ya confirmada para que el trato pueda abrirse sin escanear nada primero.
+    const guaranteed = options?.guaranteedInhabitants;
+    if (guaranteed && planets.length) {
+      const preferred = planets.find(p => p.kind === 'Terrestrial')
+        ?? planets.find(p => p.kind !== 'Gaseous')
+        ?? planets[0];
+      preferred.probabilityOfLifePct = 100;
+      preferred.inhabitants = guaranteed;
+      preferred.civilizationIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
+    }
 
   // Asteroid clusters: choose a random anchor planet index (avoid last few small ones when possible)
   const clusters: ClusterSnapshot[] = [];

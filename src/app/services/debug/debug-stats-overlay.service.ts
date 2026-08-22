@@ -93,6 +93,7 @@ export class DebugStatsOverlayService {
             <button id="dbg-btn-survivability-minus">Survivencia -9%</button>
             <button id="dbg-btn-age-plus">+365 días edad</button>
             <button id="dbg-btn-learn-all-spells">Grimorio completo (god mode)</button>
+            <button id="dbg-btn-install-gauss">Instalar gauss de hielo</button>
           </div>
           <div class="dbg-subheader">Spawn Lesser Beings</div>
           <div class="dbg-controls-row">
@@ -315,6 +316,10 @@ export class DebugStatsOverlayService {
     if (spellsBtn) {
       spellsBtn.onclick = () => this.handleLearnAllSpells();
     }
+    const gaussBtn = this.overlayElement.querySelector('#dbg-btn-install-gauss') as HTMLButtonElement | null;
+    if (gaussBtn) {
+      gaussBtn.onclick = () => this.handleInstallDebugWeapon();
+    }
     spawnButtons.forEach(({ id, type }) => {
       const btn = this.overlayElement?.querySelector(id) as HTMLButtonElement | null;
       if (!btn) {
@@ -364,6 +369,23 @@ export class DebugStatsOverlayService {
     } catch (error) {
       this.showToolStatus('Error al aprender los glifos');
       this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev god mode failed', error);
+    }
+  }
+
+  /** Prueba de armamento: monta el gauss sin esperar a la misión de los Grises. */
+  private handleInstallDebugWeapon(): void {
+    const engine = this.getEngine();
+    if (!engine || typeof engine.installShipWeapon !== 'function') {
+      this.showToolStatus('Engine no disponible para instalar armas');
+      return;
+    }
+    try {
+      const installed = engine.installShipWeapon('GAUSS_ICE');
+      this.showToolStatus(installed ? 'Gauss de hielo instalado (botón derecho dispara)' : 'Sin hardpoints libres');
+      this.logging.log(LogLevel.INFO, LogCategory.HUD, 'Dev god mode: arma instalada', { installed });
+    } catch (error) {
+      this.showToolStatus('Error al instalar el arma');
+      this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev install weapon failed', error);
     }
   }
 

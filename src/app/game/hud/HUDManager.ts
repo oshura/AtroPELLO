@@ -8,6 +8,8 @@ import { NavigationSphere } from './elements/NavigationSphere';
 import { SpeedometerDigital } from './elements/SpeedometerDigital';
 import { HealthGauge } from './elements/HealthGauge';
 import { CargoGauge } from './elements/CargoGauge';
+import { WeaponsPanel } from './elements/WeaponsPanel';
+import { WeaponsHudSnapshot } from '../types/weapon.types';
 import { MarqueePanel } from './elements/MarqueePanel';
 import { TargetingSystem, TargetInfo } from '../types/targeting.types';
 import { OrientationBasis } from '../targeting/compass-direction.util';
@@ -60,6 +62,7 @@ const HUD_MARQUEE_EVENT_CONFIG: Record<HudMarqueeEventType, HudMarqueeEventConfi
   [HudMarqueeEventType.LESSER_BEING]: { throttleMs: 1200, priority: 3 },
   [HudMarqueeEventType.VOID_RITUAL]: { throttleMs: 1200, priority: 4 },
   [HudMarqueeEventType.WARNING]: { throttleMs: 2000, priority: 1 },
+  [HudMarqueeEventType.MISSION]: { throttleMs: 1500, priority: 4 },
 };
 
 const HUD_MARQUEE_MAX_ENTRIES = 6;
@@ -82,6 +85,7 @@ export class HUDManager {
   private speedometer: SpeedometerDigital;
   private healthGauge: HealthGauge;
   private cargoGauge: CargoGauge;
+  private weaponsPanel: WeaponsPanel;
   private marqueePanel: MarqueePanel;
   private targetPanel: TargetPanel;
   private telemetryPanel: AtmosphereTelemetryPanel;
@@ -115,6 +119,7 @@ export class HUDManager {
     this.speedometer = new SpeedometerDigital();
     this.healthGauge = new HealthGauge();
     this.cargoGauge = new CargoGauge();
+    this.weaponsPanel = new WeaponsPanel();
     this.marqueePanel = new MarqueePanel();
   this.targetPanel = new TargetPanel();
   this.telemetryPanel = new AtmosphereTelemetryPanel();
@@ -169,7 +174,7 @@ export class HUDManager {
     baseMaxSpeed?: number;
     position?: { x: number; y: number; z: number };
     voidEnergy?: { current: number; max: number; pct: number };
-    weapons?: any[];
+    weapons?: WeaponsHudSnapshot | null;
     shipHealth?: { current: number; max: number; pct: number };
     shipCargo?: { current: number; max: number; pct: number };
     orientation?: OrientationBasis | null;
@@ -241,8 +246,7 @@ export class HUDManager {
     // Renderizar todos los elementos en la textura
     // Guardar temporalmente energía del vacío para el render
     (this as any)._voidEnergyHUD = gameData.voidEnergy;
-    // Guardar armas de la nave para panel izquierdo
-    (this as any)._weaponsHUD = gameData.weapons || [];
+    this.weaponsPanel.update(gameData.weapons);
     // Guardar salud de la nave para barras de arco
     (this as any)._shipHealthHUD = gameData.shipHealth || null;
     (this as any)._shipCargoHUD = gameData.shipCargo || null;
@@ -711,8 +715,9 @@ export class HUDManager {
     const centerX = canvas.width / 2;
     const centerY = canvas.height / 2;
     const sideMargin = 28;
-    const weaponsPanelWidth = Math.round(280 * 0.65);
-    const weaponsPanelHeight = Math.round(56 * 2.5);
+    // El panel de armas ancla el layout: la salud se coloca a su derecha y el medidor de energía
+    // del vacío espeja su ancho. Por eso las medidas salen del propio elemento.
+    const { width: weaponsPanelWidth, height: weaponsPanelHeight } = this.weaponsPanel.getDimensions();
     const weaponsPanelX = sideMargin;
     const weaponsPanelY = sideMargin + 24;
     const weaponsPanelRightEdge = weaponsPanelX + weaponsPanelWidth;
@@ -864,55 +869,7 @@ export class HUDManager {
     // Landing windows overlay removed
 
     // === WEAPONS PANEL (top-left, mirrored size/height) ===
-    // Always reserve symmetric space on the left side
-    {
-      const weapons: any[] = (this as any)._weaponsHUD as any[];
-      const meterW = weaponsPanelWidth;
-      const meterH = weaponsPanelHeight;
-      const xL = weaponsPanelX;
-      const yL = weaponsPanelY;
-
-      // background
-      ctx.save();
-      ctx.fillStyle = 'rgba(0, 64, 32, 0.35)'; // dark greenish transparent
-      ctx.fillRect(xL, yL, meterW, meterH);
-      // frame
-      ctx.strokeStyle = 'rgba(0,255,0,0.9)';
-      ctx.lineWidth = 1;
-      ctx.strokeRect(xL - 1, yL - 1, meterW + 2, meterH + 2);
-
-      if (!weapons || weapons.length === 0) {
-        // Show NO WEAPONS centered in the panel
-        ctx.fillStyle = 'rgba(255,255,255,0.95)';
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        // Slightly taller text without widening
-        ctx.font = '20px Segoe UI, Roboto, sans-serif';
-        const cx = xL + meterW / 2;
-        const cy = yL + meterH / 2;
-        ctx.save();
-        ctx.translate(cx, cy);
-        ctx.scale(1, 1.25);
-        ctx.fillText('NO WEAPONS', 0, 0);
-        ctx.restore();
-      } else {
-        // Placeholder schematic (if weapons exist): draw slots as small boxes
-        const slotCount = Math.min(5, weapons.length);
-        const gap = 6;
-        const slotW = Math.max(24, Math.floor((meterW - gap * (slotCount + 1)) / slotCount));
-        const slotH = meterH - 16;
-        let sx = xL + gap;
-        const sy = yL + (meterH - slotH) / 2;
-        for (let i = 0; i < slotCount; i++) {
-          ctx.fillStyle = 'rgba(0,128,64,0.4)';
-          ctx.fillRect(sx, sy, slotW, slotH);
-          ctx.strokeStyle = 'rgba(0,255,128,0.9)';
-          ctx.strokeRect(sx - 1, sy - 1, slotW + 2, slotH + 2);
-          sx += slotW + gap;
-        }
-      }
-      ctx.restore();
-    }
+    this.weaponsPanel.render(ctx, { x: weaponsPanelX, y: weaponsPanelY });
 
   // === TARGET PANEL ===
   // Centered and larger (más alto) y un poco más abajo

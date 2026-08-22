@@ -24,7 +24,8 @@ export interface PlanetIntelState {
   lesserBeingIntelStatus: PlanetIntelStatus;
 }
 
-export type PlanetMissionType = 'artifact' | 'material';
+/** 'hunt' = abatir a una criatura concreta y traer la prueba (Fase 13). */
+export type PlanetMissionType = 'artifact' | 'material' | 'hunt';
 export type PlanetMissionStatus =
   | 'offered'
   | 'accepted'
@@ -110,6 +111,10 @@ export interface PlanetMissionState {
   log: PlanetMissionLogEntry[];
   missionName?: string;
   requestedBy?: PlanetInhabitants;
+  /** Planeta que ENCARGÓ la misión (donde se entrega), distinto del objetivo. */
+  originPlanetId?: string;
+  /** Criatura a abatir en una misión de caza. */
+  huntTarget?: { lesserBeing: string; elderGod?: string };
   objectiveSummary?: string;
   targetHint?: string;
   clueTokens: MissionClueToken[];

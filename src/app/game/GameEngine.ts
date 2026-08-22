@@ -109,7 +109,7 @@ const PANEL_REOPEN_COOLDOWN_MS = 500;
 import { Vector3 } from '../types/game.types';
 import { LesserBeingController } from './services/lesser-beings/lesser-being-controller';
 import { LesserBeingSpawner } from './services/lesser-beings/lesser-being-spawner';
-import { LesserBeingCombatService, LesserBeingProjectileView } from './services/lesser-beings/lesser-being-combat.service';
+import { LesserBeingCombatService } from './services/lesser-beings/lesser-being-combat.service';
 import {
   AtmosphereGroundPalette,
   AtmosphereRenderOptions,
@@ -157,6 +157,16 @@ import {
 import { AnchoringPulseBeam, AnchoringPulseBeamHost } from './services/spells/anchoring-pulse-beam';
 import { DisruptionBeam, DisruptionBeamHost } from './services/spells/disruption-beam';
 import { VoidKinesisBeam, VoidKinesisBeamHost } from './services/spells/void-kinesis-beam';
+import { SpeedRiteSystem, SpeedRiteHost, SpeedRiteBaseline, SPEED_RITE_DEFAULT_DURATION_MS } from './services/state/speed-rite-system';
+import { ProjectileView } from './services/weapons/projectile-system';
+import { screenPointToWorldRay, ScreenRay } from './math/screen-ray';
+import { BeamRenderer } from './rendering/weapons/beam-renderer';
+import { ShipOutfittingService, ShipOutfittingHost } from './services/state/ship-outfitting.service';
+import { ELDER_GOD_LABELS } from './types/cosmic-life.types';
+import { MissionService } from './services/game/mission.service';
+import { WeaponEngineBridge } from './services/weapons/weapon-engine-bridge';
+import { DamageableLike } from './services/weapons/weapon-targets';
+import { ShipOutfitState, WeaponId } from './types/weapon.types';
 import { getPlanetTypeLabel, humanizeEnumValue, rgbToHex } from './utils/label-utils';
 import {
   atmosphereForceAltitudeFactor,
@@ -217,11 +227,6 @@ interface CanvasResizeMetrics {
   devicePixelRatio?: number;
 }
 
-interface ShipDynamicsBaseline {
-  maxSpeed: number;
-  acceleration: number;
-  deceleration: number;
-}
 
 // AtmosphereWeatherEffectsState se movió a atmosphere/atmosphere-weather-effects-system.ts (Fase 5.1).
 interface AtmosphereExitTransitionCallbacks {
@@ -798,7 +803,7 @@ export class GameEngine {
     getShipPosition: () => this.spaceship!.position,
     getShipForward: () => this.getShipForwardVector(),
     getShipSpeed: () => this.spaceship?.currentSpeed ?? 0,
-    getShipWeaponsCount: () => Array.isArray(this.spaceship?.weapons) ? this.spaceship!.weapons.length : 0,
+    getShipWeaponsCount: () => this.weaponBridge.installedCount,
     getCameraViewMatrix: () => this.camera!.viewMatrix as unknown as mat4,
     getCameraProjectionMatrix: () => this.camera!.projectionMatrix as unknown as mat4,
     isCinematicAnimationRunning: () => typeof this.animationManager?.getCurrentAnimation === 'function'
@@ -819,18 +824,19 @@ export class GameEngine {
   // Simple ephemeral text overlay (e.g., "ANIMATION NUMBER X.")
   private _placeholderOverlay: { tex: WebGLTexture; w: number; h: number; until: number } | null = null;
 
-  // Timed spell: Double Phased Time Rite (speed buff)
-  private speedRiteUntilMs: number | null = null;
-  private speedRiteOriginalMax: number | null = null;
-  private speedRiteOriginalAccel: number | null = null;
-  private speedRiteOriginalDecel: number | null = null;
+  // Timed spell: Double Phased Time Rite (speed buff) — estado y lógica en SpeedRiteSystem
+  private readonly speedRiteSystem = new SpeedRiteSystem();
+  private readonly speedRiteHost: SpeedRiteHost = {
+    getShip: () => this.spaceship ?? null,
+    isDynamicsFrozen: () => this.takeoffSequenceActive || this.landingSequenceActive || this.isAtmosphereExitTransitionActive(),
+    onBaselinePublished: (baseline) => this.gameState.setShipSpeedBaseline(baseline),
+    logInfo: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
+  };
   private voidCocoonActiveUntilMs: number | null = null;
   private voidCocoonLastImpactMs: number = 0;
   private voidCocoonShieldStartMs: number = 0;
   private voidCocoonShieldGeometry: { vbo: WebGLBuffer | null; ibo: WebGLBuffer | null; indexCount: number } | null = null;
   private cachedSpeedRiteRemainingSec: number | null = null;
-  private shipDynamicsBaseline: ShipDynamicsBaseline = { maxSpeed: 20, acceleration: 2, deceleration: 2.5 };
-  private shipDynamicsBaselineInitialized = false;
 
   // Material Disruption Rite beam animation
   private readonly disruptionBeam = new DisruptionBeam();
@@ -851,6 +857,51 @@ export class GameEngine {
     convertAsteroidToCargo: (t) => this.convertAsteroidToCargo(t),
     logInfo: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
   };
+
+  // Armamento del jugador (Fase 12 — docs/ARMAS.md). El motor solo cablea: la lógica vive fuera.
+  /** Última posición del cursor en vuelo (para armas dirigidas con el ratón). */
+  private flightPointer: { x: number; y: number } | null = null;
+  private beamRenderer: BeamRenderer | null = null;
+  private readonly shipOutfitting = new ShipOutfittingService();
+  private readonly flightPointerRay: ScreenRay = {
+    origin: { x: 0, y: 0, z: 0 },
+    direction: { x: 0, y: 0, z: 1 },
+  };
+  private readonly weaponBridge = new WeaponEngineBridge({
+    getShip: () => this.spaceship ?? null,
+    getShipForward: () => this.getShipForwardVector(),
+    getLesserBeings: () => this.lesserBeings as unknown as DamageableLike[],
+    getLooseTargets: () => [
+      this.spaceTurtleSystem.getRenderable() ? [this.spaceTurtleSystem.getRenderable() as unknown as DamageableLike] : null,
+      this.gameState.independentAsteroids as unknown as DamageableLike[],
+      this.ephemeralAsteroids as unknown as DamageableLike[],
+    ],
+    getAsteroidClusters: () => this.asteroidClusterService.getClusters(),
+    getMouseRay: () => this.resolveFlightPointerRay(),
+    getSelectedTarget: () => {
+      const target = this.adaptiveTargeting?.getCurrentTarget();
+      const position = target ? this.getTargetPosition(target) : null;
+      return target && position ? { id: target.id, position } : null;
+    },
+    applyObjectDamage: (target, damage) => this.applyDamageToObject(target, damage),
+    applyShipDamage: (damage, sourceId, kind) => this.applyShipDamage(damage, sourceId, kind),
+    logBeingImpact: (sourceId, kind, applied) => this.logLesserBeingImpact(sourceId, kind, applied),
+    consumeVoidEnergy: (amount) => {
+      const ship = this.spaceship;
+      if (!ship || ship.voidEnergyCurrent < amount) return false;
+      ship.voidEnergyCurrent = Math.max(0, ship.voidEnergyCurrent - amount);
+      return true;
+    },
+    emitWarning: (message) => this.hudManager?.emitMarqueeEvent(HudMarqueeEventType.WARNING, message),
+    playSfx: (clip) => { try { if (this.audio?.has(clip)) this.audio.play(clip, { bus: 'sfx', volume: 0.5 }); } catch {} },
+    onOutfitChanged: (outfit) => {
+      this.gameState.setShipOutfit(outfit);
+      this.shipRenderer?.rebuild({ engineTier: outfit.engineTier, occupiedHardpoints: outfit.weapons.map(w => w.slotIndex) });
+    },
+    areInputsLocked: () => this.areSpellGameplayInputsLocked(),
+    logInfo: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
+    logDebug: (msg, data) => this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, msg, data),
+  });
 
   // Void Kinesis conduit beam state
   private readonly voidKinesisBeam = new VoidKinesisBeam();
@@ -885,7 +936,9 @@ export class GameEngine {
   public portalRegistry?: PortalRegistryService,
   public runtimeSerializer?: SolarSystemRuntimeSerializerService,
     audioEngine?: AudioEngineService,
-    musicDirector?: MusicDirectorService
+    musicDirector?: MusicDirectorService,
+    /** Misiones: el motor sólo le notifica cazas cumplidas (Fase 13). */
+    private missionService?: MissionService
   ) {
     this.reticleManager = this.reticleManagerService;
     this.adaptiveTargeting = this.adaptiveTargetingService;
@@ -903,7 +956,7 @@ export class GameEngine {
 
     this.lesserBeingController = new LesserBeingController(this);
     this.lesserBeingSpawner = new LesserBeingSpawner(this);
-    this.lesserBeingCombat = new LesserBeingCombatService(this);
+    this.lesserBeingCombat = new LesserBeingCombatService(this, this.weaponBridge.projectileSystem);
     this.atmosphereWeather = new AtmosphereWeatherService();
   }
 
@@ -4438,7 +4491,7 @@ export class GameEngine {
     this.lesserBeingSpawner?.update(deltaTime);
     this.lesserBeingController?.update(deltaTime);
     this.updateLesserBeings(deltaTime);
-    this.lesserBeingCombat?.update(deltaTime);
+    this.weaponBridge.update(deltaTime);
     this.spaceTurtleSystem.update(this.spaceTurtleHost, deltaTime);
     this.spaceStationSystem.update(this.spaceStationHost, deltaTime);
 
@@ -4557,7 +4610,7 @@ export class GameEngine {
         const state = this.spaceship.thrusterState;
         const speed = this.spaceship.currentSpeed;
         // Use base max (pre-rite) to allow audio to continue 100%→200% during the rite
-        const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
+        const baseMax = this.getShipBaseMaxSpeed();
         const speedOverBase = Math.max(0, Math.min(2, speed / Math.max(1e-6, baseMax))); // allow up to 200% mapping
         const speedNorm = speedOverBase; // pass extended [0..2] to audio
         // Map visual thruster states to an accel proxy [0..1]
@@ -4706,47 +4759,15 @@ export class GameEngine {
       } catch {}
     } catch {}
 
-    this.refreshShipDynamicsBaseline();
-
-    // Timed spell upkeep: expire or compute remaining time for HUD
-    let speedRiteRemainingSec: number | null = null;
     const now = performance.now();
-    if (this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs)) {
-      if (now >= this.speedRiteUntilMs) {
-        // Expired: restore original max speed if known
-        const baseline = this.getShipDynamicsBaseline();
-        const restoredMax = this.speedRiteOriginalMax ?? baseline.maxSpeed;
-        this.spaceship.maxSpeed = restoredMax;
-        // Clamp target/current to new cap to avoid overshoot visuals
-        this.spaceship.targetSpeed = Math.min(this.spaceship.targetSpeed, this.spaceship.maxSpeed);
-        this.spaceship.currentSpeed = Math.min(this.spaceship.currentSpeed, this.spaceship.maxSpeed);
-        // Restore accel/decel baselines if known
-        const restoredAccel = this.speedRiteOriginalAccel ?? baseline.acceleration;
-        const restoredDecel = this.speedRiteOriginalDecel ?? baseline.deceleration;
-        this.spaceship.acceleration = restoredAccel;
-        this.spaceship.deceleration = restoredDecel;
-        this.speedRiteUntilMs = null;
-        this.speedRiteOriginalMax = null;
-        this.speedRiteOriginalAccel = null;
-        this.speedRiteOriginalDecel = null;
-        this.refreshShipDynamicsBaseline(true);
-      } else {
-        // Use floor to avoid showing a lingering "00:01" when < 1s remains
-        speedRiteRemainingSec = Math.max(0, Math.floor((this.speedRiteUntilMs - now) / 1000));
-      }
-      this.cachedSpeedRiteRemainingSec = speedRiteRemainingSec;
-      if (this.voidCocoonActiveUntilMs && now >= this.voidCocoonActiveUntilMs) {
-        this.voidCocoonActiveUntilMs = null;
-        this.voidCocoonLastImpactMs = 0;
-      }
-    } else {
-      this.cachedSpeedRiteRemainingSec = null;
-      if (this.voidCocoonActiveUntilMs && now >= this.voidCocoonActiveUntilMs) {
-        this.voidCocoonActiveUntilMs = null;
-        this.voidCocoonLastImpactMs = 0;
-      }
+    this.speedRiteSystem.tick(this.speedRiteHost, now);
+    this.cachedSpeedRiteRemainingSec = this.speedRiteSystem.remainingSec(now);
+
+    if (this.voidCocoonActiveUntilMs && now >= this.voidCocoonActiveUntilMs) {
+      this.voidCocoonActiveUntilMs = null;
+      this.voidCocoonLastImpactMs = 0;
     }
-    
+
   // Actualizar efectos de partículas
   this.particleEffects.updateAmbientDust(this.spaceship, deltaTime);
     this.particleEffects.updateThrusterEffect(this.spaceship, deltaTime);
@@ -5603,6 +5624,141 @@ export class GameEngine {
     // No need for manual check here - the callback will fire automatically
   }
 
+  // ══ Armamento del jugador (Fase 12): delegadores; el cableado vive en WeaponEngineBridge ══
+
+  /** Rota el arma seleccionada (tecla R / shift+R). */
+  public cycleWeapon(previous: boolean): void {
+    const definition = this.weaponBridge.cycle(previous);
+    if (definition) {
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, `ARMA: ${definition.label.toUpperCase()}`);
+    }
+  }
+
+  /** Gatillo mantenido (botón derecho del ratón en vuelo). */
+  public setWeaponTriggerHeld(held: boolean): void {
+    this.weaponBridge.setTriggerHeld(held);
+  }
+
+  /** Monta un arma en la nave (recompensa de misión, compra o herramienta de depuración). */
+  public installShipWeapon(weaponId: WeaponId, slotIndex?: number): boolean {
+    return this.weaponBridge.install(weaponId, slotIndex);
+  }
+
+  /** Aplica un equipamiento completo (carga de partida, mejoras de raza). */
+  public applyShipOutfit(outfit: ShipOutfitState | null | undefined): void {
+    this.weaponBridge.applyOutfit(outfit);
+  }
+
+  /** Host de las mejoras de nave que otorgan las razas (Fase 13). */
+  private readonly outfittingHost: ShipOutfittingHost = {
+    getShip: () => this.spaceship ?? null,
+    getOutfit: () => this.weaponBridge.getOutfit(),
+    applyOutfit: (outfit) => this.weaponBridge.applyOutfit(outfit),
+    installWeapon: (weaponId) => this.weaponBridge.install(weaponId),
+    onDynamicsChanged: () => {
+      // La nave es otra: la base de velocidad se reobserva y el rito olvida la anterior.
+      this.speedRiteSystem.resetBase();
+      this.refreshShipDynamicsBaseline(true);
+    },
+    emitNotice: (message) => this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, message),
+    logInfo: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
+  };
+
+  /** Reacondicionamiento completo de los Grises: toberas, gauss y módulo de vacío ampliado. */
+  public applyGreysShipUpgrade(): boolean {
+    return this.shipOutfitting.applyGreysUpgrade(this.outfittingHost);
+  }
+
+  /** Compra en la tienda de una raza. */
+  public applyRaceShopEffect(effect: 'weapon' | 'weapon_slot' | 'engine_tier', weaponId?: WeaponId): boolean {
+    if (effect === 'engine_tier') {
+      return this.shipOutfitting.upgradeEngine(this.outfittingHost);
+    }
+    if (effect === 'weapon_slot') {
+      return this.shipOutfitting.addWeaponSlot(this.outfittingHost);
+    }
+    return weaponId ? this.shipOutfitting.grantWeapon(this.outfittingHost, weaponId) : false;
+  }
+
+  /**
+   * Sintoniza el PRÓXIMO Rito de la Puerta hacia el dominio de un primigenio. Lo usan los Grises
+   * para mandarte a territorio de Yog-Sothoth sin que tengas que buscarlo a ciegas.
+   */
+  public tuneNextGateRite(elderGod: ElderGod | null): void {
+    this.gameState.setGateTuning(elderGod);
+    if (elderGod) {
+      this.hudManager?.emitMarqueeEvent?.(
+        HudMarqueeEventType.SYSTEM,
+        `RITO SINTONIZADO: ${ELDER_GOD_LABELS[elderGod].toUpperCase()}`
+      );
+    }
+  }
+
+  /** Dibuja el haz continuo del arma seleccionada. Devuelve true si pintó algo. */
+  private renderWeaponBeam(): boolean {
+    const state = this.weaponBridge.getBeamRenderState();
+    if (!state) {
+      return false;
+    }
+    return this.drawBeamQuad(state.startPos, state.endPos, state.widthU, state.color, state.intensity, 0.3);
+  }
+
+  /**
+   * Dibujo compartido de TODOS los haces (hechizos y armas), delegado en `BeamRenderer`.
+   * Antes cada haz repetía ~110 líneas de WebGL con dos defectos: la perpendicular se calculaba en
+   * el plano XY —un haz vertical degeneraba en una línea invisible— y se creaban y destruían dos
+   * VBOs en cada frame.
+   */
+  private drawBeamQuad(
+    start: Vector3,
+    end: Vector3,
+    width: number,
+    color: [number, number, number],
+    intensity: number,
+    tailFade: number
+  ): boolean {
+    if (!this.gl || !this.camera) {
+      return false;
+    }
+    this.beamRenderer ??= new BeamRenderer(this.gl, this.shaderManager);
+    // Forward de la cámara: tercera fila de la matriz de vista, negada.
+    const v = this.camera.viewMatrix;
+    this.beamRenderer.draw(
+      { start, end, width, color, intensity, tailFade },
+      { x: -v[2], y: -v[6], z: -v[10] },
+      this.camera.viewMatrix,
+      this.camera.projectionMatrix
+    );
+    return true;
+  }
+
+  /** Nombre del primigenio del sistema si el jugador ya lo ha averiguado; null si no (Fase 13). */
+  private getRevealedElderGodLabel(): string | null {
+    const meta = this.currentSnapshot?.meta;
+    if (!meta?.elderGodRevealed) {
+      return null;
+    }
+    const elderGod = meta.elderGod as ElderGod | undefined;
+    return elderGod ? ELDER_GOD_LABELS[elderGod] ?? null : null;
+  }
+
+  /** Rayo del cursor en vuelo, para las armas dirigidas con el ratón. */
+  private resolveFlightPointerRay(): ScreenRay | null {
+    const pointer = this.flightPointer;
+    const canvas = this.gl?.canvas as HTMLCanvasElement | undefined;
+    if (!pointer || !canvas || !this.camera) {
+      return null;
+    }
+    return screenPointToWorldRay(
+      pointer.x,
+      pointer.y,
+      canvas.getBoundingClientRect(),
+      this.camera.viewMatrix,
+      this.camera.projectionMatrix,
+      this.flightPointerRay
+    );
+  }
+
   public applyShipDamage(
     amount: number,
     sourceId: string,
@@ -5849,12 +6005,34 @@ export class GameEngine {
     if (!being) {
       return;
     }
+    this.registerHuntKill(being);
     if (!being.hasLanded) {
       this.rewardLesserBeingKill(being);
       return;
     }
     if (being.landedPlanetId) {
       this.clearPlanetOccupation(being.landedPlanetId);
+    }
+  }
+
+  /**
+   * Una muerte puede ser la prueba que pide una misión de caza. El trofeo sólo se materializa si
+   * la criatura y el dominio del sistema coinciden con lo encargado (Fase 13).
+   */
+  private registerHuntKill(being: LesserBeingBase): void {
+    try {
+      const mission = this.missionService?.registerHuntKill(
+        String(being.beingType),
+        String(this.getCurrentSystemElderGod())
+      );
+      if (mission) {
+        this.hudManager?.emitMarqueeEvent?.(
+          HudMarqueeEventType.MISSION,
+          `PRUEBA OBTENIDA: ${mission.requiredCargoLabel ?? 'trofeo'}`
+        );
+      }
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.GAME_LOOP, 'registerHuntKill falló', { error });
     }
   }
 
@@ -6241,6 +6419,13 @@ export class GameEngine {
     ship.updateModelMatrix();
     this.lastShipPos = { ...ship.position };
     this.gameState.spaceship = ship;
+    // La nave entrante trae su propia dinámica: cortar el Rito del Tiempo Doblado y recalcular la
+    // baseline, para que un rito de la partida anterior no siga vivo sobre la nave nueva.
+    this.speedRiteSystem.reset();
+    this.refreshShipDynamicsBaseline(true);
+    // Equipamiento: lo dejó el serializer en el store (o es el de la partida en curso al respawnear).
+    this.applyShipOutfit(this.gameState.getShipOutfit());
+    this.weaponBridge.clearProjectiles();
     return true;
   }
 
@@ -6732,6 +6917,9 @@ export class GameEngine {
       this.renderVoidKinesisBeam();
       restoreLitProgram();
     }
+    if (this.renderWeaponBeam()) {
+      restoreLitProgram();
+    }
 
     // Renderizar nave con shader texturizado (por encima del beam)
   this.renderSpaceship();
@@ -6920,7 +7108,7 @@ export class GameEngine {
     stations.push({ id: stationObj.id, pos: { x: stationObj.position.x, y: stationObj.position.y, z: stationObj.position.z }, label: '🛰️ ' + stationObj.getDisplayName(), color: '#6fe0ff', radiusPx: 6 });
     this.gameState.mapIdToTarget.set(stationObj.id, stationObj as unknown as ITargetable); // clic del mapa la selecciona
   }
-  this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, enemies, stations, ship, portals, marginPx: 48, details });
+  this.systemPanel.updateMap({ center, centerLabel, planets, clusters, debris, enemies, stations, ship, portals, marginPx: 48, details, elderGodLabel: this.getRevealedElderGodLabel() });
       this.systemPanel.render((this.gl.canvas as HTMLCanvasElement).width, (this.gl.canvas as HTMLCanvasElement).height);
       this.flightVectorOverlay?.setState(null);
     } catch (e) {
@@ -7106,7 +7294,7 @@ export class GameEngine {
       }
     }
 
-    let deferredProjectileViews: LesserBeingProjectileView[] | null = null;
+    let deferredProjectileViews: ProjectileView[] | null = null;
     let projectilePassTime = 0;
 
     if (this.lesserBeings.length) {
@@ -7122,23 +7310,24 @@ export class GameEngine {
       this.shaderManager.setLitOpacity(1.0);
       if (this.lesserBeingRenderer) {
         try {
-          const timeNow = (performance.now() || 0) / 1000;
           this.lesserBeingRenderer.render(
             this.lesserBeings,
             this.camera.viewMatrix,
             this.camera.projectionMatrix,
-            timeNow
+            (performance.now() || 0) / 1000
           );
-          const projectileViews = this.lesserBeingCombat?.getActiveProjectiles();
-          if (projectileViews?.length) {
-            deferredProjectileViews = projectileViews;
-            projectilePassTime = timeNow;
-          }
         } catch (e) {
           this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'LesserBeingRenderer render falló', e);
         }
       }
       restoreLitProgram();
+    }
+
+    // Proyectiles de AMBAS facciones: los del jugador existen aunque no haya seres menores en el
+    // sistema, así que este paso no puede colgar del bloque de arriba.
+    if (this.lesserBeingRenderer) {
+      deferredProjectileViews = this.weaponBridge.getRenderViews();
+      projectilePassTime = deferredProjectileViews ? (performance.now() || 0) / 1000 : 0;
     }
 
     this.renderPlanets();
@@ -8541,112 +8730,13 @@ export class GameEngine {
    */
   private renderDisruptionBeam(): void {
     const beam = this.disruptionBeam.renderState;
-    if (!this.gl || !beam) return;
-
-    const gl = this.gl;
-    
-    // Calculate animation progress (0 to 1)
+    if (!beam) return;
     const elapsed = performance.now() - beam.startTime;
     const progress = Math.min(1, elapsed / beam.duration);
-    
-    // Pulsing intensity
     const pulse = 0.7 + 0.3 * Math.sin(elapsed * 0.01);
-    
-    // Use basic shader for the beam
-    this.shaderManager.useBasicProgram();
-    
-    // Create beam geometry (thick line with triangles)
-    const thickness = 0.15 * pulse;
-    const start = beam.startPos;
-    const end = beam.endPos;
-    
-    // Direction vector
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const dz = end.z - start.z;
-    const length = Math.hypot(dx, dy, dz);
-    
-    if (length < 0.01) return;
-    
-    // Perpendicular vectors for quad
-    const right = { x: -dy, y: dx, z: 0 };
-    const rightLen = Math.hypot(right.x, right.y, right.z);
-    if (rightLen > 0.01) {
-      right.x /= rightLen;
-      right.y /= rightLen;
-      right.z /= rightLen;
-    }
-    
-    // Beam quad vertices
-    const vertices = new Float32Array([
-      start.x - right.x * thickness, start.y - right.y * thickness, start.z - right.z * thickness,
-      start.x + right.x * thickness, start.y + right.y * thickness, start.z + right.z * thickness,
-      end.x - right.x * thickness, end.y - right.y * thickness, end.z - right.z * thickness,
-      end.x + right.x * thickness, end.y + right.y * thickness, end.z + right.z * thickness
-    ]);
-    
-    // Purple/magenta color with fade
-    const alpha = progress < 0.1 ? (progress / 0.1) : (progress > 0.9 ? (1 - progress) / 0.1 : 1);
-    const r = 0.8 * alpha * pulse;
-    const g = 0.4 * alpha * pulse;
-    const b = 1.0 * alpha * pulse;
-    
-    const colors = new Float32Array([
-      r, g, b,
-      r, g, b,
-      r*0.7, g*0.7, b*0.7,
-      r*0.7, g*0.7, b*0.7
-    ]);
-    
-    // Create temporary buffers
-    const vbo = gl.createBuffer();
-    const cbo = gl.createBuffer();
-    
-    if (!vbo || !cbo) return;
-    
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-    
-    const posLoc = this.shaderManager.basicAttributes['position'];
-    gl.enableVertexAttribArray(posLoc);
-    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
-    
-    gl.bindBuffer(gl.ARRAY_BUFFER, cbo);
-    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
-    
-    const colorLoc = this.shaderManager.basicAttributes['color'];
-    gl.enableVertexAttribArray(colorLoc);
-    gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
-    
-    // Set matrices
-    const identity = new Float32Array(16);
-    identity[0] = identity[5] = identity[10] = identity[15] = 1;
-    this.shaderManager.setBasicMatrices(identity, this.camera.viewMatrix, this.camera.projectionMatrix);
-    
-    // Enable blending for transparency and force overlay above planets/billboards
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE); // Additive for glow effect
-    const depthTestWasEnabled = gl.isEnabled(gl.DEPTH_TEST);
-    if (depthTestWasEnabled) {
-      gl.disable(gl.DEPTH_TEST);
-    }
-    gl.depthMask(false);
-    
-    // Draw beam
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    
-    // Restore state
-    gl.depthMask(true);
-    if (depthTestWasEnabled) {
-      gl.enable(gl.DEPTH_TEST);
-    }
-    gl.disable(gl.BLEND);
-    gl.disableVertexAttribArray(posLoc);
-    gl.disableVertexAttribArray(colorLoc);
-    
-    // Cleanup temporary buffers
-    gl.deleteBuffer(vbo);
-    gl.deleteBuffer(cbo);
+    // Fundido de entrada y de salida en los extremos de la animacion.
+    const fade = progress < 0.1 ? progress / 0.1 : (progress > 0.9 ? (1 - progress) / 0.1 : 1);
+    this.drawBeamQuad(beam.startPos, beam.endPos, 0.3 * pulse, [0.8, 0.4, 1.0], fade * pulse, 0.3);
   }
 
   /** Launches the Anchoring Pulse tether beam */
@@ -8660,65 +8750,9 @@ export class GameEngine {
 
   private renderAnchoringPulseBeam(): void {
     const beam = this.anchoringPulseBeam.renderState;
-    if (!this.gl || !beam) return;
-    const gl = this.gl;
-    const start = beam.startPos;
-    const end = beam.endPos;
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const dz = end.z - start.z;
-    const length = Math.hypot(dx, dy, dz);
-    if (length < 1e-3) return;
-    const thickness = 0.12;
-    const right = { x: -dy, y: dx, z: 0 };
-    const rightLen = Math.hypot(right.x, right.y, right.z) || 1;
-    right.x /= rightLen; right.y /= rightLen; right.z /= rightLen;
-    const vertices = new Float32Array([
-      start.x - right.x * thickness, start.y - right.y * thickness, start.z - right.z * thickness,
-      start.x + right.x * thickness, start.y + right.y * thickness, start.z + right.z * thickness,
-      end.x - right.x * thickness, end.y - right.y * thickness, end.z - right.z * thickness,
-      end.x + right.x * thickness, end.y + right.y * thickness, end.z + right.z * thickness,
-    ]);
+    if (!beam) return;
     const pulse = 0.6 + 0.4 * Math.sin((performance.now() - beam.startTime) * 0.01);
-    const r = 0.35 * pulse;
-    const g = 0.9 * pulse;
-    const b = 1.0 * pulse;
-    const colors = new Float32Array([
-      r, g, b,
-      r, g, b,
-      r * 0.8, g * 0.8, b * 0.9,
-      r * 0.8, g * 0.8, b * 0.9,
-    ]);
-    const vbo = gl.createBuffer();
-    const cbo = gl.createBuffer();
-    if (!vbo || !cbo) return;
-    this.shaderManager.useBasicProgram();
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-    const posLoc = this.shaderManager.basicAttributes['position'];
-    gl.enableVertexAttribArray(posLoc);
-    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, cbo);
-    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
-    const colorLoc = this.shaderManager.basicAttributes['color'];
-    gl.enableVertexAttribArray(colorLoc);
-    gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
-    const identity = new Float32Array(16);
-    identity[0] = identity[5] = identity[10] = identity[15] = 1;
-    this.shaderManager.setBasicMatrices(identity, this.camera.viewMatrix, this.camera.projectionMatrix);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    const depthEnabled = gl.isEnabled(gl.DEPTH_TEST);
-    if (depthEnabled) gl.disable(gl.DEPTH_TEST);
-    gl.depthMask(false);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    gl.depthMask(true);
-    if (depthEnabled) gl.enable(gl.DEPTH_TEST);
-    gl.disable(gl.BLEND);
-    gl.disableVertexAttribArray(posLoc);
-    gl.disableVertexAttribArray(colorLoc);
-    gl.deleteBuffer(vbo);
-    gl.deleteBuffer(cbo);
+    this.drawBeamQuad(beam.startPos, beam.endPos, 0.24, [0.35, 0.9, 1.0], pulse, 0.15);
   }
 
   private convertAsteroidToCargo(target: Asteroid): boolean {
@@ -8778,62 +8812,9 @@ export class GameEngine {
 
   private renderVoidKinesisBeam(): void {
     const beam = this.voidKinesisBeam.renderState;
-    if (!this.gl || !beam) return;
-    const gl = this.gl;
-    const start = beam.startPos;
-    const end = beam.endPos;
-    const dx = end.x - start.x;
-    const dy = end.y - start.y;
-    const dz = end.z - start.z;
-    const length = Math.hypot(dx, dy, dz);
-    if (length < 1e-3) return;
-    const thickness = 0.18;
-    const right = { x: -dy, y: dx, z: 0 };
-    const rightLen = Math.hypot(right.x, right.y, right.z) || 1;
-    right.x /= rightLen; right.y /= rightLen; right.z /= rightLen;
-    const vertices = new Float32Array([
-      start.x - right.x * thickness, start.y - right.y * thickness, start.z - right.z * thickness,
-      start.x + right.x * thickness, start.y + right.y * thickness, start.z + right.z * thickness,
-      end.x - right.x * thickness, end.y - right.y * thickness, end.z - right.z * thickness,
-      end.x + right.x * thickness, end.y + right.y * thickness, end.z + right.z * thickness,
-    ]);
+    if (!beam) return;
     const pulse = 0.5 + 0.5 * Math.sin((performance.now() - beam.startTime) * 0.02);
-    const colors = new Float32Array([
-      1.0 * pulse, 0.2 * pulse, 0.1 * pulse,
-      1.0 * pulse, 0.2 * pulse, 0.1 * pulse,
-      0.7 * pulse, 0.05 * pulse, 0.05 * pulse,
-      0.7 * pulse, 0.05 * pulse, 0.05 * pulse,
-    ]);
-    const vbo = gl.createBuffer();
-    const cbo = gl.createBuffer();
-    if (!vbo || !cbo) return;
-    this.shaderManager.useBasicProgram();
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, vertices, gl.DYNAMIC_DRAW);
-    const posLoc = this.shaderManager.basicAttributes['position'];
-    gl.enableVertexAttribArray(posLoc);
-    gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
-    gl.bindBuffer(gl.ARRAY_BUFFER, cbo);
-    gl.bufferData(gl.ARRAY_BUFFER, colors, gl.DYNAMIC_DRAW);
-    const colorLoc = this.shaderManager.basicAttributes['color'];
-    gl.enableVertexAttribArray(colorLoc);
-    gl.vertexAttribPointer(colorLoc, 3, gl.FLOAT, false, 0, 0);
-    const identity = new Float32Array(16);
-    identity[0] = identity[5] = identity[10] = identity[15] = 1;
-    this.shaderManager.setBasicMatrices(identity, this.camera.viewMatrix, this.camera.projectionMatrix);
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    const depthEnabled = gl.isEnabled(gl.DEPTH_TEST);
-    if (depthEnabled) gl.disable(gl.DEPTH_TEST);
-    gl.depthMask(false);
-    gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
-    gl.depthMask(true);
-    if (depthEnabled) gl.enable(gl.DEPTH_TEST);
-    gl.disable(gl.BLEND);
-    gl.disableVertexAttribArray(posLoc);
-    gl.disableVertexAttribArray(colorLoc);
-    gl.deleteBuffer(vbo);
-    gl.deleteBuffer(cbo);
+    this.drawBeamQuad(beam.startPos, beam.endPos, 0.36, [1.0, 0.2, 0.1], pulse, 0.3);
   }
 
   private ensureVoidCocoonShieldGeometry(): boolean {
@@ -9815,69 +9796,26 @@ export class GameEngine {
   }
 
   private isSpeedRiteActive(now: number = performance.now()): boolean {
-    return !!(this.speedRiteUntilMs && isFinite(this.speedRiteUntilMs) && now < this.speedRiteUntilMs);
+    return this.speedRiteSystem.isActive(now);
+  }
+
+  /** Velocidad máxima BASE (pre-rito): audio de thrusters, HUD extendido 0..200 % y persistencia. */
+  public getShipBaseMaxSpeed(): number {
+    return this.speedRiteSystem.getBaseMaxSpeed(this.spaceship?.maxSpeed ?? 0);
   }
 
   private refreshShipDynamicsBaseline(force: boolean = false): void {
-    if (!this.spaceship) {
-      return;
-    }
-    const now = performance.now();
-    if (!force && (this.isSpeedRiteActive(now) || this.takeoffSequenceActive || this.landingSequenceActive || this.isAtmosphereExitTransitionActive())) {
-      return;
-    }
-    const next: ShipDynamicsBaseline = {
-      maxSpeed: Number.isFinite(this.spaceship.maxSpeed) ? this.spaceship.maxSpeed : this.shipDynamicsBaseline.maxSpeed,
-      acceleration: Number.isFinite(this.spaceship.acceleration) ? this.spaceship.acceleration : this.shipDynamicsBaseline.acceleration,
-      deceleration: Number.isFinite(this.spaceship.deceleration) ? this.spaceship.deceleration : this.shipDynamicsBaseline.deceleration,
-    };
-    const changed = !this.shipDynamicsBaselineInitialized
-      || Math.abs(next.maxSpeed - this.shipDynamicsBaseline.maxSpeed) > 1e-3
-      || Math.abs(next.acceleration - this.shipDynamicsBaseline.acceleration) > 1e-3
-      || Math.abs(next.deceleration - this.shipDynamicsBaseline.deceleration) > 1e-3;
-    if (force || changed) {
-      this.shipDynamicsBaseline = next;
-      this.shipDynamicsBaselineInitialized = true;
-    }
-  }
-
-  private getShipDynamicsBaseline(): ShipDynamicsBaseline {
-    if (!this.shipDynamicsBaselineInitialized) {
-      this.refreshShipDynamicsBaseline(true);
-    }
-    return { ...this.shipDynamicsBaseline };
+    this.speedRiteSystem.refreshBaseline(this.speedRiteHost, force);
   }
 
   /** Apply the Double Phased Time Rite: doubles maxSpeed for a duration (default 2 minutes) */
-  public applySpeedRite(durationMs: number = 120000): void {
-    if (!this.spaceship) return;
-    const now = performance.now();
-    const baseline = this.getShipDynamicsBaseline();
-    // Cache original max once (first activation)
-    if (this.speedRiteOriginalMax === null || !isFinite(this.speedRiteOriginalMax)) {
-      this.speedRiteOriginalMax = baseline.maxSpeed;
-    }
-    if (this.speedRiteOriginalAccel === null || !isFinite(this.speedRiteOriginalAccel)) {
-      this.speedRiteOriginalAccel = baseline.acceleration;
-    }
-    if (this.speedRiteOriginalDecel === null || !isFinite(this.speedRiteOriginalDecel)) {
-      this.speedRiteOriginalDecel = baseline.deceleration;
-    }
-    // Apply doubled max speed from the original baseline
-    const base = this.speedRiteOriginalMax ?? baseline.maxSpeed;
-    this.spaceship.maxSpeed = base * 2;
-    // Double accel/decel from their baselines
-    const baseA = this.speedRiteOriginalAccel ?? baseline.acceleration;
-    const baseD = this.speedRiteOriginalDecel ?? baseline.deceleration;
-    this.spaceship.acceleration = baseA * 2;
-    this.spaceship.deceleration = baseD * 2;
-    // Extend/refresh duration
-    this.speedRiteUntilMs = now + Math.max(0, durationMs);
+  public applySpeedRite(durationMs: number = SPEED_RITE_DEFAULT_DURATION_MS): void {
+    this.speedRiteSystem.apply(this.speedRiteHost, durationMs);
   }
 
   /** Activate Speed Rite immediately without triggering blocking animations */
   private triggerSpeedRiteInstantly(): void {
-    this.applySpeedRite(120000);
+    this.applySpeedRite(SPEED_RITE_DEFAULT_DURATION_MS);
     try {
       this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Speed Rite activated instantly');
     } catch {}
@@ -10021,7 +9959,7 @@ export class GameEngine {
           // On key press edge for acceleration, trigger a short lower-pitch onset if not at max speed
           if (pressed && !was && this.thrusterCtl) {
             // For onset suppression, map to 0..1 relative to base max (pre-rite)
-            const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
+            const baseMax = this.getShipBaseMaxSpeed();
             const speedOverBase = Math.max(0, Math.min(2, this.spaceship.currentSpeed / Math.max(1e-6, baseMax)));
             const norm01 = Math.max(0, Math.min(1, speedOverBase));
             try { (this.thrusterCtl as any).accelOnset?.(norm01); } catch {}
@@ -10329,9 +10267,8 @@ export class GameEngine {
           planetCenter: this.atmosphereSceneState.center,
         })
       : null;
-    const baseMax = (this.speedRiteOriginalMax && isFinite(this.speedRiteOriginalMax)) ? this.speedRiteOriginalMax : this.spaceship.maxSpeed;
+    const baseMax = this.getShipBaseMaxSpeed();
     const speedPctExtended = (this.spaceship.currentSpeed / Math.max(1e-6, baseMax)) * 100; // 0..200 when jumping/rite
-    const riteActive = this.isSpeedRiteActive(now);
     const voidJumpActive = !!this.voidJumpActive;
     const speedForHud = voidJumpActive ? Math.max(0, Math.min(100, speedPctExtended)) : Math.max(0, Math.min(200, speedPctExtended));
     const flightVectorReticle = this.buildFlightVectorReticleState(speedForHud);
@@ -10360,11 +10297,11 @@ export class GameEngine {
         max: this.spaceship.cargoCapacityMax,
         pct: (this.spaceship.cargoCapacityCurrent / Math.max(1, this.spaceship.cargoCapacityMax)) * 100
       },
-      weapons: this.spaceship.weapons,
+      weapons: this.weaponBridge.buildHudSnapshot(now),
       orientation: orientationBasis,
       // Pasar posición de la nave para cálculo de bearing/elevación en brújula
       position: { x: this.spaceship.position.x, y: this.spaceship.position.y, z: this.spaceship.position.z },
-      speedRiteRemainingSec: riteActive ? Math.max(0, Math.floor((this.speedRiteUntilMs! - now) / 1000)) : null,
+      speedRiteRemainingSec: this.speedRiteSystem.remainingSec(now),
       compassCountdown: this.getCompassCountdownPayload(now),
       precisionModeActive: this.isPrecisionRotationActive(),
       // Portal cooldown HUD removido (no se expone)
@@ -10408,7 +10345,7 @@ export class GameEngine {
   private getCompassCountdownPayload(now: number = performance.now()): CompassCountdownPayload | null {
     return buildCompassCountdownPayload(now, {
       voidCocoonActiveUntilMs: this.voidCocoonActiveUntilMs,
-      speedRiteUntilMs: this.speedRiteUntilMs,
+      speedRiteUntilMs: this.speedRiteSystem.expiresAtMs,
       speedRiteActive: this.isSpeedRiteActive(now),
     });
   }
@@ -10678,7 +10615,13 @@ export class GameEngine {
       onInventoryWheel: (deltaY, clientX, clientY) => this.handleInventoryWheel(deltaY, clientX, clientY),
       
       // 3D targeting (when no panel active)
-      on3DClick: (event) => this.handle3DClick(event)
+      on3DClick: (event) => this.handle3DClick(event),
+
+      // Vuelo: botón derecho mantenido = disparar el arma seleccionada
+      onFlightPointerMove: (clientX, clientY) => { this.flightPointer = { x: clientX, y: clientY }; },
+      onFlightPointerDown: (button) => { if (button === 2) this.setWeaponTriggerHeld(true); },
+      onFlightPointerUp: (button) => { if (button === 2) this.setWeaponTriggerHeld(false); },
+      onFlightContextMenu: () => true
     });
 
     this.logger.log(LogLevel.INFO, LogCategory.TARGETING, 'PanelEventCoordinator initialized successfully');

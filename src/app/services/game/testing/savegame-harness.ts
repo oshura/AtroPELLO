@@ -732,7 +732,13 @@ function buildRichPlayerSection(): SaveGamePlayerSection {
         outOfVoidEnergy: false,
         thrusterState: 'CRUISE'
       },
-      health: { current: 92, max: 120 }
+      health: { current: 92, max: 120 },
+      outfit: {
+        engineTier: 1,
+        weaponSlots: 2,
+        weapons: [{ weaponId: 'GAUSS_ICE', slotIndex: 0 }],
+        selectedWeaponIndex: 0
+      }
     },
     character: {
       profile: {
@@ -751,7 +757,8 @@ function buildRichPlayerSection(): SaveGamePlayerSection {
         survivability: 89
       },
       memoryPercent: 42,
-      characterId: 'pilot-helio'
+      characterId: 'pilot-helio',
+      storyFlags: ['greys-system-seeded']
     },
     inventory: {
       personalGear,

@@ -250,7 +250,10 @@
           <p>Escucha rumores, ejecuta recados o comparte visiones para transformar la relación con la raza local.</p>
         </ng-template>
         <ng-template #diplomacyEmpty>
-          <button type="button" class="menu-btn ghost" disabled>Sin misión disponible</button>
+          <!-- Los encargos ya no se siembran solos: nacen hablando (ver DialogueService). -->
+          <div class="mission-panel mission-panel--empty">
+            No tienes ningún encargo de esta gente. Usa <strong>Conversar</strong> para hablar con ellos.
+          </div>
         </ng-template>
       </article>
     </section>

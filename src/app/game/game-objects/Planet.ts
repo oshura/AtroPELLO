@@ -8,6 +8,7 @@ import {
   PLANET_INHABITANT_POOL
 } from '../types/cosmic-life.types';
 import { GameObjectAnimosity } from '../types/animosity.types';
+import { hashSeed, mulberry32 } from '../utils/seeded-random';
 import {
   PlanetIntelStatus,
   PLANET_INTEL_STATUS,
@@ -87,8 +88,12 @@ export class Planet extends GameObject implements ITargetable {
     this.generateVertexColors();
   }
 
-  /** Roll inhabitants once, based on probability, returning the selected race. */
-  public assignInhabitantsFromProbability(randomFn: () => number = Math.random): PlanetInhabitants {
+  /**
+   * Roll inhabitants once, based on probability, returning the selected race.
+   * Por defecto la tirada se deriva del id del planeta: así un mismo mundo tiene siempre los
+   * mismos habitantes entre recargas (ARQUITECTURA §4.2.6, determinismo por semilla).
+   */
+  public assignInhabitantsFromProbability(randomFn: () => number = mulberry32(hashSeed(this.id))): PlanetInhabitants {
     if (this.inhabitants !== PlanetInhabitants.NONE) {
       return this.inhabitants;
     }

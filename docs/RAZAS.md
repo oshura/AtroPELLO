@@ -1,0 +1,105 @@
+# Fase 13 — Razas, conversación y misiones narrativas
+
+> Estado: implementada la base jugable (build 76). Lore en `docs/HISTORIA.md`; armamento en
+> `docs/ARMAS.md`; plan por slices en `documentation/Plan_Armas_Razas.md`.
+
+## 1. Por qué
+
+Antes de esta fase, "hablar con una civilización" era una botonera con varios sinsentidos: la misión
+se sembraba sola con solo abrir el panel, sin haber cruzado palabra con nadie; "Profundizar en
+sabiduría" prometía glifos que nunca llegaban al grimorio; "Confrontar" era inalcanzable en cualquier
+planeta deshabitado con criatura; y la raza que te encargaba algo nunca llegaba a considerarte aliada,
+porque la promoción apuntaba al planeta equivocado.
+
+Además había **trece guiones de conversación escritos y muertos** en
+`src/app/assets/narrative/landing/landing_missions_<raza>.json`: nadie los importaba.
+
+## 2. Marco narrativo
+
+**Tres primigenios** (Cthulhu, Azathoth, Yog-Sothoth) se reparten el universo; el arco no crece por
+ahí. Todas las razas están amenazadas por ellos. Ficha completa en `docs/HISTORIA.md` §8-§9.
+
+Las **razas acólitas** (`RaceDefinition.isAcolyte`) sirven a un primigenio, no habitan planetas y
+aparecen cuando la trama las convoca. El tipo ya existe; su spawn por eventos es trabajo futuro.
+
+## 3. Modelo de datos
+
+| Fichero | Papel |
+|---|---|
+| `game/types/race.types.ts` | `RaceDefinition`, `RaceShopOffer`, `RaceStanding` |
+| `game/config/race-catalog.config.ts` | **Fuente única de verdad** de las razas con ficha propia |
+| `game/types/dialogue.types.ts` | Espejo EXACTO del formato de los JSON de guion |
+| `services/game/dialogue-script.service.ts` | Carga los 13 guiones (el puente que faltaba) |
+| `services/game/dialogue.service.ts` | Máquina de conversación (sesión efímera) |
+| `components/dialogue-overlay/` | Overlay 2D transparente sobre la escena |
+| `services/game/race-outfitting-bridge.service.ts` | Traduce "la raza te arma" en llamadas al motor |
+| `game/services/state/ship-outfitting.service.ts` | Mejoras permanentes de nave |
+
+**Receta: añadir una raza** = entrada en `PlanetInhabitants` + etiqueta + `landing_missions_<raza>.json`
++ entrada en `RACE_CATALOG`. Nada más. Una raza sin ficha sigue funcionando con el guion genérico.
+
+## 4. Cómo se conversa
+
+Una conversación es lo que pedía el diseño: **escena narrada + preguntas + salir cuando quieras**.
+
+- Preguntar no consume nada y **no cierra la charla**; se puede repetir.
+- **Aceptar el encargo es una opción más de la conversación.** Ya no existe misión que nazca sola.
+- **"Terminar conversación" está siempre disponible**, en cualquier fase.
+- Si el encargo está listo, la opción de entrega sustituye a la de aceptar.
+
+La sesión es efímera: lo que persiste es la misión que salga de ella.
+
+## 5. Misiones de caza (`type: 'hunt'`)
+
+Novedad de esta fase, para encargos que no ocurren en un planeta sino contra una criatura:
+
+1. La misión guarda `huntTarget: { lesserBeing, elderGod }` y `originPlanetId` (dónde se entrega).
+2. Al morir un ser menor, el motor avisa a `MissionService.registerHuntKill(criatura, dominio)`.
+3. Si coinciden criatura y dominio **y la misión está aceptada**, se materializa la prueba en la bodega
+   (mismo patrón que el caparazón de la tortuga espacial) y la misión pasa a `ready-to-turn-in`.
+4. La entrega ocurre conversando en el planeta de origen.
+
+Matar la criatura *antes* de aceptar el encargo no cuenta, y el propio diálogo lo advierte.
+
+## 6. Progreso persistido
+
+Todo opcional, sin migración de savegames:
+
+- `SaveGameCharacterState.storyFlags` — hitos de una sola vez (`greys-system-seeded`).
+- `SaveGameCharacterState.raceStandings` — reputación y misiones completadas por raza.
+- `SolarSystemMeta.elderGodRevealed` — si el jugador ya sabe quién domina ese sistema.
+
+## 7. Ritos dirigidos
+
+El Gate Rite dejaba el destino al azar, lo que hacía imposible encargar "ve al dominio de X":
+
+- **El primer Rito de la partida** siembra siempre el sistema de los Grises, con un planeta habitado
+  al 100% y su civilización ya confirmada (no hace falta escanearla). No se rifa sistema archivado.
+- Una raza puede **sintonizar el siguiente Rito** hacia un primigenio
+  (`GameStateStore.setGateTuning`, consumido una sola vez por el rito). El sistema resultante nace con
+  `elderGodRevealed`, así que el mapa te dice a dónde has llegado.
+
+## 8. Determinismo
+
+La raza de un planeta se sorteaba con `Math.random()`, así que un mismo mundo cambiaba de habitantes
+entre recargas. Ahora la tirada se deriva del id del planeta (`game/utils/seeded-random.ts`), y la
+civilización de Marte tiene semilla fija. Los Grises están **fuera del sorteo**
+(`NON_POOLABLE_INHABITANTS`): sólo aparecen donde la historia los coloca.
+
+## 9. Ficha canónica: los Grises
+
+Ver `docs/HISTORIA.md` §9 para el lore y `landing_missions_grises.json` para el guion. Resumen técnico:
+
+- Guion con cinco preguntas, incluida la que explica el reparto de los tres primigenios.
+- Misión `hunt` contra `VAMPIRO_FUEGO` bajo `YOG_SOTHOTH`, recompensa `memoryShare: 5` y
+  `uniqueGlyphId: 'SPEED'`.
+- Al aceptar: `applyGreysUpgrade` (velocidad 100, aceleración 10, vacío ×10, gauss instalado, anillo de
+  toberas) + sintonía del rito.
+- Tienda posterior (sólo siendo aliado): ampliar motor, anclaje extra y Vulcan.
+
+## 10. Antipatrones
+
+- Sembrar misiones fuera de una conversación.
+- Prometer una recompensa en el texto y no entregarla en código (el pecado original de esta fase).
+- Colocar una raza de la trama en el sorteo aleatorio de habitantes.
+- Revelar el dominio de un sistema que el jugador no ha averiguado.

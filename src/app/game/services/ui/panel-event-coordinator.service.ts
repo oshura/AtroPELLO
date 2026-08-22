@@ -39,6 +39,13 @@ export interface PanelEventCallbacks {
   // 3D targeting callback (when no panel is active)
   on3DClick?: (event: MouseEvent) => void;
 
+  // Vuelo sin paneles: botón derecho = gatillo del arma seleccionada (Fase 12)
+  onFlightPointerMove?: (clientX: number, clientY: number) => void;
+  onFlightPointerDown?: (button: number) => void;
+  onFlightPointerUp?: (button: number) => void;
+  /** true si el menú contextual del navegador debe suprimirse en vuelo. */
+  onFlightContextMenu?: () => boolean;
+
   // Pointer activity notifications (any canvas interaction)
   onPointerActivity?: () => void;
 }
@@ -55,6 +62,7 @@ export class PanelEventCoordinator {
   private pointerDownHandler?: (e: MouseEvent) => void;
   private pointerUpHandler?: (e: MouseEvent) => void;
   private contextMenuHandler?: (e: MouseEvent) => void;
+  private pointerLeaveHandler?: (e: MouseEvent) => void;
   
   // State flags (minimal - just for routing decisions)
   private mapEnabled = false;
@@ -114,6 +122,10 @@ export class PanelEventCoordinator {
     this.canvas.addEventListener('mousedown', this.pointerDownHandler);
     this.canvas.addEventListener('mouseup', this.pointerUpHandler);
     this.canvas.addEventListener('contextmenu', this.contextMenuHandler);
+    // Si el puntero abandona el canvas con el botón pulsado no llega el 'mouseup': hay que soltar
+    // el gatillo a mano o el arma se queda disparando sola.
+    this.pointerLeaveHandler = () => this.callbacks.onFlightPointerUp?.(2);
+    this.canvas.addEventListener('mouseleave', this.pointerLeaveHandler);
   }
 
   /**
@@ -176,6 +188,12 @@ export class PanelEventCoordinator {
       }
       return;
     }
+    // Sin panel activo: estamos en vuelo. El botón derecho dispara.
+    this.callbacks.onFlightPointerDown?.(event.button);
+    if (event.button === 2) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   }
 
   private handlePointerUp(event: MouseEvent): void {
@@ -201,11 +219,22 @@ export class PanelEventCoordinator {
       }
       return;
     }
+    this.callbacks.onFlightPointerUp?.(event.button);
+    if (event.button === 2) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   }
 
   private handleContextMenu(event: MouseEvent): void {
     this.callbacks.onPointerActivity?.();
     if (this.mapEnabled || this.grimoireEnabled || this.inventoryEnabled) {
+      event.preventDefault();
+      event.stopPropagation();
+      return;
+    }
+    // En vuelo el botón derecho es el gatillo: nunca debe abrir el menú del navegador.
+    if (this.callbacks.onFlightContextMenu?.()) {
       event.preventDefault();
       event.stopPropagation();
     }
@@ -233,6 +262,8 @@ export class PanelEventCoordinator {
       this.callbacks.onInventoryMove?.(event.clientX, event.clientY);
       return;
     }
+    // Sin panel activo: el cursor dirige las armas guiadas.
+    this.callbacks.onFlightPointerMove?.(event.clientX, event.clientY);
   }
 
   /**
@@ -282,6 +313,9 @@ export class PanelEventCoordinator {
       }
       if (this.contextMenuHandler) {
         this.canvas.removeEventListener('contextmenu', this.contextMenuHandler);
+      }
+      if (this.pointerLeaveHandler) {
+        this.canvas.removeEventListener('mouseleave', this.pointerLeaveHandler);
       }
     }
 

@@ -9,7 +9,11 @@ import { LoggingService, LogCategory, LogLevel } from '../../../services/logging
 import { GameLogger } from '../../utils/GameLogger';
 import { SpellType } from '../../types/spell.types';
 import { ThrusterState } from '../../game-objects/Spaceship';
+import { PlanetInhabitants } from '../../types/cosmic-life.types';
 import { BaseAnimation } from './base-animation';
+
+/** Hito: el primer Gate Rite ya sembró el sistema de los Grises (una sola vez por partida). */
+export const GREYS_SYSTEM_STORY_FLAG = 'greys-system-seeded';
 
 enum GateRitePhase {
   PreFocus = 0,
@@ -773,9 +777,22 @@ export class GateRiteAnimation extends BaseAnimation {
             colorPaletteOverride: prevPalette && prevPalette.length ? prevPalette : undefined,
           };
 
+          // El PRIMER Gate Rite siempre lleva a los Grises: es el arranque de la trama, así que ni
+          // se rifa el sistema archivado ni se deja al azar quién lo habita (Fase 13).
+          const seedsGreys = engine.gameState?.markStoryFlag?.(GREYS_SYSTEM_STORY_FLAG) === true;
+          if (seedsGreys) {
+            genOptions.guaranteedInhabitants = PlanetInhabitants.GRISES;
+          }
+          // Rito sintonizado por una raza hacia el dominio de un primigenio: de un solo uso.
+          const tuning = !seedsGreys ? engine.gameState?.consumeGateTuning?.() ?? null : null;
+          if (tuning) {
+            genOptions.forcedElderGod = tuning;
+          }
+          const directed = seedsGreys || !!tuning;
+
           let archivedSnapshot: any = null;
           let archiveRoll: number | null = null;
-          if (archivedCount > 0 && typeof archiveApi?.pickRandomArchivedProceduralSystem === 'function') {
+          if (!directed && archivedCount > 0 && typeof archiveApi?.pickRandomArchivedProceduralSystem === 'function') {
             archiveRoll = Math.random();
             if (archiveRoll <= 0.10) {
               archivedSnapshot = archiveApi.pickRandomArchivedProceduralSystem();
@@ -803,6 +820,10 @@ export class GateRiteAnimation extends BaseAnimation {
           } else {
             snapshot = solarSvc.generateWithLinkedPortal(originPortal, Date.now(), genOptions);
             snapshot.meta = { ...(snapshot.meta || {}), handcrafted: false };
+            // Si el rito iba dirigido, el jugador SABE a dónde llega: el mapa lo muestra.
+            if (tuning) {
+              snapshot.meta.elderGodRevealed = true;
+            }
             if (!snapshot.meta.proceduralSystemId && snapshot.id) {
               snapshot.meta.proceduralSystemId = snapshot.id;
             }

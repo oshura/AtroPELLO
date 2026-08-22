@@ -102,6 +102,11 @@ export interface SolarSystemMeta {
   handcrafted?: boolean;
   /** Deidad asignada al sistema. */
   elderGod?: string;
+  /**
+   * true si el jugador ya SABE qué primigenio domina el sistema (se lo dijo una raza, o mató a uno
+   * de sus siervos aquí). Sólo entonces el mapa lo muestra. Fase 13.
+   */
+  elderGodRevealed?: boolean;
   /** Radio del límite del sistema (unidades de mundo). */
   systemRadius?: number;
   /** Memoria de lesser beings errantes embebida en el snapshot. */
@@ -186,4 +191,12 @@ export interface GenerationOptions {
   colorPaletteOverride?: string[]; // allowed baseColorName palette for planets
   // New: scale number of cloud GROUPS relative to default (e.g., 0.1 -> one tenth)
   cloudGroupScale?: number;
+  /**
+   * Fuerza que UN planeta del sistema esté habitado por esta raza, con vida al 100 % y su
+   * civilización ya confirmada (no hace falta escanearla). Lo usa la trama para colocar a los
+   * Grises en el sistema al que lleva el primer Gate Rite.
+   */
+  guaranteedInhabitants?: string;
+  /** Fuerza el primigenio que domina el sistema (ritos sintonizados por una raza). */
+  forcedElderGod?: string;
 }

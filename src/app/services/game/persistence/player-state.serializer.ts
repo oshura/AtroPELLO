@@ -38,6 +38,11 @@ export class PlayerStateSerializer {
       throw new SaveGamePayloadInvalidError('SaveGame payload is missing the player section.');
     }
     const resetState = this.buildPlayerResetState(section);
+    // La nave entrante trae su propia dinámica: invalidar la baseline publicada para no arrastrar
+    // la de la partida anterior (el motor la republica en el primer frame).
+    this.gameState.setShipSpeedBaseline(null);
+    // El motor recoge el equipamiento del store al reponer la nave (applyPlayerResetState).
+    this.gameState.setShipOutfit(section.ship?.outfit ?? null);
     this.applyCharacterState(section.character);
     this.applyInventoryState(section.inventory);
     this.applyRespawnState(section.respawn);
@@ -60,6 +65,9 @@ export class PlayerStateSerializer {
     const voidEnergyPaused = Boolean((spaceship as any)?.voidEnergyPaused);
     const outOfVoidEnergy = Boolean((spaceship as any)?.outOfVoidEnergy);
     const basis = this.safeOrientationBasis(spaceship);
+    // Dinámica BASE (sin el Rito del Tiempo Doblado): guardar la instantánea fosilizaba el doble
+    // en el savegame si el jugador guardaba con el rito activo.
+    const speedBaseline = this.gameState.getShipSpeedBaseline();
 
     return {
       position: this.cloneVec(spaceship.position) ?? this.zeroVec(),
@@ -71,9 +79,9 @@ export class PlayerStateSerializer {
       speed: {
         current: this.safeNumber(spaceship.currentSpeed),
         target: this.safeNumber(spaceship.targetSpeed),
-        max: this.safeNumber(spaceship.maxSpeed),
-        acceleration: this.safeNumber(spaceship.acceleration),
-        deceleration: this.safeNumber(spaceship.deceleration),
+        max: this.safeNumber(speedBaseline?.maxSpeed ?? spaceship.maxSpeed),
+        acceleration: this.safeNumber(speedBaseline?.acceleration ?? spaceship.acceleration),
+        deceleration: this.safeNumber(speedBaseline?.deceleration ?? spaceship.deceleration),
         rotationSpeed: this.safeNumber(spaceship.rotationSpeed),
         minRotationSpeed: this.safeNumber(spaceship.minRotationSpeed)
       },
@@ -90,7 +98,8 @@ export class PlayerStateSerializer {
         outOfVoidEnergy,
         thrusterState: String(spaceship.thrusterState ?? '') || undefined
       },
-      health: this.captureHealth(spaceship)
+      health: this.captureHealth(spaceship),
+      outfit: this.gameState.getShipOutfit()
     };
   }
 
@@ -176,7 +185,9 @@ export class PlayerStateSerializer {
       characterId: this.gameState.getCharacterId(),
       slotCapacity: this.gameState.getCloudSaveSlotCapacity(),
       availableSlotIndexes: this.gameState.getCloudSaveSlotIndexes(),
-      activeSlotIndex: this.gameState.getActiveCloudSaveSlotIndex()
+      activeSlotIndex: this.gameState.getActiveCloudSaveSlotIndex(),
+      storyFlags: this.gameState.getStoryFlags().slice().sort(),
+      raceStandings: this.gameState.getRaceStandings()
     };
   }
 
@@ -258,6 +269,8 @@ export class PlayerStateSerializer {
     if (state && 'activeSlotIndex' in state) {
       this.gameState.setActiveCloudSaveSlotIndex(state.activeSlotIndex ?? null);
     }
+    this.gameState.replaceStoryFlags(state?.storyFlags ?? []);
+    this.gameState.replaceRaceStandings(state?.raceStandings ?? []);
   }
 
   private applyInventoryState(state: SaveGameInventoryState | null | undefined): void {

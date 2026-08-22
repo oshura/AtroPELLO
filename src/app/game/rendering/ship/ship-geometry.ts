@@ -135,9 +135,50 @@ function toPart(m: Raw, material: ShipMaterial, dyn: ShipPartDyn, extra: Partial
 }
 const sc = (v: [number, number, number]): [number, number, number] => [v[0] * S, v[1] * S, v[2] * S];
 
+/**
+ * Anclas de los hardpoints de arma en espacio-nave (pre-escala S; +Z = morro).
+ * Van bajo las góndolas, con la boca mirando al frente: es de donde salen los proyectiles y donde
+ * el renderer dibuja el cañón. El índice del array ES el `slotIndex` del arma instalada.
+ */
+export const WEAPON_HARDPOINT_ANCHORS: ReadonlyArray<[number, number, number]> = [
+  [-0.62, -0.24, 0.35],
+  [0.62, -0.24, 0.35],
+];
+
+/** Ancla de un hardpoint ya escalada, lista para `Spaceship.transformLocalPoint`. */
+export function getWeaponHardpointLocalPosition(slotIndex: number): [number, number, number] | null {
+  const anchor = WEAPON_HARDPOINT_ANCHORS[slotIndex];
+  return anchor ? sc(anchor) : null;
+}
+
+/** Toberas extra por nivel de motor: el tier 1 de los Grises añade un anillo de cinco. */
+function buildExtraExhaustHinges(engineTier: number): Array<[number, number, number]> {
+  if (engineTier < 1) {
+    return [];
+  }
+  const hinges: Array<[number, number, number]> = [];
+  const count = 5;
+  const ringRadius = 0.3;
+  for (let i = 0; i < count; i++) {
+    const angle = (i / count) * Math.PI * 2 + Math.PI / 2;
+    hinges.push([Math.cos(angle) * ringRadius, Math.sin(angle) * ringRadius - 0.06, -1.32]);
+  }
+  return hinges;
+}
+
+/** Configuración de casco: mejoras que cambian la malla. */
+export interface ShipGeometryConfig {
+  /** 0 = nave inicial. ≥1 añade el anillo de toberas del motor ampliado. */
+  engineTier: number;
+  /** Slots de arma ocupados: dibuja su cañón en el hardpoint correspondiente. */
+  occupiedHardpoints: number[];
+}
+
 /** Construye las partes del Vástago. */
-export function buildVastago(): ShipPart[] {
+export function buildVastago(config?: ShipGeometryConfig): ShipPart[] {
   const parts: ShipPart[] = [];
+  const engineTier = Math.max(0, Math.floor(config?.engineTier ?? 0));
+  const occupiedHardpoints = config?.occupiedHardpoints ?? [];
 
   // Casco de acero (fuselaje + aletas de cola)
   const hull = raw();
@@ -153,6 +194,12 @@ export function buildVastago(): ShipPart[] {
   place(dark, cyl(0.17, 1.0, 14), [0.42, -0.12, -0.7], [Math.PI / 2, 0, 0]);
   place(dark, box(0.9, 0.05, 0.34), [-0.72, 0.02, 0.95], [0, 0.5, 0]);
   place(dark, box(0.9, 0.05, 0.34), [0.72, 0.02, 0.95], [0, -0.5, 0]);
+  // Cañones de los hardpoints ocupados: tubo apuntando al morro (+Z).
+  for (const slot of occupiedHardpoints) {
+    const anchor = WEAPON_HARDPOINT_ANCHORS[slot];
+    if (!anchor) continue;
+    place(dark, cyl(0.07, 0.85, 10), [anchor[0], anchor[1], anchor[2]], [Math.PI / 2, 0, 0]);
+  }
   parts.push(toPart(dark, DARK, 'static'));
 
   // Morro (cono) — anclaje/pitch dinámico, oculto en modo cabina
@@ -177,6 +224,11 @@ export function buildVastago(): ShipPart[] {
   const exhaust = () => { const m = raw(); place(m, ellip(0.15, 0.15, 0.09)); return m; };
   parts.push(toPart(exhaust(), { ...EXHAUST }, 'exhaust', { hinge: sc([-0.42, -0.12, -1.2]) }));
   parts.push(toPart(exhaust(), { ...EXHAUST }, 'exhaust', { hinge: sc([0.42, -0.12, -1.2]) }));
+  // Toberas del motor ampliado: mismas bolitas, en anillo alrededor del cono de cola.
+  const smallExhaust = () => { const m = raw(); place(m, ellip(0.11, 0.11, 0.07)); return m; };
+  for (const hinge of buildExtraExhaustHinges(engineTier)) {
+    parts.push(toPart(smallExhaust(), { ...EXHAUST }, 'exhaust', { hinge: sc(hinge) }));
+  }
 
   // Luces (emisivo violeta): línea dorsal + dos balizas laterales
   const lights = raw();

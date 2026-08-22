@@ -59,6 +59,65 @@ export function vec3Normalize(v: { x: number; y: number; z: number }): { x: numb
   return { x: v.x / len, y: v.y / len, z: v.z / len };
 }
 
+/**
+ * ¿La esfera que viaja de `from` a `to` con radio `movingRadius` toca la esfera
+ * (`center`, `targetRadius`)? Barrido continuo: un proyectil rápido recorre decenas de unidades
+ * por frame, así que comprobar sólo la posición final lo haría atravesar objetivos pequeños.
+ *
+ * Reduce a "punto contra esfera engordada": distancia mínima del segmento al centro.
+ */
+export function sweptSphereHit(
+  from: Vector3,
+  to: Vector3,
+  center: Vector3,
+  targetRadius: number,
+  movingRadius: number = 0
+): boolean {
+  const radius = Math.max(0, targetRadius + movingRadius);
+  const dx = to.x - from.x;
+  const dy = to.y - from.y;
+  const dz = to.z - from.z;
+  const fx = from.x - center.x;
+  const fy = from.y - center.y;
+  const fz = from.z - center.z;
+  const segLenSq = dx * dx + dy * dy + dz * dz;
+  if (segLenSq <= 1e-12) {
+    return fx * fx + fy * fy + fz * fz <= radius * radius;
+  }
+  // t del punto del segmento más cercano al centro, recortado al tramo recorrido este frame.
+  const t = clamp(-(fx * dx + fy * dy + fz * dz) / segLenSq, 0, 1);
+  const cx = fx + dx * t;
+  const cy = fy + dy * t;
+  const cz = fz + dz * t;
+  return cx * cx + cy * cy + cz * cz <= radius * radius;
+}
+
+/**
+ * Distancia desde `origin` al primer corte del rayo (`direction`, unitaria) con la esfera
+ * (`center`, `radius`), o null si no la corta por delante. Para haces continuos.
+ */
+export function raySphereHit(
+  origin: Vector3,
+  direction: Vector3,
+  center: Vector3,
+  radius: number
+): number | null {
+  const ox = origin.x - center.x;
+  const oy = origin.y - center.y;
+  const oz = origin.z - center.z;
+  const b = ox * direction.x + oy * direction.y + oz * direction.z;
+  const c = ox * ox + oy * oy + oz * oz - radius * radius;
+  if (c > 0 && b > 0) {
+    return null; // origen fuera y esfera a la espalda
+  }
+  const discriminant = b * b - c;
+  if (discriminant < 0) {
+    return null;
+  }
+  const distance = -b - Math.sqrt(discriminant);
+  return distance < 0 ? 0 : distance; // 0 ⇒ el origen ya está dentro
+}
+
 /** Vector unitario aleatorio en el plano perpendicular a `normal`. */
 export function randomPerpendicularVector(normal: Vector3): Vector3 {
   const safeNormal = vec3Normalize(normal);

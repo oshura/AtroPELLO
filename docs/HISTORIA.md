@@ -79,9 +79,46 @@ cinemática de inicio) que **amplía los recuerdos** del PJ. Estas presentacione
 
 - **Inicio**: solo **Gate Rite** (el rito fallido, ahora infalible).
 - **Estación humana**: se descubre **Void Jump** (Long Jump).
+- **Los Grises**: entregan **Speed Rite** al completar su encargo (§9).
 - (Otros hechizos del juego se obtienen por otras vías; este documento solo fija los hilos narrativos.)
 
-## 8. Hilos abiertos (para crecer)
+## 8. Los tres primigenios
+
+El universo está repartido entre **TRES** primigenios, y el arco no crece por ahí (Cthugha se retiró
+del diseño el 2026-08-22; sus siervos pasaron a Yog-Sothoth). Cada sistema solar está bajo el dominio
+de uno de ellos, lo que determina qué siervos lo patrullan:
+
+| Primigenio | Cómo se le describe | Siervos |
+|---|---|---|
+| **Cthulhu** | Sueña y espera. Domina el sistema humano. | Semillas estelares, shoggoths |
+| **Azathoth** | No piensa, y por eso no se le puede negociar nada. | Shoggoths, semillas estelares |
+| **Yog-Sothoth** | La puerta y la llave: el que respondió cuando se lanzó el Gate Rite. | **Vampiros de fuego** (exclusivos suyos), shoggoths |
+
+Todas las razas del universo están amenazadas por ellos y por sus guerras. La meta última del PJ es
+enfrentarse a los tres en una dimensión desconocida, liberando por el camino planetas de sus siervos.
+
+Aparte quedan las **razas acólitas**: inteligencias que sirven a un primigenio, no habitan planetas y
+aparecen cuando la trama las convoca. Fueron los acólitos de Yog-Sothoth quienes combatieron sobre la
+Tierra el día del Incidente.
+
+## 9. Los Grises (primera raza)
+
+Humanoides de cabeza ancha y ojos negros. **Vigilaban la Tierra desde antes del Incidente**: sabían lo
+que la secta pretendía traer y acudieron a impedirlo. Llegaron a tiempo, pero no eran suficientes: los
+acólitos de Yog-Sothoth llegaron prendidos al rito, la batalla se libró sobre el cielo terrestre y,
+cuando el vacío se cerró, la Tierra tenía dos mitades.
+
+- **Dónde**: habitan siempre el sistema al que lleva el **primer Gate Rite** de la partida.
+- **Qué revelan**: el reparto del universo entre los tres primigenios y su papel en el Incidente
+  (+5% de memoria).
+- **Qué piden**: abatir un **vampiro de fuego** en un dominio de Yog-Sothoth y traer el rescoldo.
+- **Qué dan por adelantado**: reacondicionan la nave (anillo de toberas hasta 100&nbsp;u de velocidad y
+  10&nbsp;u/s² de aceleración, **cañones gauss de hielo** y módulo de vacío ×10) y **sintonizan el
+  siguiente Rito** hacia el dominio correcto.
+- **Qué dan al volver**: el glifo **Speed Rite**, su amistad y una oferta permanente de motor, anclajes
+  de arma y armamento.
+
+## 10. Hilos abiertos (para crecer)
 
 - ¿Qué quería realmente la secta del Gate Rite? ¿Por qué esa nave concreta?
 - ¿Quedan supervivientes humanos? ¿La estación tiene una IA/bitácora que hable con el PJ?

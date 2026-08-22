@@ -25,6 +25,8 @@ import { Vector3 } from '../../types/game.types';
 import { GameInitializer } from './game-initializer.service';
 import { MissionService } from '../../game/services/game/mission.service';
 import { getLandingDiplomacyScript, LandingDiplomacyScript, DiplomacySubTaskConfig } from '../../game/config/landing-diplomacy.config';
+import { getRaceDefinition } from '../../game/config/race-catalog.config';
+import { getSpellLabel } from '../../game/types/spell.types';
 import { LandingNarrativeService } from './landing-narrative.service';
 
 interface RollOutcome {
@@ -429,6 +431,14 @@ export class LandingActionService {
       { tone: 'info', text: 'El consejo despliega pergaminos vivos y talla el glifo sobre tus retinas.' },
       { tone: 'success', text: 'Recuerdas fragmentos dormidos: la runa despierta memoria ancestral.' }
     ];
+    // El glifo que enseña esta raza. Antes se prometía "recibir sus glifos" y sólo se entregaba un
+    // adorno de bitácora: `learnSpell` no se llamaba nunca y el grimorio no cambiaba.
+    const teachable = getRaceDefinition(planet.inhabitants)?.teachableGlyph ?? null;
+    const learned = teachable && !this.gameState.hasSpell(teachable);
+    if (learned && teachable) {
+      this.gameState.learnSpell(teachable);
+      narrative.push({ tone: 'success', text: `Un glifo nuevo arde en tu grimorio: ${getSpellLabel(teachable)}.` });
+    }
     const glyphRewardId = `ally-glyph-${Date.now().toString(36)}`;
     const effects: LandingActionEffects = {
       cargoSpent: [
@@ -436,14 +446,9 @@ export class LandingActionService {
         { kind: 'silicate', units: spentSilicate }
       ],
       memoryDelta: memoryGain,
-      itemsAwarded: [
-        {
-          id: glyphRewardId,
-          label: 'Glifo coralino compartido',
-          type: 'memory',
-          quantity: memoryGain
-        }
-      ]
+      itemsAwarded: learned && teachable
+        ? [{ id: glyphRewardId, label: getSpellLabel(teachable), type: 'spell', quantity: 1 }]
+        : [{ id: glyphRewardId, label: 'Sabiduría compartida', type: 'memory', quantity: memoryGain }]
     };
     return this.composeResult(request, planet, {
       title: 'Profundizar en sabiduría',

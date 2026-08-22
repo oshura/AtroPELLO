@@ -712,40 +712,21 @@ export class LandingMenuComponent implements OnChanges {
     return Boolean(this.planetIntel?.creatureScanned || this.landingIntelFallback?.planetCreatureIntelKnown);
   }
 
+  /**
+   * Sincroniza la intel del planeta al abrir el panel.
+   *
+   * ANTES esto además SEMBRABA una misión: con sólo abrir el menú, una civilización con la que no
+   * habías cruzado palabra te encargaba algo. Los encargos nacen ahora en la conversación
+   * (`DialogueService`), que es donde el jugador los oye y los acepta.
+   */
   private ensureMissionSeeded(): void {
     if (!this.context?.planetId) {
       return;
     }
     const planet = this.resolveLandingPlanet(this.context.planetId);
-    if (!planet) {
-      return;
-    }
-    const hasCivilization = planet.inhabitants && planet.inhabitants !== PlanetInhabitants.NONE;
-    if (!hasCivilization) {
-      return;
-    }
-    if (planet.pendingMission) {
+    if (planet) {
       this.gameState.syncPlanetIntelFromPlanet(planet);
-      return;
     }
-    const script = getLandingDiplomacyScript(planet.inhabitants);
-    if (!script) {
-      return;
-    }
-    this.missionService.offerMission(planet, {
-      race: planet.inhabitants,
-      description: script.missionTemplate.description,
-      missionName: script.missionTemplate.name,
-      requiredClueTiers: script.missionTemplate.requiredClueTiers,
-      type: script.missionTemplate.type,
-      preferredResourceKind: script.missionTemplate.preferredResourceKind,
-      objectiveSummary: script.missionTemplate.objectiveSummary,
-      targetHint: script.missionTemplate.targetHint,
-      reward: script.missionTemplate.memorySharePct
-        ? { memorySharePct: script.missionTemplate.memorySharePct }
-        : undefined
-    });
-    this.gameState.syncPlanetIntelFromPlanet(planet);
   }
 
   private resolveLandingPlanet(planetId: string): Planet | null {

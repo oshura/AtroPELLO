@@ -13,14 +13,19 @@ export enum PlanetInhabitants {
   GULES = 'GULES',
   GHASTS = 'GHASTS',
   VAMPIRO_ESTELAR = 'VAMPIRO_ESTELAR',
-  BYHKEE = 'BYHKEE'
+  BYHKEE = 'BYHKEE',
+  /** Los Grises: primera raza de la trama (Fase 13). Nunca aparecen por azar. */
+  GRISES = 'GRISES'
 }
 
+/**
+ * Los TRES primigenios del juego. Son los tres jefes finales de la trama y el arco no crece por
+ * aquí: Cthugha se retiró (2026-08-22) y sus secuaces pasaron a Yog-Sothoth.
+ */
 export enum ElderGod {
   CTHULHU = 'CTHULHU',
   AZATHOTH = 'AZATHOTH',
-  YOG_SOTHOTH = 'YOG_SOTHOTH',
-  CTHUGHA = 'CTHUGHA'
+  YOG_SOTHOTH = 'YOG_SOTHOTH'
 }
 
 export enum LesserBeing {
@@ -32,13 +37,23 @@ export enum LesserBeing {
 
 export const ELDER_GOD_SUMMONS: Record<ElderGod, ReadonlyArray<LesserBeing>> = {
   [ElderGod.CTHULHU]: [LesserBeing.SEMILLAS_ESTELARES, LesserBeing.SHOGGOTH],
-  [ElderGod.AZATHOTH]: [LesserBeing.SHOGGOTH, LesserBeing.VAMPIRO_FUEGO],
-  [ElderGod.YOG_SOTHOTH]: [LesserBeing.SHOGGOTH, LesserBeing.VAMPIRO_FUEGO],
-  [ElderGod.CTHUGHA]: [LesserBeing.VAMPIRO_FUEGO, LesserBeing.SEMILLAS_ESTELARES]
+  [ElderGod.AZATHOTH]: [LesserBeing.SHOGGOTH, LesserBeing.SEMILLAS_ESTELARES],
+  // El vampiro de fuego es EXCLUSIVO de Yog-Sothoth: la misión de los Grises manda a cazar uno y
+  // debe poder identificarse el dominio del sistema por su presencia.
+  [ElderGod.YOG_SOTHOTH]: [LesserBeing.VAMPIRO_FUEGO, LesserBeing.SHOGGOTH]
 };
 
+/**
+ * Razas que NUNCA salen en una tirada aleatoria: se colocan a mano donde la historia las necesita.
+ * Los Grises sólo viven en el sistema al que lleva el primer Gate Rite.
+ */
+export const NON_POOLABLE_INHABITANTS: ReadonlyArray<PlanetInhabitants> = [
+  PlanetInhabitants.NONE,
+  PlanetInhabitants.GRISES,
+];
+
 export const PLANET_INHABITANT_POOL: ReadonlyArray<PlanetInhabitants> = Object.values(PlanetInhabitants).filter(
-  value => value !== PlanetInhabitants.NONE
+  value => !NON_POOLABLE_INHABITANTS.includes(value)
 );
 
 export const PLANET_INHABITANT_LABELS: Record<PlanetInhabitants, string> = {
@@ -55,7 +70,8 @@ export const PLANET_INHABITANT_LABELS: Record<PlanetInhabitants, string> = {
   [PlanetInhabitants.GULES]: 'Gules',
   [PlanetInhabitants.GHASTS]: 'Ghasts',
   [PlanetInhabitants.VAMPIRO_ESTELAR]: 'Vampiro estelar',
-  [PlanetInhabitants.BYHKEE]: 'Byh-Kee'
+  [PlanetInhabitants.BYHKEE]: 'Byh-Kee',
+  [PlanetInhabitants.GRISES]: 'Los Grises'
 };
 
 export const LESSER_BEING_LABELS: Record<LesserBeing, string> = {
@@ -69,7 +85,14 @@ export const LESSER_BEING_PATRONS: Record<LesserBeing, ElderGod> = {
   [LesserBeing.NONE]: ElderGod.CTHULHU,
   [LesserBeing.SEMILLAS_ESTELARES]: ElderGod.CTHULHU,
   [LesserBeing.SHOGGOTH]: ElderGod.AZATHOTH,
-  [LesserBeing.VAMPIRO_FUEGO]: ElderGod.CTHUGHA
+  [LesserBeing.VAMPIRO_FUEGO]: ElderGod.YOG_SOTHOTH
+};
+
+/** Nombre legible del primigenio, para HUD, mapa y diálogos. */
+export const ELDER_GOD_LABELS: Record<ElderGod, string> = {
+  [ElderGod.CTHULHU]: 'Cthulhu',
+  [ElderGod.AZATHOTH]: 'Azathoth',
+  [ElderGod.YOG_SOTHOTH]: 'Yog-Sothoth'
 };
 
 export interface LesserBeingEncounterPlan {

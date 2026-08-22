@@ -89,6 +89,7 @@
   <div slot="footer" class="landing-panel__actions">
     <button *ngIf="canDisembark" type="button" class="btn primary" (click)="onDisembark()">Bajar de la nave</button>
     <ng-container *ngIf="!inMenuView; else menuFooter">
+      <button *ngIf="canTalk" type="button" class="btn primary" (click)="startDialogue()">Conversar</button>
       <button type="button" class="btn primary" (click)="enterMenu()">Permanecer</button>
       <button type="button" class="btn primary" (click)="onTakeoff()">
         Despegar
@@ -101,6 +102,7 @@
       <ng-container [ngSwitch]="viewMode">
         <ng-container *ngSwitchCase="'actions'">
           <button type="button" class="btn primary" (click)="exitMenu()">Embarcar</button>
+          <button *ngIf="canTalk" type="button" class="btn primary" (click)="startDialogue()">Conversar</button>
           <button
             *ngIf="canOpenDiplomacyPanel"
             type="button"
@@ -118,3 +120,6 @@
     </ng-template>
   </div>
 </app-modal>
+
+<!-- Conversación con la raza del planeta: overlay transparente sobre la escena. -->
+<app-dialogue-overlay [visible]="dialogueVisible" (closed)="onDialogueClosed()"></app-dialogue-overlay>

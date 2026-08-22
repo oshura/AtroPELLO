@@ -20,6 +20,8 @@ export enum HudMarqueeEventType {
   LESSER_BEING = 'lesser-being',
   VOID_RITUAL = 'void-ritual',
   WARNING = 'warning',
+  /** Encargos de las razas: ofrecido, objetivo cumplido, entregado (Fase 13). */
+  MISSION = 'mission',
 }
 
 export interface HudMarqueeEventOptions {
