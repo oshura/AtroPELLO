@@ -47,7 +47,9 @@
 ## Navegación desde el juego
 - El icono de la wiki en el header abre `/wiki/index.html` en una pestaña nueva y no interrumpe el canvas.
 - Como las páginas ya no viven dentro de Angular, no se puede usar `routerLink`. Todos los enlaces deben ser URLs absolutas o relativas dentro de `public/wiki/`.
-- Incluir mensajes claros dentro del índice que expliquen cómo volver al juego y compartir enlaces permanentes.
+- El índice NO lleva botón "Volver al juego": como la wiki se abre en pestaña nueva, ese botón cargaba una segunda
+  instancia del juego en la pestaña de la wiki en lugar de devolver el foco a la partida. Se vuelve cerrando la pestaña.
+- Las subpáginas sí conservan "↩ Volver al índice" (`.wiki-back-button` fijo arriba a la derecha).
 
 ## Checklist para nuevas entradas
 - [ ] Crear carpeta y `index.html` con metadatos completos.

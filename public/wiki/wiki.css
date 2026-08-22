@@ -119,11 +119,6 @@ main {
   box-shadow: 0 12px 30px rgba(16, 185, 129, 0.35);
 }
 
-.wiki-back-button[data-variant='home'] {
-  border-color: rgba(248, 113, 113, 0.65);
-  background: radial-gradient(circle at 60% 50%, rgba(248, 113, 113, 0.22), rgba(4, 6, 15, 0.95));
-}
-
 .wiki-shell {
   margin-top: 120px;
   background: var(--bg-soft);
@@ -131,6 +126,11 @@ main {
   padding: clamp(2rem, 5vw, 4rem);
   border: 1px solid rgba(148, 163, 184, 0.3);
   box-shadow: var(--shadow-strong);
+}
+
+/* El margen de 120px reserva sitio al botón fijo de retorno; el índice no lo lleva. */
+.wiki-shell--flush {
+  margin-top: 0;
 }
 
 .wiki-hero {
@@ -424,8 +424,7 @@ figcaption {
     align-items: flex-start;
   }
 
-  .wiki-back-button,
-  .wiki-back-button[data-variant='home'] {
+  .wiki-back-button {
     position: static;
     align-self: flex-end;
     margin-top: 0.75rem;
