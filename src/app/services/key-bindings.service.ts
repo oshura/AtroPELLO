@@ -9,6 +9,7 @@ export type GameAction =
   | 'marquee_replay'
   | 'target_next' | 'target_prev'
   | 'weapon_next' | 'weapon_prev'
+  | 'mouse_flight_toggle'
   | 'camera_7' | 'camera_8' | 'camera_9' | 'camera_0'
   | 'stats_overlay'
   | 'start_resume' | 'clear_target' | 'resume'
@@ -37,6 +38,7 @@ const DEFAULT_BINDINGS: Record<GameAction, string> = {
   target_prev: 'shift+t',
   weapon_next: 'r',
   weapon_prev: 'shift+r',
+  mouse_flight_toggle: 'c',
   marquee_replay: 'backspace',
   camera_7: '7',
   camera_8: '8',

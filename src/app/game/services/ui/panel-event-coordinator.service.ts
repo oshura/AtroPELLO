@@ -91,6 +91,11 @@ export class PanelEventCoordinator {
     this.mapEnabled = enabled;
   }
 
+  /** ¿Hay algún panel 2D capturando el puntero? (el vuelo por ratón debe soltar el mando). */
+  isAnyPanelActive(): boolean {
+    return this.mapEnabled || this.grimoireEnabled || this.inventoryEnabled || this.inputsBlocked;
+  }
+
   setGrimoireEnabled(enabled: boolean): void {
     this.grimoireEnabled = enabled;
   }

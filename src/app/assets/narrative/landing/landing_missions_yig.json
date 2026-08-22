@@ -1,48 +1,26 @@
 {
   "meta": {
     "race": "YIG",
-    "memoryShare": 7,
-    "missionType": "material",
-    "materialName": "Veneno de Muda",
-    "targetHint": "Cinturón de asteroides serpentino con vetas verdes"
+    "memoryShare": 0,
+    "missionType": "none"
   },
   "offer": {
-    "scene": "Sacerdotes serpiente se deslizan formando espirales. Sus lenguas dibujan runas sobre tu casco.",
+    "scene": "El mundo entero parece dormido. Columnas talladas con escamas del tamaño de escudos, avenidas que serpentean sin esquinas, y un calor seco que sube del suelo como el aliento de algo enorme que respira muy despacio, muy abajo.\n\nNadie te detiene. Nadie te recibe. Pero cada piedra del camino está orientada hacia ti, y juraría que no lo estaban al aterrizar.",
     "options": [
       {
-        "id": "origin",
-        "label": "¿Para qué sirve el veneno?",
-        "text": "Sus coros aseguran que el veneno suaviza mudas cósmicas y que tu secta prometió abrir portales a cambio."
+        "id": "llamar",
+        "label": "Llamar en voz alta",
+        "text": "Tu voz rueda por las avenidas y vuelve cambiada: más grave, más lenta, con un siseo de fondo que tu garganta no ha puesto. Del interior de las columnas llega una vibración paciente, como de escamas girando en su sueño. Todavía no. Eso entiendes, sin saber en qué idioma: todavía no."
       },
       {
-        "id": "destination",
-        "label": "¿Dónde encontrarlo?",
-        "text": "Hablan de un cinturón serpentino alrededor de una estrella esmeralda, donde los asteroides exudan cobre líquido."
-      },
-      {
-        "id": "danger",
-        "label": "¿Qué me espera allí?",
-        "text": "Avisan que cada asteroide alberga incubadoras vivas que castigan a los ladrones." 
+        "id": "warp",
+        "label": "Buscar el warp",
+        "text": "Encuentras el sitio, porque es imposible no encontrarlo: un anfiteatro circular en cuyo centro el aire está DOBLADO, como una página marcada. A través del pliegue se ve un cielo que no pertenece a ningún sistema. El pliegue está cerrado, y las ocho serpientes de piedra que lo rodean tienen los ojos cerrados también.\n\nCuando la gran raza despierte, este será el camino hacia las dimensiones donde residen los primigenios. Hoy solo es una promesa que respira."
       }
     ]
   },
-  "clues": {
-    "minor": {
-      "cost": "1 metal + 1 orgánico",
-      "text": "Un acólito sisea: \"Busca el asteroide que proyecta dos sombras superpuestas\"."
-    },
-    "major": {
-      "subTask": "cortar-raiz",
-      "success": "Eliminas raíces de serpiente negra; revelan el nombre del sistema y marcan el cluster exacto.",
-      "failure": "La savia tóxica se adhiere a tu traje y te obliga a purgarlo con dolor."
-    },
-    "final": {
-      "cost": "-3 cordura",
-      "text": "Aceptas compartir visiones serpentinas; ves el veneno guardado en un crisol cubierto de escamas."
-    }
-  },
   "turnIn": {
-    "success": "Ofrecen el veneno a Yig y te recuerdan que la secta juró abrir portales serpentinos. Cambian su actitud a aliado.",
-    "memoryFragment": "Imágenes emergen: negociaste personalmente con Yig, prometiendo portales infinitos a cambio de toxinas para el motor."
+    "success": "Las serpientes no entregan nada todavía.",
+    "memoryFragment": ""
   }
 }

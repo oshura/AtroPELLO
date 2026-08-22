@@ -47,6 +47,41 @@ describe('SystemGeneratorService', () => {
     expect(hostA?.id).toBe(hostB?.id);
   });
 
+  describe('varios planetas habitados garantizados (sistema de guerra arácnido, Fase 15)', () => {
+    it('count 3 puebla exactamente 3 planetas, todos confirmados y con vida al 100 %', () => {
+      const snapshot = generate({ guaranteedInhabitants: PlanetInhabitants.GRISES, guaranteedInhabitedCount: 3 });
+      const hosts = snapshot.planets.filter(p => p.inhabitants === PlanetInhabitants.GRISES);
+
+      expect(hosts.length).toBe(3);
+      for (const host of hosts) {
+        expect(host.probabilityOfLifePct).toBe(100);
+        expect(host.civilizationIntelStatus).toBe(PLANET_INTEL_STATUS.CONFIRMED_PRESENT);
+      }
+    });
+
+    it('pedir varios habitados no descuadra los ids de la semilla', () => {
+      const plain = generate();
+      const crowded = generate({ guaranteedInhabitants: PlanetInhabitants.GRISES, guaranteedInhabitedCount: 3 });
+
+      expect(crowded.planets.map(p => p.id)).toEqual(plain.planets.map(p => p.id));
+    });
+
+    it('el primer habitado con count 3 es el mismo planeta que con count 1', () => {
+      const single = generate({ guaranteedInhabitants: PlanetInhabitants.GRISES });
+      const triple = generate({ guaranteedInhabitants: PlanetInhabitants.GRISES, guaranteedInhabitedCount: 3 });
+
+      const soloHost = single.planets.find(p => p.inhabitants === PlanetInhabitants.GRISES);
+      const tripleHosts = triple.planets.filter(p => p.inhabitants === PlanetInhabitants.GRISES);
+      expect(tripleHosts.map(p => p.id)).toContain(soloHost!.id);
+    });
+
+    it('un count mayor que el número de planetas satura sin romper', () => {
+      const snapshot = generate({ guaranteedInhabitants: PlanetInhabitants.GRISES, guaranteedInhabitedCount: 99 });
+      const hosts = snapshot.planets.filter(p => p.inhabitants === PlanetInhabitants.GRISES);
+      expect(hosts.length).toBe(snapshot.planets.length);
+    });
+  });
+
   describe('identidad de los objetos generados', () => {
     it('dos sistemas distintos no comparten ningún id de planeta ni de cúmulo', () => {
       // Antes todos los sistemas reutilizaban planet-0, planet-1…: el planeta del mismo índice de
@@ -132,18 +167,28 @@ describe('SystemGeneratorService', () => {
   });
 
   describe('sorteo de habitantes', () => {
-    it('sólo entran razas TERMINADAS: hoy, los Grises', () => {
+    it('sólo entran razas TERMINADAS: hoy, Grises y Mi-Go', () => {
       // El universo no debe poblarse con civilizaciones que no tienen nada que contar: una raza
       // entra en el sorteo cuando se cierra su ficha, no cuando se reserva su nombre en el enum.
-      expect(getPoolableRaces()).toEqual([PlanetInhabitants.GRISES]);
+      expect(getPoolableRaces().sort()).toEqual(
+        [PlanetInhabitants.GRISES, PlanetInhabitants.MI_GO].sort()
+      );
     });
 
     it('las razas sin ficha están reservadas, no disponibles', () => {
       const poolable = getPoolableRaces();
-      expect(poolable).not.toContain(PlanetInhabitants.MI_GO);
+      expect(poolable).not.toContain(PlanetInhabitants.LENG);
       expect(poolable).not.toContain(PlanetInhabitants.NONE);
       // Su nombre sigue reservado en el enum para escribirlas más adelante.
-      expect(PLANET_INHABITANT_POOL).toContain(PlanetInhabitants.MI_GO);
+      expect(PLANET_INHABITANT_POOL).toContain(PlanetInhabitants.LENG);
+    });
+
+    it('una raza con ficha pero excluida del sorteo jamás aparece por azar', () => {
+      // Arácnidos y Yig existen SOLO donde la trama los coloca (sintonía del rito), aunque su
+      // ficha esté completa: la exclusión es explícita, no una carencia.
+      const poolable = getPoolableRaces();
+      expect(poolable).not.toContain(PlanetInhabitants.ARACNIDOS);
+      expect(poolable).not.toContain(PlanetInhabitants.YIG);
     });
 
     it('una raza acólita nunca habitaría planetas', () => {

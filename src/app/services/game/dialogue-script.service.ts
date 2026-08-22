@@ -3,6 +3,9 @@ import { PlanetInhabitants } from '../../game/types/cosmic-life.types';
 import { RaceMissionScript } from '../../game/types/dialogue.types';
 
 import grises from '../../assets/narrative/landing/landing_missions_grises.json';
+import migo from '../../assets/narrative/landing/landing_missions_migo.json';
+import aracnidos from '../../assets/narrative/landing/landing_missions_aracnidos.json';
+import yig from '../../assets/narrative/landing/landing_missions_yig.json';
 
 /**
  * Guiones de conversación por raza (Fase 13 — docs/RAZAS.md).
@@ -16,6 +19,9 @@ import grises from '../../assets/narrative/landing/landing_missions_grises.json'
  */
 const SCRIPTS: Partial<Record<PlanetInhabitants, unknown>> = {
   [PlanetInhabitants.GRISES]: grises,
+  [PlanetInhabitants.MI_GO]: migo,
+  [PlanetInhabitants.ARACNIDOS]: aracnidos,
+  [PlanetInhabitants.YIG]: yig,
 };
 
 @Injectable({ providedIn: 'root' })

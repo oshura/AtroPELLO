@@ -42,6 +42,8 @@ export interface MissionOfferOptions {
   huntTarget?: { lesserBeing: string; elderGod?: string };
   /** Nombre de la prueba que aparecerá en la bodega al lograr la caza. */
   trophyLabel?: string;
+  /** Exterminio (Fase 15): raza objetivo y cuota de planetas/estaciones a destruir. */
+  exterminateTarget?: { race: string; planets: number; stations: number };
 }
 
 @Injectable({ providedIn: 'root' })
@@ -76,6 +78,15 @@ export class MissionService {
       targetHint: options?.targetHint,
       originPlanetId: options?.originPlanetId ?? planet.id,
       huntTarget: options?.huntTarget,
+      exterminationTarget: options?.exterminateTarget
+        ? {
+            race: options.exterminateTarget.race,
+            planetsRequired: Math.max(0, options.exterminateTarget.planets),
+            stationsRequired: Math.max(0, options.exterminateTarget.stations),
+            planetsDestroyed: 0,
+            stationsDestroyed: 0
+          }
+        : undefined,
       requiredCargoLabel: options?.trophyLabel
     };
     this.assignMissionObjective(mission, planet, options);
@@ -274,6 +285,76 @@ export class MissionService {
     return null;
   }
 
+  /**
+   * Registra la destrucción de un planeta o estación de una raza y avanza las misiones de
+   * exterminio activas que la señalen (Fase 15; patrón `registerHuntKill`). Devuelve la misión
+   * que avanzó, o null si esta destrucción no le servía a nadie.
+   */
+  public registerExterminationEvent(race: string, kind: 'planet' | 'station'): PlanetMissionState | null {
+    if (!race) {
+      return null;
+    }
+    for (const mission of this.listMissions()) {
+      if (mission.type !== 'exterminate' || !mission.exterminationTarget) {
+        continue;
+      }
+      if (mission.status !== 'accepted' && mission.status !== 'in-progress') {
+        continue;
+      }
+      if (mission.exterminationTarget.race !== race) {
+        continue;
+      }
+      const target = mission.exterminationTarget;
+      const alreadyMet =
+        kind === 'planet'
+          ? target.planetsDestroyed >= target.planetsRequired
+          : target.stationsDestroyed >= target.stationsRequired;
+      if (alreadyMet) {
+        continue; // esa cuota ya está cubierta; el excedente no cuenta para nadie
+      }
+      const updated = this.updateMission(
+        mission.id,
+        state => {
+          const progress = state.exterminationTarget;
+          if (!progress) {
+            return;
+          }
+          if (kind === 'planet') {
+            progress.planetsDestroyed += 1;
+          } else {
+            progress.stationsDestroyed += 1;
+          }
+          if (this.exterminationComplete(state)) {
+            state.status = 'ready-to-turn-in';
+          } else if (state.status === 'accepted') {
+            state.status = 'in-progress';
+          }
+        },
+        `extermination-${kind}`,
+        { race, kind }
+      );
+      this.logger.log(LogLevel.INFO, LogCategory.LANDING, 'Extermination progress registered', {
+        missionId: mission.id,
+        race,
+        kind,
+        progress: updated?.exterminationTarget
+      });
+      return updated;
+    }
+    return null;
+  }
+
+  private exterminationComplete(mission: PlanetMissionState): boolean {
+    const target = mission.exterminationTarget;
+    if (!target) {
+      return false;
+    }
+    return (
+      target.planetsDestroyed >= target.planetsRequired &&
+      target.stationsDestroyed >= target.stationsRequired
+    );
+  }
+
   /** Evaluates new cargo entries produced by mining to see if they satisfy material missions. */
   public handleCargoRegistered(entry: CargoManifestEntry): PlanetMissionState | null {
     if (!entry) {
@@ -441,6 +522,11 @@ export class MissionService {
       if (mission.type === 'hunt' && !mission.requiredCargoEntryId) {
         return;
       }
+      // Un exterminio SOLO está listo cuando la cuota de destrucción se ha cumplido: la marca
+      // `registerExterminationEvent`, nunca esta transición automática (mismo peligro que hunt).
+      if (mission.type === 'exterminate' && !this.exterminationComplete(mission)) {
+        return;
+      }
       if (this.missionMeetsClueRequirements(mission)) {
         mission.status = 'ready-to-turn-in';
         return;
@@ -456,6 +542,10 @@ export class MissionService {
       return true;
     }
     if (mission.requiredCargoEntryId) {
+      return true;
+    }
+    const extermination = mission.exterminationTarget;
+    if (extermination && extermination.planetsDestroyed + extermination.stationsDestroyed > 0) {
       return true;
     }
     return Boolean(mission.subTasks?.some(task => task.status === 'completed'));
@@ -567,6 +657,15 @@ export class MissionService {
       // La caza no ocurre en un planeta: el objetivo es una criatura en algún sistema del dominio.
       mission.objectiveSummary =
         mission.objectiveSummary ?? `Abate a la criatura señalada y trae la prueba a ${this.describePlanet(origin)}.`;
+      return;
+    }
+    if (mission.type === 'exterminate') {
+      const target = mission.exterminationTarget;
+      mission.objectiveSummary =
+        mission.objectiveSummary ??
+        (target
+          ? `Destruye ${target.planetsRequired} planeta(s) y ${target.stationsRequired} estación(es) de la raza señalada y vuelve a informar.`
+          : 'Termina la presencia de la raza señalada y vuelve a informar.');
       return;
     }
     if (mission.type === 'artifact') {

@@ -101,6 +101,10 @@ export class GameInputHandler {
       this.gameEngine.cycleWeapon(action === 'weapon_prev');
       event.preventDefault(); return true;
     }
+    if (action === 'mouse_flight_toggle') {
+      this.gameEngine.toggleMouseFlight();
+      event.preventDefault(); return true;
+    }
     if (action === 'clear_target') {
       // Forward to engine using default key (escape) regardless of rebound value
       this.gameEngine.handleKeyDown(this.keyBindings.getDefaultKey('clear_target'));

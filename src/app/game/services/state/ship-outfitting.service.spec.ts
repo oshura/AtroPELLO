@@ -3,6 +3,8 @@ import {
   ShipOutfittingHost,
   OutfittableShip,
   GREYS_ENGINE_TIER,
+  MIGO_ROTATION_SPEED,
+  MIGO_TURN_TIER,
 } from './ship-outfitting.service';
 import { ShipOutfitState, createDefaultShipOutfit } from '../../types/weapon.types';
 
@@ -11,6 +13,7 @@ function makeHarness() {
     maxSpeed: 20,
     acceleration: 2,
     deceleration: 2.5,
+    rotationSpeed: Math.PI / 2.5,
     voidEnergyMax: 100,
     voidEnergyCurrent: 40,
     cargoCapacityMax: 10,
@@ -113,6 +116,37 @@ describe('ShipOutfittingService', () => {
     service.addWeaponSlot(harness.host);
     expect(service.grantWeapon(harness.host, 'VULCAN')).toBe(true);
     expect(harness.outfit.weapons.map(w => w.weaponId)).toEqual(['GAUSS_ICE', 'VULCAN']);
+  });
+
+  it('el injerto de los Mi-Go instala maniobrador y retensa los giroscopios', () => {
+    const service = new ShipOutfittingService();
+    const harness = makeHarness();
+
+    expect(service.applyMiGoUpgrade(harness.host)).toBe(true);
+
+    expect(harness.outfit.mouseFlight).toBe(true);
+    expect(harness.outfit.turnTier).toBe(MIGO_TURN_TIER);
+    expect(harness.ship.rotationSpeed).toBe(MIGO_ROTATION_SPEED);
+    expect(harness.dynamicsChanges).toBe(1);
+  });
+
+  it('repetir el injerto de los Mi-Go no acumula nada', () => {
+    const service = new ShipOutfittingService();
+    const harness = makeHarness();
+
+    service.applyMiGoUpgrade(harness.host);
+    expect(service.applyMiGoUpgrade(harness.host)).toBe(false);
+    expect(harness.notices.length).toBe(1);
+  });
+
+  it('el injerto Mi-Go nunca rebaja un giro que ya era mejor', () => {
+    const service = new ShipOutfittingService();
+    const harness = makeHarness();
+    harness.ship.rotationSpeed = Math.PI; // giroscopios ya superiores
+
+    service.applyMiGoUpgrade(harness.host);
+
+    expect(harness.ship.rotationSpeed).toBe(Math.PI);
   });
 
   it('sin nave, las mejoras no explotan', () => {

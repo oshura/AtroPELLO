@@ -45,6 +45,16 @@ export interface RaceDefinition {
   /** Ofertas permanentes una vez ganada su confianza. */
   shop?: RaceShopOffer[];
   /**
+   * Cuándo abre la tienda: 'ally' (default) exige su confianza; 'neutral' vende también a
+   * desconocidos (los arácnidos comercian con cualquiera que no les haya disparado).
+   */
+  shopAvailability?: 'ally' | 'neutral';
+  /**
+   * Raza con ficha que NUNCA entra en el sorteo de habitantes: sólo existe donde la trama la
+   * coloca (arácnidos en su sistema de guerra, Yig en su sistema natal).
+   */
+  excludeFromPool?: boolean;
+  /**
    * Raza acólita: sirve a un primigenio y es hostil por definición. No habita planetas; aparece
    * por eventos y misiones. Hueco tipado para la fase de acólitos.
    */

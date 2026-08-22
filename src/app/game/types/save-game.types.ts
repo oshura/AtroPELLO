@@ -13,6 +13,7 @@ import { LandingStatus, LandingThreatState } from './landing.types';
 import { PlanetIntelSnapshot, PlanetMissionState } from './planet-intel.types';
 import { LesserBeingInstanceSnapshot, PlanetInhabitants } from './cosmic-life.types';
 import { RaceStanding } from './race.types';
+import { GateTuningState } from './gate-tuning.types';
 import { SolarSystemSnapshot } from './solar-system.types';
 import { ShipOutfitState } from './weapon.types';
 
@@ -122,6 +123,11 @@ export interface SaveGameCharacterState {
   storyFlags?: string[] | null;
   /** Reputación con cada raza (Fase 13). Opcional: sin ella, todas empiezan neutrales. */
   raceStandings?: Array<{ race: PlanetInhabitants; standing: RaceStanding }> | null;
+  /**
+   * Sintonía pendiente del próximo Rito de la Puerta (Fase 15). Opcional: guardar entre aceptar
+   * un encargo y lanzar el rito ya no pierde el destino prometido.
+   */
+  gateTuning?: GateTuningState | null;
 }
 
 export interface SaveGameInventoryState {

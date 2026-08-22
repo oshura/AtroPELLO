@@ -1,0 +1,82 @@
+{
+  "meta": {
+    "race": "MI_GO",
+    "memoryShare": 5,
+    "missionType": "exterminate",
+    "targetHint": "Lanza el Rito de la Puerta cuando quieras: la sintonía te dejará en su sistema. Tres mundos habitados, dos telares orbitales. Que no quede ninguno.",
+    "uniqueGlyphId": "VOID_COCOON",
+    "grantGlyphOnAccept": "VOID_KINESIS",
+    "exterminateTarget": { "race": "ARACNIDOS", "planets": 3, "stations": 2 },
+    "acceptOutfitText": "Trabajan sobre la nave sin pedir permiso, con esa delicadeza suya de forense. Injertan un nódulo húmedo bajo la consola —el maniobrador— y recablean los giroscopios con fibra que parece tendón. Cuando terminan, la nave responde al cursor como si te leyera la muñeca, y gira el doble de rápido de lo que recordabas.",
+    "acceptTune": {
+      "label": "Sistema arácnido",
+      "guaranteedInhabitants": "ARACNIDOS",
+      "guaranteedInhabitedCount": 3,
+      "stationTheme": "aracnida"
+    },
+    "postMissionTune": {
+      "race": "YIG",
+      "label": "Pedir la senda de Yig",
+      "text": "\"Un trato es un trato.\" Tres de ellos se posan sobre el casco y ajustan tu próximo rito con torsiones que duelen a la vista. \"La gran raza de Yig guarda el warp que cruza a las dimensiones donde ELLOS residen. Nosotros no entramos ahí. Tú, por lo visto, no sabes no entrar en los sitios. Su sistema natal espera al otro lado de tu próxima puerta. Sé cortés: las serpientes son anteriores a casi todo.\""
+    }
+  },
+  "offer": {
+    "scene": "Los ves antes de aterrizar: cuerpos como hongos quitinosos, alas que no baten y aun así vuelan, cabezas que son racimos de antenas donde deberían estar los ojos. No hablan. Hacen vibrar el aire directamente contra tu tímpano, en un castellano impecable y sin acento, aprendido de alguien a quien no quieres imaginar.\n\n\"El último humano. Sabíamos que acabarías cayendo por aquí. Los objetos en órbita decadente sois nuestra especialidad.\"\n\nUno de ellos rodea la nave, palpándola con las pinzas como un médico que ausculta. \"Podemos hacer negocio contigo. Nosotros pagamos con verdades. Y tenemos algunas sobre ti que nadie más te va a vender.\"",
+    "options": [
+      {
+        "id": "quienes-sois",
+        "label": "¿Qué sois exactamente?",
+        "text": "\"Cirujanos. Mineros. Archiveros. Depende del siglo. Cruzamos el vacío mucho antes de que tu especie bajara de los árboles, y lo cruzaremos mucho después de que tú, último de la serie, te apagues.\n\nNo servimos a ningún primigenio. Los ESTUDIAMOS. Es la única relación segura que se puede tener con ellos, y aun así perdemos una colonia cada pocos siglos por acercarnos demasiado.\""
+      },
+      {
+        "id": "secta",
+        "label": "Decís que tenéis verdades sobre mí.",
+        "text": "\"La tenemos. ¿Estás seguro de quererla? ... Bien.\n\nTu secta no fue idea vuestra. Ningún humano soñó jamás ese rito por su cuenta: os quedaba grande. Yog-Sothoth lo sembró. Él es la puerta y la llave; también es el susurro paciente que durante tres generaciones fue dejando caer fórmulas en los sueños de los tuyos, hasta que un puñado de monos listos creyó haber descubierto algo.\n\nErais su herramienta, humano. Una palanca desechable. Y las palancas no saben para qué puerta trabajan.\"\n\nAlgo se agrieta en tu memoria: la letra de los manuscritos de la secta, que nadie recordaba haber escrito. Las páginas que aparecían ya traducidas."
+      },
+      {
+        "id": "tierra",
+        "label": "¿Por qué la Tierra? ¿Por qué nosotros?",
+        "text": "\"Porque vuestro sistema no era vuestro. Era SUYO. De Cthulhu.\n\nEl que sueña tenía en vuestro mundo uno de sus lugares más adorados: dormía a temporadas bajo vuestros océanos, en una ciudad hundida que vuestros mitos rozaron sin entender. Miles de sistemas le rezan, pero pocos lo han ALOJADO. La Tierra sí.\n\nDestruir ese mundo con las manos de sus propios habitantes… para Yog-Sothoth eso no era estrategia. Era humor. Los primigenios llevan eones en guerra, y vosotros fuisteis un chiste que uno le gastó a otro.\"\n\nTe acuerdas del mar. De niño, de algo enorme soñando debajo. Creías que era un sueño tuyo."
+      },
+      {
+        "id": "yog-sothoth",
+        "label": "¿Habéis visto a Yog-Sothoth?",
+        "text": "\"Verlo, no. Nadie ve a la puerta y la llave: se ve lo que él quiere enseñar. Pero lo hemos MEDIDO.\n\nSe oculta tras congregaciones de burbujas. Esferas iridiscentes, del tamaño de lunas algunas, que derivan en enjambre. Todo lo que las toca se degrada: cascos, piedra, carne, luz. Un crucero nuestro entró en el enjambre hace novecientos años; volvió la mitad, y la mitad que volvió era más vieja que la que partió.\n\nSu ser vive en el centro de las burbujas. Eso es lo único que sabemos seguro, y nos costó una flota saberlo. Si algún día se te ocurre buscar ese centro, humano, ven antes a despedirte: nos gusta cerrar los archivos.\""
+      },
+      {
+        "id": "aracnidos",
+        "label": "¿Y qué queréis de mí?",
+        "text": "\"Expansión. Nuestras rutas crecen hacia un cúmulo rico en metales raros, y en medio hay un sistema infestado: los tejedores. Arácnidos del vacío. Tres mundos habitados, estaciones hiladas entre las órbitas como telas de araña, cazas que salen del hilo.\n\nNo negocian. Lo intentamos: se comieron a los tres emisarios y tejieron con las alas. No se mueven. No se extinguen solos.\n\nQueremos que TERMINES su presencia en ese sistema. Los tres planetas y los telares. Todo.\""
+      },
+      {
+        "id": "metodo",
+        "label": "¿Cómo se destruye un planeta?",
+        "text": "\"Tú ya sabes hacerlo. Lo has hecho una vez, con el tuyo.\n\nEl Rito de la Puerta consume el mundo sobre el que se lanza: donde había un planeta queda un portal. Lánzalo sobre cada mundo tejedor y habrás abierto tres puertas y cerrado tres nidos. Poético, para quien guste de esas cosas.\n\nY hay un camino más limpio, que te enseñaremos si aceptas: la Void Kinesis que condensa asteroides puede, bien canalizada, beberse la void mass de un planeta entero. El mundo se encoge, se apaga y desaparece; su masa pasa a tu depósito. Sin portal. Sin residuo. Nosotros lo llamamos cirugía.\""
+      },
+      {
+        "id": "pago",
+        "label": "¿Qué gano yo?",
+        "text": "\"Por adelantado: el maniobrador. Un injerto que liga la nave a tu cursor —donde señales, girará, y más deprisa cuanto más lejos señales—. Con los giroscopios retensados: los cazas tejedores vuelan en espiral y con tu giro actual eres comida. También el glifo de la cirugía, Void Kinesis, para arrancar mundos de raíz.\n\nAl volver con el sistema limpio: un capullo del vacío para tu grimorio, otro pedazo de tu memoria —lo tenemos archivado, no preguntes cómo— y nuestra tienda, que no abre para cualquiera.\n\nY una cosa más, que no cabe en una vitrina: una senda. Ya hablaremos de Yig.\""
+      }
+    ]
+  },
+  "clues": {
+    "minor": {
+      "cost": "1 metal + 1 orgánico",
+      "text": "Extienden un mapa que no es un dibujo sino un olor: el cúmulo tejedor huele a cobre quemado y a seda húmeda. Lo reconocerás al cruzar la puerta."
+    },
+    "major": {
+      "subTask": "sintonizar-rito",
+      "success": "Retuercen la sintonía de tu próximo Rito con seis manos a la vez. La puerta que abras caerá en el corazón del sistema tejedor.",
+      "failure": "La sintonía chirría. Algo, entre los hilos, ha notado el tirón."
+    },
+    "final": {
+      "cost": "-2 cordura",
+      "text": "Te enchufan un recuerdo ajeno: el interior de un telar orbital, visto por los ojos de un emisario que no volvió. Hilos. Miles de hilos. Y en cada cruce, un par de ojos."
+    }
+  },
+  "turnIn": {
+    "success": "Se posan alrededor de la nave en silencio, antenas orientadas hacia el vacío del que vienes, como catando el humo de tu estela. Saben lo que has hecho antes de que digas nada; probablemente lo supieron cuando pasó.\n\n\"El sistema está limpio. Los telares, deshechos. Eres más eficaz de lo que tu especie prometía.\"\n\nUno de ellos deposita en tu cabina algo que parece un molusco de cristal: al tocarlo se disuelve y un glifo nuevo arde en el grimorio — el capullo del vacío, la piel que disipa los golpes. \"Y esto es tuyo. Estaba en nuestros archivos.\" El aire vibra distinto, y de pronto recuerdas.",
+    "memoryFragment": "Recuerdas la primera reunión de la secta. El sótano, las velas baratas, la vergüenza de estar allí. Y recuerdas el CUADERNO: apareció en tu buzón sin remite, con las fórmulas ya escritas y tu nombre en la primera página, con una letra que no era de nadie. Todos jurasteis haberlo comprobado. Nadie lo había escrito. Seguisteis igual."
+  }
+}

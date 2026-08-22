@@ -162,7 +162,9 @@ import { ProjectileView } from './services/weapons/projectile-system';
 import { screenPointToWorldRay, ScreenRay } from './math/screen-ray';
 import { BeamRenderer } from './rendering/weapons/beam-renderer';
 import { ShipOutfittingService, ShipOutfittingHost } from './services/state/ship-outfitting.service';
+import { MouseFlightSystem, MouseFlightHost } from './services/input/mouse-flight-system';
 import { ELDER_GOD_LABELS } from './types/cosmic-life.types';
+import { GateTuningState } from './types/gate-tuning.types';
 import { MissionService } from './services/game/mission.service';
 import { WeaponEngineBridge } from './services/weapons/weapon-engine-bridge';
 import { DamageableLike } from './services/weapons/weapon-targets';
@@ -861,6 +863,39 @@ export class GameEngine {
   // Armamento del jugador (Fase 12 — docs/ARMAS.md). El motor solo cablea: la lógica vive fuera.
   /** Última posición del cursor en vuelo (para armas dirigidas con el ratón). */
   private flightPointer: { x: number; y: number } | null = null;
+  /** Vuelo por ratón (Fase 14): el maniobrador Mi-Go dirige pitch/yaw con el cursor. */
+  private readonly mouseFlight = new MouseFlightSystem();
+  /** Toggle del piloto (tecla `c`); el dispositivo además debe estar instalado en el outfit. */
+  private mouseFlightUserEnabled = true;
+  private readonly mouseFlightHost: MouseFlightHost = {
+    isDeviceInstalled: () => this.weaponBridge.getOutfit().mouseFlight === true,
+    isUserEnabled: () => this.mouseFlightUserEnabled,
+    areFlightInputsLocked: () =>
+      this.areSpellGameplayInputsLocked() || (this.panelEventCoordinator?.isAnyPanelActive() ?? false),
+    getPointer: () => {
+      const pointer = this.flightPointer;
+      const canvas = this.gl?.canvas as HTMLCanvasElement | undefined;
+      if (!pointer || !canvas) {
+        return null;
+      }
+      const rect = canvas.getBoundingClientRect();
+      return { x: pointer.x - rect.left, y: pointer.y - rect.top };
+    },
+    getCanvasSize: () => {
+      const canvas = this.gl?.canvas as HTMLCanvasElement | undefined;
+      if (!canvas) {
+        return null;
+      }
+      const rect = canvas.getBoundingClientRect();
+      return { width: rect.width, height: rect.height };
+    },
+    applyAnalog: (pitch, yaw) => {
+      if (this.spaceship) {
+        this.spaceship.analogPitch = pitch;
+        this.spaceship.analogYaw = yaw;
+      }
+    },
+  };
   private beamRenderer: BeamRenderer | null = null;
   private readonly shipOutfitting = new ShipOutfittingService();
   private readonly flightPointerRay: ScreenRay = {
@@ -4491,6 +4526,7 @@ export class GameEngine {
     this.lesserBeingSpawner?.update(deltaTime);
     this.lesserBeingController?.update(deltaTime);
     this.updateLesserBeings(deltaTime);
+    this.mouseFlight.update(this.mouseFlightHost);
     this.weaponBridge.update(deltaTime);
     this.spaceTurtleSystem.update(this.spaceTurtleHost, deltaTime);
     this.spaceStationSystem.update(this.spaceStationHost, deltaTime);
@@ -5672,6 +5708,28 @@ export class GameEngine {
     return this.shipOutfitting.applyGreysUpgrade(this.outfittingHost);
   }
 
+  /** Injerto de los Mi-Go (Fase 15): maniobrador de cursor y giroscopios retensados. */
+  public applyMiGoShipUpgrade(): boolean {
+    return this.shipOutfitting.applyMiGoUpgrade(this.outfittingHost);
+  }
+
+  /** Toggle del vuelo por ratón (tecla `c`); sólo tiene sentido con el maniobrador instalado. */
+  public toggleMouseFlight(): void {
+    if (this.weaponBridge.getOutfit().mouseFlight !== true) {
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.WARNING, 'SIN MANIOBRADOR: LOS MI-GO LO INJERTAN');
+      return;
+    }
+    this.mouseFlightUserEnabled = !this.mouseFlightUserEnabled;
+    if (this.spaceship && !this.mouseFlightUserEnabled) {
+      this.spaceship.analogPitch = 0;
+      this.spaceship.analogYaw = 0;
+    }
+    this.hudManager?.emitMarqueeEvent?.(
+      HudMarqueeEventType.SYSTEM,
+      this.mouseFlightUserEnabled ? 'MANIOBRADOR DE CURSOR: ACTIVO' : 'MANIOBRADOR DE CURSOR: APAGADO'
+    );
+  }
+
   /** Compra en la tienda de una raza. */
   public applyRaceShopEffect(effect: 'weapon' | 'weapon_slot' | 'engine_tier', weaponId?: WeaponId): boolean {
     if (effect === 'engine_tier') {
@@ -5688,11 +5746,23 @@ export class GameEngine {
    * para mandarte a territorio de Yog-Sothoth sin que tengas que buscarlo a ciegas.
    */
   public tuneNextGateRite(elderGod: ElderGod | null): void {
-    this.gameState.setGateTuning(elderGod);
-    if (elderGod) {
+    if (!elderGod) {
+      this.gameState.setGateTuning(null);
+      return;
+    }
+    this.tuneNextGateRiteWith({ forcedElderGod: elderGod }, ELDER_GOD_LABELS[elderGod]);
+  }
+
+  /**
+   * Sintonía completa del próximo rito (Fase 15): destinos con raza garantizada, número de mundos
+   * habitados y tema de estaciones (el sistema de guerra arácnido, el sistema natal de Yig…).
+   */
+  public tuneNextGateRiteWith(tuning: GateTuningState, noticeLabel?: string): void {
+    this.gameState.setGateTuning(tuning);
+    if (noticeLabel) {
       this.hudManager?.emitMarqueeEvent?.(
         HudMarqueeEventType.SYSTEM,
-        `RITO SINTONIZADO: ${ELDER_GOD_LABELS[elderGod].toUpperCase()}`
+        `RITO SINTONIZADO: ${noticeLabel.toUpperCase()}`
       );
     }
   }

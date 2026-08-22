@@ -53,6 +53,89 @@ export const RACE_CATALOG: Partial<Record<PlanetInhabitants, RaceDefinition>> = 
       },
     ],
   },
+
+  /**
+   * Los Mi-Go — segunda raza de la trama (Fase 15). Cirujanos del vacío que estudian la obra de
+   * Yog-Sothoth desde fuera. Revelan quién creó de verdad la secta humana y arman al piloto para
+   * su guerra contra los tejedores arácnidos.
+   */
+  [PlanetInhabitants.MI_GO]: {
+    id: PlanetInhabitants.MI_GO,
+    label: 'Mi-Go',
+    description:
+      'Hongos quitinosos con alas que no baten y manos de cirujano. Coleccionan cerebros, ' +
+      'mapas y verdades incómodas; las tres cosas se pagan.',
+    threatenedBy: ElderGod.YOG_SOTHOTH,
+    defaultAttitude: GameObjectAnimosity.NEUTRAL,
+    dialogueScriptId: 'landing_missions_migo',
+    teachableGlyph: SpellType.QUIMIO_SIGILLUM,
+    shop: [
+      {
+        id: 'migo-missile',
+        label: 'Misil de enjambre',
+        description: 'Persigue al objetivo fijado. Diseñado para reventar telarañas.',
+        effect: 'weapon',
+        weaponId: 'MISSILE',
+        cost: { metallic: 10, silicate: 5 },
+      },
+      {
+        id: 'migo-extra-hardpoint',
+        label: 'Anclaje de arma adicional',
+        description: 'Injertan un soporte quitinoso bajo el ala.',
+        effect: 'weapon_slot',
+        cost: { metallic: 8, organic: 6 },
+      },
+    ],
+  },
+
+  /**
+   * Tejedores arácnidos — antagonistas de los Mi-Go (Fase 15). Elusivos: no conversan apenas,
+   * pero venden minas a cualquiera y pagan por traición. Neutrales hasta el primer disparo.
+   */
+  [PlanetInhabitants.ARACNIDOS]: {
+    id: PlanetInhabitants.ARACNIDOS,
+    label: 'Tejedores arácnidos',
+    description:
+      'Colonias de arácnidos del vacío que hilan estaciones-telaraña entre sus mundos. ' +
+      'No les interesas: solo tu carga, y sólo a veces.',
+    threatenedBy: ElderGod.AZATHOTH,
+    defaultAttitude: GameObjectAnimosity.NEUTRAL,
+    dialogueScriptId: 'landing_missions_aracnidos',
+    excludeFromPool: true,
+    shopAvailability: 'neutral',
+    shop: [
+      {
+        id: 'aracnid-drone-mine',
+        label: 'Mina-drone tejida',
+        description: 'Guiada con el ratón. La sueltan de sus telares sin hacer preguntas.',
+        effect: 'weapon',
+        weaponId: 'DRONE_MINE',
+        cost: { metallic: 5, organic: 5 },
+      },
+      {
+        id: 'aracnid-extra-hardpoint',
+        label: 'Anclaje de seda tensada',
+        description: 'Un arnés de hilo negro que aguanta un arma más.',
+        effect: 'weapon_slot',
+        cost: { metallic: 6, silicate: 6 },
+      },
+    ],
+  },
+
+  /**
+   * La gran raza de Yig — gancho de la próxima fase. Sólo aparece si los Mi-Go sintonizan el rito
+   * hacia su sistema natal; de momento, un teaser sin misión (el warp llegará con su ficha real).
+   */
+  [PlanetInhabitants.YIG]: {
+    id: PlanetInhabitants.YIG,
+    label: 'Serpientes de Yig',
+    description:
+      'Guardianes del warp que cruza hacia las dimensiones donde residen los primigenios. ' +
+      'Aún no responden.',
+    defaultAttitude: GameObjectAnimosity.NEUTRAL,
+    dialogueScriptId: 'landing_missions_yig',
+    excludeFromPool: true,
+  },
 };
 
 export function getRaceDefinition(race: PlanetInhabitants | null | undefined): RaceDefinition | null {
@@ -75,6 +158,6 @@ export function getDefinedRaces(): RaceDefinition[] {
  */
 export function getPoolableRaces(): PlanetInhabitants[] {
   return getDefinedRaces()
-    .filter(race => !race.isAcolyte)
+    .filter(race => !race.isAcolyte && !race.excludeFromPool)
     .map(race => race.id);
 }

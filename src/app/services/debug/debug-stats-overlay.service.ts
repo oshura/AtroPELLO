@@ -102,6 +102,7 @@ export class DebugStatsOverlayService {
           <div class="dbg-controls-row">
             <button id="dbg-btn-install-all-weapons">Montar todas</button>
             <button id="dbg-btn-clear-weapons">Desmontar todas</button>
+            <button id="dbg-btn-migo-upgrade">Injerto Mi-Go (ratón+giro)</button>
           </div>
           <div class="dbg-subheader">Spawn Lesser Beings</div>
           <div class="dbg-controls-row">
@@ -402,6 +403,19 @@ export class DebugStatsOverlayService {
     const clearBtn = this.overlayElement?.querySelector('#dbg-btn-clear-weapons') as HTMLButtonElement | null;
     if (clearBtn) {
       clearBtn.onclick = () => this.handleClearDebugWeapons();
+    }
+    // Injerto Mi-Go sin pasar por su misión: maniobrador de cursor + giroscopios (Fase 14).
+    const migoBtn = this.overlayElement?.querySelector('#dbg-btn-migo-upgrade') as HTMLButtonElement | null;
+    if (migoBtn) {
+      migoBtn.onclick = () => {
+        const engine = this.getEngine();
+        if (!engine || typeof engine.applyMiGoShipUpgrade !== 'function') {
+          this.showToolStatus('Engine no disponible para el injerto Mi-Go');
+          return;
+        }
+        const applied = engine.applyMiGoShipUpgrade();
+        this.showToolStatus(applied ? 'Injerto Mi-Go aplicado (tecla c = toggle)' : 'El injerto Mi-Go ya estaba aplicado');
+      };
     }
   }
 

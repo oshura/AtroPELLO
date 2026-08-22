@@ -758,7 +758,13 @@ function buildRichPlayerSection(): SaveGamePlayerSection {
       },
       memoryPercent: 42,
       characterId: 'pilot-helio',
-      storyFlags: ['greys-system-seeded']
+      storyFlags: ['greys-system-seeded'],
+      // Sintonía pendiente (Fase 15): cubre el round-trip del destino prometido por una raza.
+      gateTuning: {
+        guaranteedInhabitants: 'ARACNIDOS',
+        guaranteedInhabitedCount: 3,
+        stationTheme: 'aracnida'
+      }
     },
     inventory: {
       personalGear,

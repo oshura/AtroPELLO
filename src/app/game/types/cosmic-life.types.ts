@@ -14,8 +14,13 @@ export enum PlanetInhabitants {
   GHASTS = 'GHASTS',
   VAMPIRO_ESTELAR = 'VAMPIRO_ESTELAR',
   BYHKEE = 'BYHKEE',
-  /** Los Grises: primera raza de la trama (Fase 13). Nunca aparecen por azar. */
-  GRISES = 'GRISES'
+  /** Los Grises: primera raza de la trama (Fase 13). */
+  GRISES = 'GRISES',
+  /**
+   * Tejedores arácnidos (Fase 15): raza antagonista de los Mi-Go. Sólo habitan su sistema de
+   * guerra (sintonía del Gate Rite); nunca entran en el sorteo de planetas.
+   */
+  ARACNIDOS = 'ARACNIDOS'
 }
 
 /**
@@ -70,7 +75,8 @@ export const PLANET_INHABITANT_LABELS: Record<PlanetInhabitants, string> = {
   [PlanetInhabitants.GHASTS]: 'Ghasts',
   [PlanetInhabitants.VAMPIRO_ESTELAR]: 'Vampiro estelar',
   [PlanetInhabitants.BYHKEE]: 'Byh-Kee',
-  [PlanetInhabitants.GRISES]: 'Los Grises'
+  [PlanetInhabitants.GRISES]: 'Los Grises',
+  [PlanetInhabitants.ARACNIDOS]: 'Tejedores arácnidos'
 };
 
 export const LESSER_BEING_LABELS: Record<LesserBeing, string> = {

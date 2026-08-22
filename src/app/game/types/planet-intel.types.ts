@@ -24,8 +24,21 @@ export interface PlanetIntelState {
   lesserBeingIntelStatus: PlanetIntelStatus;
 }
 
-/** 'hunt' = abatir a una criatura concreta y traer la prueba (Fase 13). */
-export type PlanetMissionType = 'artifact' | 'material' | 'hunt';
+/**
+ * 'hunt' = abatir a una criatura concreta y traer la prueba (Fase 13).
+ * 'exterminate' = terminar la presencia de una raza: sus planetas y estaciones (Fase 15).
+ */
+export type PlanetMissionType = 'artifact' | 'material' | 'hunt' | 'exterminate';
+
+/** Progreso de un exterminio: qué pide la raza y cuánto lleva destruido el jugador. */
+export interface MissionExterminationTarget {
+  /** Raza a exterminar (valor de `PlanetInhabitants`). */
+  race: string;
+  planetsRequired: number;
+  stationsRequired: number;
+  planetsDestroyed: number;
+  stationsDestroyed: number;
+}
 export type PlanetMissionStatus =
   | 'offered'
   | 'accepted'
@@ -115,6 +128,8 @@ export interface PlanetMissionState {
   originPlanetId?: string;
   /** Criatura a abatir en una misión de caza. */
   huntTarget?: { lesserBeing: string; elderGod?: string };
+  /** Objetivo y progreso de una misión de exterminio (Fase 15). */
+  exterminationTarget?: MissionExterminationTarget;
   objectiveSummary?: string;
   targetHint?: string;
   clueTokens: MissionClueToken[];

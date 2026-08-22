@@ -119,6 +119,10 @@ export interface ShipOutfitState {
   weapons: InstalledWeaponState[];
   /** Índice dentro de `weapons` del arma seleccionada. -1 si no hay ninguna. */
   selectedWeaponIndex: number;
+  /** Maniobrador Mi-Go instalado: la nave puede pilotarse con el cursor (Fase 14). Opcional. */
+  mouseFlight?: boolean;
+  /** Nivel de giroscopios (0 = de fábrica). Sube la velocidad de giro. Opcional. */
+  turnTier?: number;
 }
 
 /** Outfit de la nave recién estrenada: sin armas ni mejoras. */

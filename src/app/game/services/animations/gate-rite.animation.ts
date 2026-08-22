@@ -788,10 +788,21 @@ export class GateRiteAnimation extends BaseAnimation {
             // contradice la historia (los Grises pelearon contra su raza acólita).
             genOptions.excludedElderGod = ElderGod.YOG_SOTHOTH;
           }
-          // Rito sintonizado por una raza hacia el dominio de un primigenio: de un solo uso.
+          // Rito sintonizado por una raza: de un solo uso. Puede dirigir el primigenio dominante
+          // (Grises → Yog-Sothoth) o el destino completo (Mi-Go → sistema de guerra arácnido con
+          // 3 mundos habitados y estaciones telaraña; tras su misión → sistema natal de Yig).
           const tuning = !seedsGreys ? engine.gameState?.consumeGateTuning?.() ?? null : null;
           if (tuning) {
-            genOptions.forcedElderGod = tuning;
+            if (tuning.forcedElderGod) {
+              genOptions.forcedElderGod = tuning.forcedElderGod;
+            }
+            if (tuning.excludedElderGod) {
+              genOptions.excludedElderGod = tuning.excludedElderGod;
+            }
+            if (tuning.guaranteedInhabitants) {
+              genOptions.guaranteedInhabitants = tuning.guaranteedInhabitants;
+              genOptions.guaranteedInhabitedCount = tuning.guaranteedInhabitedCount;
+            }
           }
           const directed = seedsGreys || !!tuning;
 
@@ -828,6 +839,10 @@ export class GateRiteAnimation extends BaseAnimation {
             // Si el rito iba dirigido, el jugador SABE a dónde llega: el mapa lo muestra.
             if (tuning) {
               snapshot.meta.elderGodRevealed = true;
+            }
+            // Tema de estaciones del destino (Fase 15): el sistema de guerra arácnido trae telarañas.
+            if (tuning?.stationTheme) {
+              snapshot.meta.stationTheme = tuning.stationTheme;
             }
             if (!snapshot.meta.proceduralSystemId && snapshot.id) {
               snapshot.meta.proceduralSystemId = snapshot.id;

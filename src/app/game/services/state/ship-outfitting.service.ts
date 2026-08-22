@@ -14,6 +14,8 @@ export interface OutfittableShip {
   maxSpeed: number;
   acceleration: number;
   deceleration: number;
+  /** Velocidad de giro (rad/s); ya persiste en el savegame de la nave. */
+  rotationSpeed: number;
   voidEnergyMax: number;
   voidEnergyCurrent: number;
   cargoCapacityMax: number;
@@ -36,6 +38,13 @@ const GREYS_MAX_SPEED = 100;
 const GREYS_ACCELERATION = 10;
 const GREYS_DECELERATION = 12.5;
 const GREYS_VOID_ENERGY_MAX = 1000;
+
+/**
+ * Paquete de los Mi-Go (Fase 15): maniobrador de cursor y giroscopios retensados.
+ * El giro pasa de PI/2.5 (~72°/s) a PI/1.6 (~112°/s): sin él, los cazas tejedores te comen.
+ */
+export const MIGO_TURN_TIER = 1;
+export const MIGO_ROTATION_SPEED = Math.PI / 1.6;
 
 export class ShipOutfittingService {
   /**
@@ -71,6 +80,35 @@ export class ShipOutfittingService {
       maxSpeed: ship.maxSpeed,
       voidEnergyMax: ship.voidEnergyMax,
       engineTier: GREYS_ENGINE_TIER,
+    });
+    return true;
+  }
+
+  /**
+   * Paquete completo de los Mi-Go: maniobrador de vuelo por cursor y más capacidad de giro.
+   * Idempotente: repetirlo no acumula nada.
+   */
+  public applyMiGoUpgrade(host: ShipOutfittingHost): boolean {
+    const ship = host.getShip();
+    if (!ship) {
+      return false;
+    }
+    const outfit = host.getOutfit();
+    if (outfit.mouseFlight && (outfit.turnTier ?? 0) >= MIGO_TURN_TIER) {
+      return false;
+    }
+
+    ship.rotationSpeed = Math.max(ship.rotationSpeed, MIGO_ROTATION_SPEED);
+    host.applyOutfit({
+      ...outfit,
+      mouseFlight: true,
+      turnTier: Math.max(outfit.turnTier ?? 0, MIGO_TURN_TIER),
+    });
+    host.onDynamicsChanged();
+    host.emitNotice('INJERTO MI-GO: MANIOBRADOR DE CURSOR + GIROSCOPIOS');
+    host.logInfo('Mejora de los Mi-Go aplicada', {
+      rotationSpeed: ship.rotationSpeed,
+      turnTier: MIGO_TURN_TIER,
     });
     return true;
   }

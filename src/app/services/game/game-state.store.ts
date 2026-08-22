@@ -38,6 +38,7 @@ import {
 } from '../../game/types/planet-intel.types';
 import { LesserBeingInstanceSnapshot, PlanetInhabitants } from '../../game/types/cosmic-life.types';
 import { RaceStanding, createDefaultStanding } from '../../game/types/race.types';
+import { GateTuningState, isGateTuningEmpty } from '../../game/types/gate-tuning.types';
 
 /** Resultado de otorgar experiencia: dice si hubo promoción, que la barra por sí sola oculta. */
 export interface ExperienceGainResult {
@@ -230,10 +231,10 @@ export class GameStateStore {
   /** Reputación con cada raza (Fase 13). Persiste con el personaje. */
   private readonly raceStandings = new Map<PlanetInhabitants, RaceStanding>();
   /**
-   * Primigenio hacia el que está sintonizado el PRÓXIMO Rito de la Puerta, o null.
-   * Es de un solo uso: lo consume el rito al generar el sistema destino.
+   * Sintonía del PRÓXIMO Rito de la Puerta, o null (Fases 13–15). De un solo uso: la consume el
+   * rito al generar el destino. Persiste con el personaje para sobrevivir a un save intermedio.
    */
-  private gateTuning: string | null = null;
+  private gateTuning: GateTuningState | null = null;
   /** Layout personalizado de glifos del grimorio (coordenadas normalizadas 0..1) */
   public grimoireGlyphLayout: Partial<Record<SpellType, { nx: number; ny: number }>> = {};
   /** Identificador persistente del piloto para Cloud Saves / progresión. */
@@ -1308,20 +1309,20 @@ export class GameStateStore {
     }
   }
 
-  /** Sintoniza el próximo Rito de la Puerta hacia un dominio (null lo desactiva). */
-  setGateTuning(elderGod: string | null): void {
-    this.gateTuning = elderGod;
+  /** Sintoniza el próximo Rito de la Puerta (null o sintonía vacía lo desactivan). */
+  setGateTuning(tuning: GateTuningState | null): void {
+    this.gateTuning = isGateTuningEmpty(tuning) ? null : { ...tuning! };
   }
 
   /** Lee y CONSUME la sintonía: el siguiente rito ya no la tendrá. */
-  consumeGateTuning(): string | null {
+  consumeGateTuning(): GateTuningState | null {
     const tuning = this.gateTuning;
     this.gateTuning = null;
     return tuning;
   }
 
-  peekGateTuning(): string | null {
-    return this.gateTuning;
+  peekGateTuning(): GateTuningState | null {
+    return this.gateTuning ? { ...this.gateTuning } : null;
   }
 
   /** Reputación con una raza (nunca null: por defecto, neutral y sin misiones). */

@@ -1,0 +1,33 @@
+{
+  "meta": {
+    "race": "ARACNIDOS",
+    "memoryShare": 0,
+    "missionType": "exterminate",
+    "targetHint": "Un mundo con hongos alados. Cualquiera. Que arda.",
+    "exterminateTarget": { "race": "MI_GO", "planets": 1, "stations": 0 }
+  },
+  "offer": {
+    "scene": "Aterrizas entre torres de seda endurecida. Nadie sale a recibirte. Los hilos que cruzan el cielo vibran a tu paso — te están sopesando, literalmente: peso, carga, valor.\n\nAl rato, un único hilo baja hasta la altura de tu cabeza y vibra en algo parecido a un idioma.\n\n\"Comercio. O nada.\"\n\nEso es todo. No parece que vayan a repetirlo.",
+    "options": [
+      {
+        "id": "hablar",
+        "label": "Intentar conversar",
+        "text": "El hilo vibra una sola vez, seco, como una cuerda que se desafina a propósito. Varios racimos de ojos se apagan a la vez en las torres: han dejado de mirarte. Es la respuesta más elocuente que vas a conseguir."
+      },
+      {
+        "id": "minas",
+        "label": "¿Qué vendéis?",
+        "text": "\"Huevos que muerden.\" El hilo señala —si un hilo puede señalar— hacia un racimo de esferas oscuras suspendidas en la tela, cada una envuelta en su propio capullo. Minas-drone: las tejen aquí y las venden a cualquiera con carga que pese. A cualquiera. Da la impresión de que la palabra 'bando' no vibra en su idioma."
+      },
+      {
+        "id": "hongos",
+        "label": "¿Qué sabéis de los Mi-Go?",
+        "text": "El hilo se tensa tanto que silba. Durante un instante TODOS los ojos del asentamiento te miran a la vez.\n\n\"Hongos. Roban. Miden. Vuelven.\" Una pausa larga, y después, con una claridad que no habían gastado contigo hasta ahora: \"Un mundo suyo, a cambio de precio. Cualquiera de sus mundos. Que no vuelvan.\"\n\nEs un encargo. Aparentemente también hacen eso."
+      }
+    ]
+  },
+  "turnIn": {
+    "success": "Los hilos vibran antes de que toques el suelo: ya lo saben. Un mundo de hongos menos.\n\nDel techo de la tela desciende un fardo envuelto en seda negra: raciones de su comercio, sin ceremonia y sin gratitud. El hilo de siempre baja y vibra una última vez, casi con pereza.\n\n\"Cuenta saldada.\"\n\nY los ojos se apagan. Para ellos ya eres, otra vez, solo peso y carga.",
+    "memoryFragment": "No recuperas ningún recuerdo. Los tejedores no comercian con memoria; solo con peso. Lo que sí te llevas es la certeza incómoda de haber elegido un bando a base de quemar el otro."
+  }
+}

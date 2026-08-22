@@ -36,6 +36,14 @@ export class Spaceship extends GameObject {
   public currentSpeed: number = 0.0;
   public targetSpeed: number = 0.0;
   public forwardDirection: Vector3 = { x: 0, y: 0, z: 1 }; // Dirección hacia adelante
+
+  /**
+   * Demanda ANALÓGICA de giro [-1, 1] (vuelo por ratón, Fase 14). El maniobrador Mi-Go la escribe
+   * cada frame; 0 = sin efecto. Positivo: morro arriba en pantalla / morro a la derecha. Se aplica
+   * ADEMÁS de las teclas, con la misma velocidad de giro y la misma penalización por velocidad.
+   */
+  public analogPitch: number = 0;
+  public analogYaw: number = 0;
   
   // Estado del motor para efectos visuales
   public isThrusting: boolean = false;
@@ -403,7 +411,25 @@ export class Spaceship extends GameObject {
       quat.multiply(this.orientationQuaternion, rollQuat, this.orientationQuaternion);
       hasRotation = true;
     }
-    
+
+    // Vuelo por ratón (Fase 14): demanda analógica de pitch/yaw, ADEMÁS de las teclas. Mismos
+    // ejes y misma velocidad de giro efectiva; la magnitud [-1,1] escala la deflexión. El roll
+    // queda deliberadamente fuera: sigue siendo Q/E (decisión de diseño).
+    const analogPitch = Math.max(-1, Math.min(1, this.analogPitch));
+    if (analogPitch !== 0) {
+      const pitchQuat = quat.create();
+      quat.setAxisAngle(pitchQuat, rightAxis, deltaRotation * analogPitch);
+      quat.multiply(this.orientationQuaternion, pitchQuat, this.orientationQuaternion);
+      hasRotation = true;
+    }
+    const analogYaw = Math.max(-1, Math.min(1, this.analogYaw));
+    if (analogYaw !== 0) {
+      const yawQuat = quat.create();
+      quat.setAxisAngle(yawQuat, upAxis, -deltaRotation * analogYaw);
+      quat.multiply(this.orientationQuaternion, yawQuat, this.orientationQuaternion);
+      hasRotation = true;
+    }
+
     // Actualizar matriz solo si hubo rotación
     if (hasRotation) {
       // Normalizar el quaternion para evitar drift

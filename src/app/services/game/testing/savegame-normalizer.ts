@@ -34,6 +34,8 @@ function normalizePlayerSection(section: SaveGamePlayerSection): void {
   if (section.character) {
     // Hitos de historia: opcionales y sin orden significativo (Fase 13).
     section.character.storyFlags = sortBy(section.character.storyFlags ?? [], flag => flag ?? '');
+    // Sintonía del rito: opcional (Fase 15); null explícito para comparar round-trips.
+    section.character.gateTuning = section.character.gateTuning ?? null;
   }
   if (section.ship) {
     // El outfit es opcional (savegames anteriores a la Fase 12): sin él, nave sin armamento.

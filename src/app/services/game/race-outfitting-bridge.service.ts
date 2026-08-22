@@ -2,6 +2,7 @@ import { Injectable, inject } from '@angular/core';
 import { getRaceDefinition } from '../../game/config/race-catalog.config';
 import { PlanetInhabitants } from '../../game/types/cosmic-life.types';
 import { RaceShopOffer } from '../../game/types/race.types';
+import { GateTuningState } from '../../game/types/gate-tuning.types';
 import { CargoCompositionKind } from '../../game/types/inventory.types';
 import { GameStateStore } from './game-state.store';
 import { LoggingService, LogCategory, LogLevel } from '../logging.service';
@@ -16,8 +17,10 @@ import { LoggingService, LogCategory, LogLevel } from '../logging.service';
 /** Lo que el puente necesita del motor. Lo cumple `GameEngine`. */
 export interface RaceOutfittingEngine {
   applyGreysShipUpgrade(): boolean;
+  applyMiGoShipUpgrade(): boolean;
   applyRaceShopEffect(effect: 'weapon' | 'weapon_slot' | 'engine_tier', weaponId?: string): boolean;
   tuneNextGateRite(elderGod: string | null): void;
+  tuneNextGateRiteWith(tuning: GateTuningState, noticeLabel?: string): void;
 }
 
 @Injectable({ providedIn: 'root' })
@@ -36,11 +39,17 @@ export class RaceOutfittingBridgeService {
    * Devuelve true si la nave cambió realmente.
    */
   applyRaceUpgrade(race: PlanetInhabitants): boolean {
-    if (race !== PlanetInhabitants.GRISES || !this.engine) {
+    if (!this.engine) {
       return false;
     }
     try {
-      return this.engine.applyGreysShipUpgrade();
+      if (race === PlanetInhabitants.GRISES) {
+        return this.engine.applyGreysShipUpgrade();
+      }
+      if (race === PlanetInhabitants.MI_GO) {
+        return this.engine.applyMiGoShipUpgrade();
+      }
+      return false;
     } catch (error) {
       this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'No se pudo aplicar la mejora de raza', { race, error });
       return false;
@@ -56,13 +65,33 @@ export class RaceOutfittingBridgeService {
     }
   }
 
-  /** Ofertas disponibles de una raza, una vez es aliada. */
+  /** Sintonía completa (Fase 15): destinos con raza garantizada, mundos y estaciones. */
+  tuneNextGateRiteWith(tuning: GateTuningState, noticeLabel?: string): void {
+    try {
+      this.engine?.tuneNextGateRiteWith(tuning, noticeLabel);
+    } catch (error) {
+      this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'No se pudo sintonizar el rito', { tuning, error });
+    }
+  }
+
+  /**
+   * Ofertas disponibles de una raza. Por defecto exigen su confianza (ally); las razas con
+   * `shopAvailability: 'neutral'` venden también a desconocidos. Un hostil no compra nada.
+   */
   getShopOffers(race: PlanetInhabitants): RaceShopOffer[] {
-    const standing = this.gameState.getRaceStanding(race);
-    if (standing.standing !== 'ally') {
+    const definition = getRaceDefinition(race);
+    if (!definition?.shop?.length) {
       return [];
     }
-    return getRaceDefinition(race)?.shop ?? [];
+    const standing = this.gameState.getRaceStanding(race).standing;
+    if (standing === 'hostile') {
+      return [];
+    }
+    const required = definition.shopAvailability ?? 'ally';
+    if (required === 'ally' && standing !== 'ally') {
+      return [];
+    }
+    return definition.shop;
   }
 
   /**

@@ -2,6 +2,7 @@ import { Injectable } from '@angular/core';
 import { Planet } from '../../game/game-objects/Planet';
 import { getRaceDefinition } from '../../game/config/race-catalog.config';
 import { PLANET_INHABITANT_LABELS, PlanetInhabitants } from '../../game/types/cosmic-life.types';
+import { SpellType, getSpellLabel } from '../../game/types/spell.types';
 import {
   DialogueChoice,
   DialogueLine,
@@ -58,6 +59,22 @@ export class DialogueService {
     this.script = script;
     this.askedOptionIds = new Set<string>();
 
+    // Un hostil no negocia: la conversación nace cerrada, con la puerta en las narices.
+    const race = planet.inhabitants ?? PlanetInhabitants.NONE;
+    if (this.gameState.getRaceStanding?.(race)?.standing === 'hostile') {
+      this.state = {
+        raceLabel: this.resolveRaceLabel(planet.inhabitants),
+        phase: 'closed',
+        log: [{
+          speaker: 'narrator',
+          text: 'Nadie sale a recibirte. Lo que sea que vive aquí te observa desde dentro, y no como a un visitante.'
+        }],
+        choices: [{ id: 'leave', label: 'Marcharse', kind: 'leave' }],
+        missionSummary: null,
+      };
+      return this.state;
+    }
+
     const mission = this.findMission(planet);
     const phase = mission && this.isReadyToTurnIn(mission) ? 'turn-in' : 'offer';
     const opening = phase === 'turn-in' ? script.turnIn.success : script.offer.scene;
@@ -94,6 +111,9 @@ export class DialogueService {
       case 'turn-in':
         this.turnInMission(state, script, planet);
         break;
+      case 'tune':
+        this.applyPostMissionTune(state, script);
+        break;
       case 'leave':
         this.end();
         return this.state;
@@ -123,6 +143,9 @@ export class DialogueService {
   private acceptMission(state: DialogueSessionState, script: RaceMissionScript, planet: Planet): void {
     const race = planet.inhabitants ?? PlanetInhabitants.NONE;
     const meta = script.meta;
+    if (meta.missionType === 'none') {
+      return; // guiones teaser: no hay encargo que aceptar
+    }
     const offered = this.missions.offerMission(planet, {
       race,
       type: meta.missionType,
@@ -136,6 +159,7 @@ export class DialogueService {
       },
       originPlanetId: planet.id,
       huntTarget: meta.huntTarget,
+      exterminateTarget: meta.exterminateTarget,
       trophyLabel: meta.trophyLabel,
     });
     this.missions.acceptMission(offered.id);
@@ -145,15 +169,32 @@ export class DialogueService {
     state.log.push({ speaker: 'narrator', text: 'Aceptas el encargo.' });
 
     // Lo que la raza pone de su parte al cerrar el trato: sin la nave lista, el encargo es
-    // imposible. Los Grises reacondicionan el casco y sintonizan tu próximo Rito de la Puerta.
+    // imposible (los Grises rearman el casco; los Mi-Go injertan el maniobrador y los giroscopios).
     const outfitted = this.engineBridge.applyRaceUpgrade(race);
     if (outfitted) {
       state.log.push({
         speaker: 'narrator',
-        text: 'Desmontan medio casco en silencio. Cuando terminan, la nave zumba distinto: más toberas, un cañón bajo el ala y un depósito de vacío que ya no reconoces.'
+        text: meta.acceptOutfitText ??
+          'Desmontan medio casco en silencio. Cuando terminan, la nave zumba distinto: más toberas, un cañón bajo el ala y un depósito de vacío que ya no reconoces.'
       });
     }
-    if (meta.huntTarget?.elderGod) {
+    // La herramienta del trabajo se enseña al aceptar, no al cobrar (los Mi-Go: Void Kinesis).
+    const grantedGlyph = this.resolveGlyph(meta.grantGlyphOnAccept);
+    if (grantedGlyph && !this.gameState.hasSpell(grantedGlyph)) {
+      this.gameState.learnSpell(grantedGlyph);
+      state.log.push({
+        speaker: 'narrator',
+        text: `Un glifo nuevo arde en tu grimorio: ${getSpellLabel(grantedGlyph)}.`
+      });
+    }
+    if (meta.acceptTune) {
+      const { label, ...tuning } = meta.acceptTune;
+      this.engineBridge.tuneNextGateRiteWith(tuning, label);
+      state.log.push({
+        speaker: 'narrator',
+        text: 'Sintonizan tu próximo Rito de la Puerta. La siguiente puerta que abras se inclinará hacia el destino pactado.'
+      });
+    } else if (meta.huntTarget?.elderGod) {
       this.engineBridge.tuneNextGateRite(meta.huntTarget.elderGod);
       state.log.push({
         speaker: 'narrator',
@@ -169,6 +210,26 @@ export class DialogueService {
       race,
       planetId: planet.id,
     });
+  }
+
+  /** Sintonía post-misión (la senda de Yig): disponible siempre que la raza ya confíe en ti. */
+  private applyPostMissionTune(state: DialogueSessionState, script: RaceMissionScript): void {
+    const tune = script.meta.postMissionTune;
+    if (!tune) {
+      return;
+    }
+    this.engineBridge.tuneNextGateRiteWith({ guaranteedInhabitants: tune.race }, tune.label);
+    state.log.push({ speaker: 'race', text: tune.text });
+  }
+
+  /** Un nombre de glifo en el guion sólo vale si nombra un hechizo real. */
+  private resolveGlyph(name: string | undefined): SpellType | null {
+    if (!name) {
+      return null;
+    }
+    const candidate = name.toUpperCase();
+    const known = Object.values(SpellType).find(spell => String(spell).toUpperCase() === candidate);
+    return (known as SpellType) ?? null;
   }
 
   private turnInMission(state: DialogueSessionState, script: RaceMissionScript, planet: Planet): void {
@@ -219,11 +280,15 @@ export class DialogueService {
       }
       if (!mission) {
         // Un encargo cumplido no se vuelve a ofrecer: cada raza tiene el suyo, una vez.
-        if (!this.hasCompletedMissionFor(planet)) {
+        if (script.meta.missionType !== 'none' && !this.hasCompletedMissionFor(planet)) {
           choices.push({ id: 'accept', label: 'Aceptar el encargo', kind: 'accept' });
         }
       } else if (this.isReadyToTurnIn(mission)) {
         choices.push({ id: 'turn-in', label: 'Entregar lo prometido', kind: 'turn-in' });
+      }
+      // Con su confianza ganada, algunas razas abren caminos nuevos (los Mi-Go: la senda de Yig).
+      if (script.meta.postMissionTune && this.hasCompletedMissionFor(planet)) {
+        choices.push({ id: 'tune', label: script.meta.postMissionTune.label, kind: 'tune' });
       }
     }
     // Salir SIEMPRE está disponible: el jugador cierra cuando quiere.

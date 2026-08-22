@@ -197,6 +197,12 @@ export interface GenerationOptions {
    * Grises en el sistema al que lleva el primer Gate Rite.
    */
   guaranteedInhabitants?: string;
+  /**
+   * Cuántos planetas habitados por la raza garantizada (default 1). El sistema de guerra arácnido
+   * (Fase 15) exige 3. Se puebla por preferencia determinista (terrestres primero), sin consumir
+   * rng: la misma semilla con y sin este campo genera los mismos ids.
+   */
+  guaranteedInhabitedCount?: number;
   /** Fuerza el primigenio que domina el sistema (ritos sintonizados por una raza). */
   forcedElderGod?: string;
   /**

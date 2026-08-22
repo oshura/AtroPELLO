@@ -187,7 +187,8 @@ export class PlayerStateSerializer {
       availableSlotIndexes: this.gameState.getCloudSaveSlotIndexes(),
       activeSlotIndex: this.gameState.getActiveCloudSaveSlotIndex(),
       storyFlags: this.gameState.getStoryFlags().slice().sort(),
-      raceStandings: this.gameState.getRaceStandings()
+      raceStandings: this.gameState.getRaceStandings(),
+      gateTuning: this.gameState.peekGateTuning()
     };
   }
 
@@ -271,6 +272,7 @@ export class PlayerStateSerializer {
     }
     this.gameState.replaceStoryFlags(state?.storyFlags ?? []);
     this.gameState.replaceRaceStandings(state?.raceStandings ?? []);
+    this.gameState.setGateTuning(state?.gateTuning ?? null);
   }
 
   private applyInventoryState(state: SaveGameInventoryState | null | undefined): void {

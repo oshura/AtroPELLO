@@ -313,16 +313,19 @@ export class SystemGeneratorService {
       } as PlanetSnapshot;
     });
 
-    // Habitante garantizado por la trama: un planeta del sistema aloja SIEMPRE a esta raza, con la
-    // civilización ya confirmada para que el trato pueda abrirse sin escanear nada primero.
+    // Habitantes garantizados por la trama: N planetas del sistema alojan SIEMPRE a esta raza, con
+    // la civilización ya confirmada para que el trato pueda abrirse sin escanear nada primero.
+    // Orden de preferencia determinista (terrestres > no gaseosos > el resto) y sin consumir rng:
+    // la misma semilla genera los mismos ids con y sin garantía.
     const guaranteed = options?.guaranteedInhabitants;
     if (guaranteed && planets.length) {
-      const preferred = planets.find(p => p.kind === 'Terrestrial')
-        ?? planets.find(p => p.kind !== 'Gaseous')
-        ?? planets[0];
-      preferred.probabilityOfLifePct = 100;
-      preferred.inhabitants = guaranteed;
-      preferred.civilizationIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
+      const wanted = Math.max(1, Math.min(planets.length, Math.floor(options?.guaranteedInhabitedCount ?? 1)));
+      const ranked = [...planets].sort((a, b) => this.habitabilityRank(a) - this.habitabilityRank(b));
+      for (const host of ranked.slice(0, wanted)) {
+        host.probabilityOfLifePct = 100;
+        host.inhabitants = guaranteed;
+        host.civilizationIntelStatus = PLANET_INTEL_STATUS.CONFIRMED_PRESENT;
+      }
     }
 
   // Asteroid clusters: choose a random anchor planet index (avoid last few small ones when possible)
@@ -494,5 +497,13 @@ export class SystemGeneratorService {
       }
     };
     return snapshot;
+  }
+
+  /** Preferencia para alojar civilizaciones garantizadas: terrestres > no gaseosos > el resto. */
+  private habitabilityRank(planet: PlanetSnapshot): number {
+    if (planet.kind === 'Terrestrial') {
+      return 0;
+    }
+    return planet.kind === 'Gaseous' ? 2 : 1;
   }
 }
