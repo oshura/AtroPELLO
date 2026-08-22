@@ -258,40 +258,57 @@ export class LandingActionService {
     });
   }
 
+  /**
+   * "Revisar misión" cuenta SOLO lo que piden (petición del usuario, 2026-08-22): el objetivo,
+   * el progreso real (exterminio/trofeo) y si ya se puede entregar. Nada de pistas ni recados.
+   */
   private handleMissionReview(
     planet: Planet,
     mission: PlanetMissionState,
     request: LandingActionRequest
   ): LandingEventResult {
     const snapshot = this.missionService.getMissionSnapshot(mission.id) ?? mission;
-    const missingClues = this.missionService.getMissingClueTiers(mission.id);
     const hasCargo = this.missionService.hasRequiredCargoReady(mission.id);
     const requiredLabel = snapshot.requiredCargoLabel ?? 'el cargamento solicitado';
-    const pendingSubTasks = (snapshot.subTasks ?? []).filter(task => task.status !== 'completed').length;
 
-    const narrative: LandingActionLogEntry[] = [
-      { tone: 'info', text: `Estado actual: ${snapshot.status}.` }
-    ];
-    if (missingClues.length) {
-      narrative.push({
-        tone: 'warning',
-        text: `Faltan pistas clave: ${missingClues.map(tier => tier).join(', ')}.`
-      });
-    } else {
-      narrative.push({ tone: 'success', text: 'Todas las pistas requeridas están aseguradas.' });
+    const narrative: LandingActionLogEntry[] = [];
+    const objective = snapshot.objectiveSummary ?? snapshot.description;
+    if (objective) {
+      narrative.push({ tone: 'info', text: objective });
     }
-    if (snapshot.requiredCargoEntryId) {
+    if (snapshot.targetHint) {
+      narrative.push({ tone: 'info', text: `Destino: ${snapshot.targetHint}` });
+    }
+    const extermination = snapshot.exterminationTarget;
+    if (extermination) {
+      const parts: string[] = [];
+      if (extermination.planetsRequired > 0) {
+        parts.push(`${extermination.planetsDestroyed}/${extermination.planetsRequired} mundos destruidos`);
+      }
+      if (extermination.stationsRequired > 0) {
+        parts.push(`${extermination.stationsDestroyed}/${extermination.stationsRequired} estaciones derribadas`);
+      }
+      if (parts.length) {
+        narrative.push({ tone: 'info', text: `Progreso: ${parts.join(' · ')}.` });
+      }
+    }
+    if (snapshot.type === 'hunt') {
+      narrative.push(
+        snapshot.requiredCargoEntryId
+          ? { tone: hasCargo ? 'success' : 'warning', text: hasCargo ? `La prueba viaja en tu bodega (${requiredLabel}).` : `La prueba (${requiredLabel}) ya no está en la bodega.` }
+          : { tone: 'info', text: `La presa sigue viva: sin ${requiredLabel}, no hay entrega.` }
+      );
+    } else if (snapshot.requiredCargoEntryId) {
       narrative.push({
         tone: hasCargo ? 'success' : 'warning',
         text: hasCargo ? `Carga lista para entregar (${requiredLabel}).` : `Aún falta ${requiredLabel}.`
       });
     }
-    if (pendingSubTasks > 0) {
-      narrative.push({
-        tone: 'info',
-        text: `Recados activos pendientes: ${pendingSubTasks}.`
-      });
-    }
+    narrative.push(
+      snapshot.status === 'ready-to-turn-in'
+        ? { tone: 'success', text: 'Todo cumplido: entrégala cuando quieras.' }
+        : { tone: 'info', text: 'Cuando esté cumplido, vuelve y entrégala.' }
+    );
 
     return this.composeResult(request, planet, {
       title: 'Revisar misión',

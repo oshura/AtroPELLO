@@ -16,16 +16,9 @@ import {
   PlanetIntelSnapshot,
   PlanetIntelStatus,
   PlanetMissionState,
-  PlanetMissionStatus,
-  MissionClueToken,
-  MissionClueTier,
-  MissionClueProgress,
-  MissionClueTierProgress,
-  PlanetResourceStock,
-  MissionSubTask
+  PlanetMissionStatus
 } from '../../game/types/planet-intel.types';
 import { LesserBeing, PlanetInhabitants, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
-import { getLandingDiplomacyScript, LandingDiplomacyScript } from '../../game/config/landing-diplomacy.config';
 import { MissionService } from '../../game/services/game/mission.service';
 import { Planet } from '../../game/game-objects/Planet';
 import { GameObjectAnimosity, RelationAffinity } from '../../game/types/animosity.types';
@@ -271,12 +264,20 @@ export class LandingMenuComponent implements OnChanges {
     return this.planetIntel?.pendingMission ?? null;
   }
 
-  protected get missionClueProgress(): MissionClueProgress | null {
-    const mission = this.mission;
-    if (!mission) {
+  /** "3/3 mundos · 1/2 telares": la única cuenta que importa en un exterminio (Fase 15). */
+  protected get missionExterminationProgress(): string | null {
+    const target = this.mission?.exterminationTarget;
+    if (!target) {
       return null;
     }
-    return this.missionService.summarizeClueProgress(mission);
+    const parts: string[] = [];
+    if (target.planetsRequired > 0) {
+      parts.push(`${target.planetsDestroyed}/${target.planetsRequired} mundos destruidos`);
+    }
+    if (target.stationsRequired > 0) {
+      parts.push(`${target.stationsDestroyed}/${target.stationsRequired} estaciones derribadas`);
+    }
+    return parts.join(' · ') || null;
   }
 
   protected get missionRequiresCargo(): boolean {
@@ -324,13 +325,13 @@ export class LandingMenuComponent implements OnChanges {
   }
 
   protected get missionObjectiveSummary(): string | null {
-    return this.mission?.objectiveSummary ?? this.diplomacyScript?.missionTemplate.objectiveSummary ?? null;
+    return this.mission?.objectiveSummary ?? null;
   }
 
   protected get missionTargetName(): string | null {
     const mission = this.mission;
     if (!mission) {
-      return this.diplomacyScript?.missionTemplate.targetHint ?? null;
+      return null;
     }
     const targetPlanetId = mission.targetLocation?.planetId;
     if (targetPlanetId) {
@@ -345,16 +346,12 @@ export class LandingMenuComponent implements OnChanges {
       }
       return mission.targetHint ?? targetPlanetId;
     }
-    return mission.targetHint ?? this.diplomacyScript?.missionTemplate.targetHint ?? null;
+    return mission.targetHint ?? null;
   }
 
   protected get missionRewardMemoryShare(): number | null {
     const missionShare = this.mission?.reward?.memorySharePct;
-    if (typeof missionShare === 'number') {
-      return missionShare;
-    }
-    const templateShare = this.diplomacyScript?.missionTemplate.memorySharePct;
-    return typeof templateShare === 'number' ? templateShare : null;
+    return typeof missionShare === 'number' && missionShare > 0 ? missionShare : null;
   }
 
   protected get relationAffinity(): RelationAffinity {
@@ -448,55 +445,6 @@ export class LandingMenuComponent implements OnChanges {
     return Boolean(being && being !== LesserBeing.NONE);
   }
 
-  protected get diplomacyScript(): LandingDiplomacyScript | null {
-    const inhabitants = this.planetIntel?.inhabitants;
-    if (!inhabitants || inhabitants === PlanetInhabitants.NONE) {
-      return null;
-    }
-    return getLandingDiplomacyScript(inhabitants);
-  }
-
-  protected get clueTokens(): MissionClueToken[] {
-    return this.mission?.clueTokens ?? [];
-  }
-
-  protected get missingClueTiers(): MissionClueTier[] {
-    return this.missionClueProgress?.missingTiers ?? [];
-  }
-
-  protected get subTasks(): MissionSubTask[] {
-    return this.mission?.subTasks ?? [];
-  }
-
-  protected get resourceStockEntries(): Array<{ key: keyof PlanetResourceStock; value: number }> {
-    const stock = this.planetIntel?.resourceStock;
-    if (!stock) {
-      return [];
-    }
-    return (Object.keys(stock) as Array<keyof PlanetResourceStock>)
-      .filter(key => stock[key] !== undefined)
-      .map(key => ({ key, value: stock[key] ?? 0 }));
-  }
-
-  protected get isBribeDisabled(): boolean {
-    const option = this.diplomacyScript?.bribeOption;
-    return (
-      this.disabled ||
-      !this.mission ||
-      !option ||
-      (option.cost ? !this.hasResourceStock(this.planetIntel?.resourceStock ?? null, option.cost) : false)
-    );
-  }
-
-  protected get isSubTaskDisabled(): boolean {
-    return this.disabled || !this.mission || !this.diplomacyScript?.subTasks.length;
-  }
-
-  protected get isVisionDisabled(): boolean {
-    const sanityCost = this.diplomacyScript?.visionOption?.sanityCost ?? 0;
-    return this.disabled || !this.mission || (sanityCost > 0 && this.gameState.characterProfile.sanity <= sanityCost);
-  }
-
   protected get canTurnInMission(): boolean {
     const mission = this.mission;
     if (!mission || this.disabled) {
@@ -510,10 +458,6 @@ export class LandingMenuComponent implements OnChanges {
       return false;
     }
     return true;
-  }
-
-  protected get primarySubTaskConfig(): string | undefined {
-    return this.diplomacyScript?.subTasks?.[0]?.id;
   }
 
   protected get isArtifactActionDisabled(): boolean {
@@ -606,39 +550,6 @@ export class LandingMenuComponent implements OnChanges {
       planetId: this.context!.planetId,
       action: LandingActionKind.EXPLORE,
       objective
-    });
-  }
-
-  protected handleDiplomacyBribe(): void {
-    if (!this.canSubmitDiplomacy || !this.mission) {
-      return;
-    }
-    this.executeAction({
-      planetId: this.context!.planetId,
-      action: LandingActionKind.DIPLOMACY,
-      diplomacy: { action: LandingDiplomacyAction.OFFER_BRIBE }
-    });
-  }
-
-  protected handleDiplomacyVision(): void {
-    if (!this.canSubmitDiplomacy || !this.mission) {
-      return;
-    }
-    this.executeAction({
-      planetId: this.context!.planetId,
-      action: LandingActionKind.DIPLOMACY,
-      diplomacy: { action: LandingDiplomacyAction.REQUEST_VISION }
-    });
-  }
-
-  protected handleDiplomacySubTask(subTaskId?: string): void {
-    if (!this.canSubmitDiplomacy || !this.mission) {
-      return;
-    }
-    this.executeAction({
-      planetId: this.context!.planetId,
-      action: LandingActionKind.DIPLOMACY,
-      diplomacy: { action: LandingDiplomacyAction.RUN_SUBTASK, subTaskId }
     });
   }
 
@@ -770,74 +681,6 @@ export class LandingMenuComponent implements OnChanges {
     return event.success ? 'pill--success' : 'pill--danger';
   }
 
-  protected formatTier(tier: MissionClueTier): string {
-    switch (tier) {
-      case 'minor':
-        return 'Susurro menor';
-      case 'major':
-        return 'Clave mayor';
-      case 'final':
-        return 'Visión final';
-      default:
-        return tier;
-    }
-  }
-
-  protected formatTierProgress(tier: MissionClueTierProgress): string {
-    return `${this.formatTier(tier.tier)} ${tier.obtained}/${tier.required}`;
-  }
-
-  protected hasResourceCost(cost?: Partial<PlanetResourceStock>): boolean {
-    if (!cost) {
-      return false;
-    }
-    return Object.values(cost).some(value => (value ?? 0) > 0);
-  }
-
-  protected methodEntries(methods?: Partial<Record<MissionClueToken['method'], number>>): Array<{ key: MissionClueToken['method']; label: string; count: number }> {
-    if (!methods) {
-      return [];
-    }
-    const labels: Record<MissionClueToken['method'], string> = {
-      bribe: 'Sobornos',
-      subtask: 'Recados',
-      vision: 'Visiones',
-      reward: 'Recompensas',
-      other: 'Otros'
-    } as const;
-    return Object.entries(methods)
-      .filter(([, count]) => (count ?? 0) > 0)
-      .map(([key, count]) => ({ key: key as MissionClueToken['method'], label: labels[key as MissionClueToken['method']] ?? key, count: count ?? 0 }));
-  }
-
-  protected formatResourceLabel(key: keyof PlanetResourceStock): string {
-    switch (key) {
-      case 'metal':
-        return 'Metal';
-      case 'non_metal':
-        return 'Silicatos';
-      case 'organic':
-        return 'Orgánico';
-      case 'void_matter':
-        return 'Materia de vacío';
-      default:
-        return key;
-    }
-  }
-
-  protected describeCost(cost?: Partial<PlanetResourceStock>): string {
-    if (!cost) {
-      return 'Sin coste';
-    }
-    const fragments = (Object.keys(cost) as Array<keyof PlanetResourceStock>)
-      .filter(key => (cost[key] ?? 0) > 0)
-      .map(key => `${cost[key]} ${this.formatResourceLabel(key)}`);
-    return fragments.length ? fragments.join(' + ') : 'Sin coste';
-  }
-
-  protected trackClueById = (_: number, token: MissionClueToken) => token.id;
-  protected trackSubTaskById = (_: number, task: MissionSubTask) => task.id;
-
   private get planetIntel(): PlanetIntelSnapshot | null {
     if (!this.hasPlanet) {
       return null;
@@ -853,12 +696,12 @@ export class LandingMenuComponent implements OnChanges {
     },
     accepted: {
       label: 'Contrato aceptado',
-      description: 'Reúne pistas iniciales para demostrar tu compromiso.',
+      description: 'Cumple lo que te pidieron y vuelve aquí para entregarlo.',
       pillClass: 'pill--neutral'
     },
     'in-progress': {
       label: 'En progreso',
-      description: 'Completa recados y consume recursos para avanzar la misión.',
+      description: 'El encargo avanza. Termínalo y vuelve para entregarlo.',
       pillClass: 'pill--warning'
     },
     'ready-to-turn-in': {
@@ -917,24 +760,6 @@ export class LandingMenuComponent implements OnChanges {
 
   private isIntelResolved(status?: PlanetIntelStatus | null): boolean {
     return !!status && status !== PLANET_INTEL_STATUS.UNKNOWN;
-  }
-
-  private hasResourceStock(stock: PlanetResourceStock | null, cost?: Partial<PlanetResourceStock>): boolean {
-    if (!cost) {
-      return true;
-    }
-    const source = stock ?? {};
-    for (const key of Object.keys(cost) as Array<keyof PlanetResourceStock>) {
-      const required = cost[key];
-      if (!required) {
-        continue;
-      }
-      const available = source[key] ?? 0;
-      if (available < required) {
-        return false;
-      }
-    }
-    return true;
   }
 
   private executeAction(request: LandingActionRequest): void {

@@ -54,7 +54,7 @@
         <header>
           <h4>{{ conversation?.raceLabel || 'Contacto' }}</h4>
           <ng-container *ngIf="mission as missionPreview; else diplomacyIntro">
-            <p>Negocia pistas y favores para completar {{ missionPreview.missionName || 'el encargo planetario' }}.</p>
+            <p>Tienes un encargo suyo en curso: cúmplelo y vuelve a entregarlo.</p>
           </ng-container>
         </header>
 
@@ -125,14 +125,18 @@
             </button>
           </div>
         </div>
+        <!--
+          El bloque de misión enseña SOLO lo que piden: objetivo, progreso y entrega. La mecánica
+          de pistas (tributos, resonadores, rituales) se retiró de la UI a petición del usuario
+          (2026-08-22): las misiones reales se completan haciendo, no negociando susurros.
+        -->
         <ng-container *ngIf="mission as missionState; else diplomacyEmpty">
-          <ng-container *ngIf="diplomacyScript as script; else diplomacyNoScript">
           <div class="mission-panel">
             <div class="mission-panel__meta">
               <div>
                 <span class="mission-panel__label">Encargo</span>
                 <div class="mission-panel__title">{{ missionState.missionName || 'Encargo de la cofradía' }}</div>
-                <p class="mission-panel__description">{{ missionState.description || script.missionTemplate.description }}</p>
+                <p class="mission-panel__description" *ngIf="missionState.description">{{ missionState.description }}</p>
                 <div class="mission-panel__objective" *ngIf="missionObjectiveSummary || missionTargetName">
                   <span class="mission-panel__label">Objetivo</span>
                   <p>
@@ -153,6 +157,12 @@
             </div>
 
             <p class="mission-panel__status-description">{{ missionStatusDescription }}</p>
+
+            <!-- Progreso de exterminio: la única cuenta que importa en una misión de guerra. -->
+            <div class="mission-panel__requirements" *ngIf="missionExterminationProgress">
+              <span class="mission-panel__label">Progreso</span>
+              <div class="mission-panel__requirement">{{ missionExterminationProgress }}</div>
+            </div>
 
             <div class="mission-panel__requirements" *ngIf="missionRequiresCargo">
               <span class="mission-panel__label">Entrega requerida</span>
@@ -176,7 +186,7 @@
               Aún falta {{ missionCargoLabel }} para completar el envío.
             </div>
 
-            <div class="mission-panel__meta-actions">
+            <div class="mission-panel__actions">
               <button type="button" class="menu-btn ghost" (click)="handleMissionReview()" [disabled]="!canReviewMission">
                 Revisar misión
               </button>
@@ -189,108 +199,16 @@
               >
                 Aceptar misión
               </button>
-            </div>
-
-            <div class="mission-panel__clues">
-              <div>
-                <span class="mission-panel__label">Pistas obtenidas</span>
-                <div class="clue-chip-list">
-                  <span class="pill pill--neutral" *ngFor="let clue of clueTokens; trackBy: trackClueById">
-                    {{ formatTier(clue.tier) }}
-                  </span>
-                  <span class="pill pill--warning" *ngIf="!clueTokens.length">Sin pistas</span>
-                </div>
-              </div>
-              <div *ngIf="missingClueTiers.length">
-                <span class="mission-panel__label">Faltan</span>
-                <div class="clue-chip-list">
-                  <span class="pill pill--warning" *ngFor="let tier of missingClueTiers">{{ formatTier(tier) }}</span>
-                </div>
-              </div>
-              <div class="mission-panel__clue-stats" *ngIf="missionClueProgress as progress">
-                <span class="mission-panel__label">Resumen de progreso</span>
-                <div class="clue-chip-list" *ngIf="progress.tiers.length">
-                  <span class="pill pill--neutral" *ngFor="let tier of progress.tiers">
-                    {{ formatTierProgress(tier) }}
-                  </span>
-                </div>
-                <div class="mission-panel__cost" *ngIf="hasResourceCost(progress.totalResourcesSpent)">
-                  Coste invertido: {{ describeCost(progress.totalResourcesSpent) }}
-                </div>
-                <div class="mission-panel__methods" *ngIf="methodEntries(progress.methodsUsed).length">
-                  Métodos utilizados:
-                  <span *ngFor="let method of methodEntries(progress.methodsUsed); let last = last">
-                    {{ method.label }} ({{ method.count }})<span *ngIf="!last"> · </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div class="mission-panel__resources" *ngIf="resourceStockEntries.length">
-              <span class="mission-panel__label">Stock disponible</span>
-              <ul>
-                <li *ngFor="let stock of resourceStockEntries">{{ formatResourceLabel(stock.key) }}: {{ stock.value || 0 }}</li>
-              </ul>
-            </div>
-
-            <div class="mission-panel__actions">
-              <button type="button" class="menu-btn" (click)="handleDiplomacyBribe()" [disabled]="isBribeDisabled">
-                {{ script.bribeOption.label || 'Soborno ritual' }}
-                <small *ngIf="script.bribeOption.description">{{ script.bribeOption.description }}</small>
-                <small>Otorga {{ formatTier(script.bribeOption.clueTier) }}</small>
-                <small>{{ describeCost(script.bribeOption.cost) }}</small>
-              </button>
-              <button type="button" class="menu-btn" (click)="handleDiplomacySubTask(primarySubTaskConfig)" [disabled]="isSubTaskDisabled">
-                <ng-container *ngIf="script.subTasks[0] as primaryTask; else defaultSubTaskContent">
-                  {{ primaryTask.label || 'Recado veloz' }}
-                  <small *ngIf="primaryTask.description">{{ primaryTask.description }}</small>
-                  <small>Otorga {{ formatTier(primaryTask.rewardTier) }}</small>
-                  <small *ngIf="primaryTask.successProbability">Prob {{ primaryTask.successProbability | percent:'1.0-0' }}</small>
-                </ng-container>
-              </button>
-              <ng-template #defaultSubTaskContent>
-                Recado veloz
-                <small>Otorga pista mayor</small>
-              </ng-template>
-              <button type="button" class="menu-btn" (click)="handleDiplomacyVision()" [disabled]="isVisionDisabled">
-                {{ script.visionOption.label || 'Compartir visión' }}
-                <small *ngIf="script.visionOption.description">{{ script.visionOption.description }}</small>
-                <small>Otorga {{ formatTier(script.visionOption.clueTier) }}</small>
-                <small *ngIf="script.visionOption.sanityCost">Coste: -{{ script.visionOption.sanityCost }} cordura</small>
-              </button>
-              <button type="button" class="menu-btn ghost" (click)="handleDiplomacyTurnIn()" [disabled]="!canTurnInMission">
+              <button type="button" class="menu-btn" [class.menu-btn--primary]="canTurnInMission" (click)="handleDiplomacyTurnIn()" [disabled]="!canTurnInMission">
                 Entregar misión
                 <small *ngIf="missionRequiresCargo">{{ missionHasCargo ? 'Carga lista' : 'Carga incompleta' }}</small>
+                <small *ngIf="!canTurnInMission && !missionRequiresCargo">Disponible al completar el encargo</small>
               </button>
             </div>
-
-            <div class="mission-panel__subtasks" *ngIf="subTasks.length">
-              <span class="mission-panel__label">Recados registrados</span>
-              <ul>
-                <li *ngFor="let task of subTasks; trackBy: trackSubTaskById">
-                  <div>
-                    <strong>{{ task.label }}</strong>
-                    <p *ngIf="task.description">{{ task.description }}</p>
-                  </div>
-                  <span class="pill" [ngClass]="{
-                    'pill--success': task.status === 'completed',
-                    'pill--warning': task.status === 'in-progress',
-                    'pill--neutral': task.status === 'available',
-                    'pill--danger': task.status === 'failed'
-                  }">{{ task.status }}</span>
-                </li>
-              </ul>
-            </div>
           </div>
-          </ng-container>
         </ng-container>
-        <ng-template #diplomacyNoScript>
-          <div class="mission-panel mission-panel--empty">
-            No hay un guion diplomático activo para esta raza.
-          </div>
-        </ng-template>
         <ng-template #diplomacyIntro>
-          <p>Escucha rumores, ejecuta recados o comparte visiones para transformar la relación con la raza local.</p>
+          <p>Habla con ellos: su historia, sus encargos y sus tratos nacen de la conversación.</p>
         </ng-template>
         <ng-template #diplomacyEmpty>
           <!-- Los encargos ya no se siembran solos: nacen hablando (ver DialogueService). -->
