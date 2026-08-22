@@ -1,5 +1,6 @@
 import { SystemGeneratorService } from './system-generator.service';
 import { PlanetInhabitants, PLANET_INHABITANT_POOL } from '../../types/cosmic-life.types';
+import { getDefinedRaces, getPoolableRaces } from '../../config/race-catalog.config';
 import { PLANET_INTEL_STATUS } from '../../types/planet-intel.types';
 
 /**
@@ -76,9 +77,26 @@ describe('SystemGeneratorService', () => {
     });
   });
 
-  it('los Grises nunca salen en una tirada aleatoria de habitantes', () => {
-    expect(PLANET_INHABITANT_POOL).not.toContain(PlanetInhabitants.GRISES);
-    expect(PLANET_INHABITANT_POOL).not.toContain(PlanetInhabitants.NONE);
-    expect(PLANET_INHABITANT_POOL).toContain(PlanetInhabitants.MI_GO);
+  describe('sorteo de habitantes', () => {
+    it('sólo entran razas TERMINADAS: hoy, los Grises', () => {
+      // El universo no debe poblarse con civilizaciones que no tienen nada que contar: una raza
+      // entra en el sorteo cuando se cierra su ficha, no cuando se reserva su nombre en el enum.
+      expect(getPoolableRaces()).toEqual([PlanetInhabitants.GRISES]);
+    });
+
+    it('las razas sin ficha están reservadas, no disponibles', () => {
+      const poolable = getPoolableRaces();
+      expect(poolable).not.toContain(PlanetInhabitants.MI_GO);
+      expect(poolable).not.toContain(PlanetInhabitants.NONE);
+      // Su nombre sigue reservado en el enum para escribirlas más adelante.
+      expect(PLANET_INHABITANT_POOL).toContain(PlanetInhabitants.MI_GO);
+    });
+
+    it('una raza acólita nunca habitaría planetas', () => {
+      const acolytes = getDefinedRaces().filter(race => race.isAcolyte).map(race => race.id);
+      for (const acolyte of acolytes) {
+        expect(getPoolableRaces()).not.toContain(acolyte);
+      }
+    });
   });
 });

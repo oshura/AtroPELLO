@@ -36,8 +36,34 @@ aparecen cuando la trama las convoca. El tipo ya existe; su spawn por eventos es
 | `services/game/race-outfitting-bridge.service.ts` | Traduce "la raza te arma" en llamadas al motor |
 | `game/services/state/ship-outfitting.service.ts` | Mejoras permanentes de nave |
 
-**Receta: añadir una raza** = entrada en `PlanetInhabitants` + etiqueta + `landing_missions_<raza>.json`
-+ entrada en `RACE_CATALOG`. Nada más. Una raza sin ficha sigue funcionando con el guion genérico.
+### Receta: añadir una raza
+
+Las razas se escriben **de una en una y a mano**. No hay razas "de relleno": una civilización entra
+en el universo cuando tiene algo que contar.
+
+1. **Nombre** en `PlanetInhabitants` + su etiqueta en `PLANET_INHABITANT_LABELS`.
+2. **Guion** en `src/app/assets/narrative/landing/landing_missions_<raza>.json` (formato en §5).
+3. **Registro** del guion en `DialogueScriptService.SCRIPTS`.
+4. **Ficha** en `RACE_CATALOG`: descripción, primigenio que la amenaza, actitud inicial, glifo que
+   enseña y taller.
+
+Con eso la raza **entra sola en el sorteo de habitantes** (`getPoolableRaces()`), porque el sorteo se
+deriva del catálogo y no del enum. Un nombre reservado en el enum sin ficha no aparece jamás en el
+universo: así el jugador nunca aterriza en un mundo cuya civilización no sabe hablar.
+
+> **Estado actual: sólo los Grises.** Cualquier planeta con probabilidad de vida los alojará a ellos.
+> Los guiones antiguos de las otras doce razas siguen en `assets/narrative/landing/` como material
+> de partida, pero **no se cargan**: se reescribirán al abordar cada raza.
+
+### Presupuesto de memoria
+
+Cada raza devuelve un trozo del pasado del piloto (`meta.memoryShare`, sumado al completar su
+encargo). El arco de la memoria va del 20 % inicial —intro y estación humana— al 100 %, así que
+conviene repartir el 80 % restante entre las razas que se vayan cerrando, no gastarlo en las
+primeras. Los Grises aportan **5 %**.
+
+Además del porcentaje, cada raza aporta un **fragmento narrado** (`turnIn.memoryFragment`): es el
+pago real, lo que el jugador recuerda. La cifra sólo mide el progreso.
 
 ## 4. El menú de aterrizaje
 
@@ -64,6 +90,33 @@ sueltos *Conversar* y *Relacionarse*, que ahora viven fusionados dentro de Conta
 ## 5. Cómo se conversa
 
 Una conversación es lo que pedía el diseño: **escena narrada + preguntas + salir cuando quieras**.
+
+Esqueleto del guion de una raza (`RaceMissionScript`):
+
+```jsonc
+{
+  "meta": {
+    "race": "GRISES",
+    "memoryShare": 5,                 // % de memoria que devuelve el encargo
+    "missionType": "hunt",            // artifact | material | hunt
+    "targetHint": "…",                // pista de dónde ocurre
+    "uniqueGlyphId": "SPEED",         // glifo que enseñan al completarlo (opcional)
+    "huntTarget": { "lesserBeing": "VAMPIRO_FUEGO", "elderGod": "YOG_SOTHOTH" },
+    "trophyLabel": "Rescoldo de Vampiro de Fuego"
+  },
+  "offer": {
+    "scene": "…",                     // cómo te reciben; aquí va su trozo de historia
+    "options": [                      // preguntas; repetibles, no agotan la charla
+      { "id": "origin", "label": "¿…?", "text": "…" }
+    ]
+  },
+  "clues": { "minor": {…}, "major": {…}, "final": {…} },   // opcional
+  "turnIn": {
+    "success": "…",                   // qué pasa al entregar
+    "memoryFragment": "…"             // lo que el piloto recuerda: el pago de verdad
+  }
+}
+```
 
 - Preguntar no consume nada y **no cierra la charla**; se puede repetir.
 - **Aceptar el encargo es una opción más de la conversación.** Ya no existe misión que nazca sola.
@@ -117,8 +170,8 @@ Desde la build 79, `SystemGeneratorService` antepone un `systemTag` derivado de 
 
 La raza de un planeta se sorteaba con `Math.random()`, así que un mismo mundo cambiaba de habitantes
 entre recargas. Ahora la tirada se deriva del id del planeta (`game/utils/seeded-random.ts`), y la
-civilización de Marte tiene semilla fija. Los Grises están **fuera del sorteo**
-(`NON_POOLABLE_INHABITANTS`): sólo aparecen donde la historia los coloca.
+civilización de Marte tiene semilla fija. El sorteo elige entre las razas terminadas
+(`getPoolableRaces()`), que hoy es sólo una.
 
 ## 11. Ficha canónica: los Grises
 
@@ -135,5 +188,6 @@ Ver `docs/HISTORIA.md` §9 para el lore y `landing_missions_grises.json` para el
 
 - Sembrar misiones fuera de una conversación.
 - Prometer una recompensa en el texto y no entregarla en código (el pecado original de esta fase).
-- Colocar una raza de la trama en el sorteo aleatorio de habitantes.
+- Poblar el universo con razas sin guion propio (el sorteo sale del catálogo por eso).
+- Reutilizar un texto genérico para una raza en lugar de escribirle el suyo.
 - Revelar el dominio de un sistema que el jugador no ha averiguado.

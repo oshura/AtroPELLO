@@ -63,3 +63,18 @@ export function getRaceDefinition(race: PlanetInhabitants | null | undefined): R
 export function getDefinedRaces(): RaceDefinition[] {
   return Object.values(RACE_CATALOG).filter((entry): entry is RaceDefinition => !!entry);
 }
+
+/**
+ * Razas que pueden habitar un planeta al azar.
+ *
+ * FUENTE DEL SORTEO. Se deriva del catálogo, no del enum: una raza sólo aparece en el universo
+ * cuando está terminada —guion, misión y ficha—, así el jugador nunca aterriza en un mundo cuya
+ * civilización no tiene nada que contarle. Al cerrar una raza nueva entra aquí sola.
+ *
+ * Las acólitas quedan fuera: sirven a un primigenio y aparecen por eventos, no viven en planetas.
+ */
+export function getPoolableRaces(): PlanetInhabitants[] {
+  return getDefinedRaces()
+    .filter(race => !race.isAcolyte)
+    .map(race => race.id);
+}

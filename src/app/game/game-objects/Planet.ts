@@ -9,6 +9,7 @@ import {
 } from '../types/cosmic-life.types';
 import { GameObjectAnimosity } from '../types/animosity.types';
 import { hashSeed, mulberry32 } from '../utils/seeded-random';
+import { getPoolableRaces } from '../config/race-catalog.config';
 import {
   PlanetIntelStatus,
   PLANET_INTEL_STATUS,
@@ -104,7 +105,8 @@ export class Planet extends GameObject implements ITargetable {
     }
     const roll = Math.floor(randomFn() * 100) + 1;
     if (roll <= pct) {
-      const pool = PLANET_INHABITANT_POOL;
+      // Sólo razas terminadas: ver getPoolableRaces(). Hoy son los Grises.
+      const pool = getPoolableRaces();
       const idx = pool.length > 0 ? Math.floor(randomFn() * pool.length) : -1;
       this.inhabitants = idx >= 0 ? pool[idx] : PlanetInhabitants.NONE;
     } else {

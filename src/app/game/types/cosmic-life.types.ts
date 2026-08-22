@@ -44,16 +44,15 @@ export const ELDER_GOD_SUMMONS: Record<ElderGod, ReadonlyArray<LesserBeing>> = {
 };
 
 /**
- * Razas que NUNCA salen en una tirada aleatoria: se colocan a mano donde la historia las necesita.
- * Los Grises sólo viven en el sistema al que lleva el primer Gate Rite.
+ * Todas las razas declaradas, sin contar "sin civilización".
+ *
+ * OJO: esto NO es el sorteo de habitantes. Quién puede aparecer en un planeta lo decide
+ * `getPoolableRaces()` (race-catalog.config.ts), que sólo devuelve razas TERMINADAS —con guion,
+ * misión y ficha—. Las de esta lista sin ficha son nombres reservados para escribirlas más
+ * adelante, una a una.
  */
-export const NON_POOLABLE_INHABITANTS: ReadonlyArray<PlanetInhabitants> = [
-  PlanetInhabitants.NONE,
-  PlanetInhabitants.GRISES,
-];
-
 export const PLANET_INHABITANT_POOL: ReadonlyArray<PlanetInhabitants> = Object.values(PlanetInhabitants).filter(
-  value => !NON_POOLABLE_INHABITANTS.includes(value)
+  value => value !== PlanetInhabitants.NONE
 );
 
 export const PLANET_INHABITANT_LABELS: Record<PlanetInhabitants, string> = {

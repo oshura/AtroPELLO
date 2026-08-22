@@ -2,8 +2,9 @@ import { Injectable } from '@angular/core';
 import { SolarSystemSnapshot, SunSnapshot, PlanetSnapshot, ClusterSnapshot } from '../../types/solar-system.types';
 import { Vector3 } from '../../../types/game.types';
 import { PLANET_INTEL_STATUS, createEmptyResourceStock } from '../../types/planet-intel.types';
-import { PlanetInhabitants, PLANET_INHABITANT_POOL, ElderGod } from '../../types/cosmic-life.types';
+import { PlanetInhabitants, ElderGod } from '../../types/cosmic-life.types';
 import { pickSeeded } from '../../utils/seeded-random';
+import { getPoolableRaces } from '../../config/race-catalog.config';
 
 /**
  * HumanSolarSystemService
@@ -190,9 +191,10 @@ export class HumanSolarSystemService {
    * una tirada distinta cada vez que se arranca.
    */
   private pickRandomCivilization(): PlanetInhabitants {
-    if (!PLANET_INHABITANT_POOL.length) {
+    const pool = getPoolableRaces();
+    if (!pool.length) {
       return PlanetInhabitants.NONE;
     }
-    return pickSeeded(PLANET_INHABITANT_POOL, 'human-system:mars');
+    return pickSeeded(pool, 'human-system:mars');
   }
 }
