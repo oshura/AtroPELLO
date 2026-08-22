@@ -223,12 +223,19 @@ export class WeaponEngineBridge {
     this.weapons.setTriggerHeld(held && !this.ctx.areInputsLocked());
   }
 
-  /** Monta un arma; abre un hardpoint si la nave aún no tenía ninguno. */
-  public install(weaponId: WeaponId, slotIndex?: number): boolean {
+  /**
+   * Monta un arma; abre un hardpoint si la nave aún no tenía ninguno.
+   * `ensureSlot` abre uno más cuando están todos ocupados: sólo lo usan las herramientas de
+   * depuración, porque en juego los anclajes se compran a las razas.
+   */
+  public install(weaponId: WeaponId, options?: { slotIndex?: number; ensureSlot?: boolean }): boolean {
+    const occupied = this.weapons.installedCount;
     if (this.weapons.slotsMax <= 0) {
       this.weapons.setWeaponSlots(1);
+    } else if (options?.ensureSlot && occupied >= this.weapons.slotsMax) {
+      this.weapons.setWeaponSlots(occupied + 1);
     }
-    const installed = this.weapons.installWeapon(weaponId, slotIndex);
+    const installed = this.weapons.installWeapon(weaponId, options?.slotIndex);
     if (installed) {
       this.syncOutfit();
     }

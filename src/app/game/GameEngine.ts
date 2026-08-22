@@ -5639,9 +5639,12 @@ export class GameEngine {
     this.weaponBridge.setTriggerHeld(held);
   }
 
-  /** Monta un arma en la nave (recompensa de misión, compra o herramienta de depuración). */
-  public installShipWeapon(weaponId: WeaponId, slotIndex?: number): boolean {
-    return this.weaponBridge.install(weaponId, slotIndex);
+  /**
+   * Monta un arma en la nave (recompensa de misión, compra o herramienta de depuración).
+   * `ensureSlot` abre un anclaje si están todos ocupados: exclusivo del overlay de depuración.
+   */
+  public installShipWeapon(weaponId: WeaponId, options?: { ensureSlot?: boolean }): boolean {
+    return this.weaponBridge.install(weaponId, options);
   }
 
   /** Aplica un equipamiento completo (carga de partida, mejoras de raza). */

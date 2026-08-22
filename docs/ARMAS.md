@@ -118,9 +118,16 @@ Regalo de los Grises en su misión (Fase 13). `FIXED`, 1200 u/s, alcance 3000 u,
 por disparo. Es la única forma de matar al vampiro, que es incorpóreo (no admite embestida) y radia
 daño a 1000 u.
 
-Para probarlo sin la misión: overlay de depuración (tecla `ñ`) → **"Instalar gauss de hielo"**.
+## 8. Probar armas sin jugar la misión
 
-## 8. Aspecto de los proyectiles
+Overlay de depuración (tecla **`ñ`**) → sección **Armamento**. Hay un botón por arma del catálogo
+—se generan a partir de `getAvailableWeaponIds()`, así que un arma nueva aparece ahí sola—, más
+"Montar todas" (para probar la rotación con `R`) y "Desmontar todas".
+
+Estos botones abren un anclaje si hacen falta (`ensureSlot`), cosa que el juego real no hace: en
+partida los anclajes se compran a las razas.
+
+## 9. Aspecto de los proyectiles
 
 Un proyectil de arma se dibuja como **trazadora alargada**, no como bola de luz: el billboard usa
 como eje largo la dirección de vuelo proyectada al plano de la cámara (`projectToViewPlane`) y como
@@ -131,7 +138,7 @@ El color sale de `visual.color` mezclado hacia el blanco a medias (`c*0.5 + 0.5`
 constante a los tres canales saturaba a blanco puro y el hielo perdía su tono azulado. La estela se
 alarga con la velocidad, de modo que un gauss deja una raya y una mina lenta apenas un punto.
 
-## 9. Antipatrones
+## 10. Antipatrones
 
 - Hardcodear un arma en el motor o en el puente.
 - Un segundo pool de proyectiles.

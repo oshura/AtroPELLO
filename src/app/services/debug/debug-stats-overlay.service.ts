@@ -6,6 +6,8 @@ import { GameInitializer } from '../game/game-initializer.service';
 import { GameStateStore } from '../game/game-state.store';
 import { LesserBeing, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
 import { SpellType } from '../../game/types/spell.types';
+import { WeaponId, createDefaultShipOutfit } from '../../game/types/weapon.types';
+import { getAvailableWeaponIds, getWeaponDefinition } from '../../game/config/weapon-catalog.config';
 
 @Injectable({ providedIn: 'root' })
 export class DebugStatsOverlayService {
@@ -93,7 +95,13 @@ export class DebugStatsOverlayService {
             <button id="dbg-btn-survivability-minus">Survivencia -9%</button>
             <button id="dbg-btn-age-plus">+365 días edad</button>
             <button id="dbg-btn-learn-all-spells">Grimorio completo (god mode)</button>
-            <button id="dbg-btn-install-gauss">Instalar gauss de hielo</button>
+          </div>
+          <div class="dbg-subheader">Armamento</div>
+          <!-- Un botón por arma del catálogo: al añadir una nueva aparece aquí sola. -->
+          <div class="dbg-controls-row" id="dbg-weapons-row"></div>
+          <div class="dbg-controls-row">
+            <button id="dbg-btn-install-all-weapons">Montar todas</button>
+            <button id="dbg-btn-clear-weapons">Desmontar todas</button>
           </div>
           <div class="dbg-subheader">Spawn Lesser Beings</div>
           <div class="dbg-controls-row">
@@ -316,10 +324,7 @@ export class DebugStatsOverlayService {
     if (spellsBtn) {
       spellsBtn.onclick = () => this.handleLearnAllSpells();
     }
-    const gaussBtn = this.overlayElement.querySelector('#dbg-btn-install-gauss') as HTMLButtonElement | null;
-    if (gaussBtn) {
-      gaussBtn.onclick = () => this.handleInstallDebugWeapon();
-    }
+    this.wireWeaponControls();
     spawnButtons.forEach(({ id, type }) => {
       const btn = this.overlayElement?.querySelector(id) as HTMLButtonElement | null;
       if (!btn) {
@@ -372,20 +377,81 @@ export class DebugStatsOverlayService {
     }
   }
 
-  /** Prueba de armamento: monta el gauss sin esperar a la misión de los Grises. */
-  private handleInstallDebugWeapon(): void {
+  /**
+   * Botonera de armamento, construida a partir del catálogo: añadir un arma nueva a
+   * `weapon-catalog.config.ts` la hace probable aquí sin tocar nada más.
+   */
+  private wireWeaponControls(): void {
+    const row = this.overlayElement?.querySelector('#dbg-weapons-row') as HTMLElement | null;
+    if (row) {
+      row.innerHTML = '';
+      for (const weaponId of getAvailableWeaponIds()) {
+        const definition = getWeaponDefinition(weaponId);
+        if (!definition) continue;
+        const btn = document.createElement('button');
+        btn.textContent = definition.label;
+        btn.title = `${definition.kind} · ${definition.aimMode} · ${definition.rangeU}u`;
+        btn.onclick = () => this.handleInstallDebugWeapon(weaponId);
+        row.appendChild(btn);
+      }
+    }
+    const allBtn = this.overlayElement?.querySelector('#dbg-btn-install-all-weapons') as HTMLButtonElement | null;
+    if (allBtn) {
+      allBtn.onclick = () => this.handleInstallAllDebugWeapons();
+    }
+    const clearBtn = this.overlayElement?.querySelector('#dbg-btn-clear-weapons') as HTMLButtonElement | null;
+    if (clearBtn) {
+      clearBtn.onclick = () => this.handleClearDebugWeapons();
+    }
+  }
+
+  /** Monta un arma concreta sin esperar a la misión de los Grises. */
+  private handleInstallDebugWeapon(weaponId: WeaponId): void {
     const engine = this.getEngine();
     if (!engine || typeof engine.installShipWeapon !== 'function') {
       this.showToolStatus('Engine no disponible para instalar armas');
       return;
     }
     try {
-      const installed = engine.installShipWeapon('GAUSS_ICE');
-      this.showToolStatus(installed ? 'Gauss de hielo instalado (botón derecho dispara)' : 'Sin hardpoints libres');
-      this.logging.log(LogLevel.INFO, LogCategory.HUD, 'Dev god mode: arma instalada', { installed });
+      const installed = engine.installShipWeapon(weaponId, { ensureSlot: true });
+      const label = getWeaponDefinition(weaponId)?.label ?? weaponId;
+      this.showToolStatus(installed ? `${label} montada · clic derecho dispara, R rota` : `No se pudo montar ${label}`);
+      this.logging.log(LogLevel.INFO, LogCategory.HUD, 'Dev god mode: arma instalada', { weaponId, installed });
     } catch (error) {
       this.showToolStatus('Error al instalar el arma');
       this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev install weapon failed', error);
+    }
+  }
+
+  /** Monta el catálogo entero, para probar la rotación con R. */
+  private handleInstallAllDebugWeapons(): void {
+    const engine = this.getEngine();
+    if (!engine || typeof engine.installShipWeapon !== 'function') {
+      this.showToolStatus('Engine no disponible para instalar armas');
+      return;
+    }
+    let installed = 0;
+    for (const weaponId of getAvailableWeaponIds()) {
+      try {
+        if (engine.installShipWeapon(weaponId, { ensureSlot: true })) installed++;
+      } catch { /* se informa del total al final */ }
+    }
+    this.showToolStatus(`${installed} armas montadas · R y Shift+R rotan`);
+  }
+
+  /** Deja la nave desarmada, para volver al punto de partida. */
+  private handleClearDebugWeapons(): void {
+    const engine = this.getEngine();
+    if (!engine || typeof engine.applyShipOutfit !== 'function') {
+      this.showToolStatus('Engine no disponible');
+      return;
+    }
+    try {
+      engine.applyShipOutfit(createDefaultShipOutfit());
+      this.showToolStatus('Nave desarmada');
+    } catch (error) {
+      this.showToolStatus('Error al desmontar');
+      this.logging.log(LogLevel.ERROR, LogCategory.HUD, 'Dev clear weapons failed', error);
     }
   }
 
