@@ -215,7 +215,15 @@ export class LandingActionService {
 
   private ensureMissionForDiplomacy(planet: Planet, script: LandingDiplomacyScript): PlanetMissionState {
     if (planet.pendingMission) {
-      return planet.pendingMission;
+      // Foto del planeta → estado VIVO del almacén: el progreso (caza, exterminio) ocurre en otros
+      // sistemas y la foto persistida se queda antigua. Con ella, "Entregar misión" rechazaba un
+      // encargo que el almacén ya daba por listo. Si el almacén no la tiene, es un fantasma.
+      const live = this.missionService.getMissionSnapshot(planet.pendingMission.id);
+      if (live) {
+        planet.setPendingMission(live);
+        return live;
+      }
+      planet.setPendingMission(null);
     }
     return this.missionService.offerMission(planet, {
       race: planet.inhabitants ?? PlanetInhabitants.NONE,

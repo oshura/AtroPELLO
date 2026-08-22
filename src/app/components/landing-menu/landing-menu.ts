@@ -260,8 +260,35 @@ export class LandingMenuComponent implements OnChanges {
     return !!this.mission && !this.disabled;
   }
 
+  /**
+   * El encargo VIVO del almacén global, nunca la foto pegada al planeta.
+   *
+   * El progreso ocurre en OTROS sistemas (la caza del vampiro, el exterminio), y la foto del
+   * planeta se persistió al despegar: al volver decía `accepted` sin trofeo mientras el almacén
+   * ya estaba en `ready-to-turn-in` — y el botón de entrega, leyendo la foto, se quedaba apagado.
+   * Si el almacén ya no tiene la misión es que se completó o caducó: nada de encargos fantasma.
+   */
   protected get mission(): PlanetMissionState | null {
-    return this.planetIntel?.pendingMission ?? null;
+    const pending = this.planetIntel?.pendingMission ?? null;
+    if (pending) {
+      return this.missionService.getMissionSnapshot(pending.id);
+    }
+    // Sin foto en el planeta: buscar el encargo activo que se originó o se entrega aquí.
+    const planetId = this.context?.planetId;
+    if (!planetId) {
+      return null;
+    }
+    const race = this.planetIntel?.inhabitants ?? null;
+    const missions = this.gameState.getActiveMissionsSnapshot?.() ?? [];
+    return (
+      missions.find(
+        m =>
+          m.status !== 'completed' &&
+          m.status !== 'failed' &&
+          (!race || (m.requestedBy ?? m.race) === race) &&
+          (m.originPlanetId === planetId || m.targetLocation?.planetId === planetId)
+      ) ?? null
+    );
   }
 
   /** "3/3 mundos · 1/2 telares": la única cuenta que importa en un exterminio (Fase 15). */
@@ -734,20 +761,30 @@ export class LandingMenuComponent implements OnChanges {
   }
 
   /**
-   * Sincroniza la intel del planeta al abrir el panel.
+   * Sincroniza la intel del planeta al abrir el panel, RECONCILIANDO antes su foto de misión con
+   * el almacén vivo: el progreso hecho en otros sistemas no llega al planeta persistido, así que
+   * su `pendingMission` vuelve antigua (o fantasma, si el encargo ya se entregó). Aquí se cura y
+   * queda curada también para la próxima persistencia del sistema.
    *
-   * ANTES esto además SEMBRABA una misión: con sólo abrir el menú, una civilización con la que no
-   * habías cruzado palabra te encargaba algo. Los encargos nacen ahora en la conversación
-   * (`DialogueService`), que es donde el jugador los oye y los acepta.
+   * (ANTES esto además SEMBRABA una misión con sólo abrir el menú; los encargos nacen ahora en la
+   * conversación, `DialogueService`.)
    */
   private ensureMissionSeeded(): void {
     if (!this.context?.planetId) {
       return;
     }
     const planet = this.resolveLandingPlanet(this.context.planetId);
-    if (planet) {
-      this.gameState.syncPlanetIntelFromPlanet(planet);
+    if (!planet) {
+      return;
     }
+    const pending = planet.pendingMission;
+    if (pending) {
+      const live = this.missionService.getMissionSnapshot(pending.id);
+      if (!live || live.status !== pending.status || live.requiredCargoEntryId !== pending.requiredCargoEntryId) {
+        planet.setPendingMission(live ?? null);
+      }
+    }
+    this.gameState.syncPlanetIntelFromPlanet(planet);
   }
 
   private resolveLandingPlanet(planetId: string): Planet | null {
