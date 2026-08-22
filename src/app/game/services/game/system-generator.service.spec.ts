@@ -46,6 +46,36 @@ describe('SystemGeneratorService', () => {
     expect(hostA?.id).toBe(hostB?.id);
   });
 
+  describe('identidad de los objetos generados', () => {
+    it('dos sistemas distintos no comparten ningún id de planeta ni de cúmulo', () => {
+      // Antes todos los sistemas reutilizaban planet-0, planet-1…: el planeta del mismo índice de
+      // otro sistema era indistinguible por id y las misiones se cruzaban entre sistemas.
+      const a = new SystemGeneratorService().generate(1111);
+      const b = new SystemGeneratorService().generate(2222);
+
+      const idsOf = (s: typeof a) => [...s.planets.map(p => p.id), ...(s.clusters ?? []).map(c => c.id)];
+      const idsA = new Set(idsOf(a));
+      const shared = idsOf(b).filter(id => idsA.has(id));
+
+      expect(shared).toEqual([]);
+    });
+
+    it('los ids son estables para una misma semilla', () => {
+      const a = new SystemGeneratorService().generate(4242);
+      const b = new SystemGeneratorService().generate(4242);
+
+      expect(b.planets.map(p => p.id)).toEqual(a.planets.map(p => p.id));
+      expect((b.clusters ?? []).map(c => c.id)).toEqual((a.clusters ?? []).map(c => c.id));
+    });
+
+    it('los ids de planeta siguen siendo únicos dentro del propio sistema', () => {
+      const snapshot = new SystemGeneratorService().generate(777);
+      const ids = snapshot.planets.map(p => p.id);
+
+      expect(new Set(ids).size).toBe(ids.length);
+    });
+  });
+
   it('los Grises nunca salen en una tirada aleatoria de habitantes', () => {
     expect(PLANET_INHABITANT_POOL).not.toContain(PlanetInhabitants.GRISES);
     expect(PLANET_INHABITANT_POOL).not.toContain(PlanetInhabitants.NONE);

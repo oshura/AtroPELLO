@@ -79,14 +79,25 @@ El Gate Rite dejaba el destino al azar, lo que hacía imposible encargar "ve al 
   (`GameStateStore.setGateTuning`, consumido una sola vez por el rito). El sistema resultante nace con
   `elderGodRevealed`, así que el mapa te dice a dónde has llegado.
 
-## 8. Determinismo
+## 8. Identidad de los objetos generados
+
+Los sistemas procedurales reutilizaban los mismos ids (`planet-0`, `planet-1`…, `cloud-0000`…), así
+que el planeta de un sistema y el del mismo índice de otro eran **indistinguibles por id**. Eso
+cruzaba misiones entre sistemas y afectaba a cualquier mapa por id (memoria de terreno incluida).
+
+Desde la build 79, `SystemGeneratorService` antepone un `systemTag` derivado de la semilla
+(`hashSeed(seed).toString(36)`) a planetas y cúmulos: `planet-1x3kf9-2`. Sigue siendo determinista
+—la misma semilla da los mismos ids— y el sistema humano conserva sus ids nombrados
+(`planet-earth`, `planet-mars`…), que nunca colisionaron.
+
+## 9. Determinismo
 
 La raza de un planeta se sorteaba con `Math.random()`, así que un mismo mundo cambiaba de habitantes
 entre recargas. Ahora la tirada se deriva del id del planeta (`game/utils/seeded-random.ts`), y la
 civilización de Marte tiene semilla fija. Los Grises están **fuera del sorteo**
 (`NON_POOLABLE_INHABITANTS`): sólo aparecen donde la historia los coloca.
 
-## 9. Ficha canónica: los Grises
+## 10. Ficha canónica: los Grises
 
 Ver `docs/HISTORIA.md` §9 para el lore y `landing_missions_grises.json` para el guion. Resumen técnico:
 
@@ -97,7 +108,7 @@ Ver `docs/HISTORIA.md` §9 para el lore y `landing_missions_grises.json` para el
   toberas) + sintonía del rito.
 - Tienda posterior (sólo siendo aliado): ampliar motor, anclaje extra y Vulcan.
 
-## 10. Antipatrones
+## 11. Antipatrones
 
 - Sembrar misiones fuera de una conversación.
 - Prometer una recompensa en el texto y no entregarla en código (el pecado original de esta fase).

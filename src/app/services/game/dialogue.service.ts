@@ -243,9 +243,8 @@ export class DialogueService {
   /**
    * Encargo vivo de ESTE planeta.
    *
-   * Se coteja también la raza: los sistemas procedurales reutilizan ids (`planet-0`, `planet-1`…),
-   * así que comparar sólo el id engancharía la misión de los Grises al aterrizar en el planeta del
-   * mismo índice de otro sistema, abriendo la entrega con el interlocutor equivocado.
+   * Los ids de planeta ya son únicos por sistema, pero se coteja además la raza: es la garantía de
+   * que nunca se abra la entrega con el interlocutor equivocado, aunque un id se repita.
    */
   private findMission(planet: Planet): PlanetMissionState | null {
     const missions = this.gameState.getActiveMissionsSnapshot?.() ?? [];

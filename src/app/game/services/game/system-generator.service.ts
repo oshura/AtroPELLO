@@ -96,6 +96,14 @@ export class SystemGeneratorService {
    */
   generate(seed: RNGSeed = Date.now(), options?: GenerationOptions): SolarSystemSnapshot {
     const rnd = mulberry32(hashSeed(seed));
+    /**
+     * Sufijo que hace ÚNICOS los ids de este sistema. Sin él, todos los sistemas procedurales
+     * reutilizaban `planet-0`, `planet-1`… y `cloud-0000`…, así que un planeta de un sistema y el
+     * del mismo índice de otro eran indistinguibles por id: las misiones, la memoria de terreno y
+     * cualquier mapa por id se cruzaban entre sistemas. Derivado de la semilla, así que un mismo
+     * sistema regenerado sigue dando los mismos ids.
+     */
+    const systemTag = hashSeed(seed).toString(36);
     // Un rito sintonizado por una raza decide el dominio; si no, se rifa.
     const forced = options?.forcedElderGod as ElderGod | undefined;
     const elderGod = forced && ELDER_GOD_SUMMONS[forced] ? forced : pickElderGod(rnd);
@@ -270,7 +278,7 @@ export class SystemGeneratorService {
       stock.organic = Math.round(rnd() * 15);
       stock.void_matter = hasVoidMass ? Math.round(1 + rnd() * 4) : 0;
       return {
-        id: `planet-${i}`,
+        id: `planet-${systemTag}-${i}`,
         name,
         kind,
         position: pos,
@@ -357,7 +365,7 @@ export class SystemGeneratorService {
           const s = vec( vR.x, vR.y, vR.z );
           const lateral = (r - (rows-1)/2) * ROW_SPACING * (1 + 1.2 * (c/(cols-1)));
           const center = vec(base.x + s.x * lateral, base.y + s.y * lateral, base.z + s.z * lateral);
-          clusters.push({ id: `trail-${trailAnchor}-${r}-${c}`, center, direction: t, speed: 1.2 + rnd()*1.2, count: 6 + Math.floor(rnd()*6), includeSuper: rnd() < 0.5, radius: 10 + Math.floor(rnd()*10), centerSpeedFactor: 0.4 + rnd()*0.3 });
+          clusters.push({ id: `trail-${systemTag}-${trailAnchor}-${r}-${c}`, center, direction: t, speed: 1.2 + rnd()*1.2, count: 6 + Math.floor(rnd()*6), includeSuper: rnd() < 0.5, radius: 10 + Math.floor(rnd()*10), centerSpeedFactor: 0.4 + rnd()*0.3 });
         }
       }
     }
@@ -374,7 +382,7 @@ export class SystemGeneratorService {
     cloudGroupCount = Math.min(8, Math.max(1, cloudGroupCount));
     const clampPad = (value: number) => value.toString().padStart(4, '0');
     let cloudClusterSerial = 0;
-    const nextCloudClusterId = () => `cloud-${clampPad(cloudClusterSerial++)}`;
+    const nextCloudClusterId = () => `cloud-${systemTag}-${clampPad(cloudClusterSerial++)}`;
     const cloudGroupSummaries: Array<{ index: number; normalClusters: number; megaClusters: number; }> = [];
     for (let gi = 0; gi < cloudGroupCount; gi++) {
       // Choose a random orbital band for the group's center
