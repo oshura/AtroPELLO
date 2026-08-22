@@ -34,7 +34,7 @@ Esto crea los siguientes ficheros:
   - `voice_narrator_sample.wav` (3s, dron placeholder)
 - MÚSICA
   - `music_menu.wav` (12s, acorde mayor simple)
-  - `music_explore_a.wav` (15s, dron grave)
+  - `Ari-music.mp3` (tema de vuelo, mapeado como `music_explore_a`; sustituye al placeholder `music_explore_a.wav`, que se conserva en la carpeta por si hay que revertir)
   - `music_planet.wav` (15s, acorde medio)
   - `music_combat.wav` (12s, barrido energético)
   - `music_spell_prep.wav` (6s, dron bajo)
