@@ -432,6 +432,9 @@ export class GateRiteAnimation extends BaseAnimation {
           tc.register(TargetType.PLANET, planets as unknown as ITargetable[]);
         }
       } catch {}
+      // Consecuencias de facción (Fase 15): un mundo habitado consumido por el rito no se olvida —
+      // su raza te declara hostil y las misiones de exterminio que la señalan avanzan.
+      try { engine.notifyPlanetRemoved?.(p, 'gate-rite'); } catch {}
       this.enterPortalManifest(engine);
     }
   }
@@ -842,7 +845,7 @@ export class GateRiteAnimation extends BaseAnimation {
             }
             // Tema de estaciones del destino (Fase 15): el sistema de guerra arácnido trae telarañas.
             if (tuning?.stationTheme) {
-              snapshot.meta.stationTheme = tuning.stationTheme;
+              snapshot.meta['stationTheme'] = tuning.stationTheme;
             }
             if (!snapshot.meta.proceduralSystemId && snapshot.id) {
               snapshot.meta.proceduralSystemId = snapshot.id;

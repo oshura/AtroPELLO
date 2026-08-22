@@ -80,6 +80,8 @@ cinemática de inicio) que **amplía los recuerdos** del PJ. Estas presentacione
 - **Inicio**: solo **Gate Rite** (el rito fallido, ahora infalible).
 - **Estación humana**: se descubre **Void Jump** (Long Jump).
 - **Los Grises**: entregan **Speed Rite** al completar su encargo (§9).
+- **Los Mi-Go**: enseñan **Void Kinesis** al aceptar su encargo (la herramienta para drenar mundos)
+  y entregan **Void Cocoon** al completarlo; su sabiduría de aliado enseña **Quimio Sigillum** (§11).
 - (Otros hechizos del juego se obtienen por otras vías; este documento solo fija los hilos narrativos.)
 
 ## 8. Los tres primigenios
@@ -90,9 +92,9 @@ de uno de ellos, lo que determina qué siervos lo patrullan:
 
 | Primigenio | Cómo se le describe | Siervos |
 |---|---|---|
-| **Cthulhu** | Sueña y espera. Domina el sistema humano. | Semillas estelares, shoggoths |
+| **Cthulhu** | Sueña y espera. Domina el sistema humano; **la Tierra era uno de sus mundos más adorados** (dormía a temporadas bajo sus océanos). | Semillas estelares, shoggoths |
 | **Azathoth** | No piensa, y por eso no se le puede negociar nada. | Shoggoths, semillas estelares |
-| **Yog-Sothoth** | La puerta y la llave: el que respondió cuando se lanzó el Gate Rite. | **Vampiros de fuego** (exclusivos suyos), shoggoths |
+| **Yog-Sothoth** | La puerta y la llave: el que respondió cuando se lanzó el Gate Rite. **Se oculta tras enjambres de burbujas que degradan todo lo que tocan; su ser vive en el centro de las burbujas** (observación Mi-Go, §11 — siembra del futuro enfrentamiento). | **Vampiros de fuego** (exclusivos suyos), shoggoths |
 
 Todas las razas del universo están amenazadas por ellos y por sus guerras. La meta última del PJ es
 enfrentarse a los tres en una dimensión desconocida, liberando por el camino planetas de sus siervos.
@@ -121,9 +123,58 @@ cuando el vacío se cerró, la Tierra tenía dos mitades.
 - **Qué dan al volver**: el glifo **Speed Rite**, su amistad y una oferta permanente de motor, anclajes
   de arma y armamento.
 
-## 10. Hilos abiertos (para crecer)
+## 10. La verdad de la secta (revelación Mi-Go)
 
-- ¿Qué quería realmente la secta del Gate Rite? ¿Por qué esa nave concreta?
+**Yog-Sothoth creó la secta humana.** Ningún humano soñó el Gate Rite por su cuenta: la puerta y la
+llave sembró las fórmulas durante tres generaciones en los sueños de la secta hasta que un puñado de
+"monos listos" creyó haber descubierto algo. El objetivo nunca fue la humanidad: era **Cthulhu**. La
+Tierra era uno de los sistemas más adorados de su oponente, que a veces habitaba sus profundidades
+marinas; destruir ese mundo **con las manos de sus propios habitantes** era, para Yog-Sothoth, humor.
+Los humanos fueron una herramienta desechable en una guerra entre primigenios — y el último humano,
+la palanca que quedó viva.
+
+El fragmento de memoria de los Mi-Go lo confirma desde dentro: el cuaderno de la secta apareció en un
+buzón sin remite, con las fórmulas ya escritas y una letra que no era de nadie.
+
+## 11. Los Mi-Go (segunda raza)
+
+Hongos quitinosos con alas que no baten y manos de cirujano. No sirven a ningún primigenio: los
+**estudian** — es la única relación segura, y aun así pierden una colonia cada pocos siglos. Pagan
+con verdades; las tres cosas que coleccionan (cerebros, mapas, verdades incómodas) se cobran.
+
+- **Dónde**: entran en el sorteo de mundos con vida junto a los Grises (segunda raza terminada).
+- **Qué revelan**: la verdad de la secta (§10) y el **comportamiento observado de Yog-Sothoth**: las
+  burbujas que dañan todo objeto y el ser que vive en su centro (+5 % de memoria).
+- **Qué piden**: **terminar la presencia de los tejedores arácnidos** en su sistema — los tres
+  mundos habitados y los dos telares orbitales — porque bloquean su expansión hacia un cúmulo rico.
+- **Qué dan por adelantado**: el **maniobrador de cursor** (vuelo por ratón: a más distancia de la
+  retícula, más giro; roll sigue en Q/E), giroscopios retensados (+56 % de giro) y el glifo
+  **Void Kinesis** con su uso quirúrgico: **drenar la void mass de un planeta hasta hacerlo
+  desaparecer**. Y sintonizan el rito hacia el sistema tejedor.
+- **Qué dan al volver**: +5 % de memoria, el glifo **Void Cocoon**, su tienda (misiles y anclajes) y
+  la **senda de Yig**: sintonizar el rito hacia el sistema natal de la gran raza que guarda el warp
+  a las dimensiones donde residen los primigenios.
+
+## 12. Los Tejedores arácnidos (antagonistas)
+
+Colonias de arácnidos del vacío que hilan **estaciones-telaraña** entre sus mundos. No conversan:
+vibran. Neutrales hasta el primer disparo; desde entonces sus **cazas** salen del hilo en oleadas
+mientras quede un telar vivo. Venden a cualquiera con carga que pese (minas-drone, "huevos que
+muerden") y pagan por traición: un mundo Mi-Go a cambio de precio. No comercian con memoria.
+
+Se comieron a los tres emisarios Mi-Go y tejieron con las alas.
+
+## 13. La gran raza de Yig (gancho)
+
+Serpientes anteriores a casi todo. Su sistema natal guarda un **warp plegado en el aire** que cruza
+hacia las dimensiones donde residen los primigenios — el camino del enfrentamiento final. Hoy
+duermen: el mundo entero respira despacio y las piedras se orientan hacia el visitante. Su fase (el
+warp, su encargo, su historia) está por escribir.
+
+## 14. Hilos abiertos (para crecer)
+
+- ¿Qué quería Yog-Sothoth ABRIENDO la puerta, además de humillar a Cthulhu? (La palanca sigue viva.)
 - ¿Quedan supervivientes humanos? ¿La estación tiene una IA/bitácora que hable con el PJ?
-- Estaciones de otras razas: ¿aliadas, hostiles, neutrales? ¿Qué hechizos/recuerdos guardan?
+- El despertar de Yig y el warp: ¿qué precio piden las serpientes?
+- Las burbujas de Yog-Sothoth como encuentro jugable (boss): dañan todo objeto; el ser, en el centro.
 - El arco de la **memoria**: ¿recuperarla del todo cambia quién es el PJ (otra vez)?

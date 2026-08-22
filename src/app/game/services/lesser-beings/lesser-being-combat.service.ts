@@ -1,6 +1,6 @@
 import { GameEngine } from '../../GameEngine';
 import { Vector3 } from '../../../types/game.types';
-import { StellarSeedBeing } from '../../game-objects/lesser-beings/stellar-seed-being';
+import { LesserBeingBase } from '../../game-objects/lesser-beings/lesser-being-base';
 import { TransluminalShoggothBeing } from '../../game-objects/lesser-beings/transluminal-shoggoth-being';
 import { RiftVampireBeing } from '../../game-objects/lesser-beings/rift-vampire-being';
 import { ProjectileSystem } from '../weapons/projectile-system';
@@ -41,7 +41,8 @@ export class LesserBeingCombatService {
     private readonly projectiles: ProjectileSystem
   ) {}
 
-  public fireAcidSpit(being: StellarSeedBeing, direction: Vector3): void {
+  /** Escupitajo/aguijonazo genérico: cualquier ser con perfil de proyectil (semillas, cazas arácnidos). */
+  public fireAcidSpit(being: LesserBeingBase, direction: Vector3): void {
     if (!being?.attackProfile?.metadata) {
       return;
     }

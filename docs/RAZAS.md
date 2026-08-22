@@ -1,7 +1,9 @@
-# Fase 13 — Razas, conversación y misiones narrativas
+# Fases 13–15 — Razas, conversación y misiones narrativas
 
-> Estado: implementada la base jugable (build 82). Lore en `docs/HISTORIA.md`; armamento en
-> `docs/ARMAS.md`; plan por slices en `documentation/Plan_Armas_Razas.md`.
+> Estado: base jugable en build 82 (Fase 13, los Grises); **Fase 14 (vuelo por ratón) y Fase 15
+> (Mi-Go, Arácnidos y exterminio) en build 89**. Lore en `docs/HISTORIA.md`; armamento en
+> `docs/ARMAS.md`; planes por slices en `documentation/Plan_Armas_Razas.md` y
+> `documentation/Plan_MiGo_Aracnidos.md`.
 
 ## 1. Por qué
 
@@ -51,16 +53,24 @@ Con eso la raza **entra sola en el sorteo de habitantes** (`getPoolableRaces()`)
 deriva del catálogo y no del enum. Un nombre reservado en el enum sin ficha no aparece jamás en el
 universo: así el jugador nunca aterriza en un mundo cuya civilización no sabe hablar.
 
-> **Estado actual: sólo los Grises.** Cualquier planeta con probabilidad de vida los alojará a ellos.
-> Los guiones antiguos de las otras doce razas siguen en `assets/narrative/landing/` como material
-> de partida, pero **no se cargan**: se reescribirán al abordar cada raza.
+Dos matices de ficha (Fase 15):
+
+- `excludeFromPool: true` — raza con ficha completa que **nunca** entra en el sorteo: sólo existe
+  donde la trama la coloca (los Arácnidos en su sistema de guerra, Yig en su sistema natal).
+- `shopAvailability: 'neutral'` — su taller vende sin exigir alianza (default: `'ally'`). Un
+  **hostil** no compra nada, sea cual sea la disponibilidad.
+
+> **Estado actual: Grises y Mi-Go en el sorteo.** Arácnidos y Yig existen sólo por sintonía del
+> rito. Los guiones antiguos de las razas restantes siguen en `assets/narrative/landing/` como
+> material de partida, pero **no se cargan**: se reescribirán al abordar cada raza.
 
 ### Presupuesto de memoria
 
 Cada raza devuelve un trozo del pasado del piloto (`meta.memoryShare`, sumado al completar su
 encargo). El arco de la memoria va del 20 % inicial —intro y estación humana— al 100 %, así que
 conviene repartir el 80 % restante entre las razas que se vayan cerrando, no gastarlo en las
-primeras. Los Grises aportan **5 %**.
+primeras. Los Grises aportan **5 %**; los Mi-Go, otro **5 %**. Los Arácnidos, **0 %**: no comercian
+con memoria, sólo con peso.
 
 Además del porcentaje, cada raza aporta un **fragmento narrado** (`turnIn.memoryFragment`): es el
 pago real, lo que el jugador recuerda. La cifra sólo mide el progreso.
@@ -98,11 +108,16 @@ Esqueleto del guion de una raza (`RaceMissionScript`):
   "meta": {
     "race": "GRISES",
     "memoryShare": 5,                 // % de memoria que devuelve el encargo
-    "missionType": "hunt",            // artifact | material | hunt
+    "missionType": "hunt",            // artifact | material | hunt | exterminate | none
     "targetHint": "…",                // pista de dónde ocurre
     "uniqueGlyphId": "SPEED",         // glifo que enseñan al completarlo (opcional)
+    "grantGlyphOnAccept": "…",        // glifo que enseñan al ACEPTAR (la herramienta del encargo)
     "huntTarget": { "lesserBeing": "VAMPIRO_FUEGO", "elderGod": "YOG_SOTHOTH" },
-    "trophyLabel": "Rescoldo de Vampiro de Fuego"
+    "trophyLabel": "Rescoldo de Vampiro de Fuego",
+    "exterminateTarget": { "race": "…", "planets": 3, "stations": 2 },  // sólo exterminate
+    "acceptOutfitText": "…",          // narración de la mejora de nave al aceptar
+    "acceptTune": { "label": "…", "guaranteedInhabitants": "…", "guaranteedInhabitedCount": 3, "stationTheme": "aracnida" },
+    "postMissionTune": { "race": "YIG", "label": "…", "text": "…" }     // oferta tras completar
   },
   "offer": {
     "scene": "…",                     // cómo te reciben; aquí va su trozo de historia
@@ -137,13 +152,50 @@ Novedad de esta fase, para encargos que no ocurren en un planeta sino contra una
 
 Matar la criatura *antes* de aceptar el encargo no cuenta, y el propio diálogo lo advierte.
 
+## 6b. Misiones de exterminio (`type: 'exterminate'`, Fase 15)
+
+Para encargos de guerra: terminar la presencia de una raza en su sistema.
+
+1. La misión guarda `exterminationTarget: { race, planetsRequired, stationsRequired,
+   planetsDestroyed, stationsDestroyed }`.
+2. Cada planeta habitado destruido (Gate Rite o drenaje de Void Kinesis) y cada estación derribada
+   avisan a `MissionService.registerExterminationEvent(raza, 'planet'|'station')`.
+3. La cuota sólo avanza con la misión **aceptada**; el excedente no cuenta; al completarse pasa a
+   `ready-to-turn-in` (mismo guard que hunt: jamás por transición automática) y `completeMission`
+   la rechaza si la cuota no está cumplida.
+4. La entrega ocurre conversando con la raza patrocinadora (cualquier planeta suyo).
+
+Los **métodos de destrucción de planeta** son dos, y ambos cuentan:
+
+- **Gate Rite sobre el planeta**: lo colapsa en un portal (y te lleva a un sistema nuevo; se vuelve
+  por el portal emparejado).
+- **Void Kinesis sobre el planeta** (`planet-drain-beam.ts`): canal de ~20 s que encoge el mundo
+  mientras su void mass pasa a tu depósito; al consumarse desaparece sin portal. Bloqueado en el
+  sistema natal humano y sobre el planeta donde estás aterrizado; alcance 2500 u.
+
+## 6c. Hostilidad (Fase 15)
+
+- **Destruir el planeta de CUALQUIER raza la vuelve hostil** (`declareRaceHostility`): standing
+  `hostile`, sus planetas del sistema pasan a enemigo, **sus encargos activos caducan** y no
+  vuelve a conversar ni a vender ("Nadie sale a recibirte…").
+- Los **Arácnidos** además son un caso especial: neutrales hasta el **primer disparo** del jugador a
+  un telar o a un caza (`AracnidWarSystem.notifyPlayerAggression`); desde entonces sus cazas salen
+  de las estaciones a por ti.
+- El **camino de traición** existe: los Arácnidos ofrecen en neutral su contramisión (destruir un
+  planeta Mi-Go). Cumplirla vuelve hostiles a los Mi-Go, hace caducar su misión y pierde la senda
+  de Yig; a cambio, los tejedores saldan la cuenta.
+
 ## 7. Progreso persistido
 
 Todo opcional, sin migración de savegames:
 
-- `SaveGameCharacterState.storyFlags` — hitos de una sola vez (`greys-system-seeded`).
+- `SaveGameCharacterState.storyFlags` — hitos de una sola vez (`greys-system-seeded`,
+  `aracnid-web-down:<systemTag>:<n>`).
 - `SaveGameCharacterState.raceStandings` — reputación y misiones completadas por raza.
+- `SaveGameCharacterState.gateTuning` — sintonía pendiente del próximo rito (Fase 15): guardar
+  entre aceptar un encargo y lanzar el rito ya no pierde el destino prometido.
 - `SolarSystemMeta.elderGodRevealed` — si el jugador ya sabe quién domina ese sistema.
+- `SolarSystemMeta.stationTheme` — tema de estaciones del sistema (`'aracnida'` = telarañas).
 
 ## 8. Ritos dirigidos
 
@@ -151,9 +203,13 @@ El Gate Rite dejaba el destino al azar, lo que hacía imposible encargar "ve al 
 
 - **El primer Rito de la partida** siembra siempre el sistema de los Grises, con un planeta habitado
   al 100% y su civilización ya confirmada (no hace falta escanearla). No se rifa sistema archivado.
-- Una raza puede **sintonizar el siguiente Rito** hacia un primigenio
-  (`GameStateStore.setGateTuning`, consumido una sola vez por el rito). El sistema resultante nace con
-  `elderGodRevealed`, así que el mapa te dice a dónde has llegado.
+  Ese sistema **nunca cae bajo Yog-Sothoth** (`excludedElderGod`).
+- Una raza puede **sintonizar el siguiente Rito** con un `GateTuningState` completo
+  (`game/types/gate-tuning.types.ts`, consumido una sola vez): primigenio forzado o excluido, raza
+  garantizada, número de mundos habitados (`guaranteedInhabitedCount`) y tema de estaciones. Los
+  Grises fuerzan el dominio de Yog-Sothoth; los Mi-Go generan el **sistema de guerra arácnido**
+  (3 mundos ARACNIDOS + 2 telarañas) y, tras su misión, el **sistema natal de Yig**. El sistema
+  resultante nace con `elderGodRevealed`, así que el mapa te dice a dónde has llegado.
 
 ## 9. Identidad de los objetos generados
 
@@ -183,6 +239,37 @@ Ver `docs/HISTORIA.md` §9 para el lore y `landing_missions_grises.json` para el
 - Al aceptar: `applyGreysUpgrade` (velocidad 100, aceleración 10, vacío ×10, gauss instalado, anillo de
   toberas) + sintonía del rito.
 - Tienda posterior (sólo siendo aliado): ampliar motor, anclaje extra y Vulcan.
+
+## 11b. Ficha canónica: los Mi-Go (Fase 15)
+
+Ver `docs/HISTORIA.md` §11 y `landing_missions_migo.json`. Resumen técnico:
+
+- Guion con siete preguntas: quién creó la secta (Yog-Sothoth), por qué la Tierra (sistema adorado
+  de Cthulhu), las **burbujas** de Yog-Sothoth, los arácnidos, los métodos y el pago.
+- Misión `exterminate` contra ARACNIDOS (3 mundos + 2 telares), `memoryShare: 5`,
+  `uniqueGlyphId: 'VOID_COCOON'`.
+- Al aceptar: `applyMiGoUpgrade` (maniobrador de cursor + giro PI/2.5→PI/1.6), glifo
+  **VOID_KINESIS** (`grantGlyphOnAccept`) y sintonía al sistema arácnido (`acceptTune`).
+- Tras completar: opción permanente **"Pedir la senda de Yig"** (`postMissionTune`) — sintoniza el
+  próximo rito hacia un sistema con planeta YIG (guion teaser, sin misión: la gran raza llegará con
+  su propia fase, junto al warp a las dimensiones de los primigenios).
+- Tienda (ally): MISSILE + anclaje extra. Sabiduría de aliado: QUIMIO_SIGILLUM.
+- **Entran en el sorteo de habitantes** junto a los Grises.
+
+## 11c. Ficha canónica: los Tejedores arácnidos (Fase 15)
+
+Raza **antagonista** (`excludeFromPool`): sólo habitan su sistema de guerra (sintonía Mi-Go).
+
+- **Elusivos**: guion mínimo de tres vibraciones de hilo; no cuentan historia (memoryShare 0).
+- **Tienda en neutral** (`shopAvailability: 'neutral'`): DRONE_MINE ("huevos que muerden") y un
+  anclaje. Hostiles no venden.
+- **Contramisión**: `exterminate` contra MI_GO (1 planeta). El precio real es perder a los Mi-Go.
+- Su sistema: 3 mundos habitados confirmados + 2 **estaciones telaraña**
+  (`AracnidWebStation`, 1000 HP, destruibles, sin puertos) + **cazas arácnidos**
+  (`AracnidFighterBeing`, 60 HP, aguijonazos con predicción de tiro) que salen en oleadas de los
+  telares vivos mientras seas hostil. Sin telares, los cazas se repliegan.
+- Toda la guerra vive en `game/services/state/aracnid-war-system.ts` (flat + host); estaciones
+  derribadas persisten por storyFlag y no vuelven a tejerse.
 
 ## 12. Antipatrones
 

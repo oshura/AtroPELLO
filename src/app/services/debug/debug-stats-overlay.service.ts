@@ -7,6 +7,7 @@ import { GameStateStore } from '../game/game-state.store';
 import { LesserBeing, LESSER_BEING_LABELS } from '../../game/types/cosmic-life.types';
 import { SpellType } from '../../game/types/spell.types';
 import { WeaponId, createDefaultShipOutfit } from '../../game/types/weapon.types';
+import { GateTuningState } from '../../game/types/gate-tuning.types';
 import { getAvailableWeaponIds, getWeaponDefinition } from '../../game/config/weapon-catalog.config';
 
 @Injectable({ providedIn: 'root' })
@@ -109,6 +110,11 @@ export class DebugStatsOverlayService {
             <button id="dbg-btn-spawn-seed">Semilla estelar</button>
             <button id="dbg-btn-spawn-shoggoth">Shoggoth</button>
             <button id="dbg-btn-spawn-vamp">Vampiro de fuego</button>
+          </div>
+          <div class="dbg-subheader">Sintonía del rito (Fase 15)</div>
+          <div class="dbg-controls-row">
+            <button id="dbg-btn-tune-aracnid">Rito → sistema arácnido</button>
+            <button id="dbg-btn-tune-yig">Rito → sistema de Yig</button>
           </div>
           <div id="dbg-tools-status" class="dbg-tools-status"></div>
         </div>
@@ -417,6 +423,28 @@ export class DebugStatsOverlayService {
         this.showToolStatus(applied ? 'Injerto Mi-Go aplicado (tecla c = toggle)' : 'El injerto Mi-Go ya estaba aplicado');
       };
     }
+    // Sintonías del rito sin pasar por los diálogos (Fase 15): validar los destinos dirigidos.
+    const tuneAracnid = this.overlayElement?.querySelector('#dbg-btn-tune-aracnid') as HTMLButtonElement | null;
+    if (tuneAracnid) {
+      tuneAracnid.onclick = () => this.handleDebugTune(
+        { guaranteedInhabitants: 'ARACNIDOS', guaranteedInhabitedCount: 3, stationTheme: 'aracnida' },
+        'Sistema arácnido'
+      );
+    }
+    const tuneYig = this.overlayElement?.querySelector('#dbg-btn-tune-yig') as HTMLButtonElement | null;
+    if (tuneYig) {
+      tuneYig.onclick = () => this.handleDebugTune({ guaranteedInhabitants: 'YIG' }, 'Sistema de Yig');
+    }
+  }
+
+  private handleDebugTune(tuning: GateTuningState, label: string): void {
+    const engine = this.getEngine();
+    if (!engine || typeof engine.tuneNextGateRiteWith !== 'function') {
+      this.showToolStatus('Engine no disponible para sintonizar el rito');
+      return;
+    }
+    engine.tuneNextGateRiteWith(tuning, label);
+    this.showToolStatus(`Próximo Gate Rite sintonizado: ${label}`);
   }
 
   /** Monta un arma concreta sin esperar a la misión de los Grises. */

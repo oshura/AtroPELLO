@@ -81,7 +81,7 @@ import { KeyBindingsService, GameAction } from '../services/key-bindings.service
 // Snapshot types for system swapping
 import { SolarSystemSnapshot, PortalSnapshot } from './types/solar-system.types';
 import { TargetType, ITargetable } from './types/targeting.types';
-import { getSpecificDisplayLabel, getCategory, targetTypeToGameObjectType, GameObjectCategory } from './types/game-object.types';
+import { getSpecificDisplayLabel, targetTypeToGameObjectType } from './types/game-object.types';
 import {
   InventorySelection,
   InventoryPanelRegion,
@@ -99,7 +99,7 @@ import {
   LesserBeingInstanceSnapshot,
   LesserBeingEncounterPlan,
 } from './types/cosmic-life.types';
-import { PLANET_INTEL_STATUS } from './types/planet-intel.types';
+import { PLANET_INTEL_STATUS, PlanetMissionState } from './types/planet-intel.types';
 import { GameObjectAnimosity } from './types/animosity.types';
 import { AtmosphereTelemetryPanelState, AtmosphereTelemetryPayload, CompassCountdownPayload, HudMarqueeEventType } from './types/hud.types';
 import { OrientationBasis, computeHeadingFromForward } from './targeting/compass-direction.util';
@@ -165,6 +165,15 @@ import { ShipOutfittingService, ShipOutfittingHost } from './services/state/ship
 import { MouseFlightSystem, MouseFlightHost } from './services/input/mouse-flight-system';
 import { ELDER_GOD_LABELS } from './types/cosmic-life.types';
 import { GateTuningState } from './types/gate-tuning.types';
+import { AracnidWarSystem, AracnidWarHost, ARACNID_STATION_XP } from './services/state/aracnid-war-system';
+import { AracnidWebStation } from './game-objects/stations/aracnid-web-station';
+import { AracnidFighterBeing } from './game-objects/lesser-beings/aracnid-fighter-being';
+import { AracnidStationRenderer, AracnidStationRenderHost } from './rendering/aracnid-station-renderer';
+import { PlanetDrainBeam, PlanetDrainBeamHost } from './services/spells/planet-drain-beam';
+import { getPlanetPaletteDescriptor } from './config/planet-palette.config';
+import { VoidCocoonShieldRenderer } from './rendering/spells/void-cocoon-shield-renderer';
+import { renderTargetOutline2D } from './targeting/v2/target-outline-driver';
+import { generateFallbackPlanetName, getDebrisColorForObjectType } from './utils/debris-colors';
 import { MissionService } from './services/game/mission.service';
 import { WeaponEngineBridge } from './services/weapons/weapon-engine-bridge';
 import { DamageableLike } from './services/weapons/weapon-targets';
@@ -738,6 +747,82 @@ export class GameEngine {
     unregisterCollider: (id) => this.shipCollisionSystem.unregisterStructured(id),
     log: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
   };
+
+  // ── Guerra arácnida (Fase 15): estaciones telaraña + hostilidad + oleadas de cazas ──
+  private readonly aracnidWar = new AracnidWarSystem();
+  private readonly aracnidStationRenderer = new AracnidStationRenderer();
+  private readonly aracnidWarHost: AracnidWarHost = {
+    isAracnidSystem: () => this.currentSnapshot?.meta?.['stationTheme'] === 'aracnida',
+    getSystemTag: () => this.resolveSystemId(),
+    getAracnidPlanetPositions: () =>
+      this.gameState.planets
+        .filter(p => p.inhabitants === PlanetInhabitants.ARACNIDOS)
+        .map(p => ({ ...p.position })),
+    getShipPosition: () => this.spaceship ? { ...this.spaceship.position } : null,
+    getShipVelocity: () => this.spaceship ? this.spaceship.velocity : null,
+    isBusy: () => !this.spaceship || this.voidJumpActive ||
+      (typeof this.animationManager?.getCurrentAnimation === 'function' && this.animationManager.getCurrentAnimation() !== null),
+    hasStoryFlag: (flag) => this.gameState.hasStoryFlag(flag),
+    markStoryFlag: (flag) => this.gameState.markStoryFlag(flag),
+    isHostile: () => this.gameState.getRaceStanding(PlanetInhabitants.ARACNIDOS).standing === 'hostile',
+    declareHostility: () => this.declareRaceHostility(PlanetInhabitants.ARACNIDOS, 'LOS TEJEDORES TE DECLARAN ENEMIGO'),
+    registerStation: (station) => {
+      this.registerDestructionCallback(station);
+      const shapes = station.getStructuredShapesLocal();
+      if (shapes.length) {
+        this.shipCollisionSystem.registerStructured({
+          id: station.id,
+          source: station,
+          shapesLocal: shapes,
+          objectType: GameObjectType.SPACE_STATION,
+        });
+      }
+    },
+    unregisterStationCollider: (id) => this.shipCollisionSystem.unregisterStructured(id),
+    spawnFighter: (homeStationId, position) => {
+      const fighter = new AracnidFighterBeing(homeStationId, { position });
+      try {
+        this.registerLesserBeing(fighter);
+        return fighter;
+      } catch (error) {
+        this.logger.log(LogLevel.WARN, LogCategory.LESSER_BEINGS, 'No se pudo desplegar el caza arácnido', { error });
+        return null;
+      }
+    },
+    fireNeedle: (fighter, direction) => this.lesserBeingCombat?.fireAcidSpit(fighter, direction),
+    registerStationKillForMissions: () => {
+      const mission = this.missionService?.registerExterminationEvent(String(PlanetInhabitants.ARACNIDOS), 'station');
+      if (mission?.status === 'ready-to-turn-in') {
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.MISSION, this.exterminationReadyNotice(mission));
+      } else if (mission?.exterminationTarget) {
+        const t = mission.exterminationTarget;
+        this.hudManager?.emitMarqueeEvent?.(
+          HudMarqueeEventType.MISSION,
+          `EXTERMINIO: ${t.planetsDestroyed}/${t.planetsRequired} MUNDOS · ${t.stationsDestroyed}/${t.stationsRequired} TELARES`
+        );
+      }
+    },
+    awardStationXp: () => {
+      const gain = this.characterProfileService?.awardExperience(ARACNID_STATION_XP, 'aracnid-station');
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.LESSER_BEING, `Telar destruido: +${ARACNID_STATION_XP} XP`);
+      if (gain?.leveledUp) {
+        this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, `NIVEL ${gain.level} ALCANZADO`);
+      }
+    },
+    emitNotice: (text) => this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, text),
+    log: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
+  };
+  private readonly aracnidStationRenderHost: AracnidStationRenderHost = {
+    getGl: () => this.gl,
+    getShaderManager: () => this.shaderManager,
+    getCamera: () => this.camera,
+    getStations: () => this.aracnidWar.getStations(),
+    getSacs: () => this.aracnidWar.getSacs(),
+    getLightDirection: () => this.lightDirection,
+    getLightColor: () => this.lightColor,
+    getAmbientColor: () => this.ambientColor,
+    getAmbientStrength: () => this.ambientStrength,
+  };
   // Track last applied snapshot id (debug)
   private lastAppliedSnapshotId: string | null = null;
   // Current active solar system snapshot (para acceder a configuración de debris efímero)
@@ -837,7 +922,7 @@ export class GameEngine {
   private voidCocoonActiveUntilMs: number | null = null;
   private voidCocoonLastImpactMs: number = 0;
   private voidCocoonShieldStartMs: number = 0;
-  private voidCocoonShieldGeometry: { vbo: WebGLBuffer | null; ibo: WebGLBuffer | null; indexCount: number } | null = null;
+  private voidCocoonShieldRenderer: VoidCocoonShieldRenderer | null = null;
   private cachedSpeedRiteRemainingSec: number | null = null;
 
   // Material Disruption Rite beam animation
@@ -910,6 +995,7 @@ export class GameEngine {
       this.spaceTurtleSystem.getRenderable() ? [this.spaceTurtleSystem.getRenderable() as unknown as DamageableLike] : null,
       this.gameState.independentAsteroids as unknown as DamageableLike[],
       this.ephemeralAsteroids as unknown as DamageableLike[],
+      this.aracnidWar.getStations() as unknown as DamageableLike[],
     ],
     getAsteroidClusters: () => this.asteroidClusterService.getClusters(),
     getMouseRay: () => this.resolveFlightPointerRay(),
@@ -937,6 +1023,22 @@ export class GameEngine {
     logInfo: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
     logDebug: (msg, data) => this.logger.log(LogLevel.DEBUG, LogCategory.GAME_LOOP, msg, data),
   });
+
+  // Void Kinesis sobre PLANETAS (Fase 15): drena la void mass del mundo hasta hacerlo desaparecer.
+  private readonly planetDrainBeam = new PlanetDrainBeam();
+  private readonly planetDrainHost: PlanetDrainBeamHost = {
+    getSpaceship: () => this.spaceship ?? null,
+    isPlanetAlive: (planet) => planet.active && this.gameState.planets.some(p => p.id === planet.id),
+    addVoidEnergy: (amount) => {
+      const ship = this.spaceship;
+      if (!ship || amount <= 0) return 0;
+      const applied = Math.min(amount, Math.max(0, ship.voidEnergyMax - ship.voidEnergyCurrent));
+      ship.voidEnergyCurrent += applied;
+      return applied;
+    },
+    consumePlanet: (planet) => this.consumePlanetByDrain(planet),
+    logInfo: (msg, data) => this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, msg, data),
+  };
 
   // Void Kinesis conduit beam state
   private readonly voidKinesisBeam = new VoidKinesisBeam();
@@ -1095,7 +1197,7 @@ export class GameEngine {
           // Do NOT change look direction or speeds; cooldown prevents immediate re-entry bounce
           // Optionally nudge slightly along current forward to avoid z-fighting at exact center
           try {
-            const fwd = this.normalize({ ...this.spaceship.forwardDirection });
+            const fwd = vec3Normalize({ ...this.spaceship.forwardDirection });
             const eps = 0.01;
             this.spaceship.position.x += fwd.x * eps;
             this.spaceship.position.y += fwd.y * eps;
@@ -1522,7 +1624,7 @@ export class GameEngine {
       return context;
     }
     const state = this.atmosphereSceneState;
-    const normal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
+    const normal = vec3Normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
     const centerFromState = state?.center ? { ...state.center } : null;
     const contextCenter = this.resolvePlanetCenterFromContext(context);
     const planetCenter = centerFromState ?? contextCenter ?? (context.planetCenter ? { ...context.planetCenter } : null);
@@ -1646,7 +1748,7 @@ export class GameEngine {
     const context = this.landingTouchdownContext;
     const anchor = context?.surfacePoint ?? center;
     const normal = context?.surfaceNormal ?? { x: 0, y: 1, z: 0 };
-    const safeNormal = this.normalize(normal);
+    const safeNormal = vec3Normalize(normal);
     const safeDistance = Math.max(radius * 2, 800);
     const safePosition = {
       x: anchor.x + safeNormal.x * safeDistance,
@@ -1712,7 +1814,7 @@ export class GameEngine {
       options?.groundCollisionRadius ?? (groundRadius + collisionPadding)
     );
     const palette = this.deriveAtmospherePalette(context);
-    const entryNormal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
+    const entryNormal = vec3Normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
     const scaledSurfacePoint = center
       ? {
         x: center.x + entryNormal.x * groundRadius,
@@ -1762,7 +1864,7 @@ export class GameEngine {
     if (maxSpeed <= 0) {
       return;
     }
-    const forward = this.normalize({ ...this.spaceship.forwardDirection });
+    const forward = vec3Normalize({ ...this.spaceship.forwardDirection });
     const hasForward = Math.abs(forward.x) + Math.abs(forward.y) + Math.abs(forward.z) > 1e-5;
     if (!hasForward) {
       return;
@@ -1796,7 +1898,7 @@ export class GameEngine {
     this.spaceship.thrusterState = ThrusterState.ACCELERATING;
     this.spaceship.isThrusting = true;
 
-    const forward = this.normalize({ ...this.spaceship.forwardDirection });
+    const forward = vec3Normalize({ ...this.spaceship.forwardDirection });
     if (forward.x || forward.y || forward.z) {
       this.spaceship.velocity.x = forward.x * this.spaceship.currentSpeed;
       this.spaceship.velocity.y = forward.y * this.spaceship.currentSpeed;
@@ -2164,7 +2266,7 @@ export class GameEngine {
     if (!this.spaceship) {
       return;
     }
-    const normal = context.surfaceNormal ? this.normalize(context.surfaceNormal) : { x: 0, y: 1, z: 0 };
+    const normal = context.surfaceNormal ? vec3Normalize(context.surfaceNormal) : { x: 0, y: 1, z: 0 };
     // Recalcular surfacePoint usando groundRadius escalado (no el radius original del contexto)
     let surfacePoint = context.surfacePoint ? { ...context.surfacePoint } : null;
     const center = this.resolvePlanetCenterFromContext(context);
@@ -2219,7 +2321,7 @@ export class GameEngine {
     const collisionRadius = surfaceRadius + shipRadius;
     const isColliding = distFromCenter <= collisionRadius;
     const contactNormal = distFromCenter > 1e-6
-      ? this.normalize(offset)
+      ? vec3Normalize(offset)
       : { x: 0, y: 1, z: 0 };
     const contactPoint = {
       x: state.center.x + contactNormal.x * surfaceRadius,
@@ -2255,7 +2357,7 @@ export class GameEngine {
     if (!context) {
       return;
     }
-    const collisionNormal = this.normalize(
+    const collisionNormal = vec3Normalize(
       contact?.normal
         ?? context.surfaceNormal
         ?? this.deriveLandingNormalFromContext(context)
@@ -2529,7 +2631,7 @@ export class GameEngine {
     const center = this.resolvePlanetCenterFromContext(context)
       ?? context.surfacePoint
       ?? { x: 0, y: 0, z: 0 };
-    const normal = this.normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
+    const normal = vec3Normalize(context.surfaceNormal ?? this.deriveLandingNormalFromContext(context));
     const radius = Math.max(1, context.radius ?? 0);
     const surfacePoint = context.surfacePoint ?? {
       x: center.x + normal.x * radius,
@@ -2544,12 +2646,12 @@ export class GameEngine {
       z: surfacePoint.z + normal.z * clearance,
     };
     this.placeShipAtPosition(target);
-    const forward = this.normalize(this.spaceship.forwardDirection || normal);
+    const forward = vec3Normalize(this.spaceship.forwardDirection || normal);
     let tangent = this.projectOntoPlane(forward, normal);
     if (this.vectorLength(tangent) < 1e-3) {
       tangent = this.buildPerpendicularGroundDirection(normal);
     } else {
-      tangent = this.normalize(tangent);
+      tangent = vec3Normalize(tangent);
     }
     const lookTarget = {
       x: target.x + tangent.x,
@@ -2919,7 +3021,7 @@ export class GameEngine {
     groundPalette: AtmosphereGroundPalette;
     paletteKey: string;
   } {
-    const descriptor = this.getPlanetPaletteDescriptor(context.planetType);
+    const descriptor = getPlanetPaletteDescriptor(context.planetType);
     const palette = {
       lowlands: new Float32Array(descriptor.palette.lowlands),
       highlands: new Float32Array(descriptor.palette.highlands),
@@ -2937,130 +3039,6 @@ export class GameEngine {
       groundPalette: palette,
       paletteKey: `${context.planetId ?? 'unknown'}|${descriptor.key}`,
     };
-  }
-
-  private getPlanetPaletteDescriptor(type?: PlanetType) {
-    switch (type) {
-      case PlanetType.Tierra:
-        return {
-          key: 'tierra',
-          ground: [0.26, 0.40, 0.22],
-          sky: [0.18, 0.40, 0.68],
-          palette: {
-            lowlands: [0.08, 0.16, 0.08],
-            highlands: [0.52, 0.68, 0.34],
-            dunes: [0.74, 0.54, 0.28],
-            polar: [0.92, 0.96, 0.98],
-            strata: [0.36, 0.44, 0.30],
-            valleys: [0.05, 0.12, 0.06],
-            plains: [0.22, 0.38, 0.18],
-            midlands: [0.44, 0.58, 0.30],
-            peaks: [0.88, 0.92, 0.80],
-          },
-        };
-      case PlanetType.Gaseous:
-        return {
-          key: 'gaseous',
-          ground: [0.18, 0.26, 0.58],
-          sky: [0.10, 0.16, 0.40],
-          palette: {
-            lowlands: [0.08, 0.14, 0.36],
-            highlands: [0.46, 0.66, 0.92],
-            dunes: [0.42, 0.48, 0.88],
-            polar: [0.78, 0.86, 0.98],
-            strata: [0.20, 0.32, 0.62],
-            valleys: [0.04, 0.08, 0.28],
-            plains: [0.16, 0.30, 0.52],
-            midlands: [0.28, 0.46, 0.74],
-            peaks: [0.84, 0.92, 0.98],
-          },
-        };
-      case PlanetType.Giant:
-        return {
-          key: 'giant',
-          ground: [0.62, 0.34, 0.22],
-          sky: [0.40, 0.18, 0.48],
-          palette: {
-            lowlands: [0.20, 0.08, 0.04],
-            highlands: [0.88, 0.54, 0.30],
-            dunes: [0.94, 0.66, 0.32],
-            polar: [0.96, 0.86, 0.70],
-            strata: [0.54, 0.26, 0.18],
-            valleys: [0.12, 0.05, 0.03],
-            plains: [0.42, 0.18, 0.10],
-            midlands: [0.68, 0.34, 0.18],
-            peaks: [0.98, 0.82, 0.60],
-          },
-        };
-      case PlanetType.Ringed:
-        return {
-          key: 'ringed',
-          ground: [0.36, 0.30, 0.24],
-          sky: [0.20, 0.16, 0.34],
-          palette: {
-            lowlands: [0.12, 0.10, 0.10],
-            highlands: [0.70, 0.60, 0.48],
-            dunes: [0.78, 0.60, 0.32],
-            polar: [0.90, 0.86, 0.78],
-            strata: [0.42, 0.34, 0.28],
-            valleys: [0.10, 0.08, 0.08],
-            plains: [0.28, 0.22, 0.18],
-            midlands: [0.48, 0.40, 0.32],
-            peaks: [0.96, 0.90, 0.78],
-          },
-        };
-      case PlanetType.Dwarf:
-        return {
-          key: 'dwarf',
-          ground: [0.48, 0.26, 0.18],
-          sky: [0.26, 0.16, 0.32],
-          palette: {
-            lowlands: [0.06, 0.04, 0.04],
-            highlands: [0.78, 0.46, 0.30],
-            dunes: [0.86, 0.48, 0.26],
-            polar: [0.94, 0.70, 0.56],
-            strata: [0.66, 0.34, 0.22],
-            valleys: [0.04, 0.02, 0.02],
-            plains: [0.28, 0.12, 0.10],
-            midlands: [0.54, 0.28, 0.18],
-            peaks: [0.96, 0.78, 0.54],
-          },
-        };
-      case PlanetType.Protoplanet:
-        return {
-          key: 'protoplanet',
-          ground: [0.44, 0.34, 0.26],
-          sky: [0.24, 0.26, 0.34],
-          palette: {
-            lowlands: [0.14, 0.10, 0.10],
-            highlands: [0.78, 0.58, 0.42],
-            dunes: [0.86, 0.60, 0.32],
-            polar: [0.92, 0.86, 0.74],
-            strata: [0.48, 0.34, 0.26],
-            valleys: [0.12, 0.08, 0.08],
-            plains: [0.32, 0.22, 0.18],
-            midlands: [0.56, 0.40, 0.30],
-            peaks: [0.94, 0.78, 0.56],
-          },
-        };
-      default:
-        return {
-          key: 'default',
-          ground: [0.40, 0.30, 0.28],
-          sky: [0.10, 0.14, 0.26],
-          palette: {
-            lowlands: [0.14, 0.12, 0.12],
-            highlands: [0.80, 0.60, 0.48],
-            dunes: [0.82, 0.58, 0.30],
-            polar: [0.94, 0.92, 0.88],
-            strata: [0.44, 0.34, 0.28],
-            valleys: [0.10, 0.08, 0.08],
-            plains: [0.32, 0.24, 0.20],
-            midlands: [0.56, 0.40, 0.32],
-            peaks: [0.96, 0.84, 0.72],
-          },
-        };
-    }
   }
 
   public isAtmosphereSceneActive(): boolean {
@@ -3267,7 +3245,7 @@ export class GameEngine {
     for (let i = 0; i < clusterCount; i++) {
       const clusterId = `collapse-${planetId}-${++this.collapseClusterSerial}-${i}`;
       const clusterCenter = this.randomPointInShell(center, radius * 0.2, radius * 1.25);
-      const direction = this.normalize({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 });
+      const direction = vec3Normalize({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 });
       const speed = 5 + Math.random() * 35;
       const includeSuper = Math.random() < 0.2;
       const memberCount = includeSuper ? 5 + Math.floor(Math.random() * 4) : 4 + Math.floor(Math.random() * 4);
@@ -3312,7 +3290,7 @@ export class GameEngine {
   private randomPointInShell(center: Vector3, innerRadius: number, outerRadius: number): Vector3 {
     const min = Math.max(0, Math.min(innerRadius, outerRadius));
     const max = Math.max(min + 1, Math.max(innerRadius, outerRadius));
-    const dir = this.normalize({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 });
+    const dir = vec3Normalize({ x: Math.random() - 0.5, y: Math.random() - 0.5, z: Math.random() - 0.5 });
     const distance = min + Math.random() * (max - min);
     return {
       x: center.x + dir.x * distance,
@@ -3681,6 +3659,8 @@ export class GameEngine {
     this.spaceTurtleSystem.clear();
     this.stationRenderer.clear();
     this.spaceStationSystem.clear(this.spaceStationHost);
+    this.aracnidStationRenderer.clear();
+    this.aracnidWar.clear(this.aracnidWarHost);
     this.stationDockCandidate = null;
     this.stationPanelOpen = false;
     this.stationDockedPort = null;
@@ -4530,6 +4510,7 @@ export class GameEngine {
     this.weaponBridge.update(deltaTime);
     this.spaceTurtleSystem.update(this.spaceTurtleHost, deltaTime);
     this.spaceStationSystem.update(this.spaceStationHost, deltaTime);
+    this.aracnidWar.update(this.aracnidWarHost, deltaTime);
 
     // Apply ongoing collision slide (lateral reposition), antes de que la cámara lea la posición
     this.shipCollisionSystem.applySlide(this.shipCollisionHost, deltaTime);
@@ -4622,7 +4603,7 @@ export class GameEngine {
     // Update audio listener pose and ship-related continuous sounds
     try {
       if (this.audio && this.camera) {
-        const fwd = this.normalize({
+        const fwd = vec3Normalize({
           x: this.camera.target.x - this.camera.position.x,
           y: this.camera.target.y - this.camera.position.y,
           z: this.camera.target.z - this.camera.position.z,
@@ -4814,6 +4795,7 @@ export class GameEngine {
     // Update active spell beams
     this.updateAnchoringPulseBeam(deltaTime);
     this.updateVoidKinesisBeam(deltaTime);
+    this.planetDrainBeam.update(this.planetDrainHost, deltaTime);
     this.updateDisruptionBeam();
 
     // Actualizar cámara con nueva posición
@@ -4927,6 +4909,14 @@ export class GameEngine {
     for (const port of this.spaceStationSystem.getPorts()) {
       if (port.isActive() && !availableTargets.some(t => t.id === port.id)) {
         availableTargets.push(port as unknown as ITargetable);
+      }
+    }
+  } catch {}
+  // Estaciones telaraña arácnidas (Fase 15): seleccionables y destruibles.
+  try {
+    for (const web of this.aracnidWar.getStations()) {
+      if (web.isActive() && !availableTargets.some(t => t.id === web.id)) {
+        availableTargets.push(web as unknown as ITargetable);
       }
     }
   } catch {}
@@ -5607,28 +5597,7 @@ export class GameEngine {
         return svc.generateUniquePlanetName();
       }
     } catch {}
-    // Fallback: local generator (non-unique)
-    const catalogPrefixes = ['Kepler', 'TRAPPIST', 'Gliese', 'Proxima', 'HD', 'K2', 'Tau', 'LHS', 'WASP', 'HIP'];
-    const separators = ['-', ' ', ' '];
-    const suffixAlpha = ['b', 'c', 'd', 'e', 'f', 'g', 'h'];
-    const num = () => Math.floor(10 + Math.random() * 8900);
-    const pick = (arr: any[]) => arr[Math.floor(Math.random() * arr.length)];
-    const style = Math.random();
-    if (style < 0.5) {
-      return `${pick(catalogPrefixes)}${pick(separators)}${num()}${Math.random() < 0.5 ? '' : ' '}${pick(suffixAlpha)}`.trim();
-    } else {
-      const myth = ['Aether', 'Chronos', 'Erebus', 'Gaia', 'Nyx', 'Hera', 'Hyperion', 'Icarus', 'Janus', 'Tethys', 'Rhea', 'Atlas'];
-      const romans = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII'];
-      return `${pick(myth)} ${pick(romans)}`;
-    }
-  }
-
-  // typeToLabel() eliminado - usar getDisplayLabelFromTargetType() de game-object.types
-
-  // Los efectos de propulsión ahora se manejan en ParticleEffectsService
-
-  private normalize(v: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
-    return vec3Normalize(v);
+    return generateFallbackPlanetName();
   }
 
   /**
@@ -5644,10 +5613,15 @@ export class GameEngine {
       return;
     }
     
+    // Primer golpe a algo arácnido (estación o caza): se acabó la neutralidad (Fase 15).
+    if (damage > 0 && (obj instanceof AracnidWebStation || obj instanceof AracnidFighterBeing)) {
+      this.aracnidWar.notifyPlayerAggression(this.aracnidWarHost);
+    }
+
     const prevHealth = obj.healthCurrent;
     obj.healthCurrent = Math.max(0, obj.healthCurrent - damage);
-    
-    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object damaged', { 
+
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Object damaged', {
       id: obj.id, 
       damage, 
       prevHealth: prevHealth.toFixed(0), 
@@ -5711,6 +5685,27 @@ export class GameEngine {
   /** Injerto de los Mi-Go (Fase 15): maniobrador de cursor y giroscopios retensados. */
   public applyMiGoShipUpgrade(): boolean {
     return this.shipOutfitting.applyMiGoUpgrade(this.outfittingHost);
+  }
+
+  /** Raza a hostil (Fase 15): standing + aviso + planetas en enemigo + sus encargos caducan. */
+  private declareRaceHostility(race: PlanetInhabitants, notice: string): void {
+    if (this.gameState.getRaceStanding(race).standing === 'hostile') {
+      return;
+    }
+    this.gameState.setRaceStanding(race, 'hostile');
+    for (const planet of this.gameState.planets) {
+      if (planet.inhabitants === race) {
+        try { planet.setAnimosity(GameObjectAnimosity.ENEMY); } catch {}
+        this.gameState.syncPlanetIntelFromPlanet(planet);
+      }
+    }
+    for (const mission of this.missionService?.listMissions() ?? []) {
+      if ((mission.requestedBy ?? mission.race) === race && mission.status !== 'completed' && mission.status !== 'failed') {
+        this.missionService?.failMission(mission.id, 'race-hostile');
+      }
+    }
+    this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.WARNING, notice);
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Race turned hostile', { race });
   }
 
   /** Toggle del vuelo por ratón (tecla `c`); sólo tiene sentido con el maniobrador instalado. */
@@ -5887,29 +5882,6 @@ export class GameEngine {
   /**
    * Get debris particle color based on object type
    */
-  private getObjectDebrisColor(obj: GameObject): { r: number; g: number; b: number } {
-    const objectType = this.resolveObjectType(obj);
-    const category = getCategory(objectType);
-
-    // Asteroids / debris fields: gris-marrón rocoso
-    if (category === GameObjectCategory.ASTEROID || objectType === GameObjectType.CLUSTER) {
-      return { r: 0.7, g: 0.5, b: 0.3 };
-    }
-
-    // Planets: tonos azulados/verdosos
-    if (category === GameObjectCategory.PLANET) {
-      return { r: 0.3, g: 0.6, b: 0.8 };
-    }
-
-    // Portals: púrpura místico
-    if (category === GameObjectCategory.PORTAL) {
-      return { r: 0.8, g: 0.3, b: 0.9 };
-    }
-
-    // Default: gris neutro
-    return { r: 0.6, g: 0.6, b: 0.6 };
-  }
-
   private stopDopplerCueForObject(objectId: string | null | undefined): void {
     if (!objectId) {
       return;
@@ -5947,7 +5919,7 @@ export class GameEngine {
       // Calculate approximate size for particle generation
       const size = obj.size || 1.0;
       // Generate particles (color based on object type)
-      const color = this.getObjectDebrisColor(obj);
+      const color = getDebrisColorForObjectType(this.resolveObjectType(obj));
       this.particleEffects.createDestructionDebris(obj.position, size, color);
     }
     
@@ -5964,6 +5936,12 @@ export class GameEngine {
     if (obj instanceof LesserBeingBase) {
       this.handleLesserBeingDestroyed(obj);
       this.unregisterLesserBeing(objId);
+      removed = true;
+    }
+
+    // Estación telaraña arácnida destruida (Fase 15): storyFlag + misión + XP + repliegue de cazas.
+    if (obj instanceof AracnidWebStation) {
+      this.aracnidWar.notifyStationDestroyed(this.aracnidWarHost, objId);
       removed = true;
     }
 
@@ -6695,6 +6673,8 @@ export class GameEngine {
     this.spaceTurtleSystem.clear();
     this.stationRenderer.clear();
     this.spaceStationSystem.clear(this.spaceStationHost);
+    this.aracnidStationRenderer.clear();
+    this.aracnidWar.clear(this.aracnidWarHost);
     this.stationDockCandidate = null;
     this.stationPanelOpen = false;
     this.stationDockedPort = null;
@@ -6998,6 +6978,10 @@ export class GameEngine {
     }
     if (this.voidKinesisBeam.isActive) {
       this.renderVoidKinesisBeam();
+      restoreLitProgram();
+    }
+    if (this.planetDrainBeam.isActive) {
+      this.renderPlanetDrainBeam();
       restoreLitProgram();
     }
     if (this.renderWeaponBeam()) {
@@ -7654,7 +7638,7 @@ export class GameEngine {
       if (p.orbitAngle < 0) p.orbitAngle += Math.PI * 2;
       // Elipse en el plano local: r = uR * (a cos t) + vR * (b sin t)
       // 1) Asegurar base ortonormal del plano
-      const n0 = this.normalize({ x: p.orbitNormal.x, y: p.orbitNormal.y, z: p.orbitNormal.z });
+      const n0 = vec3Normalize({ x: p.orbitNormal.x, y: p.orbitNormal.y, z: p.orbitNormal.z });
       // Proyectar orbitU al plano y normalizar; fallback si degenerado
       const dotUN = (p.orbitU.x * n0.x + p.orbitU.y * n0.y + p.orbitU.z * n0.z);
       let u0 = { x: p.orbitU.x - dotUN * n0.x, y: p.orbitU.y - dotUN * n0.y, z: p.orbitU.z - dotUN * n0.z };
@@ -7666,10 +7650,10 @@ export class GameEngine {
         const dotWN = (w.x*n0.x + w.y*n0.y + w.z*n0.z);
         u0 = { x: w.x - dotWN*n0.x, y: w.y - dotWN*n0.y, z: w.z - dotWN*n0.z };
       }
-      u0 = this.normalize(u0);
+      u0 = vec3Normalize(u0);
       // v = n × u
       let v0 = { x: n0.y*u0.z - n0.z*u0.y, y: n0.z*u0.x - n0.x*u0.z, z: n0.x*u0.y - n0.y*u0.x };
-      v0 = this.normalize(v0);
+      v0 = vec3Normalize(v0);
       // 2) Aplicar rotación en el plano por orbitOrientation (mantener compatibilidad)
       const co = Math.cos(p.orbitOrientation || 0);
       const so = Math.sin(p.orbitOrientation || 0);
@@ -7961,6 +7945,7 @@ export class GameEngine {
     this.renderPlanetDebris();
     this.renderSpaceTurtle();
     this.stationRenderer.render(this.stationRenderHost);
+    this.aracnidStationRenderer.render(this.aracnidStationRenderHost);
     // Desbindeo explícito de texturas usadas por el pase texturizado de planetas
     this.gl.activeTexture(this.gl.TEXTURE0);
     this.gl.bindTexture(this.gl.TEXTURE_2D, null);
@@ -8201,10 +8186,10 @@ export class GameEngine {
     if (dist - radius > farDistance) return false;
 
     // Build camera basis
-    const fwd = this.normalize({ x: this.camera.target.x - camPos.x, y: this.camera.target.y - camPos.y, z: this.camera.target.z - camPos.z });
+    const fwd = vec3Normalize({ x: this.camera.target.x - camPos.x, y: this.camera.target.y - camPos.y, z: this.camera.target.z - camPos.z });
     // Ensure up basis is orthonormal
     const worldUp = this.camera.up;
-    const right = this.normalize({
+    const right = vec3Normalize({
       x: fwd.y * worldUp.z - fwd.z * worldUp.y,
       y: fwd.z * worldUp.x - fwd.x * worldUp.z,
       z: fwd.x * worldUp.y - fwd.y * worldUp.x,
@@ -8900,116 +8885,24 @@ export class GameEngine {
     this.drawBeamQuad(beam.startPos, beam.endPos, 0.36, [1.0, 0.2, 0.1], pulse, 0.3);
   }
 
-  private ensureVoidCocoonShieldGeometry(): boolean {
-    if (this.voidCocoonShieldGeometry?.vbo && this.voidCocoonShieldGeometry?.ibo) {
-      return true;
-    }
-    if (!this.gl) {
-      return false;
-    }
-    const gl = this.gl;
-    const latSegments = 24;
-    const lonSegments = 36;
-    const positions: number[] = [];
-    for (let lat = 0; lat <= latSegments; lat++) {
-      const theta = (lat / latSegments) * Math.PI;
-      const sinTheta = Math.sin(theta);
-      const cosTheta = Math.cos(theta);
-      for (let lon = 0; lon <= lonSegments; lon++) {
-        const phi = (lon / lonSegments) * Math.PI * 2;
-        const sinPhi = Math.sin(phi);
-        const cosPhi = Math.cos(phi);
-        const x = cosPhi * sinTheta;
-        const y = cosTheta;
-        const z = sinPhi * sinTheta;
-        positions.push(x, y, z);
-      }
-    }
-    const stride = lonSegments + 1;
-    const indexList: number[] = [];
-    for (let lat = 0; lat < latSegments; lat++) {
-      for (let lon = 0; lon < lonSegments; lon++) {
-        const first = lat * stride + lon;
-        const second = first + stride;
-        indexList.push(first, second, first + 1);
-        indexList.push(second, second + 1, first + 1);
-      }
-    }
-    const positionArray = new Float32Array(positions);
-    const indexArray = new Uint16Array(indexList);
-    const vbo = gl.createBuffer();
-    const ibo = gl.createBuffer();
-    if (!vbo || !ibo) {
-      return false;
-    }
-    gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
-    gl.bufferData(gl.ARRAY_BUFFER, positionArray, gl.STATIC_DRAW);
-    gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
-    gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, indexArray, gl.STATIC_DRAW);
-    this.voidCocoonShieldGeometry = { vbo, ibo, indexCount: indexArray.length };
-    return true;
-  }
-
+  /** Escudo del Void Cocoon: parámetros del frame aquí, dibujo en VoidCocoonShieldRenderer. */
   private renderVoidCocoonShield(): void {
-    if (!this.gl || !this.shaderManager || !this.shaderManager.stormShellProgram) return;
-    if (!this.spaceship || !this.camera) return;
+    if (!this.gl || !this.shaderManager || !this.spaceship || !this.camera) return;
     if (!this.voidCocoonActiveUntilMs) return;
     const now = performance.now();
     if (now >= this.voidCocoonActiveUntilMs) return;
-    if (!this.ensureVoidCocoonShieldGeometry() || !this.voidCocoonShieldGeometry) return;
-
-    const gl = this.gl;
-    const mesh = this.voidCocoonShieldGeometry;
-    const prevProgram = gl.getParameter(gl.CURRENT_PROGRAM) as WebGLProgram | null;
-    const wasBlend = gl.isEnabled(gl.BLEND);
-    const wasDepth = gl.isEnabled(gl.DEPTH_TEST);
-    const prevDepthMask = !!gl.getParameter(gl.DEPTH_WRITEMASK);
-    const wasCull = gl.isEnabled(gl.CULL_FACE);
-
-    gl.enable(gl.BLEND);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE);
-    gl.disable(gl.DEPTH_TEST);
-    gl.depthMask(false);
-    gl.disable(gl.CULL_FACE);
-
     const shieldRadius = Math.max(2.4, (this.spaceship.boundingSphere?.radius ?? 1.2) * 1.75);
     const modelMatrix = this.createThrusterMatrix(shieldRadius);
     if (!modelMatrix) return;
-    const elapsedSec = (now - this.voidCocoonShieldStartMs) / 1000;
-    const remainingSec = (this.voidCocoonActiveUntilMs - now) / 1000;
-    const normalized = Math.max(0, Math.min(1, remainingSec / 30));
-    const baseIntensity = 0.55 + 0.35 * normalized + 0.15 * Math.sin(elapsedSec * 2.4);
-    const impactFlash = Math.min(1, Math.max(0, 1 - (now - this.voidCocoonLastImpactMs) / 350));
-
-    this.shaderManager.useStormShellProgram();
-    this.shaderManager.setStormShellMatrices(modelMatrix, this.camera.viewMatrix, this.camera.projectionMatrix);
-    const baseColor = new Float32Array([0.08, 0.28, 0.42]);
-    const veinColor = new Float32Array([0.45, 0.9, 1.0]);
-    this.shaderManager.setStormShellParams(
-      elapsedSec,
-      Math.min(1.3, baseIntensity),
-      Math.min(1, impactFlash),
-      1.08,
-      baseColor,
-      veinColor,
-    );
-
-    const posLoc = this.shaderManager.stormShellAttributes['position'];
-    if (posLoc !== undefined && posLoc >= 0) {
-      gl.bindBuffer(gl.ARRAY_BUFFER, mesh.vbo);
-      gl.enableVertexAttribArray(posLoc);
-      gl.vertexAttribPointer(posLoc, 3, gl.FLOAT, false, 0, 0);
-      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, mesh.ibo);
-      gl.drawElements(gl.TRIANGLES, mesh.indexCount, gl.UNSIGNED_SHORT, 0);
-      gl.disableVertexAttribArray(posLoc);
-    }
-
-    gl.depthMask(prevDepthMask);
-    gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
-    if (wasBlend) gl.enable(gl.BLEND); else gl.disable(gl.BLEND);
-    if (wasDepth) gl.enable(gl.DEPTH_TEST); else gl.disable(gl.DEPTH_TEST);
-    if (wasCull) gl.enable(gl.CULL_FACE); else gl.disable(gl.CULL_FACE);
-    gl.useProgram(prevProgram);
+    this.voidCocoonShieldRenderer ??= new VoidCocoonShieldRenderer(this.gl, this.shaderManager);
+    this.voidCocoonShieldRenderer.draw({
+      modelMatrix,
+      viewMatrix: this.camera.viewMatrix,
+      projectionMatrix: this.camera.projectionMatrix,
+      elapsedSec: (now - this.voidCocoonShieldStartMs) / 1000,
+      remainingSec: (this.voidCocoonActiveUntilMs - now) / 1000,
+      impactFlash: Math.min(1, Math.max(0, 1 - (now - this.voidCocoonLastImpactMs) / 350)),
+    });
   }
 
   private resolveVoidKinesisConversion(target: Asteroid): void {
@@ -9419,8 +9312,13 @@ export class GameEngine {
     if (!this.spaceship) {
       return false;
     }
+    // Fase 15 (la "cirugía" de los Mi-Go): sobre un PLANETA, el rito drena su void mass hasta
+    // hacerlo desaparecer. Sobre un asteroide sigue el camino clásico de condensación.
+    if (target instanceof Planet) {
+      return this.castVoidKinesisOnPlanet(target);
+    }
     if (!target || !this.isAsteroidTarget(target)) {
-      this.showPlaceholderText('VOID KINESIS REQUIERE ASTEROIDE', 1500);
+      this.showPlaceholderText('VOID KINESIS REQUIERE ASTEROIDE O PLANETA', 1500);
       return false;
     }
     const pos = this.getTargetPosition(target);
@@ -9447,6 +9345,102 @@ export class GameEngine {
     }
   }
 
+  /** Drenaje de un planeta (Fase 15): canal largo que se bebe su void mass hasta hacerlo desaparecer. */
+  private castVoidKinesisOnPlanet(planet: Planet): boolean {
+    if (this.planetDrainBeam.isActive) {
+      this.showPlaceholderText('YA HAY UN DRENAJE EN CURSO', 1500);
+      return false;
+    }
+    if (this.resolveSystemId() === 'human-system') {
+      // El hogar no se bebe: la Tierra partida y sus vecinos son historia, no combustible.
+      this.showPlaceholderText('EL SISTEMA NATAL SE RESISTE AL DRENAJE', 2000);
+      return false;
+    }
+    if (this.gameState.getActiveLandingPlanet()?.id === planet.id) {
+      this.showPlaceholderText('NO PUEDES DRENAR EL SUELO QUE PISAS', 2000);
+      return false;
+    }
+    if (this.getDistanceFromShip(planet.position) > 2500) {
+      this.showPlaceholderText('DEMASIADO LEJOS PARA EL DRENAJE (>2500u)', 1500);
+      return false;
+    }
+    const started = this.planetDrainBeam.start(this.planetDrainHost, planet);
+    if (started) {
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, `DRENANDO ${this.describePlanetName(planet).toUpperCase()}`);
+    }
+    return started;
+  }
+
+  private describePlanetName(planet: Planet): string {
+    try {
+      if (typeof planet.getDisplayName === 'function') {
+        return planet.getDisplayName();
+      }
+    } catch {}
+    return planet.customName ?? planet.id;
+  }
+
+  private renderPlanetDrainBeam(): void {
+    const beam = this.planetDrainBeam.renderState;
+    if (!beam || !this.spaceship) return;
+    const pulse = 0.45 + 0.4 * Math.sin((performance.now() - beam.startedAtMs) * 0.012);
+    // Violeta y más grueso que el de asteroides: se está bebiendo un MUNDO.
+    this.drawBeamQuad(this.spaceship.position, beam.endPos, 0.9 + beam.progress * 1.4, [0.62, 0.3, 0.95], pulse, 0.25);
+  }
+
+  /** Consuma el drenaje: retira el planeta (sin portal), persiste y dispara las consecuencias. */
+  private consumePlanetByDrain(planet: Planet): void {
+    try {
+      const planets = this.gameState.planets;
+      const idx = planets.findIndex(p => p.id === planet.id);
+      if (idx >= 0) planets.splice(idx, 1);
+      this.targetCatalog.register(TargetType.PLANET, planets as unknown as ITargetable[]);
+    } catch {}
+    try {
+      if (this.particleEffects) {
+        this.particleEffects.createDestructionDebris(planet.position, Math.max(4, planet.scale.x * 0.15), { r: 0.62, g: 0.3, b: 0.95 });
+      }
+    } catch {}
+    planet.active = false;
+    planet.visible = false;
+    this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.SYSTEM, `${this.describePlanetName(planet).toUpperCase()} CONSUMIDO POR EL VACÍO`);
+    this.notifyPlanetRemoved(planet, 'void-drain');
+    try {
+      this.persistActiveSystemState({ reason: 'planet-drained' });
+    } catch {}
+  }
+
+  /**
+   * Consecuencias de destruir un planeta, sea por Gate Rite o por drenaje (Fase 15): si estaba
+   * habitado, su raza te declara hostil y las misiones de exterminio que la señalan avanzan.
+   */
+  public notifyPlanetRemoved(planet: { id: string; inhabitants?: PlanetInhabitants | null }, cause: 'gate-rite' | 'void-drain'): void {
+    const race = planet.inhabitants;
+    if (!race || race === PlanetInhabitants.NONE) {
+      return;
+    }
+    const raceLabel = PLANET_INHABITANT_LABELS[race] ?? String(race);
+    const mission = this.missionService?.registerExterminationEvent(String(race), 'planet');
+    if (mission?.status === 'ready-to-turn-in') {
+      this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.MISSION, this.exterminationReadyNotice(mission));
+    } else if (mission?.exterminationTarget) {
+      const t = mission.exterminationTarget;
+      this.hudManager?.emitMarqueeEvent?.(
+        HudMarqueeEventType.MISSION,
+        `EXTERMINIO: ${t.planetsDestroyed}/${t.planetsRequired} MUNDOS · ${t.stationsDestroyed}/${t.stationsRequired} TELARES`
+      );
+    }
+    this.declareRaceHostility(race, `${raceLabel.toUpperCase()}: NO OLVIDARÁN ESTE MUNDO`);
+    this.logger.log(LogLevel.INFO, LogCategory.GAME_LOOP, 'Inhabited planet removed', { planetId: planet.id, race, cause });
+  }
+
+  /** "Entrega con quien te lo encargó": el exterminio cumplido nombra a su patrocinador. */
+  private exterminationReadyNotice(mission: PlanetMissionState): string {
+    const sponsor = mission.requestedBy ?? mission.race;
+    const label = sponsor ? PLANET_INHABITANT_LABELS[sponsor] ?? String(sponsor) : 'tu patrocinador';
+    return `EXTERMINIO CUMPLIDO: ENTREGA CON ${label.toUpperCase()}`;
+  }
+
   private isVoidCocoonActive(referenceTime?: number): boolean {
     if (!this.voidCocoonActiveUntilMs) {
       return false;
@@ -9464,7 +9458,6 @@ export class GameEngine {
     this.voidCocoonActiveUntilMs = now + durationMs;
     this.voidCocoonLastImpactMs = now;
     this.voidCocoonShieldStartMs = now;
-    this.ensureVoidCocoonShieldGeometry();
     try {
       this.hudManager?.emitMarqueeEvent?.(HudMarqueeEventType.VOID_RITUAL, 'Void Cocoon: capullo protector desplegado');
     } catch {}
@@ -9680,7 +9673,7 @@ export class GameEngine {
     const landingSite = context?.surfacePoint && context?.surfaceNormal
       ? {
           surfacePoint: { ...context.surfacePoint },
-          surfaceNormal: this.normalize(context.surfaceNormal),
+          surfaceNormal: vec3Normalize(context.surfaceNormal),
           radius: context.radius ?? (planet ? this.estimatePlanetRadius(planet) : 0),
         }
       : undefined;
@@ -10189,13 +10182,7 @@ export class GameEngine {
     this.shipRenderer?.cleanup();
     this.planetSurfaceRenderer?.cleanup();
     this.planetRingRenderer?.cleanup();
-    if (this.gl) {
-      if (this.voidCocoonShieldGeometry) {
-        if (this.voidCocoonShieldGeometry.vbo) this.gl.deleteBuffer(this.voidCocoonShieldGeometry.vbo);
-        if (this.voidCocoonShieldGeometry.ibo) this.gl.deleteBuffer(this.voidCocoonShieldGeometry.ibo);
-        this.voidCocoonShieldGeometry = null;
-      }
-    }
+    this.voidCocoonShieldRenderer = null; // sus buffers caen con el contexto GL
 
     if (this.atmosphereSceneManager) {
       this.atmosphereSceneManager.dispose();
@@ -10468,86 +10455,17 @@ export class GameEngine {
   }
 
 
-  /** STEP 5: Render del nuevo outliner 2D (si hay seleccionado o hovered) */
+  /** STEP 5: outliner 2D — la decisión de pintado vive en target-outline-driver (regla #1). */
   private renderTargetOutline2D(): void {
-    if (!this.outlinerEnabled) return; // disabled for performance testing
-    if (!this.targetOutline2D || !this.adaptiveTargeting) return;
-    try {
-      const selected = this.adaptiveTargeting.getCurrentTarget?.();
-      const hovered = this.adaptiveTargeting.getHoveredTarget?.();
-      if (!selected && !hovered) return;
-
-      // During animations (and pre-cast blocking delay), suppress overlays for a clean view
-      const blockOverlays = this.spellIOCoordinator?.shouldHideOutliners?.() ?? (!!this.animationManager?.isBlockingInputs?.());
-
-      const dpr = (this.webglService.getState().devicePixelRatio || 1);
-
-      // Helper: build render data from TargetDisplayInfo and optionally dim the color
-      const toRGBA = (hex: string, alpha: number): string => {
-        const h = hex.replace('#','');
-        const bigint = parseInt(h.length === 3
-          ? (h[0]+h[0]+h[1]+h[1]+h[2]+h[2])
-          : h, 16);
-        const r = (bigint >> 16) & 255;
-        const g = (bigint >> 8) & 255;
-        const b = bigint & 255;
-        return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, alpha)).toFixed(3)})`;
-      };
-      const buildData = (t: any) => {
-        const info = this.adaptiveTargeting!.getTargetDisplayInfo?.(t);
-        if (!info || !info.screenPosition) return null;
-        const typeLabel = ((): string => {
-          try { return String(info.type || t.getTargetType?.() || 'unknown'); } catch { return 'unknown'; }
-        })();
-        const healthPct = (() => {
-          try {
-            const h = info.details?.health;
-            if (h && typeof h.current === 'number' && typeof h.max === 'number' && h.max > 0) {
-              return (h.current / h.max) * 100;
-            }
-          } catch {}
-          return undefined;
-        })();
-        const distanceRaw = this.getDisplayDistanceToTarget(t);
-        const distanceDisplay = Number.isFinite(distanceRaw) ? distanceRaw : 0;
-        return {
-          x: info.screenPosition.x * dpr,
-          y: info.screenPosition.y * dpr,
-          // Prefer live target name to avoid 1-frame stale snapshots
-          name: (t.getDisplayName?.() || info.name || t.id),
-          typeLabel,
-          distanceDisplay,
-          color: info.accentColor || '#60a5fa',
-          healthPct
-        } as any;
-      };
-
-      // Render hovered (slightly brighter than before) if present and different from selected
-      if (!blockOverlays && hovered && (!selected || hovered.id !== selected.id)) {
-        const hData = buildData(hovered);
-        if (hData) {
-          // Use full color and control perceived brightness via intensity + thickness
-          hData.color = toRGBA(hData.color, 1.0);
-          (hData as any).intensity = 0.85; // was ~0.6; brighter hover
-          (hData as any).thickness = 1.1;   // slightly thicker
-          this.targetOutline2D.render('hover', hData.x, hData.y, hData);
-        }
-      }
-
-      // Render selected (intense) on top
-      if (!blockOverlays && selected) {
-        const sData = buildData(selected);
-        if (sData) {
-          // Slightly bolder selected
-          sData.color = toRGBA(sData.color, 1.0);
-          (sData as any).intensity = 1.0; // fully opaque
-          (sData as any).thickness = 1.2; // subtle emphasis
-          this.targetOutline2D.render('selected', sData.x, sData.y, sData);
-        }
-      }
-    } catch (e) {
-      // No romper frame por errores visuales
-    }
+    renderTargetOutline2D({
+      isEnabled: () => this.outlinerEnabled && !!this.targetOutline2D && !!this.adaptiveTargeting,
+      getOutline: () => this.targetOutline2D,
+      getTargeting: () => this.adaptiveTargeting,
+      shouldHideOverlays: () =>
+        this.spellIOCoordinator?.shouldHideOutliners?.() ?? (!!this.animationManager?.isBlockingInputs?.()),
+      getDevicePixelRatio: () => this.webglService.getState().devicePixelRatio || 1,
+      getDisplayDistance: (t) => this.getDisplayDistanceToTarget(t),
+    });
   }
 
   /** Attach or detach click binding based on panel enabled state */
@@ -11375,7 +11293,10 @@ export class GameEngine {
     } catch (err) {
       this.logger.log(LogLevel.WARN, LogCategory.RENDER, 'Failed to init lesser being buffers', { id: being.id, err });
     }
-    try { this.lesserBeingController?.registerBeing(being as any); } catch {}
+    // Los seres con piloto propio (cazas arácnidos) no entran en la IA genérica: los mueve su sistema.
+    if (!being.externallyPiloted) {
+      try { this.lesserBeingController?.registerBeing(being as any); } catch {}
+    }
     const currentShips = [...this.targetCatalog.getByType(TargetType.SPACESHIP).filter(t => t.id !== being.id), being as unknown as ITargetable];
     this.targetCatalog.register(TargetType.SPACESHIP, currentShips);
     this.gameState.mapIdToTarget.set(being.id, being as unknown as ITargetable);

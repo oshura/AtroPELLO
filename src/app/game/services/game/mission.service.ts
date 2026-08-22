@@ -154,6 +154,14 @@ export class MissionService {
       });
       return snapshot;
     }
+    // Un exterminio no se cobra a cuenta: la cuota de destrucción debe estar cumplida.
+    if (snapshot.type === 'exterminate' && !this.exterminationComplete(snapshot)) {
+      this.logger.log(LogLevel.WARN, LogCategory.LANDING, 'Mission completion blocked: extermination quota unmet', {
+        missionId,
+        progress: snapshot.exterminationTarget
+      });
+      return snapshot;
+    }
     const updated = this.updateMission(
       missionId,
       mission => {

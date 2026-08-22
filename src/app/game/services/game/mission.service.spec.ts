@@ -148,4 +148,95 @@ describe('MissionService · misiones de caza', () => {
     expect(service.registerHuntKill('VAMPIRO_FUEGO', 'YOG_SOTHOTH')).toBeNull();
     expect(cargo.length).toBe(1);
   });
+
+  /**
+   * Exterminio (Fase 15): la misión de los Mi-Go contra los tejedores. La cuota (3 mundos + 2
+   * telares) sólo avanza por eventos reales de destrucción; el mismo peligro que hunt — sin el
+   * guard, aceptar la habría dejado lista al instante.
+   */
+  describe('misiones de exterminio', () => {
+    function offerExtermination(): PlanetMissionState {
+      return service.offerMission(makePlanet(), {
+        race: PlanetInhabitants.MI_GO,
+        type: 'exterminate',
+        originPlanetId: 'planet-greys',
+        exterminateTarget: { race: 'ARACNIDOS', planets: 3, stations: 2 },
+        reward: { memorySharePct: 5, uniqueGlyphId: 'VOID_COCOON' },
+      });
+    }
+
+    it('un exterminio recién aceptado NO está listo para entregar', () => {
+      const mission = offerExtermination();
+      const accepted = service.acceptMission(mission.id)!;
+      expect(accepted.status).toBe('accepted');
+    });
+
+    it('cada planeta y estación destruidos avanzan su contador', () => {
+      const mission = offerExtermination();
+      service.acceptMission(mission.id);
+
+      service.registerExterminationEvent('ARACNIDOS', 'planet');
+      const after = service.registerExterminationEvent('ARACNIDOS', 'station');
+
+      expect(after?.exterminationTarget?.planetsDestroyed).toBe(1);
+      expect(after?.exterminationTarget?.stationsDestroyed).toBe(1);
+      expect(after?.status).toBe('in-progress');
+    });
+
+    it('destruir cosas de OTRA raza no cuenta', () => {
+      const mission = offerExtermination();
+      service.acceptMission(mission.id);
+
+      expect(service.registerExterminationEvent('MI_GO', 'planet')).toBeNull();
+      expect(service.getMissionSnapshot(mission.id)?.exterminationTarget?.planetsDestroyed).toBe(0);
+    });
+
+    it('con la cuota completa (3 mundos + 2 telares) queda lista para entregar', () => {
+      const mission = offerExtermination();
+      service.acceptMission(mission.id);
+
+      for (let i = 0; i < 3; i++) service.registerExterminationEvent('ARACNIDOS', 'planet');
+      service.registerExterminationEvent('ARACNIDOS', 'station');
+      const done = service.registerExterminationEvent('ARACNIDOS', 'station');
+
+      expect(done?.status).toBe('ready-to-turn-in');
+    });
+
+    it('el excedente sobre la cuota no cuenta para nadie', () => {
+      const mission = offerExtermination();
+      service.acceptMission(mission.id);
+      for (let i = 0; i < 3; i++) service.registerExterminationEvent('ARACNIDOS', 'planet');
+
+      expect(service.registerExterminationEvent('ARACNIDOS', 'planet')).toBeNull();
+      expect(service.getMissionSnapshot(mission.id)?.exterminationTarget?.planetsDestroyed).toBe(3);
+    });
+
+    it('no se puede completar sin cumplir la cuota', () => {
+      const mission = offerExtermination();
+      service.acceptMission(mission.id);
+      service.registerExterminationEvent('ARACNIDOS', 'planet');
+
+      const result = service.completeMission(mission.id);
+      expect(result?.status).not.toBe('completed');
+      expect(learnedSpells).toEqual([]);
+    });
+
+    it('cumplida la cuota, completar entrega memoria y glifo', () => {
+      const mission = offerExtermination();
+      service.acceptMission(mission.id);
+      for (let i = 0; i < 3; i++) service.registerExterminationEvent('ARACNIDOS', 'planet');
+      for (let i = 0; i < 2; i++) service.registerExterminationEvent('ARACNIDOS', 'station');
+
+      const completed = service.completeMission(mission.id);
+
+      expect(completed?.status).toBe('completed');
+      expect(learnedSpells).toEqual([SpellType.VOID_COCOON]);
+      expect(store.memoryPercent).toBe(5);
+    });
+
+    it('los eventos antes de aceptar no avanzan nada', () => {
+      offerExtermination(); // ofrecida pero NO aceptada
+      expect(service.registerExterminationEvent('ARACNIDOS', 'planet')).toBeNull();
+    });
+  });
 });

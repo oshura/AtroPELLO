@@ -128,6 +128,12 @@ export abstract class LesserBeingBase extends GameObject implements ITargetable 
   public readonly attackProfile: LesserBeingAttackProfile;
   public readonly behaviorProfile: LesserBeingBehaviorProfile;
   public readonly beingType: LesserBeing;
+  /**
+   * true = lo pilota un sistema propio (cazas arácnidos, Fase 15): el motor NO lo registra en el
+   * LesserBeingController genérico (cuya IA busca planetas y aterriza, cosa que un caza no hace).
+   * El resto del pipeline (render, targeting, daño, recompensa de kill) es idéntico.
+   */
+  public readonly externallyPiloted: boolean = false;
   public currentSpeed: number = 0;
   public targetSpeed: number = 0;
   public forwardDirection: Vector3 = { x: 0, y: 0, z: 1 };
